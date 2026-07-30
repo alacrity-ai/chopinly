@@ -1,0 +1,253 @@
+/* Woodshed — "inside the piano": warm ebony case, aged ivory, brass hardware,
+   felt-red reserved for the downbeat. Tokens per docs/DESIGN.md §4. */
+
+@font-face {
+  font-family: "Fraunces";
+  src: url("/fonts/fraunces-roman.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Fraunces";
+  src: url("/fonts/fraunces-italic.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+:root {
+  --ebony: #191410;
+  --ebony-raised: #26201a;
+  --ebony-edge: #3a3128;
+  --ivory: #eee5d3;
+  --ivory-dim: #a2947d;
+  --brass: #c9a35c;
+  --brass-bright: #e3c284;
+  --felt: #b0463c;
+  --serif: "Fraunces", "Didot", "Bodoni MT", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { color-scheme: dark; }
+
+body {
+  min-height: 100dvh;
+  background:
+    radial-gradient(120% 60% at 50% -10%, #2a2118 0%, transparent 60%),
+    var(--ebony);
+  color: var(--ivory);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: clamp(1rem, 3vh, 2rem) 1rem 3rem;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* ---------- shell ---------- */
+
+.shell-header { text-align: center; margin-bottom: clamp(0.75rem, 3vh, 2rem); }
+
+.wordmark {
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+  font-weight: 550;
+  font-size: 1.75rem;
+  letter-spacing: 0.01em;
+  color: var(--ivory);
+}
+
+.tagline {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.95rem;
+  color: var(--ivory-dim);
+  margin-top: 0.15rem;
+}
+
+.tool-tabs { display: flex; gap: 0.5rem; justify-content: center; margin-top: 1rem; }
+.tool-tabs button {
+  font: 500 0.85rem var(--sans);
+  color: var(--ivory-dim);
+  background: transparent;
+  border: 1px solid var(--ebony-edge);
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+  cursor: pointer;
+}
+.tool-tabs button[aria-selected="true"] { color: var(--brass); border-color: var(--brass); }
+
+.noscript { color: var(--ivory-dim); text-align: center; max-width: 26rem; }
+
+#tool-root { margin-block: auto; width: 100%; display: flex; justify-content: center; }
+
+/* ---------- metronome ---------- */
+
+.metronome {
+  width: min(100%, 26rem);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(0.9rem, 2.5vh, 1.4rem);
+}
+
+/* pendulum — the signature; angle is set from JS off the audio clock */
+.pendulum { width: min(78%, 17rem); overflow: visible; }
+.pendulum .arc {
+  fill: none;
+  stroke: var(--ebony-edge);
+  stroke-width: 1.5;
+  stroke-dasharray: 2 5;
+  stroke-linecap: round;
+}
+.pendulum .arm line {
+  stroke: var(--brass);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.pendulum .bob {
+  fill: var(--brass);
+  transition: fill 90ms linear;
+}
+.pendulum .bob.down { fill: var(--felt); }
+.pendulum .pivot { fill: var(--ivory-dim); }
+
+/* beat dots */
+.beat-dots { display: flex; gap: 0.7rem; flex-wrap: wrap; justify-content: center; }
+.dot {
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 50%;
+  border: 2px solid var(--ivory-dim);
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 90ms ease-out, background 90ms, border-color 90ms, opacity 90ms;
+}
+.dot.accent { background: var(--felt); border-color: var(--felt); }
+.dot.normal { border-color: var(--ivory); }
+.dot.muted { opacity: 0.3; }
+.dot.now { transform: scale(1.45); }
+
+/* tempo */
+.tempo { text-align: center; }
+.bpm {
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+  font-weight: 480;
+  font-size: clamp(4.5rem, 24vw, 7rem);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+}
+.marking {
+  font-family: var(--serif);
+  color: var(--ivory-dim);
+  font-size: 1.1rem;
+  margin-top: 0.25rem;
+}
+.marking em { font-style: italic; color: var(--brass); font-size: 1.25rem; }
+
+.tempo-adjust {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.nudge {
+  font: 600 0.9rem var(--sans);
+  color: var(--ivory);
+  background: var(--ebony-raised);
+  border: 1px solid var(--ebony-edge);
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  min-width: 2.4rem;
+  cursor: pointer;
+}
+.nudge:active { background: var(--ebony-edge); }
+
+input[type="range"] { accent-color: var(--brass); flex: 1; min-width: 4rem; }
+#bpm-slider { width: 8rem; }
+
+/* parameter row */
+.params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem 1.4rem;
+  justify-content: center;
+  align-items: center;
+}
+.param {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ivory-dim);
+}
+.param select {
+  font: 500 0.95rem var(--sans);
+  color: var(--ivory);
+  background: var(--ebony-raised);
+  border: 1px solid var(--ebony-edge);
+  border-radius: 0.5rem;
+  padding: 0.35rem 0.5rem;
+}
+.segmented { display: flex; border: 1px solid var(--ebony-edge); border-radius: 0.5rem; overflow: hidden; }
+.segmented button {
+  font: 500 0.95rem var(--sans);
+  color: var(--ivory-dim);
+  background: var(--ebony-raised);
+  border: none;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+}
+.segmented button + button { border-left: 1px solid var(--ebony-edge); }
+.segmented button[aria-pressed="true"] { color: var(--ebony); background: var(--brass); }
+
+/* transport */
+.transport { display: flex; align-items: center; gap: 1rem; margin-top: 0.4rem; }
+.start {
+  font: 600 1.1rem var(--sans);
+  letter-spacing: 0.04em;
+  color: var(--ebony);
+  background: linear-gradient(180deg, var(--brass-bright), var(--brass));
+  border: none;
+  border-radius: 999px;
+  padding: 0.85rem 2.8rem;
+  cursor: pointer;
+  transition: filter 120ms;
+}
+.start:hover { filter: brightness(1.06); }
+.start.running {
+  background: transparent;
+  border: 2px solid var(--brass);
+  color: var(--brass);
+  padding: calc(0.85rem - 2px) calc(2.8rem - 2px);
+}
+.tap {
+  font: 500 0.95rem var(--sans);
+  color: var(--ivory-dim);
+  background: transparent;
+  border: 1px solid var(--ebony-edge);
+  border-radius: 999px;
+  padding: 0.7rem 1.3rem;
+  cursor: pointer;
+}
+.tap:active { color: var(--brass); border-color: var(--brass); }
+
+@media (prefers-reduced-motion: reduce) {
+  .dot, .pendulum .bob, .start { transition: none; }
+}
