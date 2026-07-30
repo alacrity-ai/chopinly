@@ -1,9 +1,11 @@
 # Woodshed — practice assistant
 
-A piano practice assistant PWA. Tool #1 is a metronome: sample-accurate Web
-Audio scheduling, four synthesized click voices, tap tempo, per-beat
-accent/mute, subdivisions, and a brass pendulum phase-locked to the audio
-clock. Installable and fully offline.
+A piano practice assistant PWA. Tools so far: a **metronome** (sample-accurate
+Web Audio scheduling, four synthesized click voices, tap tempo, per-beat
+accent/mute, subdivisions, a brass pendulum phase-locked to the audio clock)
+and a **pitch pipe** (ring of 12 notes, sustained reed tone, octave + A4
+calibration with live retune). Installable and fully offline; tools live at
+`#/<tool-id>` behind the navbar dropdown.
 
 **Live:** https://metronome.apps.lalalimited.com
 

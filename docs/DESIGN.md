@@ -135,7 +135,22 @@ plain numbers, markings in Italian. No filler.
   output (it kills Pages SPA fallback).
 - Wake lock owned by the shell, requested only while a tool reports running.
 
-## 6. Verification bar
+## 6. Tool #2 — pitch pipe (WSHED-5), and the navbar (WSHED-4)
+
+With a second tool the shell's header became a **navbar**: brand left, a
+dropdown top-right rendered from the registry (menuitemradio semantics,
+Escape/click-outside close), plus **hash routing** — each tool is a screen at
+`#/<tool-id>` with a shareable URL.
+
+The **pitch pipe** mirrors the physical object: 12 notes in a ring, tap to
+sound a sustained tone, tap again to stop. Center readout shows note (sharp ·
+flat) + frequency; octave (2–6) and **A4 calibration** (430–450, default 440)
+retune a *sounding* note live via `setTargetAtTime`, so you can sweep while
+tuning. Timbre: two saws detuned 6 cents (reed beating) through a gentle
+lowpass with a soft attack — sustained, steady, no vibrato. Wake lock while
+sounding.
+
+## 7. Verification bar
 
 Local smoke before deploy: page serves, manifest + sw fetch 200, start/stop
 works, all four voices audible, tap tempo sane, dots editable, settings survive

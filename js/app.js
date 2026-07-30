@@ -1,11 +1,11 @@
-// Shell: mounts the active tool, renders tabs when there's more than one tool,
-// owns the screen wake-lock, registers the service worker.
+// Shell: navbar with a tool dropdown (rendered from the registry), hash
+// routing (#/<tool-id>), screen wake-lock, service-worker registration.
 import { TOOLS } from "./registry.js";
 import { getAudio } from "./lib/audio.js";
 import { makeStore } from "./lib/store.js";
 
 const root = document.getElementById("tool-root");
-const tabs = document.getElementById("tool-tabs");
+const picker = document.getElementById("tool-picker");
 const shellStore = makeStore("shell");
 
 let active = null;
@@ -31,31 +31,67 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && running) acquireWakeLock();
 });
 
+// --- tool picker: button + menu, top right --------------------------------
+const pickerBtn = document.createElement("button");
+pickerBtn.className = "picker-btn";
+pickerBtn.setAttribute("aria-haspopup", "menu");
+pickerBtn.setAttribute("aria-expanded", "false");
+
+const pickerMenu = document.createElement("div");
+pickerMenu.className = "picker-menu";
+pickerMenu.setAttribute("role", "menu");
+pickerMenu.hidden = true;
+
+picker.append(pickerBtn, pickerMenu);
+
+for (const tool of TOOLS) {
+  const item = document.createElement("button");
+  item.className = "picker-item";
+  item.setAttribute("role", "menuitemradio");
+  item.dataset.tool = tool.id;
+  item.innerHTML = `<span class="picker-glyph" aria-hidden="true">${tool.glyph}</span>${tool.name}`;
+  item.addEventListener("click", () => { closeMenu(); mount(tool); });
+  pickerMenu.append(item);
+}
+
+function openMenu() { pickerMenu.hidden = false; pickerBtn.setAttribute("aria-expanded", "true"); }
+function closeMenu() { pickerMenu.hidden = true; pickerBtn.setAttribute("aria-expanded", "false"); }
+pickerBtn.addEventListener("click", () => (pickerMenu.hidden ? openMenu() : closeMenu()));
+document.addEventListener("click", (e) => { if (!picker.contains(e.target)) closeMenu(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
+
+// --- mounting + routing ----------------------------------------------------
 function mount(tool) {
+  if (active === tool) { syncHash(tool); return; }
   if (active) { active.unmount(); root.replaceChildren(); }
   active = tool;
   shellStore.set("activeTool", tool.id);
+  syncHash(tool);
+  pickerBtn.innerHTML =
+    `<span class="picker-glyph" aria-hidden="true">${tool.glyph}</span>${tool.name}` +
+    `<span class="chevron" aria-hidden="true">&#9662;</span>`;
+  for (const item of pickerMenu.children) {
+    item.setAttribute("aria-checked", String(item.dataset.tool === tool.id));
+  }
   tool.mount(root, { getAudio, store: makeStore(tool.id), setRunning });
-  if (!tabs.hidden) {
-    for (const b of tabs.querySelectorAll("button")) {
-      b.setAttribute("aria-selected", String(b.dataset.tool === tool.id));
-    }
-  }
 }
 
-if (TOOLS.length > 1) {
-  tabs.hidden = false;
-  for (const tool of TOOLS) {
-    const b = document.createElement("button");
-    b.dataset.tool = tool.id;
-    b.textContent = `${tool.glyph} ${tool.name}`;
-    b.addEventListener("click", () => mount(tool));
-    tabs.append(b);
-  }
+function syncHash(tool) {
+  const want = `#/${tool.id}`;
+  if (location.hash !== want) history.replaceState(null, "", want);
 }
 
-const startId = shellStore.get("activeTool", TOOLS[0].id);
-mount(TOOLS.find((t) => t.id === startId) ?? TOOLS[0]);
+const fromHash = () => TOOLS.find((t) => `#/${t.id}` === location.hash);
+window.addEventListener("hashchange", () => {
+  const tool = fromHash();
+  if (tool) mount(tool);
+});
+
+mount(
+  fromHash()
+    ?? TOOLS.find((t) => t.id === shellStore.get("activeTool", TOOLS[0].id))
+    ?? TOOLS[0]
+);
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js"));
