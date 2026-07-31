@@ -150,6 +150,15 @@ tuning. Timbre: two saws detuned 6 cents (reed beating) through a gentle
 lowpass with a soft attack — sustained, steady, no vibrato. Wake lock while
 sounding.
 
+**Tool #3 — tuner (WSHED-6)**, the pitch pipe's inverse: mic →
+`MediaStreamSource` → `AnalyserNode` (fftSize 4096, echo-cancel/noise-suppress/
+AGC off) → autocorrelation with parabolic interpolation (`detect.js`, pure and
+node-tested), ~10 readings/s with an RMS silence gate. Display is a **cents
+dial** in the pendulum's visual family: ±50¢ arc, ticks every 10¢, a needle
+that eases to the smoothed reading — ivory normally, **brass within ±5¢**,
+felt-red beyond 25¢. Same A4 calibration control as the pitch pipe. Mic tracks
+are released on stop; denial shows guidance instead of a broken screen.
+
 ## 7. Verification bar
 
 Local smoke before deploy: page serves, manifest + sw fetch 200, start/stop

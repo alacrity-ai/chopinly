@@ -3,5 +3,6 @@
 // entry here; the shell grows a tab strip automatically once there are two.
 import metronome from "./tools/metronome/index.js";
 import pitchpipe from "./tools/pitchpipe/index.js";
+import tuner from "./tools/tuner/index.js";
 
-export const TOOLS = [metronome, pitchpipe];
+export const TOOLS = [metronome, pitchpipe, tuner];

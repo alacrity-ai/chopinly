@@ -374,6 +374,66 @@ input[type="range"] { accent-color: var(--brass); flex: 1; min-width: 4rem; }
 #pp-a4 { width: 6.5rem; }
 #pp-a4-out { font-variant-numeric: tabular-nums; color: var(--ivory); min-width: 2.6rem; }
 
+/* ---------- tuner ---------- */
+
+.tuner {
+  width: min(100%, 26rem);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(0.7rem, 2vh, 1.1rem);
+}
+
+.dial { width: min(82%, 19rem); overflow: visible; }
+.dial .arc {
+  fill: none;
+  stroke: var(--ebony-edge);
+  stroke-width: 1.5;
+  stroke-dasharray: 2 5;
+  stroke-linecap: round;
+}
+.dial #tn-ticks line { stroke: var(--ebony-edge); stroke-width: 2; stroke-linecap: round; }
+.dial #tn-ticks line.center { stroke: var(--brass); }
+.dial-label { fill: var(--ivory-dim); font-size: 13px; }
+.dial #tn-needle line {
+  stroke: var(--ivory-dim);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke 120ms;
+}
+.dial #tn-needle.intune line { stroke: var(--brass); }
+.dial #tn-needle.far line { stroke: var(--felt); }
+.dial .pivot { fill: var(--ivory-dim); }
+
+.tuner-note {
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+  font-weight: 480;
+  font-size: 2.6rem;
+  line-height: 1.1;
+  transition: color 120ms;
+}
+.tuner-note.intune { color: var(--brass); }
+
+.tuner-read {
+  font-family: var(--serif);
+  color: var(--ivory-dim);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.1rem;
+  min-height: 1.4rem;
+}
+
+#tn-a4 { width: 6.5rem; }
+#tn-a4-out { font-variant-numeric: tabular-nums; color: var(--ivory); min-width: 2.6rem; }
+
+.tuner-status {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  color: var(--ivory-dim);
+  min-height: 1rem;
+  text-align: center;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .dot, .pendulum .bob, .start, .pipe-note { transition: none; }
   .pipe-ring.sounding .pipe-center { animation: none; }
