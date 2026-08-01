@@ -1,6 +1,6 @@
 // Network-first, cache-fallback. Installable + fully offline, but never serves
 // a stale shell when the network is up (see docs/DESIGN.md §5).
-const CACHE = "woodshed-v4";
+const CACHE = "woodshed-v5";
 const SHELL = [
   "/",
   "/css/app.css",
@@ -50,7 +50,10 @@ self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET" || new URL(req.url).origin !== self.location.origin) return;
   e.respondWith(
-    fetch(req)
+    // cache:"no-cache" forces ETag revalidation — without it, fetch() serves the
+    // browser HTTP cache (Pages sends max-age=14400 on assets) and "network-first"
+    // can hand out files from before the latest deploy.
+    fetch(req, { cache: "no-cache" })
       .then((res) => {
         if (res.ok) {
           const copy = res.clone();

@@ -1,0 +1,19 @@
+# Unhashed module/style URLs must revalidate on every load (ETag makes this a
+# cheap 304). Long-cache only the truly immutable binaries.
+/js/*
+  Cache-Control: no-cache
+
+/css/*
+  Cache-Control: no-cache
+
+/sw.js
+  Cache-Control: no-cache
+
+/manifest.webmanifest
+  Cache-Control: no-cache
+
+/fonts/*
+  Cache-Control: public, max-age=604800
+
+/icons/*
+  Cache-Control: public, max-age=604800
