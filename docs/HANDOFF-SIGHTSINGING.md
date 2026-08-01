@@ -127,6 +127,15 @@ dev/gallery.html         staff visual gallery (11 cases) — served locally only
   --project-name woodshed --branch main --commit-dirty=true`. Wait ~15-20s,
   verify on the custom domain (first-ever deploy of a new hostname can 000 for
   ~90s — not this project anymore). Bump `sw.js` CACHE + SHELL when adding files.
+- **Cache staleness (0f299b7, learned the hard way):** the lalalimited.com zone
+  rewrites cache-control on the proxied custom domain to `max-age=14400`, and a
+  plain `fetch(req)` in the SW honors the browser HTTP cache — so "network-first"
+  served pre-deploy modules for up to 4h (Leif saw v1.0 after v1.1 shipped). Fix:
+  SW fetches with `{cache:"no-cache"}` (ETag revalidation) + `_headers` pins
+  `no-cache` on /js,/css at the Pages origin (pages.dev honors it; the custom
+  domain overrides it, which is fine — the SW fetch mode is the real guard). The
+  deploy token cannot edit zone cache rules. To verify what's actually live,
+  md5-compare local files vs `curl` of the custom domain.
 
 ## Commit history (feature)
 
