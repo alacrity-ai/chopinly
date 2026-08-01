@@ -10,6 +10,7 @@ import { createMicPitch } from "../../lib/pitch/mic.js";
 import { tonicTriad } from "../../lib/music.js";
 import { toTimeline } from "./melodies.js";
 import { judge, centsOff, provisionalTier, STRICTNESS } from "./judge.js";
+import { icon } from "../../lib/icons.js";
 
 const LANE_Y = 36, LANE_SCALE = 0.32; // ±100¢ → ±32px around the centerline
 const LANE_HEAD_X = 240, LANE_SPEED = 140; // trail scrolls left at px/sec
@@ -39,10 +40,10 @@ export function createRunner(container, { getAudio, setRunning }, hooks) {
     </div>
     <div class="ss-staffcard"><div id="ss-staff"></div></div>
     <div class="transport">
-      <button class="start" id="ss-start">start</button>
-      <button class="tap" id="ss-hear">hear it</button>
+      <button class="btn-round" id="ss-start" aria-label="start singing">${icon("play")}</button>
+      <button class="icon-btn" id="ss-hear" aria-label="hear the melody" title="hear it">${icon("hear")}</button>
     </div>
-    <p class="tuner-status" id="ss-status">count-in, then sing — the mic listens while you do</p>`;
+    <p class="tuner-status" id="ss-status"></p>`;
 
   const el = (id) => container.querySelector(`#${id}`);
   const statusEl = el("ss-status"), startBtn = el("ss-start");
@@ -60,7 +61,7 @@ export function createRunner(container, { getAudio, setRunning }, hooks) {
     el("ss-meta").textContent =
       `${m.title} — ${m.key} ${m.mode} · ${m.time.join("/")} · ♩=${m.tempo} · ${m.clef} clef · level ${m.difficulty}`;
     staff = renderMelody(el("ss-staff"), m, { unit: 9 });
-    statusEl.textContent = "count-in, then sing — the mic listens while you do";
+    statusEl.textContent = "";
   }
 
   function paintUnit(unitIdx, stateName) {
@@ -123,7 +124,8 @@ export function createRunner(container, { getAudio, setRunning }, hooks) {
     grades = new Array(staff.count).fill(null);
     staff.clearStates();
     lane.hidden = false;
-    startBtn.textContent = "stop";
+    startBtn.innerHTML = icon("stop");
+    startBtn.setAttribute("aria-label", "stop");
     startBtn.classList.add("running");
     setRunning(true);
     hooks.onRunState(true);
@@ -260,7 +262,8 @@ export function createRunner(container, { getAudio, setRunning }, hooks) {
     mic.stop();
     paintUnit(null);
     resetLane();
-    startBtn.textContent = "start";
+    startBtn.innerHTML = icon("play");
+    startBtn.setAttribute("aria-label", "start singing");
     startBtn.classList.remove("running");
     setRunning(false);
     hooks.onRunState(false);
@@ -308,7 +311,7 @@ export function createRunner(container, { getAudio, setRunning }, hooks) {
   function stopPlayback() {
     if (player) { player.stop(); player = null; }
     if (staff) paintUnit(null);
-    statusEl.textContent = grades ? statusEl.textContent : "count-in, then sing — the mic listens while you do";
+    if (!grades && statusEl.textContent === "listen…") statusEl.textContent = "";
   }
 
   /** quiet=true: internal reset (no "stopped" status line). */
@@ -328,10 +331,11 @@ export function createRunner(container, { getAudio, setRunning }, hooks) {
     }
     resetLane();
     stopPlayback();
-    startBtn.textContent = "start";
+    startBtn.innerHTML = icon("play");
+    startBtn.setAttribute("aria-label", "start singing");
     startBtn.classList.remove("running");
     if (staff) paintUnit(null);
-    if (wasRunning && !quiet) statusEl.textContent = "stopped — press start to try again";
+    if (wasRunning && !quiet) statusEl.textContent = "stopped";
   }
 
   startBtn.addEventListener("click", () => (run ? stopAll() : start()));

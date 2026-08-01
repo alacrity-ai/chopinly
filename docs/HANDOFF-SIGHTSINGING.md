@@ -23,8 +23,17 @@ Corpus is **108 melodies** in `corpus/` (book1–5.js + classic.js + campaign.js
 table + index.js `pool()`; `melodies.js` re-exports and adds `dealSet`).
 App shell (`app.js`) routes tool **sub-paths** (`startsWith` match — don't
 regress this). New E2E seam: `window.__WS_FAKE_SET = ["perfect", ...]`, one
-outcome consumed per melody. SW cache `woodshed-v6`; all corpus files are in
-SHELL. Commits: `7118d1a` corpus · `a70df7f` modes.
+outcome consumed per melody. All corpus files are in the SW SHELL. Commits:
+`7118d1a` corpus · `a70df7f` modes.
+
+WSHED-22 polish (same day): **campaign grades at relaxed** (Leif's call);
+shared vector icon set `lib/icons.js` (back/play/stop/hear/click/redo/next/map)
+— app chrome is icon buttons (`.icon-btn`, off-state slash) with `.ss-head`
+headers and a round `.btn-round` play/stop transport (sight singing AND
+metronome); idle instruction copy removed (status = live state + errors only);
+**redoLast()** re-sings the just-judged melody from interstitial or summary
+(pops its result, recomputes); `.ss-results-open` hides the runner transport
+whenever results are up (prevents double-scored verdicts). SW `woodshed-v7`.
 
 ## What Woodshed is (30s)
 

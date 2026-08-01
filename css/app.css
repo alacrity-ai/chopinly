@@ -218,16 +218,103 @@ body {
   margin-top: 1rem;
 }
 .nudge {
-  font: 600 0.9rem var(--sans);
-  color: var(--ivory);
-  background: var(--ebony-raised);
+  font: 600 0.85rem var(--sans);
+  color: var(--ivory-dim);
+  background: transparent;
   border: 1px solid var(--ebony-edge);
-  border-radius: 0.5rem;
-  padding: 0.45rem 0.6rem;
-  min-width: 2.4rem;
+  border-radius: 999px;
+  width: 2.3rem;
+  height: 2.3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
+  transition: color 120ms, border-color 120ms;
 }
-.nudge:active { background: var(--ebony-edge); }
+.nudge:hover { color: var(--brass); border-color: var(--brass); }
+.nudge:active { background: var(--ebony-raised); }
+
+/* --- app chrome: icon buttons, round transport, view headers -------------- */
+.ic { width: 1.35rem; height: 1.35rem; display: block; }
+
+.icon-btn {
+  position: relative;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  border: 1px solid var(--ebony-edge);
+  background: transparent;
+  color: var(--ivory-dim);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 120ms, border-color 120ms;
+}
+.icon-btn:hover { color: var(--brass); border-color: var(--brass); }
+.icon-btn[aria-pressed="true"] { color: var(--brass); border-color: var(--brass); }
+.icon-btn[aria-pressed="false"] { color: var(--ivory-dim); }
+.icon-btn[aria-pressed="false"]::after {
+  content: "";
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  top: 50%;
+  height: 1.6px;
+  background: currentColor;
+  transform: rotate(-45deg);
+  border-radius: 1px;
+}
+
+.btn-round {
+  width: 4rem;
+  height: 4rem;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(180deg, var(--brass-bright), var(--brass));
+  color: var(--ebony);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+.btn-round .ic { width: 1.7rem; height: 1.7rem; }
+.btn-round .ic-play { margin-left: 0.2rem; } /* optical centering */
+.btn-round:hover { filter: brightness(1.06); }
+.btn-round.running {
+  background: transparent;
+  border: 2px solid var(--brass);
+  color: var(--brass);
+  box-shadow: none;
+}
+
+.ss-head {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 2.75rem 1fr 2.75rem;
+  align-items: center;
+  gap: 0.6rem;
+}
+.ss-head-title {
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ivory-dim);
+  font-size: 0.95rem;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ss-chip {
+  justify-self: end;
+  color: var(--brass);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.tap .ic { width: 1.05rem; height: 1.05rem; }
+.tap { display: inline-flex; align-items: center; gap: 0.45rem; }
 
 input[type="range"] { accent-color: var(--brass); flex: 1; min-width: 4rem; }
 #bpm-slider { width: 8rem; }
@@ -537,9 +624,14 @@ input[type="range"] { accent-color: var(--brass); flex: 1; min-width: 4rem; }
 
 /* while an exercise runs: settings give way to the pitch lane */
 .ss-running .ss-controls { display: none; }
+.ss-running #ss-hear { display: none; }
 
-/* after the last melody of a set: the summary's buttons take over */
-.ss-set-done #ss-runner .transport, .ss-set-done #ss-runner .tuner-status { display: none; }
+.start { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; }
+.start .ic, .tap .ic { width: 1.05rem; height: 1.05rem; }
+.start, .tap { white-space: nowrap; }
+
+/* whenever results are up (interstitial or summary), their buttons take over */
+.ss-results-open #ss-runner .transport, .ss-results-open #ss-runner .tuner-status { display: none; }
 
 /* live-grade pop: a quick satisfying bounce on the notehead group */
 .staff-svg .note { transform-box: fill-box; transform-origin: center; }
@@ -620,14 +712,6 @@ input[type="range"] { accent-color: var(--brass); flex: 1; min-width: 4rem; }
 .ss-mode-line { color: var(--ivory-dim); font-size: 0.95rem; }
 .ss-mode-sub { color: var(--brass); font-size: 0.85rem; margin-top: 0.4rem; }
 
-.ss-maphead {
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.ss-mapstars { color: var(--brass); font-size: 0.95rem; }
-
 .ss-map { align-items: stretch; }
 .ss-book {
   background: #1e1913;
@@ -684,15 +768,6 @@ input[type="range"] { accent-color: var(--brass); flex: 1; min-width: 4rem; }
 .ss-dim { color: var(--ivory-dim); }
 
 .ss-config .ss-controls { flex-direction: column; gap: 0.8rem; }
-
-.ss-runhead { width: 100%; justify-content: space-between; }
-.ss-context {
-  font-family: var(--serif);
-  font-style: italic;
-  color: var(--ivory-dim);
-  font-size: 0.95rem;
-  text-align: center;
-}
 
 .ss-summary-list { list-style: none; text-align: center; margin: 0.5rem 0; }
 .ss-summary-list li { margin: 0.2rem 0; }

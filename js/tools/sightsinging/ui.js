@@ -7,6 +7,7 @@
 import { createRunner } from "./runner.js";
 import { byId, dealSet, BOOKS, LESSONS, starsFor } from "./melodies.js";
 import { STRICTNESS } from "./judge.js";
+import { icon } from "../../lib/icons.js";
 
 const SCORE_WORDS = [
   [95, "flawless — gold standard"],
@@ -78,9 +79,10 @@ export function buildUI(root, ctx) {
     let flat = 0;
     root.innerHTML = `
       <section class="sightsinging ss-map">
-        <div class="ss-maphead">
-          <button class="nudge" id="ss-back">&larr; modes</button>
-          <span class="ss-mapstars">&#9733; ${totalStars()}/${LESSONS.length * 3}</span>
+        <div class="ss-head">
+          <button class="icon-btn" id="ss-back" aria-label="back to modes" title="modes">${icon("back")}</button>
+          <div class="ss-head-title">campaign</div>
+          <span class="ss-chip">&#9733; ${totalStars()}/${LESSONS.length * 3}</span>
         </div>
         ${BOOKS.map((b, bi) => `
           <div class="ss-book">
@@ -134,16 +136,20 @@ export function buildUI(root, ctx) {
     const cfg = store.get("challenge-cfg", { difficulty: 0, clefs: ["treble"], count: 3, strict: "standard", click: true });
     root.innerHTML = `
       <section class="sightsinging ss-config">
-        <div class="ss-maphead"><button class="nudge" id="ss-back">&larr; modes</button></div>
+        <div class="ss-head">
+          <button class="icon-btn" id="ss-back" aria-label="back to modes" title="modes">${icon("back")}</button>
+          <div class="ss-head-title">challenge</div>
+          <button class="icon-btn" id="ss-click" aria-pressed="${cfg.click}"
+            aria-label="metronome click while singing" title="click while singing">${icon("click")}</button>
+        </div>
         <div class="ss-controls">
           <div class="param">level<div class="segmented" id="ss-diff"></div></div>
           <div class="param">clefs<div class="segmented" id="ss-clefs"></div></div>
           <div class="param">melodies<div class="segmented" id="ss-count"></div></div>
           <div class="param">strictness<div class="segmented" id="ss-strict"></div></div>
-          <button class="nudge" id="ss-click" aria-pressed="${cfg.click}">click ${cfg.click ? "on" : "off"}</button>
         </div>
         <button class="start" id="ss-drill">start drill</button>
-        <p class="tuner-status" id="ss-status">pick your rules — the drill deals ${cfg.count} melodies</p>
+        <p class="tuner-status" id="ss-status"></p>
       </section>`;
     const save = () => store.set("challenge-cfg", cfg);
     segmented(root.querySelector("#ss-diff"), [[0, "any"], [1, "1"], [2, "2"], [3, "3"]], cfg.difficulty,
@@ -154,10 +160,10 @@ export function buildUI(root, ctx) {
       (v) => { cfg.count = v; save(); });
     segmented(root.querySelector("#ss-strict"), Object.keys(STRICTNESS).map((k) => [k, k]), cfg.strict,
       (v) => { cfg.strict = v; save(); });
-    root.querySelector("#ss-click").addEventListener("click", (e) => {
+    const clickBtn = root.querySelector("#ss-click");
+    clickBtn.addEventListener("click", () => {
       cfg.click = !cfg.click; save();
-      e.target.setAttribute("aria-pressed", String(cfg.click));
-      e.target.textContent = `click ${cfg.click ? "on" : "off"}`;
+      clickBtn.setAttribute("aria-pressed", String(cfg.click));
     });
     root.querySelector("#ss-back").addEventListener("click", () => nav(""));
     root.querySelector("#ss-drill").addEventListener("click", () => {
@@ -177,10 +183,13 @@ export function buildUI(root, ctx) {
     const clickOn = () => (runState.mode === "challenge" ? runState.cfg.click : store.get("click", true));
     root.innerHTML = `
       <section class="sightsinging" id="ss-root">
-        <div class="ss-runhead ss-controls">
-          <button class="nudge" id="ss-quit">&larr; ${runState.mode === "campaign" ? "map" : "settings"}</button>
-          <div class="ss-context" id="ss-context"></div>
-          <button class="nudge" id="ss-clicktoggle" aria-pressed="${clickOn()}">click ${clickOn() ? "on" : "off"}</button>
+        <div class="ss-head ss-controls">
+          <button class="icon-btn" id="ss-quit"
+            aria-label="${runState.mode === "campaign" ? "back to the map" : "back to settings"}"
+            title="${runState.mode === "campaign" ? "map" : "settings"}">${icon("back")}</button>
+          <div class="ss-head-title ss-context" id="ss-context"></div>
+          <button class="icon-btn" id="ss-clicktoggle" aria-pressed="${clickOn()}"
+            aria-label="metronome click while singing" title="click while singing">${icon("click")}</button>
         </div>
         <div id="ss-runner"></div>
         <div class="ss-results" id="ss-results" hidden></div>
@@ -190,7 +199,7 @@ export function buildUI(root, ctx) {
     const contextEl = root.querySelector("#ss-context");
 
     runner = createRunner(root.querySelector("#ss-runner"), ctx, {
-      strictness: () => (runState.mode === "challenge" ? STRICTNESS[runState.cfg.strict] : STRICTNESS.standard),
+      strictness: () => (runState.mode === "challenge" ? STRICTNESS[runState.cfg.strict] : STRICTNESS.relaxed),
       click: clickOn,
       onRunState: (r) => {
         section.classList.toggle("ss-running", r);
@@ -206,14 +215,14 @@ export function buildUI(root, ctx) {
     root.querySelector("#ss-quit").addEventListener("click", () => {
       nav(runState.mode === "campaign" ? "/campaign" : "/challenge");
     });
-    root.querySelector("#ss-clicktoggle").addEventListener("click", (e) => {
+    const clickToggle = root.querySelector("#ss-clicktoggle");
+    clickToggle.addEventListener("click", () => {
       if (runState.mode === "challenge") {
         runState.cfg.click = !runState.cfg.click;
       } else {
         store.set("click", !store.get("click", true));
       }
-      e.target.setAttribute("aria-pressed", String(clickOn()));
-      e.target.textContent = `click ${clickOn() ? "on" : "off"}`;
+      clickToggle.setAttribute("aria-pressed", String(clickOn()));
     });
 
     function contextLine() {
@@ -229,13 +238,16 @@ export function buildUI(root, ctx) {
       if (Array.isArray(window.__WS_FAKE_SET) && window.__WS_FAKE_SET.length) {
         window.__WS_FAKE_SING = window.__WS_FAKE_SET.shift();
       }
-      section.classList.remove("ss-set-done");
+      section.classList.remove("ss-results-open");
       contextEl.textContent = contextLine();
       resultsEl.hidden = true;
       runner.load(runState.melodies[runState.idx]);
     }
 
+    // While results are up, the runner's transport retires — singing resumes
+    // only through the results' own buttons (prevents double-scored verdicts).
     function showResults() {
+      section.classList.add("ss-results-open");
       resultsEl.hidden = false;
       resultsEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
@@ -249,9 +261,13 @@ export function buildUI(root, ctx) {
       resultsEl.innerHTML = `
         <div class="ss-score" id="ss-score">${verdict.score}%</div>
         <div class="ss-tiers">${tierCounts(verdict)}</div>
-        <button class="start" id="ss-next">next melody</button>`;
+        <div class="transport">
+          <button class="tap" id="ss-redo">${icon("redo")} redo</button>
+          <button class="start" id="ss-next">next ${icon("next")}</button>
+        </div>`;
       showResults();
       resultsEl.querySelector("#ss-next").addEventListener("click", advance);
+      resultsEl.querySelector("#ss-redo").addEventListener("click", redoLast);
       advanceTimer = setTimeout(advance, 4000);
     }
 
@@ -261,8 +277,15 @@ export function buildUI(root, ctx) {
       loadCurrent();
     }
 
+    // Re-sing the melody just judged: drop its result and reload it. Works
+    // from the interstitial (idx unchanged) and the summary (idx is last).
+    function redoLast() {
+      clearTimeout(advanceTimer);
+      runState.results.pop();
+      loadCurrent();
+    }
+
     function summary() {
-      section.classList.add("ss-set-done"); // retires the runner's transport
       const scores = runState.results.map((v) => v.score);
       const avg = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
       const rows = runState.melodies.map((m, i) =>
@@ -285,12 +308,14 @@ export function buildUI(root, ctx) {
           </div>
           <ul class="ss-summary-list">${rows}</ul>
           <div class="transport">
-            <button class="tap" id="ss-replay">sing it again</button>
-            <button class="start" id="ss-tomap">back to the map</button>
+            <button class="tap" id="ss-redo">${icon("redo")} redo last</button>
+            <button class="tap" id="ss-replay">replay</button>
+            <button class="start" id="ss-tomap">${icon("map")} map</button>
           </div>
           <p class="tuner-status">${stars === 3 ? "gold sticker — flawless lesson" : SCORE_WORDS.find(([min]) => avg >= min)[1]}</p>`;
         showResults();
         resultsEl.querySelector("#ss-tomap").addEventListener("click", () => nav("/campaign"));
+        resultsEl.querySelector("#ss-redo").addEventListener("click", redoLast);
         resultsEl.querySelector("#ss-replay").addEventListener("click", () => {
           runState.idx = 0; runState.results = []; loadCurrent();
         });
@@ -300,11 +325,13 @@ export function buildUI(root, ctx) {
           <div class="ss-score" id="ss-score">${avg}%</div>
           <ul class="ss-summary-list">${rows}</ul>
           <div class="transport">
-            <button class="tap" id="ss-config">change settings</button>
-            <button class="start" id="ss-again">again</button>
+            <button class="tap" id="ss-redo">${icon("redo")} redo last</button>
+            <button class="tap" id="ss-config">settings</button>
+            <button class="start" id="ss-again">${icon("redo")} again</button>
           </div>
           <p class="tuner-status">${SCORE_WORDS.find(([min]) => avg >= min)[1]}</p>`;
         showResults();
+        resultsEl.querySelector("#ss-redo").addEventListener("click", redoLast);
         resultsEl.querySelector("#ss-config").addEventListener("click", () => nav("/challenge"));
         resultsEl.querySelector("#ss-again").addEventListener("click", () => {
           runState.melodies = dealSet(runState.melodies.length, {

@@ -3,6 +3,7 @@
 // can never drift from what you hear.
 import { MetronomeEngine } from "./engine.js";
 import { VOICES } from "./voices.js";
+import { icon } from "../../lib/icons.js";
 
 const MARKINGS = [
   [39, "Grave"], [49, "Largo"], [54, "Larghetto"], [64, "Adagio"],
@@ -67,7 +68,7 @@ export function buildUI(root, { getAudio, store, setRunning }) {
         </label>
       </div>
       <div class="transport">
-        <button class="start" id="start">start</button>
+        <button class="btn-round" id="start" aria-label="start">${icon("play")}</button>
         <button class="tap" id="tap">tap tempo</button>
       </div>
     </section>`;
@@ -179,12 +180,14 @@ export function buildUI(root, { getAudio, store, setRunning }) {
   function toggle() {
     if (engine.running) {
       engine.stop();
-      startBtn.textContent = "start";
+      startBtn.innerHTML = icon("play");
+      startBtn.setAttribute("aria-label", "start");
       startBtn.classList.remove("running");
       setRunning(false);
     } else {
       engine.start();
-      startBtn.textContent = "stop";
+      startBtn.innerHTML = icon("stop");
+      startBtn.setAttribute("aria-label", "stop");
       startBtn.classList.add("running");
       setRunning(true);
     }

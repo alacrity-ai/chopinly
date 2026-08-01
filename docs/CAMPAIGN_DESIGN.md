@@ -59,7 +59,8 @@ One card of controls, then **start drill**:
   drill only deals melodies whose clef is toggled on)
 - **melodies** — 3 / 5 / 10
 - **strictness** — relaxed / standard / strict (campaign always grades at
-  standard; strictness is a challenge-only dial)
+  **relaxed** — Leif's call after playing v2; strictness is a challenge-only
+  dial)
 - **click** — on / off
 
 Settings persist per-tool (same `store` mechanism as today). No melody
