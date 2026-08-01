@@ -42,8 +42,8 @@ test("octave-down is identical to perfect", () => {
   assert.deepEqual(v.notes.map((n) => n.tier), ["nailed", "nailed", "nailed"]);
 });
 
-test("consistently 80 cents flat → rough", () => {
-  const v = judge(UNITS, sing(-0.8), opts);
+test("consistently 80 cents flat → rough (strict ×1.0)", () => {
+  const v = judge(UNITS, sing(-0.8), { ...opts, strictness: 1.0 });
   assert.deepEqual(v.notes.map((n) => n.tier), ["rough", "rough", "rough"]);
   assert.equal(v.score, 40);
 });
@@ -69,16 +69,22 @@ test("late entry drops the tier via coverage, not pitch", () => {
 });
 
 test("strictness moves borderline performances", () => {
-  const flat55 = sing(-0.55); // 55 cents flat
+  // ladder: relaxed ×2.0 → [30, 90, 180] · standard ×1.5 → [22.5, 67.5, 135] · strict ×1.0 → [15, 45, 90]
+  const flat25 = sing(-0.25);
+  assert.deepEqual(judge(UNITS, flat25, { ...opts, strictness: STRICTNESS.relaxed }).notes.map((n) => n.tier),
+    ["nailed", "nailed", "nailed"]);  // 25 ≤ 30
+  assert.deepEqual(judge(UNITS, flat25, { ...opts, strictness: STRICTNESS.standard }).notes.map((n) => n.tier),
+    ["good", "good", "good"]);        // 25 > 22.5
+  const flat55 = sing(-0.55);
   assert.deepEqual(judge(UNITS, flat55, { ...opts, strictness: STRICTNESS.standard }).notes.map((n) => n.tier),
-    ["rough", "rough", "rough"]);   // 55 > 45 good-ceiling
-  assert.deepEqual(judge(UNITS, flat55, { ...opts, strictness: STRICTNESS.relaxed }).notes.map((n) => n.tier),
-    ["good", "good", "good"]);      // 55 ≤ 67.5
-  const flat65 = sing(-0.65); // 65 cents flat
-  assert.deepEqual(judge(UNITS, flat65, { ...opts, strictness: STRICTNESS.standard }).notes.map((n) => n.tier),
-    ["rough", "rough", "rough"]);   // 65 ≤ 90
-  assert.deepEqual(judge(UNITS, flat65, { ...opts, strictness: STRICTNESS.strict }).notes.map((n) => n.tier),
-    ["missed", "missed", "missed"]); // 65 > 58.5 rough-ceiling
+    ["good", "good", "good"]);        // 55 ≤ 67.5
+  assert.deepEqual(judge(UNITS, flat55, { ...opts, strictness: STRICTNESS.strict }).notes.map((n) => n.tier),
+    ["rough", "rough", "rough"]);     // 55 > 45, ≤ 90
+  const flat95 = sing(-0.95);
+  assert.deepEqual(judge(UNITS, flat95, { ...opts, strictness: STRICTNESS.standard }).notes.map((n) => n.tier),
+    ["rough", "rough", "rough"]);     // 95 ≤ 135
+  assert.deepEqual(judge(UNITS, flat95, { ...opts, strictness: STRICTNESS.strict }).notes.map((n) => n.tier),
+    ["missed", "missed", "missed"]);  // 95 > 90
 });
 
 test("one wrong note among right ones only hurts itself", () => {

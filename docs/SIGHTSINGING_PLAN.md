@@ -111,7 +111,8 @@ strictness multiplier.
   `precision` = median |cents error| of the in-tolerance samples.
   Coverage is the rhythm axis (late entry, early release, wrong duration all
   reduce it); precision is the pitch axis.
-- **Tiers** (standard strictness; relaxed ×1.5, strict ×0.65 on both axes):
+- **Tiers** (base ceilings below; the strictness dial multiplies them —
+  **relaxed ×2.0, standard ×1.5, strict ×1.0** since the v1.1 feedback pass):
   - **nailed** — precision ≤ 15¢ and coverage ≥ 0.75
   - **good** — precision ≤ 45¢ and coverage ≥ 0.55
   - **rough** — precision ≤ 90¢ and coverage ≥ 0.30
@@ -122,6 +123,15 @@ Test seam: the exercise loop reads samples through one callback, and a
 `window.__WS_FAKE_SING` hook ("perfect" | "octave-down" | "flat" | "silent")
 synthesizes the sample stream from the melody itself — full E2E through the
 real UI, count-in, judge and results with deterministic outcomes, no mic.
+
+### v1.1 live feedback (WSHED-14)
+
+Rhythm-game feedback landed after Leif's first sessions: each note is judged
+**the moment its window closes** (tier color + pop bounce on the notehead
+mid-song); while running, the settings strip hides and a **pitch lane** shows
+live cents deviation — centerline = target, comet dot + fading trail, gold
+glow ≤15¢ / sage ≤45¢ / bronze ≤90¢ / felt beyond, ♯ above / ♭ below. All run
+audio routes through a per-run gain bus so stop silences instantly.
 
 ## 6. Ticket map (all under the epic)
 

@@ -135,7 +135,17 @@ export function renderMelody(container, melody, opts = {}) {
       if (state && state !== "idle") g.classList.add(`n-${state}`);
     },
     clearStates() {
-      for (const g of groups) g.classList.remove(...STATES);
+      for (const g of groups) g.classList.remove(...STATES, "n-pop");
+    },
+    /** One-shot celebratory bounce on a note (used by live grading). */
+    pulse(i) {
+      const g = groups[i];
+      if (!g) return;
+      g.classList.remove("n-pop");
+      requestAnimationFrame(() => {
+        g.classList.add("n-pop");
+        setTimeout(() => g.classList.remove("n-pop"), 650);
+      });
     },
   };
 }

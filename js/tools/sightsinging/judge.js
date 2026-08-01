@@ -5,7 +5,8 @@
 
 export const TIERS = ["nailed", "good", "rough", "missed"];
 export const TIER_SCORE = { nailed: 100, good: 75, rough: 40, missed: 0 };
-export const STRICTNESS = { relaxed: 1.5, standard: 1, strict: 0.65 };
+// One notch easier than v1 by request: old standard is today's strict.
+export const STRICTNESS = { relaxed: 2.0, standard: 1.5, strict: 1.0 };
 
 const BASE_PRECISION = [15, 45, 90];   // cents, tier ceilings
 const BASE_COVERAGE = [0.75, 0.55, 0.30];

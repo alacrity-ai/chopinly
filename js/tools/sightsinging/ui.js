@@ -1,5 +1,7 @@
 // Sight singing: deal a melody → count-in (clicks + tonic chord) → sing with
-// the current note highlighted → judge → graded staff + score.
+// live per-note grading (rhythm-game style) and a pitch lane showing cents
+// deviation in real time → final graded staff + score.
+// All run audio flows through a per-run gain bus so stop is instant.
 // Test seam: window.__WS_FAKE_SING = "perfect" | "octave-down" | "flat" |
 // "silent" synthesizes the sample stream from the melody itself (no mic).
 import { renderMelody } from "../../lib/staff/render.js";
@@ -7,7 +9,7 @@ import { playMelody, playChord, scheduleClick } from "../../lib/melody-player.js
 import { createMicPitch } from "../../lib/pitch/mic.js";
 import { tonicTriad } from "../../lib/music.js";
 import { MELODIES, toTimeline, deal } from "./melodies.js";
-import { judge, STRICTNESS } from "./judge.js";
+import { judge, centsOff, STRICTNESS } from "./judge.js";
 
 const SCORE_WORDS = [
   [95, "flawless — gold standard"],
@@ -16,6 +18,10 @@ const SCORE_WORDS = [
   [50, "getting there — slow it down"],
   [0, "rough one — try an easier melody"],
 ];
+
+const LANE_Y = 36, LANE_SCALE = 0.32; // ±100¢ → ±32px around the centerline
+const LANE_HEAD_X = 240, LANE_SPEED = 140; // trail scrolls left at px/sec
+const TRAIL_MAX = 26;
 
 export function buildUI(root, { getAudio, store, setRunning }) {
   const state = {
@@ -26,7 +32,7 @@ export function buildUI(root, { getAudio, store, setRunning }) {
   };
 
   root.innerHTML = `
-    <section class="sightsinging">
+    <section class="sightsinging" id="ss-root">
       <div class="ss-controls">
         <div class="param">level<div class="segmented" id="ss-diff"></div></div>
         <div class="param">strictness<div class="segmented" id="ss-strict"></div></div>
@@ -34,6 +40,17 @@ export function buildUI(root, { getAudio, store, setRunning }) {
         <button class="nudge" id="ss-new">new melody</button>
       </div>
       <div class="ss-meta" id="ss-meta"></div>
+      <div class="pitch-lane" id="ss-lane" hidden>
+        <span class="lane-mark lane-sharp" aria-hidden="true">&#9839;</span>
+        <span class="lane-mark lane-flat" aria-hidden="true">&#9837;</span>
+        <svg viewBox="0 0 300 72" preserveAspectRatio="none" aria-hidden="true">
+          <line class="lane-guide" x1="18" y1="20" x2="294" y2="20"/>
+          <line class="lane-guide" x1="18" y1="52" x2="294" y2="52"/>
+          <line class="lane-center" x1="18" y1="36" x2="294" y2="36"/>
+          <g id="ss-lane-trail"></g>
+          <circle class="lane-dot" id="ss-lane-dot" cx="${LANE_HEAD_X}" cy="36" r="5" opacity="0"/>
+        </svg>
+      </div>
       <div class="ss-staffcard"><div id="ss-staff"></div></div>
       <div class="ss-results" id="ss-results" hidden>
         <div class="ss-score" id="ss-score"></div>
@@ -47,10 +64,13 @@ export function buildUI(root, { getAudio, store, setRunning }) {
     </section>`;
 
   const el = (id) => root.querySelector(`#${id}`);
+  const section = el("ss-root");
   const statusEl = el("ss-status"), startBtn = el("ss-start");
+  const lane = el("ss-lane"), laneDot = el("ss-lane-dot"), laneTrail = el("ss-lane-trail");
   const mic = createMicPitch(getAudio);
   let staff = null, timeline = null, grades = null;
   let raf = 0, run = null, player = null, highlighted = [];
+  const trailDots = [];
 
   // --- controls -------------------------------------------------------------
   function segmented(container, items, current, onPick) {
@@ -135,22 +155,36 @@ export function buildUI(root, { getAudio, store, setRunning }) {
     const m = state.melody;
     const spb = 60 / m.tempo;
     const beats = m.time[0];
+    const bus = context.createGain();
+    bus.connect(getAudio().master);
     const t0 = context.currentTime + 0.25;
     const singStart = t0 + beats * spb;
-    for (let b = 0; b < beats; b++) scheduleClick(getAudio, t0 + b * spb, b === 0);
-    playChord(getAudio, tonicTriad(m.key, m.mode, timeline.units[0].midi), t0, beats * spb * 0.9);
+    for (let b = 0; b < beats; b++) scheduleClick(getAudio, t0 + b * spb, b === 0, bus);
+    playChord(getAudio, tonicTriad(m.key, m.mode, timeline.units[0].midi), t0, beats * spb * 0.9, { out: bus });
     if (state.click) {
       const total = Math.round(timeline.total / spb);
-      for (let b = 0; b < total; b++) scheduleClick(getAudio, singStart + b * spb, b % beats === 0);
+      for (let b = 0; b < total; b++) scheduleClick(getAudio, singStart + b * spb, b % beats === 0, bus);
     }
-    run = { t0, singStart, spb, beats, samples, fake };
-    grades = null;
+    run = {
+      t0, singStart, spb, beats, samples, fake, bus,
+      fakeSamples: fake ? synthFake(fake, timeline) : null,
+      fakeIdx: 0, fakeLatest: null, gradedUpTo: 0, trail: [],
+    };
+    grades = new Array(staff.count).fill(null);
     staff.clearStates();
     el("ss-results").hidden = true;
+    section.classList.add("ss-running");
+    lane.hidden = false;
     startBtn.textContent = "stop";
     startBtn.classList.add("running");
     setRunning(true);
     raf = requestAnimationFrame(runFrame);
+  }
+
+  function relSamples() {
+    return run.fake
+      ? run.fakeSamples
+      : run.samples.map((s) => ({ t: s.t - run.singStart, midi: s.midi }));
   }
 
   function runFrame() {
@@ -167,6 +201,8 @@ export function buildUI(root, { getAudio, store, setRunning }) {
       if (idx >= 0 && (!highlighted.length || timeline.units[idx].drawn[0] !== highlighted[0])) {
         paintUnit(idx, "current");
       }
+      liveGrade(now);
+      updateLane(now, idx);
     } else if (now >= run.singStart + timeline.total + 0.3) {
       finishRun();
       return;
@@ -174,17 +210,97 @@ export function buildUI(root, { getAudio, store, setRunning }) {
     raf = requestAnimationFrame(runFrame);
   }
 
+  // Grade each note the moment its window (plus latency lag) closes.
+  function liveGrade(now) {
+    const latency = run.fake ? 0 : 0.13;
+    const t = now - run.singStart;
+    while (run.gradedUpTo < timeline.units.length
+        && t > timeline.units[run.gradedUpTo].t1 + latency + 0.12) {
+      const i = run.gradedUpTo++;
+      const v = judge([timeline.units[i]], relSamples(), {
+        strictness: STRICTNESS[state.strict], latency,
+      });
+      const tier = v.notes[0].tier;
+      for (const d of timeline.units[i].drawn) {
+        grades[d] = tier;
+        if (!highlighted.includes(d)) staff.setState(d, tier);
+        staff.pulse(d);
+      }
+    }
+  }
+
+  // --- the pitch lane -------------------------------------------------------
+  function latestSample(now) {
+    const t = now - run.singStart;
+    if (run.fake) {
+      while (run.fakeIdx < run.fakeSamples.length && run.fakeSamples[run.fakeIdx].t <= t) {
+        run.fakeLatest = run.fakeSamples[run.fakeIdx++];
+      }
+      return run.fakeLatest && t - run.fakeLatest.t < 0.3 ? run.fakeLatest : null;
+    }
+    const s = run.samples[run.samples.length - 1];
+    return s && now - s.t < 0.3 ? { t: s.t - run.singStart, midi: s.midi } : null;
+  }
+
+  function updateLane(now, unitIdx) {
+    const ZONES = ["zone-nailed", "zone-good", "zone-rough", "zone-missed"];
+    const sample = unitIdx >= 0 ? latestSample(now) : null;
+    let zone = null;
+    if (sample) {
+      const err = Math.max(-100, Math.min(100, centsOff(sample.midi, timeline.units[unitIdx].midi)));
+      const abs = Math.abs(err);
+      zone = abs <= 15 ? "zone-nailed" : abs <= 45 ? "zone-good" : abs <= 90 ? "zone-rough" : "zone-missed";
+      const last = run.trail[run.trail.length - 1];
+      if (!last || now - last.at > 0.03) run.trail.push({ at: now, y: LANE_Y - err * LANE_SCALE });
+    }
+    run.trail = run.trail.filter((p) => now - p.at < 1.6);
+    lane.classList.remove(...ZONES);
+    if (zone) lane.classList.add(zone);
+    while (trailDots.length < TRAIL_MAX) {
+      const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      c.setAttribute("class", "lane-tail");
+      laneTrail.append(c);
+      trailDots.push(c);
+    }
+    for (let i = 0; i < TRAIL_MAX; i++) {
+      const p = run.trail[run.trail.length - 1 - i];
+      const c = trailDots[i];
+      if (!p) { c.setAttribute("opacity", "0"); continue; }
+      const age = now - p.at;
+      c.setAttribute("cx", (LANE_HEAD_X - age * LANE_SPEED).toFixed(1));
+      c.setAttribute("cy", p.y.toFixed(1));
+      c.setAttribute("r", Math.max(0.8, 3 - age * 1.6).toFixed(2));
+      c.setAttribute("opacity", Math.max(0, 0.55 - age * 0.4).toFixed(2));
+    }
+    const head = run.trail[run.trail.length - 1];
+    if (head && now - head.at < 0.25) {
+      laneDot.setAttribute("cy", head.y.toFixed(1));
+      laneDot.setAttribute("opacity", "1");
+    } else {
+      laneDot.setAttribute("opacity", "0");
+    }
+  }
+
+  function resetLane() {
+    lane.hidden = true;
+    lane.classList.remove("zone-nailed", "zone-good", "zone-rough", "zone-missed");
+    laneDot.setAttribute("opacity", "0");
+    for (const c of trailDots) c.setAttribute("opacity", "0");
+  }
+
+  // --- finish / stop --------------------------------------------------------
   function finishRun() {
-    const { singStart, samples, fake } = run;
+    const { fake, bus } = run;
+    const rel = relSamples();
+    bus.disconnect();
     run = null;
     mic.stop();
     paintUnit(null);
+    section.classList.remove("ss-running");
+    resetLane();
     startBtn.textContent = "start";
     startBtn.classList.remove("running");
     setRunning(false);
-    const rel = fake
-      ? synthFake(fake, timeline)
-      : samples.map((s) => ({ t: s.t - singStart, midi: s.midi }));
     const verdict = judge(timeline.units, rel, {
       strictness: STRICTNESS[state.strict],
       latency: fake ? 0 : 0.13,
@@ -237,11 +353,25 @@ export function buildUI(root, { getAudio, store, setRunning }) {
 
   function stopAll() {
     cancelAnimationFrame(raf);
-    if (run) { run = null; mic.stop(); setRunning(false); }
+    const wasRunning = Boolean(run);
+    if (run) {
+      run.bus.gain.value = 0;   // instant silence for everything scheduled
+      run.bus.disconnect();
+      run = null;
+      mic.stop();
+      grades = null;
+      if (staff) staff.clearStates();
+      highlighted = [];
+      el("ss-results").hidden = true;
+      setRunning(false);
+    }
+    section.classList.remove("ss-running");
+    resetLane();
     stopPlayback();
     startBtn.textContent = "start";
     startBtn.classList.remove("running");
     if (staff) paintUnit(null);
+    if (wasRunning) statusEl.textContent = "stopped — press start to try again";
   }
 
   startBtn.addEventListener("click", () => (run ? stopAll() : startRun()));

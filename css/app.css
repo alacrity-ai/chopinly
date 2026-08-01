@@ -521,7 +521,63 @@ input[type="range"] { accent-color: var(--brass); flex: 1; min-width: 4rem; }
 .ss-tiers .tier-rough::before { color: var(--bronze); }
 .ss-tiers .tier-missed::before { color: var(--felt); }
 
+/* while an exercise runs: settings give way to the pitch lane */
+.ss-running .ss-controls { display: none; }
+
+/* live-grade pop: a quick satisfying bounce on the notehead group */
+.staff-svg .note { transform-box: fill-box; transform-origin: center; }
+.note.n-pop { animation: notepop 0.5s cubic-bezier(0.2, 1.8, 0.4, 1); }
+@keyframes notepop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.4); }
+  100% { transform: scale(1); }
+}
+
+/* pitch lane — the horizontal tuner */
+.pitch-lane {
+  position: relative;
+  width: 100%;
+  background: #1e1913;
+  border: 1px solid var(--ebony-edge);
+  border-radius: 0.8rem;
+  padding: 0.3rem 0.5rem;
+}
+.pitch-lane svg { display: block; width: 100%; height: 72px; }
+.lane-mark {
+  position: absolute;
+  left: 0.6rem;
+  color: var(--ivory-dim);
+  font-size: 0.8rem;
+  line-height: 1;
+}
+.lane-sharp { top: 0.45rem; }
+.lane-flat { bottom: 0.45rem; }
+.lane-guide {
+  stroke: var(--ebony-edge);
+  stroke-width: 1;
+  stroke-dasharray: 2 6;
+}
+.lane-center {
+  stroke: var(--ivory-dim);
+  stroke-width: 1.6;
+  transition: stroke 120ms;
+}
+.lane-dot { fill: var(--ivory-dim); transition: fill 120ms; }
+.lane-tail { fill: var(--ivory-dim); }
+.pitch-lane.zone-nailed .lane-center { stroke: var(--gold); filter: drop-shadow(0 0 4px rgba(236, 199, 102, 0.9)); }
+.pitch-lane.zone-nailed .lane-dot { fill: var(--gold); filter: drop-shadow(0 0 7px rgba(236, 199, 102, 1)); }
+.pitch-lane.zone-nailed .lane-tail { fill: var(--gold); }
+.pitch-lane.zone-good .lane-dot { fill: var(--sage); filter: drop-shadow(0 0 4px rgba(143, 174, 130, 0.8)); }
+.pitch-lane.zone-good .lane-tail { fill: var(--sage); }
+.pitch-lane.zone-rough .lane-dot { fill: var(--bronze); }
+.pitch-lane.zone-rough .lane-tail { fill: var(--bronze); }
+.pitch-lane.zone-missed .lane-dot { fill: var(--felt); }
+.pitch-lane.zone-missed .lane-tail { fill: var(--felt); }
+
 @media (prefers-reduced-motion: reduce) {
   .dot, .pendulum .bob, .start, .pipe-note { transition: none; }
   .pipe-ring.sounding .pipe-center { animation: none; }
+  .note.n-pop { animation: none; }
+  .note.n-nailed .halo { animation: none; }
+  .pitch-lane .lane-center, .pitch-lane .lane-dot { filter: none; }
 }

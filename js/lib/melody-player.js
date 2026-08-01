@@ -45,17 +45,18 @@ export function playMelody(getAudio, timeline, { a4 = 440, gain = VOICE_GAIN, de
   };
 }
 
-/** Sustain a chord (midis) from atTime for dur seconds — the count-in tonic. */
-export function playChord(getAudio, midis, atTime, dur, { a4 = 440, gain = 0.3 } = {}) {
+/** Sustain a chord (midis) from atTime for dur seconds — the count-in tonic.
+ *  Pass `out` to route through a caller-owned (killable) bus. */
+export function playChord(getAudio, midis, atTime, dur, { a4 = 440, gain = 0.3, out: dest } = {}) {
   const { context, master } = getAudio();
   const out = context.createGain();
   out.gain.value = gain / Math.sqrt(midis.length);
-  out.connect(master);
+  out.connect(dest ?? master);
   for (const m of midis) scheduleTone(context, out, midiToFreq(m, a4), atTime, atTime + dur);
 }
 
-/** One count-in / practice click at an exact audio time. */
-export function scheduleClick(getAudio, atTime, accent = false) {
+/** One count-in / practice click at an exact audio time (optionally via a bus). */
+export function scheduleClick(getAudio, atTime, accent = false, dest = null) {
   const { context, master } = getAudio();
   const osc = context.createOscillator();
   osc.type = "sine";
@@ -64,7 +65,7 @@ export function scheduleClick(getAudio, atTime, accent = false) {
   const g = context.createGain();
   g.gain.setValueAtTime(accent ? 0.5 : 0.3, atTime);
   g.gain.exponentialRampToValueAtTime(0.001, atTime + 0.05);
-  osc.connect(g).connect(master);
+  osc.connect(g).connect(dest ?? master);
   osc.start(atTime);
   osc.stop(atTime + 0.07);
 }
