@@ -1,60 +1,12 @@
-// The sight-singing corpus + melody utilities.
-// Notation: "G4:4" = pitch:duration-in-16ths, "~" = tied to next, "r:4" = rest.
-// Durations: 16 whole · 12 dotted half · 8 half · 6 dotted quarter · 4 quarter · 2 eighth.
+// Melody utilities over the corpus (see corpus/ for the melodies themselves).
+// Notation reference lives in corpus/notation.js.
 import { parsePitch } from "../../lib/music.js";
 import { toMeasures } from "../../lib/staff/layout.js";
+import { MELODIES, byId, pool } from "./corpus/index.js";
 
-function seq(str) {
-  return str.trim().split(/[\s|]+/).filter(Boolean).map((tok) => {
-    const tie = tok.endsWith("~");
-    const [p, d] = (tie ? tok.slice(0, -1) : tok).split(":");
-    return p === "r" ? { r: true, d: Number(d) } : { p, d: Number(d), ...(tie ? { tie: true } : {}) };
-  });
-}
-
-export const MELODIES = [
-  // --- difficulty 1: stepwise, simple rhythm, treble ------------------------
-  { id: "d1-c-steps", title: "First steps", difficulty: 1, clef: "treble", key: "C", mode: "major", time: [4, 4], tempo: 84,
-    notes: seq("C4:4 D4:4 E4:4 F4:4 | G4:8 E4:8 | F4:4 E4:4 D4:8 | C4:16") },
-  { id: "d1-g-hill", title: "Up the hill", difficulty: 1, clef: "treble", key: "G", mode: "major", time: [4, 4], tempo: 84,
-    notes: seq("G4:4 A4:4 B4:8 | A4:4 G4:4 A4:8 | B4:4 C5:4 D5:8 | C5:4 B4:4 A4:4 G4:4") },
-  { id: "d1-f-sway", title: "Gentle sway", difficulty: 1, clef: "treble", key: "F", mode: "major", time: [3, 4], tempo: 88,
-    notes: seq("F4:4 G4:4 A4:4 | Bb4:4 A4:4 G4:4 | A4:4 G4:4 E4:4 | F4:12") },
-  { id: "d1-c-skips", title: "Little skips", difficulty: 1, clef: "treble", key: "C", mode: "major", time: [4, 4], tempo: 80,
-    notes: seq("E4:8 G4:8 | C5:8 G4:8 | A4:4 G4:4 F4:4 E4:4 | D4:8 C4:8") },
-  { id: "d1-g-walk", title: "Short walk", difficulty: 1, clef: "treble", key: "G", mode: "major", time: [2, 4], tempo: 84,
-    notes: seq("G4:4 B4:4 | D5:8 | C5:4 A4:4 | B4:4 G4:4 | A4:4 F#4:4 | G4:8") },
-
-  // --- difficulty 2: leaps, minor, bass, eighths, dotted quarters -----------
-  { id: "d2-d-dotted", title: "Dotted lilt", difficulty: 2, clef: "treble", key: "D", mode: "major", time: [4, 4], tempo: 80,
-    notes: seq("D4:6 E4:2 F#4:4 G4:4 | A4:8 F#4:4 r:4 | G4:6 F#4:2 E4:4 D4:4 | E4:8 D4:8") },
-  { id: "d2-bb-turns", title: "Turning by thirds", difficulty: 2, clef: "treble", key: "Bb", mode: "major", time: [4, 4], tempo: 78,
-    notes: seq("F4:4 Bb4:4 A4:2 G4:2 F4:4 | G4:4 Eb4:4 F4:8 | Bb4:4 A4:2 G4:2 F4:4 D4:4 | Eb4:4 C4:4 Bb3:8") },
-  { id: "d2-am-leading", title: "Leading tone", difficulty: 2, clef: "treble", key: "A", mode: "minor", time: [4, 4], tempo: 76,
-    notes: seq("A4:4 B4:4 C5:8 | E5:4 D5:4 C5:4 B4:4 | A4:4 G#4:4 A4:4 B4:4 | A4:16") },
-  { id: "d2-em-bass", title: "Low lament", difficulty: 2, clef: "bass", key: "E", mode: "minor", time: [4, 4], tempo: 76,
-    notes: seq("E3:4 G3:4 F#3:4 E3:4 | B3:8 r:8 | A3:4 F#3:4 D#3:4 B2:4 | E3:16") },
-  { id: "d2-f-bass", title: "Grounded", difficulty: 2, clef: "bass", key: "F", mode: "major", time: [3, 4], tempo: 82,
-    notes: seq("F3:4 A3:4 C4:4 | Bb3:6 A3:2 G3:4 | A3:4 F3:4 G3:4 | F3:12") },
-  { id: "d2-dm-eighths", title: "Quick brook", difficulty: 2, clef: "treble", key: "D", mode: "minor", time: [2, 4], tempo: 76,
-    notes: seq("D4:2 E4:2 F4:2 G4:2 | A4:4 r:4 | Bb4:2 A4:2 G4:2 F4:2 | E4:4 C#4:4 | D4:8") },
-  { id: "d2-a-pairs", title: "Bright pairs", difficulty: 2, clef: "treble", key: "A", mode: "major", time: [4, 4], tempo: 80,
-    notes: seq("A4:4 C#5:2 B4:2 A4:4 E4:4 | F#4:2 G#4:2 A4:4 B4:4 C#5:4 | D5:4 C#5:2 B4:2 A4:4 E5:4 | A4:16") },
-
-  // --- difficulty 3: ties, C clefs, chromatics, denser ----------------------
-  { id: "d3-c-alto", title: "Alto line", difficulty: 3, clef: "alto", key: "C", mode: "major", time: [4, 4], tempo: 76,
-    notes: seq("C4:4 D4:4 E4:8~ | E4:4 F4:4 G4:8 | A4:4 G4:4 F#4:4 G4:4 | D4:8 C4:8") },
-  { id: "d3-g-soprano", title: "Soprano air", difficulty: 3, clef: "soprano", key: "G", mode: "major", time: [4, 4], tempo: 72,
-    notes: seq("G4:4 F#4:2 G4:2 A4:4 B4:4 | C5:12 A4:4 | B4:4 G4:4 E4:4 F#4:4 | G4:16") },
-  { id: "d3-eb-tied", title: "Held breath", difficulty: 3, clef: "treble", key: "Eb", mode: "major", time: [4, 4], tempo: 72,
-    notes: seq("G4:4 Ab4:4 Bb4:8~ | Bb4:4 C5:4 Bb4:4 Ab4:4 | G4:6 F4:2 Eb4:4 F4:4 | Eb4:16") },
-  { id: "d3-bm-lift", title: "Night lift", difficulty: 3, clef: "treble", key: "B", mode: "minor", time: [4, 4], tempo: 72,
-    notes: seq("F#4:4 B4:4 A#4:4 B4:4 | C#5:4 D5:8 B4:4 | G4:4 E4:4 F#4:8~ | F#4:4 D4:4 B3:8") },
-  { id: "d3-d-bass-tie", title: "Cellar song", difficulty: 3, clef: "bass", key: "D", mode: "major", time: [3, 4], tempo: 76,
-    notes: seq("D3:4 F#3:4 A3:4 | B3:6 A3:2 G3:4 | F#3:4 D3:4 E3:4~ | E3:4 F#3:2 E3:2 C#3:4 | D3:12") },
-  { id: "d3-fsm-alto", title: "Old mode", difficulty: 3, clef: "alto", key: "F#", mode: "minor", time: [4, 4], tempo: 69,
-    notes: seq("F#3:4 A3:4 C#4:8 | B3:4 A3:4 G#3:4 A3:4 | D4:4 C#4:4 B3:2 A3:2 G#3:4 | A3:4 E#3:4 F#3:8") },
-];
+export { MELODIES, byId, pool };
+export { BOOKS, LESSONS, STAR_THRESHOLDS, starsFor } from "./corpus/index.js";
+export { seq } from "./corpus/notation.js";
 
 const CLEF_RANGE = { treble: [-4, 12], soprano: [-4, 12], alto: [-4, 12], bass: [-4, 12] };
 
@@ -64,6 +16,7 @@ export function validateCorpus(list = MELODIES) {
   for (const m of list) {
     if (ids.has(m.id)) throw new Error(`duplicate id ${m.id}`);
     ids.add(m.id);
+    if (!(m.tempo >= 54 && m.tempo <= 132)) throw new Error(`${m.id}: tempo ${m.tempo} outside 54–132`);
     toMeasures(m); // exact measure fill + duration vocabulary
     m.notes.forEach((n, i) => {
       if (n.r) { if (n.tie) throw new Error(`${m.id}: rest ${i} cannot tie`); return; }
@@ -108,8 +61,25 @@ export function toTimeline(melody, tempo = melody.tempo) {
   return { units, total: t, secPerBeat: 60 / tempo };
 }
 
-/** Deal a random melody at a difficulty (0 = any), never repeating `lastId`. */
-export function deal(difficulty = 0, lastId = null) {
-  const pool = MELODIES.filter((m) => (!difficulty || m.difficulty === difficulty) && m.id !== lastId);
-  return pool[Math.floor(Math.random() * pool.length)] ?? MELODIES[0];
+/**
+ * Deal a random melody. Either the classic signature `deal(difficulty, lastId)`
+ * or an options object `deal({ difficulty, clefs, exclude })`.
+ */
+export function deal(arg = 0, lastId = null) {
+  const opts = typeof arg === "object" && arg !== null
+    ? { ...arg, exclude: [...(arg.exclude ?? [])] }
+    : { difficulty: arg, exclude: lastId ? [lastId] : [] };
+  const candidates = pool(opts);
+  return candidates[Math.floor(Math.random() * candidates.length)] ?? MELODIES[0];
+}
+
+/** Deal n distinct melodies (a challenge drill). Falls back gracefully if the pool is small. */
+export function dealSet(n, { difficulty = 0, clefs = null } = {}) {
+  const out = [];
+  while (out.length < n) {
+    const m = deal({ difficulty, clefs, exclude: out.map((x) => x.id) });
+    if (out.some((x) => x.id === m.id)) break; // pool exhausted
+    out.push(m);
+  }
+  return out;
 }
