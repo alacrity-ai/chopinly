@@ -86,11 +86,13 @@ function mount(tool) {
 }
 
 function syncHash(tool) {
-  const want = `#/${tool.id}`;
-  if (location.hash !== want) history.replaceState(null, "", want);
+  // Tools may own sub-paths (#/sightsinging/campaign) — only rewrite the hash
+  // when it isn't already somewhere inside this tool.
+  if (!location.hash.startsWith(`#/${tool.id}`)) history.replaceState(null, "", `#/${tool.id}`);
 }
 
-const fromHash = () => TOOLS.find((t) => `#/${t.id}` === location.hash);
+const fromHash = () =>
+  TOOLS.find((t) => location.hash === `#/${t.id}` || location.hash.startsWith(`#/${t.id}/`));
 window.addEventListener("hashchange", () => {
   const tool = fromHash();
   if (tool) mount(tool);

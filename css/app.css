@@ -538,6 +538,9 @@ input[type="range"] { accent-color: var(--brass); flex: 1; min-width: 4rem; }
 /* while an exercise runs: settings give way to the pitch lane */
 .ss-running .ss-controls { display: none; }
 
+/* after the last melody of a set: the summary's buttons take over */
+.ss-set-done #ss-runner .transport, .ss-set-done #ss-runner .tuner-status { display: none; }
+
 /* live-grade pop: a quick satisfying bounce on the notehead group */
 .staff-svg .note { transform-box: fill-box; transform-origin: center; }
 .note.n-pop { animation: notepop 0.5s cubic-bezier(0.2, 1.8, 0.4, 1); }
@@ -588,10 +591,133 @@ input[type="range"] { accent-color: var(--brass); flex: 1; min-width: 4rem; }
 .pitch-lane.zone-missed .lane-dot { fill: var(--felt); }
 .pitch-lane.zone-missed .lane-tail { fill: var(--felt); }
 
+/* ---------- sight singing v2: landing / campaign map / challenge ---------- */
+
+.ss-home {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: center;
+  min-height: 55vh;
+}
+.ss-mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  width: min(17rem, 80vw);
+  padding: 2rem 1.4rem;
+  background: #1e1913;
+  border: 1px solid var(--ebony-edge);
+  border-radius: 1rem;
+  color: var(--ivory);
+  cursor: pointer;
+  transition: border-color 150ms, transform 150ms;
+}
+.ss-mode-card:hover { border-color: var(--brass); transform: translateY(-2px); }
+.ss-mode-glyph { font-size: 2rem; color: var(--brass); }
+.ss-mode-name { font-family: var(--serif); font-size: 1.5rem; }
+.ss-mode-line { color: var(--ivory-dim); font-size: 0.95rem; }
+.ss-mode-sub { color: var(--brass); font-size: 0.85rem; margin-top: 0.4rem; }
+
+.ss-maphead {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.ss-mapstars { color: var(--brass); font-size: 0.95rem; }
+
+.ss-map { align-items: stretch; }
+.ss-book {
+  background: #1e1913;
+  border: 1px solid var(--ebony-edge);
+  border-radius: 1rem;
+  padding: 1.1rem 1.3rem;
+}
+.ss-book h3 { font-family: var(--serif); font-weight: 500; font-size: 1.2rem; }
+.ss-blurb { color: var(--ivory-dim); font-size: 0.9rem; margin: 0.2rem 0 0.9rem; }
+.ss-lessons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem 1.4rem;
+  align-items: flex-start;
+}
+.ss-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  width: 3.4rem;
+  height: 3.4rem;
+  border-radius: 50%;
+  border: 2px solid var(--ebony-edge);
+  background: var(--ebony);
+  color: var(--ivory);
+  cursor: pointer;
+  justify-content: center;
+  transition: border-color 150ms;
+}
+.ss-node:nth-child(even) { transform: translateY(0.7rem); } /* gentle path wave */
+.ss-node-num { font-family: var(--serif); font-size: 1.05rem; line-height: 1; }
+.ss-node-stars { font-size: 0.55rem; letter-spacing: 0.08em; color: var(--gold); line-height: 1; }
+.ss-node.locked { opacity: 0.35; cursor: default; }
+.ss-node.current {
+  border-color: var(--brass);
+  box-shadow: 0 0 10px rgba(201, 163, 92, 0.45);
+}
+.ss-node.done { border-color: var(--gold); }
+.ss-node:not(.locked):hover { border-color: var(--brass-bright); }
+
+.ss-panel {
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--ebony-edge);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+.ss-panel-title { font-family: var(--serif); font-style: italic; }
+.ss-panel-list { list-style: none; text-align: center; font-size: 0.9rem; }
+.ss-panel-list li { margin: 0.15rem 0; }
+.ss-dim { color: var(--ivory-dim); }
+
+.ss-config .ss-controls { flex-direction: column; gap: 0.8rem; }
+
+.ss-runhead { width: 100%; justify-content: space-between; }
+.ss-context {
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ivory-dim);
+  font-size: 0.95rem;
+  text-align: center;
+}
+
+.ss-summary-list { list-style: none; text-align: center; margin: 0.5rem 0; }
+.ss-summary-list li { margin: 0.2rem 0; }
+
+/* the star-award moment: teacher's stickers stamped on one by one */
+.ss-stars { display: flex; justify-content: center; gap: 0.6rem; font-size: 2rem; margin: 0.3rem 0; }
+.ss-stars .star { color: var(--ebony-edge); }
+.ss-stars .star.earned {
+  color: var(--gold);
+  text-shadow: 0 0 12px rgba(236, 199, 102, 0.8);
+  opacity: 0;
+  animation: stamp 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) forwards;
+}
+@keyframes stamp {
+  0% { opacity: 0; transform: scale(2.4) rotate(-18deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .dot, .pendulum .bob, .start, .pipe-note { transition: none; }
   .pipe-ring.sounding .pipe-center { animation: none; }
   .note.n-pop { animation: none; }
   .note.n-nailed .halo { animation: none; }
   .pitch-lane .lane-center, .pitch-lane .lane-dot { filter: none; }
+  .ss-stars .star.earned { animation: none; opacity: 1; }
+  .ss-mode-card:hover { transform: none; }
+  .ss-node:nth-child(even) { transform: none; }
 }
