@@ -16,7 +16,16 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: "Bravura";
+  src: url("/fonts/Bravura.woff2") format("woff2");
+  font-display: block;
+}
+
 :root {
+  --gold: #ecc766;
+  --sage: #8fae82;
+  --bronze: #9a6b3f;
   --ebony: #191410;
   --ebony-raised: #26201a;
   --ebony-edge: #3a3128;
@@ -432,6 +441,29 @@ input[type="range"] { accent-color: var(--brass); flex: 1; min-width: 4rem; }
   color: var(--ivory-dim);
   min-height: 1rem;
   text-align: center;
+}
+
+/* ---------- staff (lib/staff) ---------- */
+
+.staff-svg { display: block; user-select: none; }
+.staff-svg text { font-family: "Bravura"; fill: var(--ivory); }
+.staff-svg .sline { stroke: #7d7161; stroke-width: 1.1; }
+.staff-svg .sline-bar { fill: #7d7161; }
+.staff-svg .stem, .staff-svg .beam { fill: var(--ivory); }
+.staff-svg .tie { fill: none; stroke: var(--ivory); stroke-width: 1.4; }
+.staff-svg .halo { fill: transparent; transition: fill 150ms; }
+
+.note.n-current .head, .note.n-current .head-part, .note.n-current .stem, .note.n-current .rest { fill: var(--brass); }
+.note.n-current .halo { fill: rgba(201, 163, 92, 0.16); }
+.note.n-nailed .head, .note.n-nailed .head-part, .note.n-nailed .stem { fill: var(--gold); }
+.note.n-nailed .halo { fill: rgba(236, 199, 102, 0.14); animation: shimmer 2s ease-in-out infinite; }
+.note.n-good .head, .note.n-good .head-part, .note.n-good .stem { fill: var(--sage); }
+.note.n-rough .head, .note.n-rough .head-part, .note.n-rough .stem { fill: var(--bronze); }
+.note.n-missed .head, .note.n-missed .head-part, .note.n-missed .stem { fill: var(--felt); }
+
+@keyframes shimmer {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 
 @media (prefers-reduced-motion: reduce) {

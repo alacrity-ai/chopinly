@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>staff gallery (dev)</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    body { display: block; padding: 2rem; }
+    .case { margin-bottom: 2.5rem; }
+    .case h2 { font: 500 0.9rem system-ui; color: #a2947d; margin-bottom: 0.6rem; }
+    .frame { background: #1e1913; border: 1px solid #3a3128; border-radius: 8px; padding: 14px; }
+    .narrow { max-width: 340px; }
+  </style>
+</head>
+<body>
+  <div id="cases"></div>
+  <script type="module">
+    import { renderMelody } from "/js/lib/staff/render.js";
+    import { MELODIES } from "/js/tools/sightsinging/melodies.js";
+
+    const pick = ["d1-c-steps", "d1-g-walk", "d2-bb-turns", "d2-em-bass", "d2-a-pairs",
+                  "d3-eb-tied", "d3-c-alto", "d3-g-soprano", "d3-fsm-alto", "d3-d-bass-tie"];
+    const root = document.getElementById("cases");
+    for (const id of pick) {
+      const m = MELODIES.find((x) => x.id === id);
+      const div = document.createElement("div");
+      div.className = "case";
+      div.innerHTML = `<h2>${m.id} — ${m.clef} · ${m.key} ${m.mode} · ${m.time.join("/")}</h2>
+        <div class="frame wide"></div>`;
+      root.append(div);
+      renderMelody(div.querySelector(".frame"), m, { width: 660 });
+    }
+    // narrow width + grade states demo
+    const m = MELODIES.find((x) => x.id === "d2-d-dotted");
+    const div = document.createElement("div");
+    div.className = "case";
+    div.innerHTML = `<h2>${m.id} — narrow (340px) + grade states</h2><div class="frame narrow"></div>`;
+    root.append(div);
+    const h = renderMelody(div.querySelector(".frame"), m, { width: 312 });
+    const states = ["nailed", "good", "rough", "missed", "current"];
+    for (let i = 0; i < h.count; i++) h.setState(i, states[i % states.length]);
+    window.__galleryReady = true;
+  </script>
+</body>
+</html>
