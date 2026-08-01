@@ -136,6 +136,7 @@ body {
 }
 .picker-item:hover { background: var(--ebony-edge); }
 .picker-item[aria-checked="true"] { color: var(--brass); }
+.picker-rule { height: 1px; background: var(--ebony-edge); margin: 0.3rem 0.6rem; }
 
 .noscript { color: var(--ivory-dim); text-align: center; max-width: 26rem; }
 
@@ -465,6 +466,60 @@ input[type="range"] { accent-color: var(--brass); flex: 1; min-width: 4rem; }
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }
 }
+
+/* ---------- sight singing ---------- */
+
+.sightsinging {
+  width: min(100%, 44rem);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(0.8rem, 2vh, 1.2rem);
+}
+
+.ss-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem 1.2rem;
+  justify-content: center;
+  align-items: center;
+}
+
+.ss-meta {
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ivory-dim);
+  font-size: 0.95rem;
+  text-align: center;
+}
+
+.ss-staffcard {
+  width: 100%;
+  background: #1e1913;
+  border: 1px solid var(--ebony-edge);
+  border-radius: 0.8rem;
+  padding: 0.9rem 1rem;
+}
+
+.ss-results { text-align: center; }
+.ss-score {
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+  font-weight: 500;
+  font-size: 3rem;
+  line-height: 1.1;
+  color: var(--gold);
+}
+.ss-tiers { color: var(--ivory-dim); font-size: 0.9rem; margin-top: 0.25rem; }
+.ss-tiers .tier::before {
+  content: "●";
+  margin-right: 0.3rem;
+  font-size: 0.8em;
+}
+.ss-tiers .tier-nailed::before { color: var(--gold); }
+.ss-tiers .tier-good::before { color: var(--sage); }
+.ss-tiers .tier-rough::before { color: var(--bronze); }
+.ss-tiers .tier-missed::before { color: var(--felt); }
 
 @media (prefers-reduced-motion: reduce) {
   .dot, .pendulum .bob, .start, .pipe-note { transition: none; }

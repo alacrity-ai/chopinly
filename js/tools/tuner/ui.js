@@ -1,14 +1,14 @@
-// Tuner: mic → analyser → autocorrelation, rendered as a cents dial. The
+// Tuner: shared mic-pitch stream (lib/pitch) rendered as a cents dial. The
 // needle eases toward the latest reading each frame; readings are smoothed
 // over a short window and gated so silence shows "listening", not noise.
-import { autoCorrelate, noteFromFreq } from "./detect.js";
+import { noteFromFreq } from "../../lib/pitch/detect.js";
+import { createMicPitch } from "../../lib/pitch/mic.js";
 
 const NOTES = [
   ["C", "C"], ["C♯", "D♭"], ["D", "D"], ["D♯", "E♭"], ["E", "E"], ["F", "F"],
   ["F♯", "G♭"], ["G", "G"], ["G♯", "A♭"], ["A", "A"], ["A♯", "B♭"], ["B", "B"],
 ];
 
-const DETECT_MS = 90;      // detection cadence
 const HOLD_MS = 600;       // keep the last reading briefly through gaps
 const WINDOW = 6;          // smoothing window (readings)
 
@@ -48,7 +48,6 @@ export function buildUI(root, { getAudio, store, setRunning }) {
   const nameEl = el("tn-name"), centsEl = el("tn-cents"), hzEl = el("tn-hz");
   const statusEl = el("tn-status"), startBtn = el("tn-start");
 
-  // dial ticks: every 10 cents, center tick emphasized
   const ticks = el("tn-ticks");
   for (let c = -50; c <= 50; c += 10) {
     const a = (c / 50) * 45 * (Math.PI / 180);
@@ -63,16 +62,19 @@ export function buildUI(root, { getAudio, store, setRunning }) {
     ticks.append(line);
   }
 
-  let stream = null, source = null, analyser = null, buf = null;
-  let raf = 0, lastDetect = 0, lastVoiced = 0;
-  let readings = [];            // recent { midi, cents, freq }
+  const mic = createMicPitch(getAudio);
+  let raf = 0, lastVoiced = 0;
+  let readings = [];
   let shownAngle = 0, targetAngle = 0;
   let listening = false;
 
   async function start() {
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      await mic.start((sample) => {
+        lastVoiced = performance.now();
+        readings.push({ ...noteFromFreq(sample.freq, state.a4), freq: sample.freq });
+        readings = readings.slice(-WINDOW);
+        render();
       });
     } catch (err) {
       statusEl.textContent = err && err.name === "NotAllowedError"
@@ -80,12 +82,6 @@ export function buildUI(root, { getAudio, store, setRunning }) {
         : "couldn't open the microphone";
       return;
     }
-    const { context } = getAudio();
-    source = context.createMediaStreamSource(stream);
-    analyser = context.createAnalyser();
-    analyser.fftSize = 4096;
-    source.connect(analyser); // analysis only — never routed to output
-    buf = new Float32Array(analyser.fftSize);
     listening = true;
     readings = [];
     startBtn.textContent = "stop listening";
@@ -98,9 +94,7 @@ export function buildUI(root, { getAudio, store, setRunning }) {
   function stop() {
     listening = false;
     cancelAnimationFrame(raf);
-    if (stream) for (const t of stream.getTracks()) t.stop();
-    if (source) source.disconnect();
-    stream = source = analyser = null;
+    mic.stop();
     startBtn.textContent = "start listening";
     startBtn.classList.remove("running");
     statusEl.textContent = "the tuner listens on your microphone";
@@ -111,29 +105,18 @@ export function buildUI(root, { getAudio, store, setRunning }) {
   function showIdle() {
     nameEl.textContent = "—";
     nameEl.classList.remove("intune");
-    centsEl.textContent = " ";
-    hzEl.textContent = " ";
+    centsEl.textContent = " ";
+    hzEl.textContent = " ";
     needle.classList.remove("intune", "far");
     targetAngle = 0;
   }
 
-  function frame(now) {
+  function frame() {
     if (!listening) return;
-    if (now - lastDetect >= DETECT_MS) {
-      lastDetect = now;
-      analyser.getFloatTimeDomainData(buf);
-      const { context } = getAudio();
-      const freq = autoCorrelate(buf, context.sampleRate);
-      if (freq > 0 && freq < 5000) {
-        lastVoiced = now;
-        readings.push({ ...noteFromFreq(freq, state.a4), freq });
-        readings = readings.slice(-WINDOW);
-        render();
-      } else if (now - lastVoiced > HOLD_MS && readings.length) {
-        readings = [];
-        showIdle();
-        statusEl.textContent = "listening…";
-      }
+    if (readings.length && performance.now() - lastVoiced > HOLD_MS) {
+      readings = [];
+      showIdle();
+      statusEl.textContent = "listening…";
     }
     shownAngle += (targetAngle - shownAngle) * 0.25;
     needle.setAttribute("transform", `rotate(${shownAngle.toFixed(2)} 120 130)`);
@@ -141,7 +124,6 @@ export function buildUI(root, { getAudio, store, setRunning }) {
   }
 
   function render() {
-    // dominant note in the window, mean cents for that note
     const counts = new Map();
     for (const r of readings) counts.set(r.midi, (counts.get(r.midi) ?? 0) + 1);
     const midi = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
@@ -154,7 +136,7 @@ export function buildUI(root, { getAudio, store, setRunning }) {
     nameEl.textContent = sharp === flat ? `${sharp}${octave}` : `${sharp}${octave} · ${flat}${octave}`;
     centsEl.textContent = `${cents >= 0 ? "+" : "−"}${Math.abs(cents).toFixed(0)}¢`;
     hzEl.textContent = ` · ${freq.toFixed(1)} Hz`;
-    statusEl.textContent = " ";
+    statusEl.textContent = " ";
     targetAngle = (Math.max(-50, Math.min(50, cents)) / 50) * 45;
     const inTune = Math.abs(cents) <= 5;
     nameEl.classList.toggle("intune", inTune);

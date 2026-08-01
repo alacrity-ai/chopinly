@@ -44,7 +44,16 @@ pickerMenu.hidden = true;
 
 picker.append(pickerBtn, pickerMenu);
 
+let lastCategory = null;
 for (const tool of TOOLS) {
+  const category = tool.category ?? "tools";
+  if (lastCategory !== null && category !== lastCategory) {
+    const rule = document.createElement("div");
+    rule.className = "picker-rule";
+    rule.setAttribute("role", "separator");
+    pickerMenu.append(rule);
+  }
+  lastCategory = category;
   const item = document.createElement("button");
   item.className = "picker-item";
   item.setAttribute("role", "menuitemradio");

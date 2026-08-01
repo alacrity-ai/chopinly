@@ -4,9 +4,11 @@ A piano practice assistant PWA. Tools so far: a **metronome** (sample-accurate
 Web Audio scheduling, four synthesized click voices, tap tempo, per-beat
 accent/mute, subdivisions, a brass pendulum phase-locked to the audio clock)
 a **pitch pipe** (ring of 12 notes, sustained reed tone, octave + A4
-calibration with live retune), and a **tuner** (mic + autocorrelation pitch
-detection, cents dial, same A4 calibration). Installable and fully offline;
-tools live at `#/<tool-id>` behind the navbar dropdown.
+calibration with live retune), a **tuner** (mic + autocorrelation pitch
+detection, cents dial), and **sight singing** — a training app with a real
+engraved staff (Bravura/SMuFL), tonic-chord count-in, and octave-agnostic
+pitch+rhythm judging with a gold/green/bronze/red grade per note. Installable
+and fully offline; tools live at `#/<tool-id>` behind the navbar dropdown.
 
 **Live:** https://metronome.apps.lalalimited.com
 
