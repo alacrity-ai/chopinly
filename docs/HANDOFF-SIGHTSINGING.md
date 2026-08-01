@@ -1,9 +1,30 @@
 # HANDOFF: Sight Singing feature — full context rehydration
 
-Written 2026-08-01 by the agent, for the agent, before a context compaction.
-Read this + `docs/SIGHTSINGING_PLAN.md` + `docs/STAFF_DESIGN.md` and you know
-everything about this feature. Repo: `~/lets-get-rich/woodshed` (GitHub
-`alacrity-ai/woodshed`, persona `leifktaylor`, Alacrity world).
+Written 2026-08-01 by the agent, for the agent, before a context compaction;
+updated same day after the **v2 campaign/challenge restructure** (WSHED-16
+epic). Read this + `docs/CAMPAIGN_DESIGN.md` + `docs/CAMPAIGN_IMPLEMENTATION.md`
++ `docs/MUSICAL_DESIGN.md` (+ the older `docs/SIGHTSINGING_PLAN.md` /
+`docs/STAFF_DESIGN.md` for the staff/judge foundations) and you know
+everything. Repo: `~/lets-get-rich/woodshed` (GitHub `alacrity-ai/woodshed`,
+persona `leifktaylor`, Alacrity world).
+
+## v2 in one paragraph (supersedes parts of the sections below)
+
+`#/sightsinging` is now a **landing** forking two modes: **campaign**
+(`/campaign` — 5 books × 6 lessons × 3 melodies, star stickers 1★≥70/2★≥85/
+3★≥95, best-of in store key `campaign`, strictly linear unlock, standard
+strictness) and **challenge** (`/challenge` — config: level, clef multi-toggle,
+3/5/10 melodies, strictness, click → random drill). Both feed `/run`: a
+playlist driver in `ui.js` around the extracted **`runner.js`** (one-melody
+exercise: staff, count-in bus, live grading, pitch lane, `__WS_FAKE_SING`).
+Interstitial after each melody (auto-advance 4s, `#ss-next`), set summary at
+the end (campaign: star-stamp moment; challenge: per-melody list + again).
+Corpus is **108 melodies** in `corpus/` (book1–5.js + classic.js + campaign.js
+table + index.js `pool()`; `melodies.js` re-exports and adds `dealSet`).
+App shell (`app.js`) routes tool **sub-paths** (`startsWith` match — don't
+regress this). New E2E seam: `window.__WS_FAKE_SET = ["perfect", ...]`, one
+outcome consumed per melody. SW cache `woodshed-v6`; all corpus files are in
+SHELL. Commits: `7118d1a` corpus · `a70df7f` modes.
 
 ## What Woodshed is (30s)
 
