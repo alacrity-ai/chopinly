@@ -50,3 +50,26 @@ export function judge(units, samples, { strictness = 1, latency = 0.13, headGrac
     : 0;
   return { notes, score, counts };
 }
+
+/**
+ * Optimistic live tier for a note still sounding. Precision-only — coverage
+ * can't be known until the note ends, so we assume the singer will hold it and
+ * let the end-of-window judge() pass correct the color if they don't.
+ * Returns null until there's enough evidence (≥2 in-tolerance samples, or ≥5
+ * voiced samples with none in tolerance → "missed").
+ */
+export function provisionalTier(unit, samples, { strictness = 1, latency = 0.13, headGrace = 0.06 } = {}) {
+  const prec = BASE_PRECISION.map((v) => v * strictness);
+  const w0 = unit.t0 + headGrace;
+  const errors = [];
+  for (const s of samples) {
+    const t = s.t - latency;
+    if (t >= w0 && t < unit.t1) errors.push(Math.abs(centsOff(s.midi, unit.midi)));
+  }
+  const matching = errors.filter((e) => e <= prec[2]).sort((a, b) => a - b);
+  if (matching.length >= 2) {
+    const precision = matching[Math.floor(matching.length / 2)];
+    return precision <= prec[0] ? "nailed" : precision <= prec[1] ? "good" : "rough";
+  }
+  return errors.length >= 5 ? "missed" : null;
+}

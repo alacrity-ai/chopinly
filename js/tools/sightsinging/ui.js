@@ -9,7 +9,7 @@ import { playMelody, playChord, scheduleClick } from "../../lib/melody-player.js
 import { createMicPitch } from "../../lib/pitch/mic.js";
 import { tonicTriad } from "../../lib/music.js";
 import { MELODIES, toTimeline, deal } from "./melodies.js";
-import { judge, centsOff, STRICTNESS } from "./judge.js";
+import { judge, centsOff, provisionalTier, STRICTNESS } from "./judge.js";
 
 const SCORE_WORDS = [
   [95, "flawless — gold standard"],
@@ -118,11 +118,16 @@ export function buildUI(root, { getAudio, store, setRunning }) {
   }
 
   function paintUnit(unitIdx, stateName) {
-    for (const i of highlighted) staff.setState(i, grades ? grades[i] : "idle");
+    for (const i of highlighted) {
+      staff.setHere(i, false);
+      staff.setState(i, grades ? grades[i] : "idle");
+    }
     highlighted = [];
     if (unitIdx !== null && stateName) {
       for (const i of timeline.units[unitIdx].drawn) {
-        staff.setState(i, stateName);
+        staff.setHere(i, true);
+        // fill shows the live grade once one exists; ivory "current" until then
+        staff.setState(i, (grades && grades[i]) || stateName);
         highlighted.push(i);
       }
     }
@@ -168,7 +173,7 @@ export function buildUI(root, { getAudio, store, setRunning }) {
     run = {
       t0, singStart, spb, beats, samples, fake, bus,
       fakeSamples: fake ? synthFake(fake, timeline) : null,
-      fakeIdx: 0, fakeLatest: null, gradedUpTo: 0, trail: [],
+      fakeIdx: 0, fakeLatest: null, gradedUpTo: 0, prov: [], trail: [],
     };
     grades = new Array(staff.count).fill(null);
     staff.clearStates();
@@ -210,21 +215,36 @@ export function buildUI(root, { getAudio, store, setRunning }) {
     raf = requestAnimationFrame(runFrame);
   }
 
-  // Grade each note the moment its window (plus latency lag) closes.
+  function setUnitTier(i, tier, pop) {
+    for (const d of timeline.units[i].drawn) {
+      grades[d] = tier;
+      staff.setState(d, tier);
+      if (pop) staff.pulse(d);
+    }
+  }
+
+  // Rhythm-game grading: an optimistic tier pops the moment the note is hit
+  // (precision-only — coverage can't be known mid-note); the window-close pass
+  // is the authoritative finalizer and silently corrects the color if needed.
   function liveGrade(now) {
     const latency = run.fake ? 0 : 0.13;
     const t = now - run.singStart;
+    const opts = { strictness: STRICTNESS[state.strict], latency };
     while (run.gradedUpTo < timeline.units.length
         && t > timeline.units[run.gradedUpTo].t1 + latency + 0.12) {
       const i = run.gradedUpTo++;
-      const v = judge([timeline.units[i]], relSamples(), {
-        strictness: STRICTNESS[state.strict], latency,
-      });
-      const tier = v.notes[0].tier;
-      for (const d of timeline.units[i].drawn) {
-        grades[d] = tier;
-        if (!highlighted.includes(d)) staff.setState(d, tier);
-        staff.pulse(d);
+      const tier = judge([timeline.units[i]], relSamples(), opts).notes[0].tier;
+      setUnitTier(i, tier, run.prov[i] == null); // pop only if never shown live
+    }
+    const i = run.gradedUpTo;
+    const u = timeline.units[i];
+    if (u && t >= u.t0 && t < u.t1) {
+      const heard = relSamples().filter((s) => s.t <= t);
+      const tier = provisionalTier(u, heard, opts);
+      if (tier && tier !== run.prov[i]) {
+        const first = run.prov[i] == null;
+        run.prov[i] = tier;
+        setUnitTier(i, tier, first);
       }
     }
   }

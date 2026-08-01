@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { judge, centsOff, STRICTNESS } from "../js/tools/sightsinging/judge.js";
+import { judge, centsOff, provisionalTier, STRICTNESS } from "../js/tools/sightsinging/judge.js";
 
 // three notes: 0.75s, 0.5s, 1.0s
 const UNITS = [
@@ -85,6 +85,25 @@ test("strictness moves borderline performances", () => {
     ["rough", "rough", "rough"]);     // 95 ≤ 135
   assert.deepEqual(judge(UNITS, flat95, { ...opts, strictness: STRICTNESS.strict }).notes.map((n) => n.tier),
     ["missed", "missed", "missed"]);  // 95 > 90
+});
+
+test("provisionalTier: null until evidence, then tier from precision alone", () => {
+  const u = UNITS[0];
+  const at = (n, off = 0) =>
+    Array.from({ length: n }, (_, i) => ({ t: u.t0 + 0.08 + i * 0.085, midi: u.midi + off }));
+  assert.equal(provisionalTier(u, [], opts), null);
+  assert.equal(provisionalTier(u, at(1), opts), null);              // one sample isn't proof
+  assert.equal(provisionalTier(u, at(2), opts), "nailed");          // hit awarded ~0.25s in
+  assert.equal(provisionalTier(u, at(3, -0.8), { ...opts, strictness: STRICTNESS.strict }), "rough");
+  assert.equal(provisionalTier(u, at(3, -0.25), { ...opts, strictness: STRICTNESS.standard }), "good");
+  assert.equal(provisionalTier(u, at(4, 3), opts), null);           // off-pitch: not judged yet…
+  assert.equal(provisionalTier(u, at(5, 3), opts), "missed");       // …missed once it's clearly wrong
+});
+
+test("provisionalTier ignores samples outside the note window", () => {
+  const u = UNITS[1];
+  const before = [{ t: u.t0 - 0.2, midi: u.midi }, { t: u.t0 - 0.1, midi: u.midi }];
+  assert.equal(provisionalTier(u, before, opts), null);
 });
 
 test("one wrong note among right ones only hurts itself", () => {

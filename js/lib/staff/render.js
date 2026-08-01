@@ -134,8 +134,14 @@ export function renderMelody(container, melody, opts = {}) {
       g.classList.remove(...STATES);
       if (state && state !== "idle") g.classList.add(`n-${state}`);
     },
+    /** Position marker (ivory halo), orthogonal to grade states — a note can
+     *  be "here" and carry a live tier color at the same time. */
+    setHere(i, on) {
+      const g = groups[i];
+      if (g) g.classList.toggle("n-here", Boolean(on));
+    },
     clearStates() {
-      for (const g of groups) g.classList.remove(...STATES, "n-pop");
+      for (const g of groups) g.classList.remove(...STATES, "n-here", "n-pop");
     },
     /** One-shot celebratory bounce on a note (used by live grading). */
     pulse(i) {
