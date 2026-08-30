@@ -3,6 +3,7 @@
 import { TOOLS } from "./registry.js";
 import { getAudio } from "./lib/audio.js";
 import { makeStore } from "./lib/store.js";
+import { logbook } from "./lib/logbook.js";
 
 const root = document.getElementById("tool-root");
 const picker = document.getElementById("tool-picker");
@@ -88,11 +89,41 @@ function mount(tool) {
 function syncHash(tool) {
   // Tools may own sub-paths (#/sightsinging/campaign) — only rewrite the hash
   // when it isn't already somewhere inside this tool.
-  if (!location.hash.startsWith(`#/${tool.id}`)) history.replaceState(null, "", `#/${tool.id}`);
+  if (!hashPath().startsWith(`#/${tool.id}`)) history.replaceState(null, "", `#/${tool.id}`);
 }
 
+// --- session chip: the Logbook's clock, visible on every tool ---------------
+const chip = document.createElement("a");
+chip.className = "session-chip";
+chip.href = "#/logbook";
+chip.hidden = true;
+chip.setAttribute("aria-label", "practice session running — open the logbook");
+chip.innerHTML = `<span class="session-dot" aria-hidden="true"></span><span class="session-time">0:00</span>`;
+picker.before(chip);
+let chipTimer = 0;
+function fmtElapsed(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}` : `${m}:${String(sec).padStart(2, "0")}`;
+}
+function syncChip() {
+  clearInterval(chipTimer);
+  const c = logbook.clock();
+  chip.hidden = !c;
+  if (!c) return;
+  const time = chip.querySelector(".session-time");
+  const tick = () => { time.textContent = fmtElapsed(Date.now() - c.startedAt); };
+  tick();
+  chipTimer = setInterval(tick, 1000);
+}
+logbook.on(syncChip);
+syncChip();
+
+// `#/metronome?bpm=96` and `#/logbook/log?goal=…` carry a query; match on the
+// path part only.
+const hashPath = () => location.hash.split("?")[0];
 const fromHash = () =>
-  TOOLS.find((t) => location.hash === `#/${t.id}` || location.hash.startsWith(`#/${t.id}/`));
+  TOOLS.find((t) => hashPath() === `#/${t.id}` || hashPath().startsWith(`#/${t.id}/`));
 window.addEventListener("hashchange", () => {
   const tool = fromHash();
   if (tool) mount(tool);

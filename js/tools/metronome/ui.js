@@ -4,6 +4,7 @@
 import { MetronomeEngine } from "./engine.js";
 import { VOICES } from "./voices.js";
 import { icon } from "../../lib/icons.js";
+import { logbook } from "../../lib/logbook.js";
 
 const MARKINGS = [
   [39, "Grave"], [49, "Largo"], [54, "Larghetto"], [64, "Adagio"],
@@ -70,6 +71,7 @@ export function buildUI(root, { getAudio, store, setRunning }) {
       <div class="transport">
         <button class="btn-round" id="start" aria-label="start">${icon("play")}</button>
         <button class="tap" id="tap">tap tempo</button>
+        <button class="tap" id="log-tempo" hidden aria-label="log this tempo in the logbook">${icon("log")} log</button>
       </div>
     </section>`;
 
@@ -112,6 +114,21 @@ export function buildUI(root, { getAudio, store, setRunning }) {
     }
   }
   renderDots();
+
+  // --- logbook round trip --------------------------------------------------
+  // Arriving as #/metronome?bpm=N (from a Logbook tempo button) sets the tempo
+  // and strips the query so a reload doesn't re-apply it.
+  const q = new URLSearchParams(location.hash.split("?")[1] ?? "");
+  if (q.has("bpm")) {
+    const v = Number(q.get("bpm"));
+    if (Number.isFinite(v)) setBpm(v);
+    history.replaceState(null, "", "#/metronome");
+  }
+  const logBtn = el("log-tempo");
+  const syncLogBtn = () => { logBtn.hidden = !logbook.goals("active").some((g) => g.kind === "user"); };
+  syncLogBtn();
+  const offLog = logbook.on(syncLogBtn);
+  logBtn.addEventListener("click", () => { location.hash = `#/logbook/log?bpm=${settings.bpm}`; });
 
   // --- tempo controls ----------------------------------------------------
   slider.addEventListener("input", () => setBpm(Number(slider.value)));
@@ -245,6 +262,7 @@ export function buildUI(root, { getAudio, store, setRunning }) {
       setRunning(false);
       window.removeEventListener("keydown", onKey);
       cancelAnimationFrame(raf);
+      offLog();
     },
   };
 }

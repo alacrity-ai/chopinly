@@ -8,6 +8,7 @@ import { createRunner } from "./runner.js";
 import { byId, dealSet, BOOKS, LESSONS, starsFor } from "./melodies.js";
 import { STRICTNESS } from "./judge.js";
 import { icon } from "../../lib/icons.js";
+import { logbook } from "../../lib/logbook.js";
 
 const SCORE_WORDS = [
   [95, "flawless — gold standard"],
@@ -292,6 +293,13 @@ export function buildUI(root, ctx) {
         `<li>${m.title} <span class="ss-dim">${scores[i]}%</span></li>`).join("");
       if (runState.mode === "campaign") {
         const stars = starsFor(avg);
+        if (!runState.logged) {
+          runState.logged = true;
+          const lesson = LESSONS.find((l) => l.id === runState.lessonId);
+          const bookIdx = BOOKS.findIndex((b) => b.id === lesson?.bookId) + 1;
+          const lessonIdx = LESSONS.filter((l) => l.bookId === lesson?.bookId).indexOf(lesson) + 1;
+          logbook.addAuto({ source: "sightsinging", label: `Book ${bookIdx} Lesson ${lessonIdx} · ${"★".repeat(stars) || "☆"} · ${avg}%` });
+        }
         const p = { ...progress() };
         const prev = p[runState.lessonId];
         p[runState.lessonId] = {
@@ -317,9 +325,13 @@ export function buildUI(root, ctx) {
         resultsEl.querySelector("#ss-tomap").addEventListener("click", () => nav("/campaign"));
         resultsEl.querySelector("#ss-redo").addEventListener("click", redoLast);
         resultsEl.querySelector("#ss-replay").addEventListener("click", () => {
-          runState.idx = 0; runState.results = []; loadCurrent();
+          runState.idx = 0; runState.results = []; runState.logged = false; loadCurrent();
         });
       } else {
+        if (!runState.logged) {
+          runState.logged = true;
+          logbook.addAuto({ source: "sightsinging", label: `Challenge · ${runState.melodies.length} melodies · ${avg}%` });
+        }
         store.set("challenge-log", `${avg}% over ${runState.melodies.length}`);
         resultsEl.innerHTML = `
           <div class="ss-score" id="ss-score">${avg}%</div>
@@ -337,7 +349,7 @@ export function buildUI(root, ctx) {
           runState.melodies = dealSet(runState.melodies.length, {
             difficulty: runState.cfg.difficulty, clefs: runState.cfg.clefs,
           });
-          runState.idx = 0; runState.results = []; loadCurrent();
+          runState.idx = 0; runState.results = []; runState.logged = false; loadCurrent();
         });
       }
     }

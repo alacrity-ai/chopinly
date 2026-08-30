@@ -164,3 +164,16 @@ are released on stop; denial shows guidance instead of a broken screen.
 Local smoke before deploy: page serves, manifest + sw fetch 200, start/stop
 works, all four voices audible, tap tempo sane, dots editable, settings survive
 reload. Deploy isn't done until the same checks pass on the final host.
+
+
+## 7. Tool #5 — Logbook (WSHED-23)
+
+The practice log. Feature design in [`LOGBOOK_DESIGN.md`](LOGBOOK_DESIGN.md),
+technical plan in [`LOGBOOK_IMPLEMENTATION.md`](LOGBOOK_IMPLEMENTATION.md).
+Two things it adds to the *shell* contract:
+
+- `js/lib/logbook.js` is a shared library (not tool-private): the shell renders
+  its session clock as a navbar chip, the metronome offers a `log` control and
+  accepts `#/metronome?bpm=N`, and sight singing writes auto entries.
+- Hash routes may carry a query (`#/tool?…`); `app.js` matches tools on the
+  path part only.
