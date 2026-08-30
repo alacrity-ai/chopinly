@@ -828,12 +828,16 @@ input[type="range"] { accent-color: var(--brass); flex: 1; min-width: 4rem; }
 
 /* ---------- logbook ---------- */
 
+/* The Logbook is a document, not an instrument: anchor it to the top so the
+   today · goals · history strip never moves as content height changes. */
+#tool-root.top-anchored { margin-block: 0 0 auto; align-items: flex-start; }
 .logbook {
   width: min(100%, 30rem);
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
   position: relative;
+  min-height: 60vh;
 }
 .lb-strip { align-self: center; margin-bottom: 0.4rem; }
 .lb-strip button { padding: 0.45rem 1.1rem; }

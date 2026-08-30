@@ -332,6 +332,7 @@ export function buildUI(root) {
   }
 
   // --- boot ----------------------------------------------------------------
+  root.classList.add("top-anchored");
   const onHash = () => { if (location.hash.startsWith("#/logbook")) render(); };
   window.addEventListener("hashchange", onHash);
   const off = logbook.on(() => { /* other tools may write (auto entries) while we're mounted */ if (!route().path.startsWith("log") && !route().path.startsWith("goals/")) render(); });
@@ -339,6 +340,7 @@ export function buildUI(root) {
 
   return {
     destroy() {
+      root.classList.remove("top-anchored");
       clearInterval(clockTimer);
       window.removeEventListener("hashchange", onHash);
       off();
