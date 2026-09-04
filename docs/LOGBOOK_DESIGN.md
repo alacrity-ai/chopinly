@@ -1,5 +1,7 @@
 # Woodshed — Logbook (practice log) design
 
+> **Superseded (2026-09-04)** by Logbook v2 — see [`LOGBOOK_V2_DESIGN.md`](LOGBOOK_V2_DESIGN.md) and [`LOGBOOK_V2_IMPLEMENTATION.md`](LOGBOOK_V2_IMPLEMENTATION.md). Kept for the record of what v1 was and why it changed.
+
 **Status:** approved 2026-08-30 (WSHED-23 epic). Technical plan in [`LOGBOOK_IMPLEMENTATION.md`](LOGBOOK_IMPLEMENTATION.md).
 **Working name:** **Logbook** (nav label "Logbook", glyph: a pencil). It's the
 notebook a teacher writes assignments in, kept by you. "Journal" implies

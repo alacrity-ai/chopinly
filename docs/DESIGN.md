@@ -166,14 +166,13 @@ works, all four voices audible, tap tempo sane, dots editable, settings survive
 reload. Deploy isn't done until the same checks pass on the final host.
 
 
-## 7. Tool #5 — Logbook (WSHED-23)
+## 7. Tool #5 — Logbook (WSHED-23 → v2 in WSHED-29)
 
-The practice log. Feature design in [`LOGBOOK_DESIGN.md`](LOGBOOK_DESIGN.md),
-technical plan in [`LOGBOOK_IMPLEMENTATION.md`](LOGBOOK_IMPLEMENTATION.md).
-Two things it adds to the *shell* contract:
-
-- `js/lib/logbook.js` is a shared library (not tool-private): the shell renders
-  its session clock as a navbar chip, the metronome offers a `log` control and
-  accepts `#/metronome?bpm=N`, and sight singing writes auto entries.
-- Hash routes may carry a query (`#/tool?…`); `app.js` matches tools on the
-  path part only.
+The practice tracker. v1 (WSHED-23, 2026-08-30) was a daily log with goals
+attached; four days of use showed the goal object asked for too much and the
+clock never touched the goals. **v2 (WSHED-29, 2026-09-04)** is
+goal-attributed: play → *what are you working on?* → the clock runs against
+that goal; switch splits a sitting into per-goal segments; goals are type +
+name with a dated notes thread; Today and History are derived from segments.
+Full design: [`LOGBOOK_V2_DESIGN.md`](LOGBOOK_V2_DESIGN.md); plan:
+[`LOGBOOK_V2_IMPLEMENTATION.md`](LOGBOOK_V2_IMPLEMENTATION.md).

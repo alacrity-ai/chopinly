@@ -1,5 +1,7 @@
 # Woodshed — Logbook implementation plan
 
+> **Superseded (2026-09-04)** by Logbook v2 — see [`LOGBOOK_V2_DESIGN.md`](LOGBOOK_V2_DESIGN.md) and [`LOGBOOK_V2_IMPLEMENTATION.md`](LOGBOOK_V2_IMPLEMENTATION.md). Kept for the record of what v1 was and why it changed.
+
 Companion to [`LOGBOOK_DESIGN.md`](LOGBOOK_DESIGN.md) (the *what*). This is
 the *how*: files, data model, seams into the shell / metronome / sight
 singing, tests, and the delivery slices that become WSHED tickets.
