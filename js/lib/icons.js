@@ -13,6 +13,8 @@ const P = {
   click: `<path d="M10 4.5h4l2.8 14a1 1 0 0 1-1 1.2H8.2a1 1 0 0 1-1-1.2l2.8-14Z"/>
           <path d="M11.2 15.5 16 7.8"/><circle cx="16.4" cy="7.2" r="1.4" fill="currentColor" stroke="none"/>`,
   map: `<path d="M4.5 6.5 9.5 4.5 14.5 6.5 19.5 4.5v13l-5 2-5-2-5 2v-13Z"/><path d="M9.5 4.8v12.4M14.5 6.8v12.4"/>`,
+  pencil: `<path d="M5 19.2l.9-3.6L15.6 5.9a1.6 1.6 0 0 1 2.3 0l.9.9a1.6 1.6 0 0 1 0 2.3l-9.7 9.7L5 19.2Z"/><path d="M13.9 7.6l3.2 3.2"/>`,
+  log: `<path d="M6 4.5h9.5l3 3V19.5H6V4.5Z"/><path d="M9 10h6M9 13.5h6M9 17h3.5"/>`,
 };
 
 /** icon("play") → inline SVG string. Decorative by default (aria-hidden). */

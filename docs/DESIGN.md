@@ -164,3 +164,15 @@ are released on stop; denial shows guidance instead of a broken screen.
 Local smoke before deploy: page serves, manifest + sw fetch 200, start/stop
 works, all four voices audible, tap tempo sane, dots editable, settings survive
 reload. Deploy isn't done until the same checks pass on the final host.
+
+
+## 7. Tool #5 — Logbook (WSHED-23 → v2 in WSHED-29)
+
+The practice tracker. v1 (WSHED-23, 2026-08-30) was a daily log with goals
+attached; four days of use showed the goal object asked for too much and the
+clock never touched the goals. **v2 (WSHED-29, 2026-09-04)** is
+goal-attributed: play → *what are you working on?* → the clock runs against
+that goal; switch splits a sitting into per-goal segments; goals are type +
+name with a dated notes thread; Today and History are derived from segments.
+Full design: [`LOGBOOK_V2_DESIGN.md`](LOGBOOK_V2_DESIGN.md); plan:
+[`LOGBOOK_V2_IMPLEMENTATION.md`](LOGBOOK_V2_IMPLEMENTATION.md).

@@ -1,0 +1,462 @@
+// Logbook data layer v2 — goal-attributed practice. Pure and DOM-free so the
+// shell, the metronome and sight singing can import it, and so
+// `tests/logbook.test.mjs` can drive it with an in-memory store.
+// See docs/LOGBOOK_V2_DESIGN.md §2 and docs/LOGBOOK_V2_IMPLEMENTATION.md §2.
+//
+// One document lives under ws.logbook.data (via makeStore("logbook")):
+//   { schemaVersion: 2, goals[], segments[], notes[], deleted[] }
+// A Goal is what you practice; a Segment is time spent on one goal (the
+// running segment has endedAt: null — at most one); a Note is a dated line
+// on a goal. Days are never stored: every number is derived from segments.
+
+import { makeStore } from "./store.js";
+
+export const SCHEMA_VERSION = 2;
+export const TYPES = {
+  piece: { id: "piece", label: "piece", glyph: "●", cls: "t-piece", examples: "Pathétique Sonata, Bach Invention, Clair de lune" },
+  technique: { id: "technique", label: "technique", glyph: "▲", cls: "t-technique", examples: "Scales, arpeggios, Hanon, octaves" },
+  other: { id: "other", label: "other", glyph: "◆", cls: "t-other", examples: "Sight reading, improvisation, ear training" },
+};
+export const TYPE_IDS = Object.keys(TYPES);
+export const BUILTIN_SIGHTSINGING = "sightsinging";
+export const BUILTIN_FREEPRACTICE = "freepractice";
+/** Segments shorter than this are dropped when closed (an accidental tap). */
+export const MIN_SEGMENT_MS = 10_000;
+export const SORTS = ["recent", "name", "created", "time", "week", "month"];
+
+const MIN = 60000;
+const pad = (n) => String(n).padStart(2, "0");
+/** Local-time day key, YYYY-MM-DD. */
+export function dayKey(ms) {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+/** ms at local midnight for a day key. */
+export function dayStart(key) {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d).getTime();
+}
+export function addDays(key, n) {
+  const [y, m, d] = key.split("-").map(Number);
+  return dayKey(new Date(y, m - 1, d + n).getTime());
+}
+/** Exclusive end of a day, DST-safe. */
+const dayEnd = (key) => dayStart(addDays(key, 1));
+
+const uuid = () =>
+  globalThis.crypto?.randomUUID?.() ??
+  `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+/** Accent- and case-insensitive text for search. */
+export const norm = (s) => String(s ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
+
+function emptyDoc() {
+  return { schemaVersion: SCHEMA_VERSION, goals: [], segments: [], notes: [], deleted: [] };
+}
+
+// --- migration ---------------------------------------------------------------
+function migrate(doc) {
+  if (!doc || typeof doc !== "object") return emptyDoc();
+  if (doc.schemaVersion === SCHEMA_VERSION) return { ...emptyDoc(), ...doc };
+  if (doc.schemaVersion === 1) return migrateV1(doc);
+  return emptyDoc();
+}
+
+/** v1 → v2, per docs/LOGBOOK_V2_DESIGN.md §2.2. Lossless where it can be. */
+function migrateV1(v1) {
+  const out = emptyDoc();
+  const goals = Array.isArray(v1.goals) ? v1.goals : [];
+  const entries = Array.isArray(v1.entries) ? v1.entries : [];
+  const days = v1.days && typeof v1.days === "object" ? v1.days : {};
+  const note = (goalId, body, createdAt) => ({ id: uuid(), goalId, body, createdAt });
+  const fmtD = (ms) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+  for (const g of goals) {
+    const builtin = g.kind === "builtin";
+    out.goals.push({
+      id: g.id, name: String(g.title ?? "").trim() || "untitled", type: builtin ? "other" : "piece",
+      status: g.status ?? "active", kind: g.kind ?? "user",
+      createdAt: g.createdAt ?? 0, updatedAt: g.updatedAt ?? g.createdAt ?? 0, finishedAt: g.finishedAt ?? null,
+    });
+    if (g.target) out.notes.push(note(g.id, `target: ${g.target}`, g.createdAt ?? 0));
+    if (g.spots?.length) {
+      const spots = g.spots.map((s) => (s.fixedAt ? `${s.text} (fixed ${fmtD(s.fixedAt)})` : s.text)).join(" · ");
+      out.notes.push(note(g.id, `spots: ${spots}`, (g.createdAt ?? 0) + 1));
+    }
+    if (g.next) out.notes.push(note(g.id, `next time: ${g.next}`, g.updatedAt ?? g.createdAt ?? 0));
+  }
+  for (const e of entries) {
+    const g = goals.find((x) => x.id === e.goalId);
+    if (!g) continue;
+    const parts = [];
+    if (e.auto?.label) parts.push(e.auto.label);
+    if (e.bpm != null) parts.push(`♩ ${e.bpm}`);
+    const spots = (e.spotIds ?? []).map((id) => g.spots?.find((s) => s.id === id)?.text).filter(Boolean);
+    if (spots.length) parts.push(spots.join(", "));
+    if (e.note) parts.push(e.note);
+    if (parts.length) out.notes.push(note(e.goalId, parts.join(" · "), e.at ?? 0));
+  }
+  const dayKeys = Object.keys(days).filter((k) => (days[k]?.minutes ?? 0) > 0).sort();
+  if (dayKeys.length || v1.clock?.startedAt) {
+    const first = dayKeys.length ? dayStart(dayKeys[0]) : v1.clock.startedAt;
+    out.goals.push({
+      id: BUILTIN_FREEPRACTICE, name: "Free practice", type: "other", status: "active", kind: "builtin",
+      createdAt: first, updatedAt: first, finishedAt: null,
+    });
+    for (const k of dayKeys) {
+      const startedAt = dayStart(k) + 12 * 3600000;
+      out.segments.push({
+        id: uuid(), goalId: BUILTIN_FREEPRACTICE, startedAt, endedAt: startedAt + days[k].minutes * MIN,
+        bpm: null, auto: { source: "migration", label: "v1 daily minutes" },
+      });
+    }
+    if (v1.clock?.startedAt) {
+      out.segments.push({ id: uuid(), goalId: BUILTIN_FREEPRACTICE, startedAt: v1.clock.startedAt, endedAt: null, bpm: null, auto: null });
+    }
+  }
+  out.deleted = Array.isArray(v1.deleted) ? v1.deleted : [];
+  return out;
+}
+
+/**
+ * Build a logbook bound to a store. Defaults to localStorage via makeStore;
+ * tests pass an in-memory store and a fake clock.
+ */
+export function createLogbook({ store = makeStore("logbook"), now = () => Date.now() } = {}) {
+  const raw = store.get("data", null);
+  let doc = migrate(raw);
+  const listeners = new Set();
+  const save = () => { store.set("data", doc); for (const fn of listeners) fn(doc); };
+  if (raw && raw.schemaVersion !== SCHEMA_VERSION) store.set("data", doc); // persist the upgrade once
+  const stamp = (obj) => { obj.updatedAt = now(); return obj; };
+  const goalById = (id) => doc.goals.find((g) => g.id === id) ?? null;
+  const mustGoal = (id) => { const g = goalById(id); if (!g) throw new Error(`no goal ${id}`); return g; };
+  const tomb = (id, kind) => doc.deleted.push({ id, kind, at: now() });
+
+  // --- time helpers ----------------------------------------------------------
+  const today = () => dayKey(now());
+  /** ms of a segment inside [from, to). The running segment ends now. */
+  const clip = (s, from, to) => Math.max(0, Math.min(s.endedAt ?? now(), to) - Math.max(s.startedAt, from));
+  const msIn = (from, to, pred = () => true) => {
+    let sum = 0;
+    for (const s of doc.segments) if (pred(s)) sum += clip(s, from, to);
+    return sum;
+  };
+  const toMin = (ms) => Math.round(ms / MIN);
+  const goalMs = (goalId, from = -Infinity, to = Infinity) => msIn(from, to, (s) => s.goalId === goalId);
+  function lastPracticedAt(goalId) {
+    let best = null;
+    for (const s of doc.segments) {
+      if (s.goalId !== goalId) continue;
+      const t = s.endedAt ?? now();
+      if (best === null || t > best) best = t;
+    }
+    return best;
+  }
+  const weekFrom = () => dayStart(addDays(today(), -6));
+  const monthFrom = () => { const d = new Date(now()); return new Date(d.getFullYear(), d.getMonth(), 1).getTime(); };
+
+  // --- goals -----------------------------------------------------------------
+  const COMPARE = {
+    recent: (a, b) => {
+      const la = lastPracticedAt(a.id), lb = lastPracticedAt(b.id);
+      if (la === null && lb === null) return b.createdAt - a.createdAt;
+      if (la === null) return 1;
+      if (lb === null) return -1;
+      return lb - la || b.createdAt - a.createdAt;
+    },
+    name: (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+    created: (a, b) => b.createdAt - a.createdAt,
+    time: (a, b) => goalMs(b.id) - goalMs(a.id) || b.createdAt - a.createdAt,
+    week: (a, b) => goalMs(b.id, weekFrom()) - goalMs(a.id, weekFrom()) || b.createdAt - a.createdAt,
+    month: (a, b) => goalMs(b.id, monthFrom()) - goalMs(a.id, monthFrom()) || b.createdAt - a.createdAt,
+  };
+  /** Library query. `status` "active" | "finished" | "shelved" | "all". */
+  function goals(opts = {}) {
+    const { status = "active", type = null, q = "", sort = "recent" } = typeof opts === "string" ? { status: opts } : opts;
+    const needle = norm(q);
+    const cmp = COMPARE[sort] ?? COMPARE.recent;
+    return doc.goals
+      .filter((g) => (status === "all" || g.status === status) && (!type || g.type === type) && (!needle || norm(g.name).includes(needle)))
+      .sort(cmp);
+  }
+  function addGoal({ name, type = "piece", kind = "user", id = uuid() }) {
+    const n = String(name ?? "").trim();
+    if (!n) throw new Error("a goal needs a name");
+    if (!TYPES[type]) throw new Error(`unknown type ${type}`);
+    const g = stamp({ id, name: n, type, status: "active", kind, createdAt: now(), finishedAt: null });
+    doc.goals.push(g); save(); return g;
+  }
+  function renameGoal(id, name) {
+    const g = mustGoal(id);
+    const n = String(name ?? "").trim();
+    if (!n) throw new Error("a goal needs a name");
+    g.name = n; stamp(g); save(); return g;
+  }
+  function retypeGoal(id, type) {
+    const g = mustGoal(id);
+    if (!TYPES[type]) throw new Error(`unknown type ${type}`);
+    g.type = type; stamp(g); save(); return g;
+  }
+  function setStatus(id, status, { persist = true } = {}) {
+    const g = mustGoal(id);
+    g.status = status;
+    g.finishedAt = status === "finished" ? now() : null;
+    stamp(g);
+    if (persist) save();
+    return g;
+  }
+  const finishGoal = (id) => setStatus(id, "finished");
+  const shelveGoal = (id) => setStatus(id, "shelved");
+  const reactivateGoal = (id) => setStatus(id, "active");
+  function deleteGoal(id) {
+    const g = mustGoal(id);
+    if (g.kind === "builtin") throw new Error("built-in goals can't be deleted");
+    doc.goals = doc.goals.filter((x) => x.id !== id);
+    tomb(id, "goal");
+    for (const s of doc.segments) if (s.goalId === id) tomb(s.id, "segment");
+    for (const n of doc.notes) if (n.goalId === id) tomb(n.id, "note");
+    doc.segments = doc.segments.filter((s) => s.goalId !== id);
+    doc.notes = doc.notes.filter((n) => n.goalId !== id);
+    save();
+  }
+  function ensureBuiltin(id, name, type) {
+    let g = goalById(id);
+    if (!g) {
+      g = stamp({ id, name, type, status: "active", kind: "builtin", createdAt: now(), finishedAt: null });
+      doc.goals.push(g);
+    } else if (g.status !== "active") setStatus(id, "active", { persist: false });
+    return g;
+  }
+
+  // --- practice (the timer) --------------------------------------------------
+  const runningSegment = () => doc.segments.find((s) => s.endedAt === null) ?? null;
+  function running() {
+    const s = runningSegment();
+    if (!s) return null;
+    return { segment: s, goal: goalById(s.goalId), elapsedMs: Math.max(0, now() - s.startedAt) };
+  }
+  /** Closes the running segment; drops it if it was an accidental tap. */
+  function closeRunning(at = now()) {
+    const s = runningSegment();
+    if (!s) return null;
+    s.endedAt = Math.max(at, s.startedAt);
+    if (s.endedAt - s.startedAt < MIN_SEGMENT_MS && !s.auto) {
+      doc.segments = doc.segments.filter((x) => x !== s);
+      return null;
+    }
+    return s;
+  }
+  /** Start practicing a goal. If something is already running this is a switch. */
+  function start(goalId) {
+    const g = mustGoal(goalId);
+    const cur = runningSegment();
+    if (cur) {
+      if (cur.goalId === goalId) return cur;
+      closeRunning();
+    }
+    if (g.status !== "active") setStatus(goalId, "active", { persist: false });
+    const s = { id: uuid(), goalId, startedAt: now(), endedAt: null, bpm: null, auto: null };
+    doc.segments.push(s); save(); return s;
+  }
+  const switchTo = start;
+  /** Stop → the closed segment, or null if it was too short to keep. */
+  function stop() { const s = closeRunning(); save(); return s; }
+  function stampTempo(bpm) {
+    const s = runningSegment();
+    if (!s) throw new Error("nothing is running");
+    const b = Math.round(Number(bpm));
+    if (!(b >= 20 && b <= 300)) throw new Error("tempo must be 20–300");
+    s.bpm = b; save(); return s;
+  }
+  /** Time without the clock (forgot to press play): a closed segment ending at `endedAt`. */
+  function addTime({ goalId, minutes, endedAt = now() }) {
+    mustGoal(goalId);
+    const m = Math.round(Number(minutes));
+    if (!(m >= 1 && m <= 24 * 60)) throw new Error("minutes must be 1–1440");
+    const s = { id: uuid(), goalId, startedAt: endedAt - m * MIN, endedAt, bpm: null, auto: null };
+    doc.segments.push(s); save(); return s;
+  }
+  function deleteSegment(id) {
+    const s = doc.segments.find((x) => x.id === id);
+    if (!s) return;
+    if (s.endedAt === null) throw new Error("stop it first");
+    doc.segments = doc.segments.filter((x) => x !== s);
+    tomb(id, "segment"); save();
+  }
+
+  // --- notes -----------------------------------------------------------------
+  function notes(goalId) {
+    return doc.notes.map((n, i) => [n, i]).filter(([n]) => n.goalId === goalId)
+      .sort((a, b) => (b[0].createdAt - a[0].createdAt) || (b[1] - a[1])).map(([n]) => n);
+  }
+  function addNote(goalId, body) {
+    mustGoal(goalId);
+    const b = String(body ?? "").trim();
+    if (!b) throw new Error("an empty note isn't worth keeping");
+    const n = { id: uuid(), goalId, body: b, createdAt: now() };
+    doc.notes.push(n); save(); return n;
+  }
+  function deleteNote(id) {
+    const before = doc.notes.length;
+    doc.notes = doc.notes.filter((n) => n.id !== id);
+    if (doc.notes.length !== before) { tomb(id, "note"); save(); }
+  }
+
+  // --- other tools writing in -----------------------------------------------
+  /**
+   * A finished sight-singing run. With a goal running it becomes a note on
+   * that goal (you chose what you're practicing — don't double count);
+   * idle, it becomes an auto segment on the built-in Sight singing goal.
+   */
+  function addAuto({ source, label, startedAt, endedAt = now() }) {
+    const r = running();
+    if (r) return { kind: "note", note: addNote(r.goal.id, label) };
+    if (!Number.isFinite(startedAt)) throw new Error("addAuto needs startedAt");
+    const g = ensureBuiltin(BUILTIN_SIGHTSINGING, "Sight singing", "other");
+    const s = { id: uuid(), goalId: g.id, startedAt: Math.min(startedAt, endedAt), endedAt, bpm: null, auto: { source, label } };
+    doc.segments.push(s); save();
+    return { kind: "segment", segment: s };
+  }
+
+  // --- read models -----------------------------------------------------------
+  const msOn = (key) => msIn(dayStart(key), dayEnd(key));
+  const minutesOn = (key) => toMin(msOn(key));
+  /** Half a minute rounds to one — the same threshold minutesOn uses. */
+  const practicedOn = (key) => msOn(key) >= MIN / 2;
+  /** What was practiced on a day: one row per goal, most time first, live row first on a tie. */
+  function dayReport(key) {
+    const from = dayStart(key), to = dayEnd(key);
+    const by = new Map();
+    for (const s of doc.segments) {
+      const ms = clip(s, from, to);
+      if (ms <= 0) continue;
+      let r = by.get(s.goalId);
+      if (!r) { r = { goal: goalById(s.goalId), ms: 0, segments: [], live: false }; by.set(s.goalId, r); }
+      r.ms += ms; r.segments.push(s);
+      if (s.endedAt === null) r.live = true;
+    }
+    const rows = [...by.values()].filter((r) => r.goal)
+      .map((r) => ({ ...r, minutes: toMin(r.ms) }))
+      .sort((a, b) => (b.ms - a.ms) || (Number(b.live) - Number(a.live)));
+    const ms = rows.reduce((m, r) => m + r.ms, 0);
+    return { key, ms, minutes: toMin(ms), goals: rows };
+  }
+
+  // --- metrics ---------------------------------------------------------------
+  function streak() {
+    let key = today();
+    if (!practicedOn(key)) key = addDays(key, -1); // a fresh morning keeps yesterday's streak
+    let n = 0;
+    while (practicedOn(key)) { n++; key = addDays(key, -1); if (n > 3660) break; }
+    return n;
+  }
+  /** Every day key any segment touches, ascending. */
+  function practicedKeys() {
+    const keys = new Set();
+    for (const s of doc.segments) {
+      let k = dayKey(s.startedAt);
+      const last = dayKey(s.endedAt ?? now());
+      for (let i = 0; i < 400 && k <= last; i++) { keys.add(k); k = addDays(k, 1); }
+    }
+    return [...keys].sort();
+  }
+  /** Gold = a day that beat every earlier day's total, or set a new best tempo on a goal. */
+  function goldDaySet() {
+    const gold = new Set();
+    let best = 0, seen = false;
+    for (const k of practicedKeys()) {
+      const ms = msOn(k);
+      if (ms < MIN / 2) continue;
+      if (seen && ms > best) gold.add(k);
+      if (ms > best) best = ms;
+      seen = true;
+    }
+    const bestBpm = new Map();
+    for (const s of [...doc.segments].filter((x) => x.bpm != null).sort((a, b) => a.startedAt - b.startedAt)) {
+      const prev = bestBpm.get(s.goalId);
+      if (prev != null && s.bpm > prev) gold.add(dayKey(s.startedAt));
+      if (prev == null || s.bpm > prev) bestBpm.set(s.goalId, s.bpm);
+    }
+    return gold;
+  }
+  function weekStrip() {
+    const gold = goldDaySet();
+    const t = today();
+    return Array.from({ length: 7 }, (_, i) => {
+      const key = addDays(t, i - 6);
+      return { key, practiced: practicedOn(key), gold: gold.has(key), today: key === t };
+    });
+  }
+  const minutesBetween = (fromKey, toKey) => toMin(msIn(dayStart(fromKey), dayEnd(toKey)));
+  /** Calendar for a month: cells [{ key, minutes, practiced, gold, goals }] + totals. */
+  function month(year, monthIndex) {
+    const gold = goldDaySet();
+    const first = new Date(year, monthIndex, 1);
+    const daysIn = new Date(year, monthIndex + 1, 0).getDate();
+    const lead = (first.getDay() + 6) % 7; // Monday-first grid
+    const cells = [];
+    for (let i = 0; i < lead; i++) cells.push(null);
+    for (let d = 1; d <= daysIn; d++) {
+      const key = dayKey(new Date(year, monthIndex, d).getTime());
+      const rep = dayReport(key);
+      cells.push({ key, minutes: rep.minutes, practiced: practicedOn(key), gold: gold.has(key), goals: rep.goals.length });
+    }
+    const from = dayKey(first.getTime()), to = dayKey(new Date(year, monthIndex, daysIn).getTime());
+    return { cells, totals: { days: cells.filter((c) => c?.practiced).length, minutes: minutesBetween(from, to) } };
+  }
+  /** This month's time per goal, most first. */
+  function monthByGoal(year, monthIndex) {
+    const from = new Date(year, monthIndex, 1).getTime(), to = new Date(year, monthIndex + 1, 1).getTime();
+    const by = new Map();
+    for (const s of doc.segments) {
+      const ms = clip(s, from, to);
+      if (ms > 0) by.set(s.goalId, (by.get(s.goalId) ?? 0) + ms);
+    }
+    return [...by].map(([id, ms]) => ({ goal: goalById(id), ms, minutes: toMin(ms) }))
+      .filter((r) => r.goal).sort((a, b) => b.ms - a.ms);
+  }
+  function tempoSeries(goalId) {
+    return doc.segments.filter((s) => s.goalId === goalId && s.bpm != null)
+      .sort((a, b) => a.startedAt - b.startedAt).map((s) => ({ at: s.startedAt, bpm: s.bpm }));
+  }
+  /** Per-goal numbers, all derived from its segments. */
+  function goalStats(goalId) {
+    const segs = doc.segments.filter((s) => s.goalId === goalId).sort((a, b) => b.startedAt - a.startedAt);
+    const ms = goalMs(goalId);
+    const days = new Set(segs.map((s) => dayKey(s.startedAt))).size;
+    const last = lastPracticedAt(goalId);
+    const series = tempoSeries(goalId);
+    return {
+      minutes: toMin(ms), days,
+      avgSessionMin: days ? Math.round(toMin(ms) / days) : 0,
+      weekMin: toMin(goalMs(goalId, weekFrom())),
+      monthMin: toMin(goalMs(goalId, monthFrom())),
+      lastPracticedAt: last,
+      daysSince: last === null ? null : Math.round((dayStart(today()) - dayStart(dayKey(last))) / 86400000),
+      bestBpm: series.reduce((m, p) => Math.max(m, p.bpm), 0) || null,
+      lastBpm: series.length ? series[series.length - 1].bpm : null,
+      segments: segs,
+    };
+  }
+
+  const on = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
+
+  return {
+    get doc() { return doc; }, save, on,
+    // goals
+    goals, goal: goalById, addGoal, renameGoal, retypeGoal, finishGoal, shelveGoal, reactivateGoal, deleteGoal,
+    // practice
+    running, start, switchTo, stop, stampTempo, addTime, deleteSegment,
+    // notes
+    notes, addNote, deleteNote,
+    // other tools
+    addAuto,
+    // read models
+    today, minutesOn, practicedOn, dayReport,
+    metrics: { streak, weekStrip, month, monthByGoal, minutesBetween, tempoSeries, goalStats, goldDays: goldDaySet },
+  };
+}
+
+/** The app-wide instance (localStorage-backed). Tools and the shell share it. */
+export const logbook = createLogbook();

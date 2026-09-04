@@ -4,6 +4,9 @@
 import { MetronomeEngine } from "./engine.js";
 import { VOICES } from "./voices.js";
 import { icon } from "../../lib/icons.js";
+import { logbook } from "../../lib/logbook.js";
+import { openPicker } from "../logbook/picker.js";
+import { toast } from "../logbook/util.js";
 
 const MARKINGS = [
   [39, "Grave"], [49, "Largo"], [54, "Larghetto"], [64, "Adagio"],
@@ -70,6 +73,7 @@ export function buildUI(root, { getAudio, store, setRunning }) {
       <div class="transport">
         <button class="btn-round" id="start" aria-label="start">${icon("play")}</button>
         <button class="tap" id="tap">tap tempo</button>
+        <button class="tap" id="log-tempo" aria-label="practice">${icon("log")} <span id="log-tempo-label">practice</span></button>
       </div>
     </section>`;
 
@@ -112,6 +116,35 @@ export function buildUI(root, { getAudio, store, setRunning }) {
     }
   }
   renderDots();
+
+  // --- logbook round trip --------------------------------------------------
+  // Arriving as #/metronome?bpm=N (from a Logbook tempo button) sets the tempo
+  // and strips the query so a reload doesn't re-apply it.
+  const q = new URLSearchParams(location.hash.split("?")[1] ?? "");
+  if (q.has("bpm")) {
+    const v = Number(q.get("bpm"));
+    if (Number.isFinite(v)) setBpm(v);
+    history.replaceState(null, "", "#/metronome");
+  }
+  // While a goal is running the button stamps this tempo on it; idle, it
+  // opens the picker so you can start practicing without leaving the metronome.
+  const logBtn = el("log-tempo"), logLabel = el("log-tempo-label");
+  const syncLogBtn = () => {
+    const r = logbook.running();
+    logLabel.textContent = r ? "♩ stamp" : "practice";
+    logBtn.setAttribute("aria-label", r ? `stamp ${settings.bpm} on ${r.goal?.name ?? "the running goal"}` : "practice — choose what you're working on");
+    logBtn.title = r ? `stamp ♩ ${settings.bpm} on ${r.goal?.name ?? ""}` : "start practicing";
+  };
+  syncLogBtn();
+  const offLog = logbook.on(syncLogBtn);
+  logBtn.addEventListener("click", async () => {
+    const r = logbook.running();
+    if (r) { logbook.stampTempo(settings.bpm); toast(`♩ ${settings.bpm} → ${r.goal?.name ?? ""}`); return; }
+    const pick = await openPicker({ mode: "start" });
+    if (!pick) return;
+    logbook.start(pick.goal.id);
+    toast(`${pick.goal.name} — go`);
+  });
 
   // --- tempo controls ----------------------------------------------------
   slider.addEventListener("input", () => setBpm(Number(slider.value)));
@@ -245,6 +278,7 @@ export function buildUI(root, { getAudio, store, setRunning }) {
       setRunning(false);
       window.removeEventListener("keydown", onKey);
       cancelAnimationFrame(raf);
+      offLog();
     },
   };
 }

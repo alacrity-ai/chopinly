@@ -1,0 +1,215 @@
+// Logbook shell: routes, the today · goals · history strip, the Today screen
+// (hero + practiced-today list), the 1 s ticker, and the ctx handed to the
+// other screens. Routes: #/logbook · /goals · /goals/<id> · /history.
+// The picker, creation and quick-note sheets are overlays, not routes.
+import { logbook, TYPES } from "../../lib/logbook.js";
+import { icon } from "../../lib/icons.js";
+import { esc, longPress, fmtMin, fmtClock, fmtDate, relDay, toast, sheetOpen } from "./util.js";
+import { openPicker } from "./picker.js";
+import { openCreate } from "./create.js";
+import { openQuickNote } from "./notes.js";
+import { renderLibrary } from "./library.js";
+import { renderGoalPage } from "./goalpage.js";
+import { renderHistory } from "./history.js";
+import { whoosh, settle, tickRow, stamp, glow, haptic } from "./motion.js";
+
+export function buildUI(root) {
+  let ticker = 0;
+  const tickFns = new Set();
+  const libState = {}, histState = {};
+  let practicedToday = logbook.practicedOn(logbook.today());
+
+  const nav = (sub) => { location.hash = `#/logbook${sub}`; };
+  const route = () => {
+    const h = location.hash.replace(/^#\/logbook\/?/, "");
+    const [path] = h.split("?");
+    return path;
+  };
+
+  // --- shared chrome ----------------------------------------------------------
+  const strip = (which) => `
+    <nav class="segmented lb-strip" aria-label="logbook sections">
+      <button aria-pressed="${which === "today"}" data-go="">today</button>
+      <button aria-pressed="${which === "goals"}" data-go="/goals">goals</button>
+      <button aria-pressed="${which === "history"}" data-go="/history">history</button>
+    </nav>`;
+  // Delegated so it survives screens re-rendering themselves.
+  const onRootClick = (e) => { const b = e.target.closest(".lb-strip button"); if (b && root.contains(b)) nav(b.dataset.go); };
+  root.addEventListener("click", onRootClick);
+
+  /** One "practiced" row: glyph · name · minutes. Used by Today and History. */
+  const goalRow = (r) => {
+    const t = TYPES[r.goal.type] ?? TYPES.other;
+    const auto = r.segments.every((s) => s.auto);
+    return `<li class="lb-trow ${r.live ? "live" : ""}" data-id="${r.goal.id}">
+      <button class="lb-trow-main" data-open="${r.goal.id}" title="tap to open · hold for a note">
+        <i class="lb-type ${t.cls}" aria-hidden="true">${t.glyph}</i>
+        <span class="lb-trow-name">${esc(r.goal.name)}</span>
+        ${auto ? `<span class="lb-auto">auto</span>` : ""}
+        <span class="lb-trow-min" data-live-min="${r.live ? r.goal.id : ""}">${fmtMin(r.minutes)}</span>
+      </button>
+    </li>`;
+  };
+  const wireGoalRows = (el) => {
+    for (const b of el.querySelectorAll(".lb-trow-main")) longPress(b,
+      () => nav(`/goals/${b.dataset.open}`),
+      async () => { haptic(); await openQuickNote(b.dataset.open); render(); });
+  };
+
+  const ctx = { root, nav, render, toast, strip, goalRow, wireGoalRows, openPicker, openCreate, openQuickNote, onTick: (fn) => tickFns.add(fn) };
+
+  // --- render -----------------------------------------------------------------
+  function render() {
+    tickFns.clear();
+    const path = route();
+    if (path === "goals") renderLibrary(root, ctx, libState);
+    else if (path.startsWith("goals/")) renderGoalPage(root, path.slice(6), ctx);
+    else if (path === "history") renderHistory(root, ctx, histState);
+    else if (path === "log") { history.replaceState(null, "", "#/logbook"); renderToday(); }
+    else renderToday();
+    syncTicker();
+  }
+
+  // --- Today ------------------------------------------------------------------
+  function renderToday() {
+    const t = logbook.today();
+    const run = logbook.running();
+    const rep = logbook.dayReport(t);
+    const strip7 = logbook.metrics.weekStrip();
+    const streak = logbook.metrics.streak();
+    const lastNote = run ? logbook.notes(run.goal.id)[0] : null;
+    const goalToday = run ? rep.goals.find((r) => r.goal.id === run.goal.id)?.minutes ?? 0 : 0;
+    const rt = run ? (TYPES[run.goal.type] ?? TYPES.other) : null;
+
+    root.innerHTML = `
+      <section class="logbook lb-today">
+        ${strip("today")}
+        <div class="lb-date">${fmtDate(Date.now(), { weekday: "long", month: "long", day: "numeric" })}</div>
+        ${run ? `
+        <div class="lb-hero running">
+          <div class="lb-hero-type ${rt.cls}"><i class="lb-type ${rt.cls}" aria-hidden="true">${rt.glyph}</i>${rt.label}</div>
+          <button class="lb-hero-goal" id="lb-hero-goal" data-open="${run.goal.id}">${esc(run.goal.name)}</button>
+          <div class="lb-hero-elapsed" id="lb-elapsed" aria-live="off">${fmtClock(run.elapsedMs)}</div>
+          <div class="lb-hero-sub">today on this goal <b id="lb-goal-today">${fmtMin(goalToday)}</b></div>
+          <div class="lb-hero-note">
+            <div class="lb-hero-note-head"><span class="lb-dim">${lastNote ? `last note · ${esc(relDay(lastNote.createdAt))}` : "no notes yet"}</span><button class="lb-link" id="lb-hero-addnote">+ note</button></div>
+            ${lastNote ? `<button class="lb-hero-note-body" data-open="${run.goal.id}">${esc(lastNote.body)}</button>` : ""}
+          </div>
+          <div class="lb-hero-acts">
+            <button class="lb-stop" id="lb-stop" aria-label="stop">${icon("stop")}<span>stop</span></button>
+            <button class="lb-switch" id="lb-switch" aria-label="switch goal"><span aria-hidden="true">&#8644;</span><span>switch</span></button>
+          </div>
+        </div>` : `
+        <div class="lb-hero idle">
+          <button class="lb-hero-play" id="lb-play" aria-label="play — choose what you're working on" title="hold to add time without the clock">${icon("play")}</button>
+          <div class="lb-hero-total">${rep.minutes ? `<b>${fmtMin(rep.minutes)}</b> today` : `<span class="lb-dim">press play and say what you're working on</span>`}</div>
+        </div>`}
+        <div class="lb-week" aria-label="this week">
+          ${strip7.map((d) => `<i class="${d.practiced ? "on" : ""} ${d.gold ? "gold" : ""} ${d.today ? "today" : ""}" title="${d.key}"></i>`).join("")}
+          <span class="lb-dim">${streak ? `streak ${streak} day${streak === 1 ? "" : "s"}` : "no streak yet"}</span>
+          ${run ? `<span class="lb-week-total lb-dim"><b id="lb-total">${fmtMin(rep.minutes)}</b> today</span>` : ""}
+        </div>
+        <div class="lb-sect">practiced today</div>
+        ${rep.goals.length ? `<ul class="lb-today-list" id="lb-today-list">${rep.goals.map(goalRow).join("")}</ul>`
+          : `<p class="lb-empty lb-dim">nothing yet.</p>`}
+      </section>`;
+
+    root.querySelector("#lb-play") && longPress(root.querySelector("#lb-play"), play, addTime);
+    root.querySelector("#lb-stop")?.addEventListener("click", stop);
+    root.querySelector("#lb-switch")?.addEventListener("click", switchGoal);
+    root.querySelector("#lb-hero-goal")?.addEventListener("click", () => nav(`/goals/${run.goal.id}`));
+    root.querySelector(".lb-hero-note-body")?.addEventListener("click", () => nav(`/goals/${run.goal.id}`));
+    root.querySelector("#lb-hero-addnote")?.addEventListener("click", async () => { await openQuickNote(run.goal.id); render(); });
+    wireGoalRows(root);
+
+    if (run) {
+      const el = root.querySelector("#lb-elapsed"), gt = root.querySelector("#lb-goal-today"), tot = root.querySelector("#lb-total");
+      tickFns.add(() => {
+        const r = logbook.running();
+        if (!r) { render(); return; }
+        el.textContent = fmtClock(r.elapsedMs);
+        if (new Date().getSeconds() % 15 === 0 || !el.dataset.primed) {
+          el.dataset.primed = "1";
+          const rp = logbook.dayReport(logbook.today());
+          gt.textContent = fmtMin(rp.goals.find((x) => x.goal.id === r.goal.id)?.minutes ?? 0);
+          if (tot) tot.textContent = fmtMin(rp.minutes);
+          const live = root.querySelector(`[data-live-min="${r.goal.id}"]`);
+          if (live) live.textContent = fmtMin(rp.goals.find((x) => x.goal.id === r.goal.id)?.minutes ?? 0);
+          else if (rp.goals.some((x) => x.goal.id === r.goal.id)) render(); // the row appeared
+          if (!practicedToday && logbook.practicedOn(logbook.today())) { practicedToday = true; const dot = root.querySelector(".lb-week i.today"); dot?.classList.add("on"); glow(dot); }
+        }
+      });
+    }
+  }
+
+  async function play() {
+    const r = await openPicker({ mode: "start" });
+    if (!r) return;
+    logbook.start(r.goal.id);
+    render();
+    await whoosh(r.rowEl, root.querySelector("#lb-hero-goal"));
+    if (r.created) stamp(root.querySelector(`.lb-trow[data-id="${r.goal.id}"]`));
+  }
+  async function switchGoal() {
+    const cur = logbook.running();
+    const r = await openPicker({ mode: "switch", excludeId: cur?.goal.id ?? null });
+    if (!r) return;
+    const before = root.querySelector(`.lb-trow[data-id="${cur?.goal.id}"]`);
+    if (before) tickRow(before);
+    logbook.switchTo(r.goal.id);
+    render();
+    await whoosh(r.rowEl, root.querySelector("#lb-hero-goal"));
+    stamp(root.querySelector(`.lb-trow[data-id="${r.goal.id}"]`));
+  }
+  function stop() {
+    const run = logbook.running();
+    if (!run) { render(); return; }
+    const numeral = root.querySelector("#lb-elapsed"), row = root.querySelector(`.lb-trow[data-id="${run.goal.id}"]`);
+    const seg = logbook.stop();
+    haptic();
+    settle(numeral, row);
+    render();
+    if (seg) {
+      tickRow(root.querySelector(`.lb-trow[data-id="${run.goal.id}"]`));
+      toast(`${fmtMin(Math.round((seg.endedAt - seg.startedAt) / 60000))} on ${run.goal.name}`);
+    } else toast("under 10 seconds — not kept");
+  }
+  async function addTime() {
+    const r = await openPicker({ mode: "addtime" });
+    if (!r) return;
+    logbook.addTime({ goalId: r.goal.id, minutes: r.minutes });
+    render();
+    stamp(root.querySelector(`.lb-trow[data-id="${r.goal.id}"]`));
+    toast(`${fmtMin(r.minutes)} added to ${r.goal.name}`);
+  }
+
+  // --- ticker -------------------------------------------------------------------
+  function syncTicker() {
+    clearInterval(ticker);
+    if (!logbook.running() || !tickFns.size) return;
+    ticker = setInterval(() => { for (const fn of tickFns) fn(); }, 1000);
+  }
+
+  // --- boot -------------------------------------------------------------------
+  root.classList.add("top-anchored");
+  const onHash = () => { if (location.hash.startsWith("#/logbook")) render(); };
+  window.addEventListener("hashchange", onHash);
+  const typing = () => { const a = document.activeElement; return a && root.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); };
+  const off = logbook.on(() => { if (sheetOpen() || typing()) return; render(); });
+  const onKey = (e) => {
+    if (e.key === "/" && route() === "goals" && !typing() && !sheetOpen()) { e.preventDefault(); root.querySelector("#lb-lib-q")?.focus(); }
+  };
+  document.addEventListener("keydown", onKey);
+  render();
+
+  return {
+    destroy() {
+      root.classList.remove("top-anchored");
+      clearInterval(ticker);
+      window.removeEventListener("hashchange", onHash);
+      document.removeEventListener("keydown", onKey);
+      root.removeEventListener("click", onRootClick);
+      off();
+    },
+  };
+}

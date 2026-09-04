@@ -6,5 +6,6 @@ import metronome from "./tools/metronome/index.js";
 import pitchpipe from "./tools/pitchpipe/index.js";
 import tuner from "./tools/tuner/index.js";
 import sightsinging from "./tools/sightsinging/index.js";
+import logbook from "./tools/logbook/index.js";
 
-export const TOOLS = [metronome, pitchpipe, tuner, sightsinging];
+export const TOOLS = [metronome, pitchpipe, tuner, logbook, sightsinging];

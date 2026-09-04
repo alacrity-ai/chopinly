@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "goals": [
+    {
+      "id": "g-chopin", "title": "Chopin Op. 10 No. 1", "target": "140",
+      "next": "mm. 5–8 at 100, then add m. 9", "status": "active", "kind": "user", "order": 1,
+      "createdAt": 1787000000000, "updatedAt": 1787300000000, "finishedAt": null,
+      "spots": [
+        { "id": "s1", "text": "mm. 5–8 consistency", "createdAt": 1787000001000, "fixedAt": null },
+        { "id": "s2", "text": "arpeggio m. 11", "createdAt": 1787000002000, "fixedAt": 1787200000000 }
+      ]
+    },
+    {
+      "id": "g-scales", "title": "Two-handed scales", "target": null, "next": null,
+      "status": "finished", "kind": "user", "order": 2,
+      "createdAt": 1787000100000, "updatedAt": 1787400000000, "finishedAt": 1787400000000, "spots": []
+    },
+    {
+      "id": "sightsinging", "title": "Sight singing", "target": null, "next": null,
+      "status": "active", "kind": "builtin", "order": 3,
+      "createdAt": 1787100000000, "updatedAt": 1787100000000, "finishedAt": null, "spots": []
+    }
+  ],
+  "entries": [
+    { "id": "e1", "goalId": "g-chopin", "at": 1787100000000, "bpm": 96, "spotIds": [], "note": null, "auto": null },
+    { "id": "e2", "goalId": "g-chopin", "at": 1787200000000, "bpm": null, "spotIds": ["s1"], "note": "clean 4/5 runs", "auto": null },
+    { "id": "e3", "goalId": "sightsinging", "at": 1787250000000, "bpm": null, "spotIds": [], "note": null, "auto": { "source": "sightsinging", "label": "Book 1 Lesson 2 · ★★ · 81%" } },
+    { "id": "e4", "goalId": "g-scales", "at": 1787300000000, "bpm": 128, "spotIds": [], "note": "C# minor harmonic ok", "auto": null }
+  ],
+  "days": { "2026-08-28": { "minutes": 42 }, "2026-08-29": { "minutes": 15 }, "2026-08-31": { "minutes": 60 } },
+  "clock": { "startedAt": 1788000000000 },
+  "deleted": [ { "id": "g-old", "kind": "goal", "at": 1786900000000 } ]
+}
