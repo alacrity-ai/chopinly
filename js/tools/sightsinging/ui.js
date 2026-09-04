@@ -180,7 +180,7 @@ export function buildUI(root, ctx) {
 
   // --- the run driver -------------------------------------------------------
   function renderRun() {
-    const runState = { idx: 0, results: [], ...pendingRun };
+    const runState = { idx: 0, results: [], startedAt: Date.now(), ...pendingRun };
     const clickOn = () => (runState.mode === "challenge" ? runState.cfg.click : store.get("click", true));
     root.innerHTML = `
       <section class="sightsinging" id="ss-root">
@@ -298,7 +298,7 @@ export function buildUI(root, ctx) {
           const lesson = LESSONS.find((l) => l.id === runState.lessonId);
           const bookIdx = BOOKS.findIndex((b) => b.id === lesson?.bookId) + 1;
           const lessonIdx = LESSONS.filter((l) => l.bookId === lesson?.bookId).indexOf(lesson) + 1;
-          logbook.addAuto({ source: "sightsinging", label: `Book ${bookIdx} Lesson ${lessonIdx} · ${"★".repeat(stars) || "☆"} · ${avg}%` });
+          logbook.addAuto({ source: "sightsinging", label: `Book ${bookIdx} Lesson ${lessonIdx} · ${"★".repeat(stars) || "☆"} · ${avg}%`, startedAt: runState.startedAt, endedAt: Date.now() });
         }
         const p = { ...progress() };
         const prev = p[runState.lessonId];
@@ -325,12 +325,12 @@ export function buildUI(root, ctx) {
         resultsEl.querySelector("#ss-tomap").addEventListener("click", () => nav("/campaign"));
         resultsEl.querySelector("#ss-redo").addEventListener("click", redoLast);
         resultsEl.querySelector("#ss-replay").addEventListener("click", () => {
-          runState.idx = 0; runState.results = []; runState.logged = false; loadCurrent();
+          runState.idx = 0; runState.results = []; runState.logged = false; runState.startedAt = Date.now(); loadCurrent();
         });
       } else {
         if (!runState.logged) {
           runState.logged = true;
-          logbook.addAuto({ source: "sightsinging", label: `Challenge · ${runState.melodies.length} melodies · ${avg}%` });
+          logbook.addAuto({ source: "sightsinging", label: `Challenge · ${runState.melodies.length} melodies · ${avg}%`, startedAt: runState.startedAt, endedAt: Date.now() });
         }
         store.set("challenge-log", `${avg}% over ${runState.melodies.length}`);
         resultsEl.innerHTML = `
@@ -349,7 +349,7 @@ export function buildUI(root, ctx) {
           runState.melodies = dealSet(runState.melodies.length, {
             difficulty: runState.cfg.difficulty, clefs: runState.cfg.clefs,
           });
-          runState.idx = 0; runState.results = []; runState.logged = false; loadCurrent();
+          runState.idx = 0; runState.results = []; runState.logged = false; runState.startedAt = Date.now(); loadCurrent();
         });
       }
     }
