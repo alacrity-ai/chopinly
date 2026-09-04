@@ -45,5 +45,6 @@ palette, and audio-engine design: [`docs/DESIGN.md`](docs/DESIGN.md).
 Cloudflare Pages on the shared LaLa Solutions account
 (`wrangler pages deploy . --project-name woodshed` — the Pages project keeps its
 original name); custom domains `chopinly.com` + `www.chopinly.com` (zone
-`chopinly.com`) and the legacy alias `metronome.apps.lalalimited.com`. See
+`chopinly.com`; www → apex is a client-side redirect in `index.html` — Pages
+`_redirects` can't match hostnames and no token has the Rulesets scope) and the legacy alias `metronome.apps.lalalimited.com`. See
 `claude_ops/docs/sops/cloudflare-deploys.md`.
