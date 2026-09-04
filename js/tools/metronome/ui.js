@@ -4,9 +4,10 @@
 import { MetronomeEngine } from "./engine.js";
 import { VOICES } from "./voices.js";
 import { icon } from "../../lib/icons.js";
-import { logbook } from "../../lib/logbook.js";
+import { logbook, TYPES } from "../../lib/logbook.js";
 import { openPicker } from "../logbook/picker.js";
 import { toast } from "../logbook/util.js";
+import { engage } from "../logbook/ceremony.js";
 
 const MARKINGS = [
   [39, "Grave"], [49, "Largo"], [54, "Larghetto"], [64, "Adagio"],
@@ -143,7 +144,7 @@ export function buildUI(root, { getAudio, store, setRunning }) {
     const pick = await openPicker({ mode: "start" });
     if (!pick) return;
     logbook.start(pick.goal.id);
-    toast(`${pick.goal.name} — go`);
+    engage({ goal: pick.goal, type: TYPES[pick.goal.type] ?? TYPES.other });
   });
 
   // --- tempo controls ----------------------------------------------------

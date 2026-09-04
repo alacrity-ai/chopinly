@@ -44,7 +44,7 @@ html { color-scheme: dark; }
 /* No pull-to-refresh: the pages are shorter than the screen, so every downward
    drag is an overscroll at the top (WSHED-45). Sheets and lists scroll inside
    their own containers and are unaffected. */
-html, body { overscroll-behavior-y: none; }
+html, body { overscroll-behavior: none; }
 
 body {
   min-height: 100dvh;
@@ -921,7 +921,8 @@ input[type="range"] { accent-color: var(--brass); flex: 1; min-width: 4rem; }
 .lb-foot { display: flex; gap: 1.2rem; justify-content: center; margin-top: 0.6rem; font-size: 0.85rem; }
 .lb-err { color: var(--felt); font-size: 0.85rem; min-height: 1.1em; margin: 0.2rem 0 0; }
 .lb-err:empty { display: none; }
-.lb-back { padding: 0.5rem 0.85rem; }
+.lb-back { flex: none; }
+.lb-back .ic { width: 1.5rem; height: 1.5rem; }
 .lb-date { font-family: var(--serif); font-style: italic; color: var(--ivory-dim); font-size: 1rem; text-align: center; }
 
 /* goal type: glyph always present, colour never the only signal */
@@ -1187,11 +1188,47 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .lb-trow.lb-stamp, .lb-row.lb-stamp { box-shadow: inset 0 0 0 1px var(--brass); animation: stamp 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both, brass-glow 600ms ease-out; }
 @keyframes brass-glow { 0% { background: rgba(201, 163, 92, 0.28); } 100% { background: transparent; } }
 .lb-ghost {
-  position: fixed; z-index: 70; pointer-events: none; display: flex; align-items: center; padding: 0 0.6rem;
+  position: fixed; z-index: 90; pointer-events: none; display: flex; align-items: center; padding: 0 0.6rem;
   color: var(--ivory); font: 600 1rem var(--sans); white-space: nowrap; overflow: hidden; transform-origin: top left;
   background: rgba(30, 25, 19, 0.85); border-radius: 0.6rem;
 }
 .lb-ghost-num { font-family: var(--serif); font-size: 3.2rem; font-variant-numeric: tabular-nums; background: none; justify-content: center; transform-origin: top right; }
+.lb-ghost-cer { font: italic 500 clamp(1.8rem, 7vw, 2.6rem) var(--serif); background: none; justify-content: center; padding: 0; }
+
+/* --- ceremonies (WSHED-47): engage + bow ---------------------------------- */
+.lb-ceremony {
+  position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at 50% 40%, rgba(38, 32, 26, 0.96), rgba(25, 20, 16, 0.97));
+  opacity: 0; transition: opacity 160ms ease-out; cursor: pointer; -webkit-tap-highlight-color: transparent; user-select: none;
+}
+.lb-ceremony.in { opacity: 1; }
+.lb-ceremony.out { opacity: 0; transition: opacity 240ms ease-in; pointer-events: none; }
+.lb-cer-body { position: relative; display: flex; flex-direction: column; align-items: center; gap: 0.45rem; text-align: center; padding: 0 1.5rem; max-width: 100%; }
+.lb-cer-ring {
+  position: absolute; left: 50%; top: 50%; width: 14rem; height: 14rem; margin: -7rem 0 0 -7rem; border-radius: 50%;
+  border: 2px solid var(--brass); opacity: 0; animation: cer-ring 900ms cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+}
+.lb-cer-ring.two { animation-delay: 140ms; border-color: var(--brass-bright); border-width: 1px; }
+@keyframes cer-ring { 0% { transform: scale(0.12); opacity: 0.95; } 100% { transform: scale(2); opacity: 0; } }
+.lb-cer-type { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.7rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ivory-dim); animation: cer-rise 320ms ease-out both; }
+.lb-cer-goal { font: italic 500 clamp(1.8rem, 7vw, 2.6rem) var(--serif); color: var(--ivory); line-height: 1.15; max-width: 100%; overflow-wrap: anywhere; animation: cer-rise 420ms cubic-bezier(0.2, 0.9, 0.3, 1.1) 60ms both; }
+.lb-cer-clock { font: 500 1.7rem var(--serif); font-variant-numeric: tabular-nums; color: var(--brass); margin-top: 0.3rem; animation: cer-rise 320ms ease-out 240ms both; }
+@keyframes cer-rise { from { transform: translateY(18px); opacity: 0; } to { transform: none; opacity: 1; } }
+.lb-cer-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.lb-cer-bloom {
+  position: absolute; left: 50%; top: 45%; width: 24rem; height: 24rem; margin: -12rem 0 0 -12rem; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgba(201, 163, 92, 0.38), rgba(201, 163, 92, 0) 62%); animation: cer-bloom 1500ms ease-out forwards;
+}
+@keyframes cer-bloom { 0% { transform: scale(0.4); opacity: 0; } 30% { opacity: 1; } 100% { transform: scale(1.35); opacity: 0; } }
+.lb-cer-num { font: 500 clamp(4.2rem, 19vw, 6.4rem) var(--serif); font-variant-numeric: tabular-nums; color: var(--ivory); line-height: 1; animation: cer-pop 560ms cubic-bezier(0.2, 0.9, 0.3, 1.15) both; }
+.lb-cer-num small { font-size: 0.36em; font-style: italic; color: var(--brass); margin-left: 0.18em; }
+@keyframes cer-pop { from { transform: scale(0.6); opacity: 0; } to { transform: none; opacity: 1; } }
+.lb-cer-on { font: italic 1.25rem var(--serif); color: var(--ivory-dim); margin-top: 0.4rem; animation: cer-rise 320ms ease-out 260ms both; }
+.lb-cer-on em { color: var(--ivory); }
+.lb-cer-sub { font-size: 0.85rem; color: var(--ivory-dim); animation: cer-rise 320ms ease-out 460ms both; }
+.lb-cer-sub b { color: var(--ivory); font-weight: 500; font-variant-numeric: tabular-nums; }
+.lb-cer-hint { position: absolute; left: 0; right: 0; bottom: calc(1.6rem + env(safe-area-inset-bottom, 0)); text-align: center; font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ivory-dim); opacity: 0; animation: cer-fade 400ms ease-out 1000ms forwards; }
+@keyframes cer-fade { to { opacity: 0.7; } }
 .lb-tick { animation: felt-tick 600ms ease-out; }
 @keyframes felt-tick { 0% { box-shadow: inset 4px 0 0 var(--felt); background: rgba(176, 70, 60, 0.18); } 100% { box-shadow: inset 4px 0 0 transparent; background: transparent; } }
 .lb-slide-in { animation: slide-in 120ms ease-out; }
@@ -1207,4 +1244,7 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
   .lb-stamp, .lb-trow.lb-stamp, .lb-row.lb-stamp, .lb-noteitem.lb-stamp, .lb-hero-note.lb-stamp, .lb-tick, .lb-slide-in, .lb-week i.lb-glow, .lb-trow.live .lb-type { animation: none; }
   .lb-hero-play, .lb-addnote, .lb-modal-save { transition: none; }
   .lb-hero-goal.lb-arriving { opacity: 1; }
+  .lb-ceremony, .lb-ceremony.out { transition: none; }
+  .lb-cer-ring, .lb-cer-bloom { display: none; }
+  .lb-cer-type, .lb-cer-goal, .lb-cer-clock, .lb-cer-num, .lb-cer-on, .lb-cer-sub, .lb-cer-hint { animation: none; opacity: 1; transform: none; }
 }

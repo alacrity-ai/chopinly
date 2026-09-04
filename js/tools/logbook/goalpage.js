@@ -4,6 +4,8 @@ import { esc, fmtMin, ago, fmtDate, relDay, longPress, plural } from "./util.js"
 import { renderNotes } from "./notes.js";
 import { sparkline } from "./sparkline.js";
 import { haptic } from "./motion.js";
+import { icon } from "../../lib/icons.js";
+import { engage } from "./ceremony.js";
 
 export function renderGoalPage(root, id, ctx) {
   const g = logbook.goal(id);
@@ -26,7 +28,7 @@ export function renderGoalPage(root, id, ctx) {
   root.innerHTML = `
     <section class="logbook lb-goalpage">
       <div class="ss-head lb-gp-head">
-        <button class="tap lb-back" id="lb-back" aria-label="back to goals">&larr;</button>
+        <button class="icon-btn lb-back" id="lb-back" aria-label="back to goals">${icon("back")}</button>
         <div class="ss-head-title">${isRunning ? "practicing now" : g.status}</div>
         <button class="lb-gp-type ${t.cls}" id="lb-gp-type" ${builtin ? "disabled" : ""} aria-label="type: ${t.label}${builtin ? "" : " — tap to change"}"><i class="lb-type ${t.cls}" aria-hidden="true">${t.glyph}</i>${t.label}</button>
       </div>
@@ -61,7 +63,8 @@ export function renderGoalPage(root, id, ctx) {
   root.querySelector("#lb-back").addEventListener("click", () => ctx.nav("/goals"));
   root.querySelector("#lb-gp-today")?.addEventListener("click", () => ctx.nav(""));
   root.querySelector("#lb-gp-practice")?.addEventListener("click", () => {
-    logbook.start(id); haptic(); ctx.toast(`${g.name} — go`); ctx.nav("");
+    logbook.start(id); ctx.nav("");
+    engage({ goal: g, type: t, landOn: () => document.querySelector("#lb-hero-goal") });
   });
   if (!builtin) {
     const name = root.querySelector("#lb-gp-name");

@@ -3,8 +3,9 @@
 // solid read is stronger). Buttons stay text-free; meaning rides on
 // aria-label/title supplied by the caller.
 const P = {
-  back: `<path d="M14.5 5.5 8 12l6.5 6.5"/>`,
-  next: `<path d="M9.5 5.5 16 12l-6.5 6.5"/>`,
+  // back/next: a centred caret, heavier than the rest so it reads at a glance (WSHED-47)
+  back: `<path d="M15 5 8 12l7 7" stroke-width="2.9"/>`,
+  next: `<path d="M9 5l7 7-7 7" stroke-width="2.9"/>`,
   play: `<path d="M8.2 5.4v13.2c0 .8.9 1.3 1.6.9l10-6.6c.6-.4.6-1.4 0-1.8l-10-6.6c-.7-.4-1.6.1-1.6.9Z" fill="currentColor" stroke="none"/>`,
   stop: `<rect x="6.8" y="6.8" width="10.4" height="10.4" rx="1.6" fill="currentColor" stroke="none"/>`,
   hear: `<path d="M4.5 9.5v5h3.2l4.3 3.6V5.9L7.7 9.5H4.5Z" fill="currentColor" stroke="none"/>

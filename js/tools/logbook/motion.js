@@ -19,13 +19,13 @@ export function stamp(el) {
  * The whoosh: a clone of `fromEl`'s text lifts off its position and lands on
  * `toEl` (FLIP), then `toEl` is revealed. Resolves when it lands.
  */
-export function whoosh(fromEl, toEl) {
+export function whoosh(fromEl, toEl, cls = "") {
   if (!fromEl || !toEl) return Promise.resolve();
   if (reduced()) { toEl.classList.add("lb-arrived"); return Promise.resolve(); }
   const a = fromEl.getBoundingClientRect(), b = toEl.getBoundingClientRect();
   if (!a.width || !b.width) { toEl.classList.add("lb-arrived"); return Promise.resolve(); }
   const ghost = document.createElement("div");
-  ghost.className = "lb-ghost";
+  ghost.className = `lb-ghost ${cls}`;
   ghost.textContent = fromEl.textContent.trim();
   Object.assign(ghost.style, { left: `${a.left}px`, top: `${a.top}px`, width: `${a.width}px`, height: `${a.height}px` });
   document.body.append(ghost);
