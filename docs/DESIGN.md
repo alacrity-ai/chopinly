@@ -1,10 +1,10 @@
-# Woodshed — design (WSHED-1)
+# Chopinly — design (WSHED-1)
 
-**Woodshed** (jazz slang for the place you go to practice) is a piano practice
-assistant PWA. Tool #1 is a metronome. The design below is the contract the
+**Chopinly** (renamed from *Woodshed*, jazz slang for the place you go to practice,
+on 2026-09-04 — WSHED-46) is a piano practice assistant PWA. Tool #1 is a metronome. The design below is the contract the
 implementation follows.
 
-- Live host: `metronome.apps.lalalimited.com` (Cloudflare Pages)
+- Live host: `chopinly.com` (Cloudflare Pages; legacy alias `metronome.apps.lalalimited.com`)
 - Repo: `~/lets-get-rich/woodshed` · persona `leifktaylor` (Alacrity)
 - Audience: a pianist with the phone propped on the music desk. One job:
   a rock-steady, pleasant beat with zero friction.

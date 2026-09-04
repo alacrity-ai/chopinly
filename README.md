@@ -1,4 +1,4 @@
-# Woodshed — practice assistant
+# Chopinly — practice assistant
 
 A piano practice assistant PWA. Tools so far: a **metronome** (sample-accurate
 Web Audio scheduling, four synthesized click voices, tap tempo, per-beat
@@ -16,7 +16,7 @@ again, and a history that reconstructs what you actually did. Sight-singing
 results and metronome tempos log themselves. Installable and fully offline;
 tools live at `#/<tool-id>` behind the navbar dropdown.
 
-**Live:** https://metronome.apps.lalalimited.com
+**Live:** https://chopinly.com (legacy alias: https://metronome.apps.lalalimited.com)
 
 ## Run locally
 
@@ -43,5 +43,7 @@ palette, and audio-engine design: [`docs/DESIGN.md`](docs/DESIGN.md).
 ## Deploy
 
 Cloudflare Pages on the shared LaLa Solutions account
-(`wrangler pages deploy . --project-name woodshed`); custom domain
-`metronome.apps.lalalimited.com`. See `claude_ops/docs/sops/cloudflare-deploys.md`.
+(`wrangler pages deploy . --project-name woodshed` — the Pages project keeps its
+original name); custom domains `chopinly.com` + `www.chopinly.com` (zone
+`chopinly.com`) and the legacy alias `metronome.apps.lalalimited.com`. See
+`claude_ops/docs/sops/cloudflare-deploys.md`.
