@@ -27,15 +27,23 @@ export function buildUI(root) {
   };
 
   // --- shared chrome ----------------------------------------------------------
-  const strip = (which) => `
-    <nav class="segmented lb-strip" aria-label="logbook sections">
-      <button aria-pressed="${which === "today"}" data-go="">today</button>
-      <button aria-pressed="${which === "goals"}" data-go="/goals">goals</button>
-      <button aria-pressed="${which === "history"}" data-go="/history">history</button>
-    </nav>`;
-  // Delegated so it survives screens re-rendering themselves.
-  const onRootClick = (e) => { const b = e.target.closest(".lb-strip button"); if (b && root.contains(b)) nav(b.dataset.go); };
-  root.addEventListener("click", onRootClick);
+  // The today · goals · history strip lives in the shell's nav slot so it is
+  // pinned with the header on every screen (WSHED-42).
+  const slot = document.getElementById("nav-slot");
+  const stripEl = document.createElement("nav");
+  stripEl.className = "segmented lb-strip";
+  stripEl.setAttribute("aria-label", "logbook sections");
+  stripEl.innerHTML = `
+      <button data-go="">today</button>
+      <button data-go="/goals">goals</button>
+      <button data-go="/history">history</button>`;
+  stripEl.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) nav(b.dataset.go); });
+  slot?.replaceChildren(stripEl);
+  const setStrip = (which) => {
+    const on = { "": "today", "/goals": "goals", "/history": "history" };
+    for (const b of stripEl.querySelectorAll("button")) b.setAttribute("aria-pressed", String(on[b.dataset.go] === which));
+  };
+  const strip = () => ""; // screens no longer render their own strip
 
   /** One "practiced" row: glyph · name · minutes. Used by Today and History. */
   const goalRow = (r) => {
@@ -53,7 +61,7 @@ export function buildUI(root) {
   const wireGoalRows = (el) => {
     for (const b of el.querySelectorAll(".lb-trow-main")) longPress(b,
       () => nav(`/goals/${b.dataset.open}`),
-      async () => { haptic(); await openQuickNote(b.dataset.open); render(); });
+      async () => { haptic(); const n = await openQuickNote(b.dataset.open); render(); if (n) stamp(root.querySelector(`.lb-trow[data-id="${b.dataset.open}"]`)); });
   };
 
   const ctx = { root, nav, render, toast, strip, goalRow, wireGoalRows, openPicker, openCreate, openQuickNote, onTick: (fn) => tickFns.add(fn) };
@@ -62,11 +70,11 @@ export function buildUI(root) {
   function render() {
     tickFns.clear();
     const path = route();
-    if (path === "goals") renderLibrary(root, ctx, libState);
-    else if (path.startsWith("goals/")) renderGoalPage(root, path.slice(6), ctx);
-    else if (path === "history") renderHistory(root, ctx, histState);
-    else if (path === "log") { history.replaceState(null, "", "#/logbook"); renderToday(); }
-    else renderToday();
+    if (path === "goals") { setStrip("goals"); renderLibrary(root, ctx, libState); }
+    else if (path.startsWith("goals/")) { setStrip("goals"); renderGoalPage(root, path.slice(6), ctx); }
+    else if (path === "history") { setStrip("history"); renderHistory(root, ctx, histState); }
+    else if (path === "log") { history.replaceState(null, "", "#/logbook"); setStrip("today"); renderToday(); }
+    else { setStrip("today"); renderToday(); }
     syncTicker();
   }
 
@@ -83,7 +91,6 @@ export function buildUI(root) {
 
     root.innerHTML = `
       <section class="logbook lb-today">
-        ${strip("today")}
         <div class="lb-date">${fmtDate(Date.now(), { weekday: "long", month: "long", day: "numeric" })}</div>
         ${run ? `
         <div class="lb-hero running">
@@ -119,7 +126,11 @@ export function buildUI(root) {
     root.querySelector("#lb-switch")?.addEventListener("click", switchGoal);
     root.querySelector("#lb-hero-goal")?.addEventListener("click", () => nav(`/goals/${run.goal.id}`));
     root.querySelector(".lb-hero-note-body")?.addEventListener("click", () => nav(`/goals/${run.goal.id}`));
-    root.querySelector("#lb-hero-addnote")?.addEventListener("click", async () => { await openQuickNote(run.goal.id); render(); });
+    root.querySelector("#lb-hero-addnote")?.addEventListener("click", async () => {
+      const n = await openQuickNote(run.goal.id);
+      render();
+      if (n) stamp(root.querySelector(".lb-hero-note"));
+    });
     wireGoalRows(root);
 
     if (run) {
@@ -208,7 +219,7 @@ export function buildUI(root) {
       clearInterval(ticker);
       window.removeEventListener("hashchange", onHash);
       document.removeEventListener("keydown", onKey);
-      root.removeEventListener("click", onRootClick);
+      slot?.replaceChildren();
       off();
     },
   };
