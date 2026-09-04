@@ -10,6 +10,7 @@ export default {
   id: "logbook",
   name: "Logbook",
   glyph: icon("pencil"),
+  category: "logbook",
   mount(root, ctx) {
     ui = buildUI(root, ctx);
   },

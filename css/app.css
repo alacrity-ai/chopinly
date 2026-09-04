@@ -130,7 +130,19 @@ body {
 .picker-btn .chevron { color: var(--ivory-dim); font-size: 0.75em; }
 .picker-btn[aria-expanded="true"] { border-color: var(--brass); }
 
-.picker-glyph { color: var(--brass); }
+/* One fixed box per glyph so labels line up whatever the icon's natural size. */
+.picker-glyph {
+  color: var(--brass);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  flex: none;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.picker-glyph svg, .picker-glyph .ic { width: 1.1rem; height: 1.1rem; }
 
 .picker-menu {
   position: absolute;

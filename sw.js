@@ -1,6 +1,6 @@
 // Network-first, cache-fallback. Installable + fully offline, but never serves
 // a stale shell when the network is up (see docs/DESIGN.md §5).
-const CACHE = "woodshed-v12";
+const CACHE = "woodshed-v13";
 const SHELL = [
   "/",
   "/css/app.css",
