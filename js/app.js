@@ -1,6 +1,6 @@
 // Shell: navbar with a tool dropdown (rendered from the registry), hash
 // routing (#/<tool-id>), screen wake-lock, service-worker registration.
-import { TOOLS } from "./registry.js";
+import { TOOLS, DEFAULT_TOOL } from "./registry.js";
 import { getAudio } from "./lib/audio.js";
 import { makeStore } from "./lib/store.js";
 import { logbook } from "./lib/logbook.js";
@@ -135,8 +135,8 @@ window.addEventListener("hashchange", () => {
 
 mount(
   fromHash()
-    ?? TOOLS.find((t) => t.id === shellStore.get("activeTool", TOOLS[0].id))
-    ?? TOOLS[0]
+    ?? TOOLS.find((t) => t.id === shellStore.get("activeTool", DEFAULT_TOOL.id))
+    ?? DEFAULT_TOOL
 );
 
 if ("serviceWorker" in navigator) {
