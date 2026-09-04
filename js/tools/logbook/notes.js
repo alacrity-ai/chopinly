@@ -1,30 +1,12 @@
-// The notes thread — a goal's dated, append-only lines — and the quick-note
-// sheet used from the running hero and Today rows (docs/LOGBOOK_V2_DESIGN.md §3.3).
+// Notes — a goal's dated, append-only lines. Writing one always happens in a
+// dedicated modal (a few lines of textarea, cancel + save) opened from the
+// goal page's "add a note" button, the running hero's "+ note", or a
+// long-press on a Today row (docs/LOGBOOK_V2_DESIGN.md §3.3, WSHED-42).
 import { logbook } from "../../lib/logbook.js";
-import { esc, longPress, relDay, openSheet, finePointer, toast } from "./util.js";
-import { slideIn, haptic } from "./motion.js";
+import { esc, longPress, relDay, openSheet, toast } from "./util.js";
+import { slideIn, stamp, haptic } from "./motion.js";
 
-const PLACEHOLDER = "add a note — fingering, a spot, what to do next…";
-
-/** A textarea that grows with its text; Enter saves, Shift+Enter is a newline. */
-function composer(onSave, { autofocus = false } = {}) {
-  const form = document.createElement("form");
-  form.className = "lb-composer";
-  form.innerHTML = `
-    <textarea class="lb-input lb-notebox" rows="1" placeholder="${PLACEHOLDER}" aria-label="new note" maxlength="2000"></textarea>
-    <button class="lb-notesave" type="submit" aria-label="save note">save</button>
-    <p class="lb-err" role="alert"></p>`;
-  const ta = form.querySelector("textarea"), err = form.querySelector(".lb-err");
-  const grow = () => { ta.style.height = "auto"; ta.style.height = `${Math.min(220, ta.scrollHeight)}px`; };
-  ta.addEventListener("input", grow);
-  ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    try { onSave(ta.value); ta.value = ""; grow(); err.textContent = ""; } catch (ex) { err.textContent = ex.message; }
-  });
-  if (autofocus) setTimeout(() => ta.focus(), 50);
-  return form;
-}
+const PLACEHOLDER = "fingering, a trouble spot, a tempo, what to do next time…";
 
 function noteItem(n) {
   const li = document.createElement("li");
@@ -34,9 +16,13 @@ function noteItem(n) {
   return li;
 }
 
-/** Render composer + thread for a goal into `container`. Re-renders itself on save/delete. */
-export function renderNotes(container, goalId, { autofocus = false } = {}) {
+/** "add a note" button + the thread. Re-renders itself on save/delete. */
+export function renderNotes(container, goalId) {
   container.innerHTML = "";
+  const btn = document.createElement("button");
+  btn.className = "lb-addnote";
+  btn.type = "button";
+  btn.innerHTML = `<span class="lb-addnote-glyph" aria-hidden="true">✎</span><span>add a note</span>`;
   const list = document.createElement("ul");
   list.className = "lb-notes";
   const draw = () => {
@@ -51,18 +37,20 @@ export function renderNotes(container, goalId, { autofocus = false } = {}) {
       list.append(li);
     }
   };
-  const form = composer((body) => {
-    logbook.addNote(goalId, body);
+  btn.addEventListener("click", async () => {
     haptic();
+    const n = await openQuickNote(goalId);
+    if (!n) return;
     draw();
-    slideIn(list.firstElementChild);
-  }, { autofocus });
-  container.append(form, list);
+    const first = list.firstElementChild;
+    slideIn(first); stamp(first);
+  });
+  container.append(btn, list);
   draw();
   return { refresh: draw };
 }
 
-/** Quick note in a sheet. Resolves with the note or null. */
+/** The note modal. Resolves with the saved note, or null on cancel. */
 export function openQuickNote(goalId) {
   const g = logbook.goal(goalId);
   if (!g) return Promise.resolve(null);
@@ -70,11 +58,34 @@ export function openQuickNote(goalId) {
   const sheet = openSheet({
     title: g.name,
     cls: "lb-note-wrap",
-    html: last ? `<p class="lb-lastnote"><span class="lb-dim">last note · ${esc(relDay(last.createdAt))}</span><br>${esc(last.body)}</p>` : "",
+    html: `
+      ${last ? `<p class="lb-lastnote"><span class="lb-dim">last note · ${esc(relDay(last.createdAt))}</span><br>${esc(last.body)}</p>` : ""}
+      <form class="lb-notemodal" id="lb-notemodal">
+        <textarea class="lb-input lb-notearea" id="lb-notearea" rows="4" placeholder="${PLACEHOLDER}" aria-label="note" maxlength="2000"></textarea>
+        <p class="lb-err" id="lb-note-err" role="alert"></p>
+        <div class="lb-modal-acts">
+          <button type="button" class="lb-modal-cancel" id="lb-note-cancel">cancel</button>
+          <button type="submit" class="lb-modal-save" id="lb-note-save">save</button>
+        </div>
+      </form>`,
   });
+  const { body, close, closed } = sheet;
+  const ta = body.querySelector("#lb-notearea"), err = body.querySelector("#lb-note-err");
   let result = null;
-  const form = composer((body) => { result = logbook.addNote(goalId, body); haptic(); toast("noted"); sheet.close(); }, { autofocus: true });
-  sheet.body.append(form);
-  void finePointer;
-  return sheet.closed.then(() => result);
+  const grow = () => { ta.style.height = "auto"; ta.style.height = `${Math.min(320, Math.max(ta.scrollHeight, 96))}px`; };
+  ta.addEventListener("input", grow);
+  ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); body.querySelector("#lb-notemodal").requestSubmit(); } });
+  body.querySelector("#lb-note-cancel").addEventListener("click", close);
+  body.querySelector("#lb-notemodal").addEventListener("submit", (e) => {
+    e.preventDefault();
+    try {
+      result = logbook.addNote(goalId, ta.value);
+      haptic(18);
+      body.querySelector("#lb-note-save").classList.add("lb-saved");
+      toast("noted");
+      setTimeout(close, 120);
+    } catch (ex) { err.textContent = ex.message; ta.focus(); }
+  });
+  setTimeout(() => ta.focus(), 60);
+  return closed.then(() => result);
 }

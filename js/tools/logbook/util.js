@@ -4,22 +4,28 @@
 export const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-/** Tap vs long-press (≥ 500 ms) on one element, pointer-agnostic. */
+/**
+ * Tap vs long-press (≥ 500 ms) on one element, pointer-agnostic.
+ * Only the timer firing marks a hold. Leaving/cancelling merely stops the
+ * timer — touch browsers fire pointerleave right after pointerup and before
+ * click, so treating it as a cancelled tap swallowed every real tap (WSHED-42).
+ */
 export function longPress(el, onTap, onHold, ms = 500) {
   let timer = 0, held = false;
   const down = (e) => {
     if (e.button && e.button !== 0) return;
     held = false;
-    timer = setTimeout(() => { held = true; onHold(); }, ms);
+    clearTimeout(timer);
+    timer = setTimeout(() => { held = true; onHold?.(); }, ms);
   };
-  const up = () => { clearTimeout(timer); };
-  const cancel = () => { clearTimeout(timer); held = true; };
+  const stop = () => { clearTimeout(timer); };
   el.addEventListener("pointerdown", down);
-  el.addEventListener("pointerup", up);
-  el.addEventListener("pointerleave", cancel);
-  el.addEventListener("pointercancel", cancel);
+  el.addEventListener("pointerup", stop);
+  el.addEventListener("pointerleave", stop);
+  el.addEventListener("pointercancel", stop);
   el.addEventListener("click", (e) => { if (held) { e.preventDefault(); held = false; return; } onTap?.(e); });
   el.addEventListener("contextmenu", (e) => e.preventDefault());
+  el.style.touchAction = "manipulation";
 }
 
 /** 95 → "1h 35m", 45 → "45m", 0 → "0m". */

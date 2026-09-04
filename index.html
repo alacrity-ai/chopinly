@@ -15,11 +15,14 @@
 </head>
 <body>
   <header class="navbar">
-    <div class="brand">
-      <h1 class="wordmark">Woodshed</h1>
-      <p class="tagline">practice assistant</p>
+    <div class="navbar-row">
+      <div class="brand">
+        <h1 class="wordmark">Woodshed</h1>
+        <p class="tagline">practice assistant</p>
+      </div>
+      <nav class="tool-picker" id="tool-picker" aria-label="tools"></nav>
     </div>
-    <nav class="tool-picker" id="tool-picker" aria-label="tools"></nav>
+    <div class="nav-slot" id="nav-slot"></div>
   </header>
   <main id="tool-root"></main>
   <noscript><p class="noscript">Woodshed needs JavaScript — the metronome is built on the Web Audio clock.</p></noscript>

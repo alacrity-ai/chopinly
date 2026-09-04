@@ -36,7 +36,6 @@ export function renderLibrary(root, ctx, state) {
 
   root.innerHTML = `
     <section class="logbook lb-library">
-      ${ctx.strip("goals")}
       <div class="lb-libhead">
         <input class="lb-input lb-search" id="lb-lib-q" type="search" placeholder="search goals…" value="${esc(q)}" autocomplete="off" aria-label="search goals">
         <button class="lb-addgoal" id="lb-lib-add" aria-label="new goal">+ goal</button>

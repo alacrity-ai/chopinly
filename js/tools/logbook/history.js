@@ -17,7 +17,6 @@ export function renderHistory(root, ctx, state) {
 
   root.innerHTML = `
     <section class="logbook lb-history">
-      ${ctx.strip("history")}
       <div class="ss-head lb-month-head">
         <button class="tap lb-back" id="lb-prev" aria-label="previous month">&#9664;</button>
         <div class="lb-month-title">${MONTHS[m]} ${y}</div>
