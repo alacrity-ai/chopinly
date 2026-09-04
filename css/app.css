@@ -41,6 +41,10 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html { color-scheme: dark; }
+/* No pull-to-refresh: the pages are shorter than the screen, so every downward
+   drag is an overscroll at the top (WSHED-45). Sheets and lists scroll inside
+   their own containers and are unaffected. */
+html, body { overscroll-behavior-y: none; }
 
 body {
   min-height: 100dvh;
