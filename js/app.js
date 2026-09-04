@@ -97,8 +97,8 @@ const chip = document.createElement("a");
 chip.className = "session-chip";
 chip.href = "#/logbook";
 chip.hidden = true;
-chip.setAttribute("aria-label", "practice session running — open the logbook");
-chip.innerHTML = `<span class="session-dot" aria-hidden="true"></span><span class="session-time">0:00</span>`;
+chip.setAttribute("aria-label", "practicing — open the logbook");
+chip.innerHTML = `<span class="session-dot" aria-hidden="true"></span><span class="session-time">0:00</span><span class="session-goal"></span>`;
 picker.before(chip);
 let chipTimer = 0;
 function fmtElapsed(ms) {
@@ -108,18 +108,22 @@ function fmtElapsed(ms) {
 }
 function syncChip() {
   clearInterval(chipTimer);
-  const c = logbook.clock();
-  chip.hidden = !c;
-  if (!c) return;
+  const r = logbook.running();
+  chip.hidden = !r;
+  if (!r) return;
   const time = chip.querySelector(".session-time");
-  const tick = () => { time.textContent = fmtElapsed(Date.now() - c.startedAt); };
+  const dot = chip.querySelector(".session-dot");
+  dot.className = `session-dot t-${r.goal?.type ?? "piece"}`;
+  chip.querySelector(".session-goal").textContent = r.goal?.name ?? "";
+  chip.title = r.goal?.name ?? "";
+  const tick = () => { time.textContent = fmtElapsed(Date.now() - r.segment.startedAt); };
   tick();
   chipTimer = setInterval(tick, 1000);
 }
 logbook.on(syncChip);
 syncChip();
 
-// `#/metronome?bpm=96` and `#/logbook/log?goal=…` carry a query; match on the
+// `#/metronome?bpm=96` carries a query; match on the
 // path part only.
 const hashPath = () => location.hash.split("?")[0];
 const fromHash = () =>
