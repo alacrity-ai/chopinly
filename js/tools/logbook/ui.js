@@ -11,7 +11,8 @@ import { openQuickNote } from "./notes.js";
 import { renderLibrary } from "./library.js";
 import { renderGoalPage } from "./goalpage.js";
 import { renderHistory } from "./history.js";
-import { whoosh, settle, tickRow, stamp, glow, haptic } from "./motion.js";
+import { whoosh, tickRow, stamp, glow, haptic } from "./motion.js";
+import { engage, bow } from "./ceremony.js";
 
 export function buildUI(root) {
   let ticker = 0;
@@ -158,7 +159,7 @@ export function buildUI(root) {
     if (!r) return;
     logbook.start(r.goal.id);
     render();
-    await whoosh(r.rowEl, root.querySelector("#lb-hero-goal"));
+    await engage({ goal: r.goal, type: TYPES[r.goal.type] ?? TYPES.other, landOn: () => root.querySelector("#lb-hero-goal") });
     if (r.created) stamp(root.querySelector(`.lb-trow[data-id="${r.goal.id}"]`));
   }
   async function switchGoal() {
@@ -172,18 +173,16 @@ export function buildUI(root) {
     await whoosh(r.rowEl, root.querySelector("#lb-hero-goal"));
     stamp(root.querySelector(`.lb-trow[data-id="${r.goal.id}"]`));
   }
-  function stop() {
+  async function stop() {
     const run = logbook.running();
     if (!run) { render(); return; }
-    const numeral = root.querySelector("#lb-elapsed"), row = root.querySelector(`.lb-trow[data-id="${run.goal.id}"]`);
     const seg = logbook.stop();
-    haptic();
-    settle(numeral, row);
     render();
-    if (seg) {
-      tickRow(root.querySelector(`.lb-trow[data-id="${run.goal.id}"]`));
-      toast(`${fmtMin(Math.round((seg.endedAt - seg.startedAt) / 60000))} on ${run.goal.name}`);
-    } else toast("under 10 seconds — not kept");
+    if (!seg) { haptic(); toast("under 10 seconds — not kept"); return; }
+    const rep = logbook.dayReport(logbook.today());
+    const rowFor = () => root.querySelector(`.lb-trow[data-id="${run.goal.id}"]`);
+    await bow({ goal: run.goal, ms: seg.endedAt - seg.startedAt, todayMinutes: rep.goals.find((r) => r.goal.id === run.goal.id)?.minutes ?? 0, streak: logbook.metrics.streak(), landOn: rowFor });
+    tickRow(rowFor());
   }
   async function addTime() {
     const r = await openPicker({ mode: "addtime" });

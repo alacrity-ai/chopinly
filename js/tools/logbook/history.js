@@ -1,6 +1,7 @@
 // History — calendar, a day's report, this month by goal (docs/LOGBOOK_V2_DESIGN.md §3.4).
 import { logbook, TYPES } from "../../lib/logbook.js";
 import { esc, fmtMin, fmtDate } from "./util.js";
+import { icon } from "../../lib/icons.js";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -18,9 +19,9 @@ export function renderHistory(root, ctx, state) {
   root.innerHTML = `
     <section class="logbook lb-history">
       <div class="ss-head lb-month-head">
-        <button class="tap lb-back" id="lb-prev" aria-label="previous month">&#9664;</button>
+        <button class="icon-btn lb-back" id="lb-prev" aria-label="previous month">${icon("back")}</button>
         <div class="lb-month-title">${MONTHS[m]} ${y}</div>
-        <button class="tap lb-back" id="lb-next-m" aria-label="next month">&#9654;</button>
+        <button class="icon-btn lb-back" id="lb-next-m" aria-label="next month">${icon("next")}</button>
       </div>
       <div class="lb-cal" role="grid" aria-label="days practiced">
         ${["M", "T", "W", "T", "F", "S", "S"].map((d) => `<span class="lb-cal-h">${d}</span>`).join("")}

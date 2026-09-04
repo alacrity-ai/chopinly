@@ -413,6 +413,26 @@ Sound: **none** by default. The metronome owns audio; a practice tracker that
 clicks is a nuisance next to a piano. (A future "tick on start" setting can
 reuse the metronome's wood voice.)
 
+### 6.1 Ceremonies — the two moments that stop you (WSHED-47, 2026-09-04)
+
+Leif's brief: the start and stop flourishes should be *pronounced, even
+momentarily blocking, so we can enjoy their full effect* — "practice engaged"
+on choosing a goal, "you worked toward a goal for a length of time" on stop.
+No infantilising copy; excitement is carried by feel. `js/tools/logbook/ceremony.js`.
+
+Both are full-screen ebony curtains on `body` that swallow input, auto-dismiss,
+and — after a minimum hold — dismiss on tap / Esc / Enter. Silent. Palette only.
+
+| Ceremony | When | What happens | Timing | Haptic |
+|---|---|---|---|---|
+| **Engage** | after the picker closes on Play (Today hero, metronome "practice", goal page "practice this") | curtain; a brass ring ripples out from the centre like a downbeat (a second, thinner ring 140 ms behind); the type label, then the goal name in large italic Fraunces, then `0:00` in brass rise in sequence. On exit the name **whooshes** down onto the running hero so the moment lands on the clock | 1.1 s, tap-through after 0.4 s | `[18, 60, 36]` |
+| **Bow** | after Stop, when the segment is kept (≥ 10 s) | a brass bloom behind a huge serif numeral that **counts up** to the duration (`27min`, `1h 02m`, `40s`, ease-out so the last digits slow); **brass shavings** — 24…120 canvas particles, count scaling with minutes — burst upward from the numeral and settle under gravity; beneath: *on ‹goal›* and *today on this goal · streak*. A quiet "tap to continue" appears only if you linger past 1 s. On exit the numeral **settles** into the goal's row, which ticks felt-red | 2.2 s, tap-through after 0.6 s | `[30, 50, 30, 50, 90]` |
+
+Not ceremonies, on purpose: **Switch** (mid-practice; the page-turn whoosh
+stays), **add time** (bookkeeping, stamp + toast), and a stop under 10 s
+(toast "not kept"). Reduced motion: both curtains are static, shorter
+(0.5 s / 1.2 s), no rings, bloom or particles.
+
 ## 7. Seams into the rest of Woodshed
 
 - **Shell chip** (`js/app.js`): shows `● 27:14 · Pathétique` (type dot,
