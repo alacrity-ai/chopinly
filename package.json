@@ -1,5 +1,5 @@
 {
-  "name": "woodshed",
+  "name": "chopinly",
   "private": true,
   "type": "module",
   "description": "Piano practice assistant PWA — no build step, no dependencies",

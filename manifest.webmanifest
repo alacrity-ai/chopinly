@@ -1,6 +1,6 @@
 {
-  "name": "Woodshed — Practice Assistant",
-  "short_name": "Woodshed",
+  "name": "Chopinly — Practice Assistant",
+  "short_name": "Chopinly",
   "description": "A piano practice assistant. Tool one: a metronome that keeps honest time.",
   "start_url": "/",
   "display": "standalone",
