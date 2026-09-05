@@ -4,6 +4,7 @@ import { TOOLS, DEFAULT_TOOL } from "./registry.js";
 import { getAudio } from "./lib/audio.js";
 import { makeStore } from "./lib/store.js";
 import { logbook } from "./lib/logbook.js";
+import { sync } from "./lib/sync.js";
 
 const root = document.getElementById("tool-root");
 const picker = document.getElementById("tool-picker");
@@ -138,6 +139,9 @@ mount(
     ?? TOOLS.find((t) => t.id === shellStore.get("activeTool", DEFAULT_TOOL.id))
     ?? DEFAULT_TOOL
 );
+
+// Accounts: confirm the session (if any) and sync (WSHED-52). Never blocks the shell.
+sync.start();
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js"));
