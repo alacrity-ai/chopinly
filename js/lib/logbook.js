@@ -25,6 +25,7 @@ export const TYPE_IDS = Object.keys(TYPES);
 export const displayName = (g) => (g?.composer ? `${g.composer} – ${g.name}` : (g?.name ?? ""));
 const cleanComposer = (c) => String(c ?? "").trim().slice(0, 80);
 export const BUILTIN_SIGHTSINGING = "sightsinging";
+export const BUILTIN_EARTRAINING = "eartraining";
 export const BUILTIN_FREEPRACTICE = "freepractice";
 /** Segments shorter than this are dropped when closed (an accidental tap). */
 export const MIN_SEGMENT_MS = 10_000;
@@ -373,15 +374,16 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
 
   // --- other tools writing in -----------------------------------------------
   /**
-   * A finished sight-singing run. With a goal running it becomes a note on
-   * that goal (you chose what you're practicing — don't double count);
-   * idle, it becomes an auto segment on the built-in Sight singing goal.
+   * A finished lesson run (sight singing, ear training). With a goal running
+   * it becomes a note on that goal (you chose what you're practicing — don't
+   * double count); idle, it becomes an auto segment on the lesson's built-in
+   * goal (`builtin` — Sight singing by default).
    */
-  function addAuto({ source, label, startedAt, endedAt = now() }) {
+  function addAuto({ source, label, startedAt, endedAt = now(), builtin = { id: BUILTIN_SIGHTSINGING, name: "Sight singing" } }) {
     const r = running();
     if (r) return { kind: "note", note: addNote(r.goal.id, label) };
     if (!Number.isFinite(startedAt)) throw new Error("addAuto needs startedAt");
-    const g = ensureBuiltin(BUILTIN_SIGHTSINGING, "Sight singing", "other");
+    const g = ensureBuiltin(builtin.id, builtin.name, "other");
     const s = touch("segment", { id: uuid(), goalId: g.id, startedAt: Math.min(startedAt, endedAt), endedAt, bpm: null, auto: { source, label } });
     doc.segments.push(s); save();
     return { kind: "segment", segment: s };

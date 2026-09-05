@@ -68,7 +68,7 @@ const meta = (extra = "") => `<p class="l-meta">Effective ${EFFECTIVE} · ${CO}$
 const about = `
     <h1>About Chopinly</h1>
     ${meta("")}
-    <p>Chopinly is a free practice assistant for musicians. You press play, say what you're working on, and it keeps an honest record of your practice: minutes on each piece and technique, a notes thread per goal, a calendar that shows the shape of your months, and an analytics page that tells you how you really spend your time. It also carries the tools you reach for while practicing: a metronome, a piano keyboard, a take recorder, a tuner, a pitch pipe and sight-singing books.</p>
+    <p>Chopinly is a free practice assistant for musicians. You press play, say what you're working on, and it keeps an honest record of your practice: minutes on each piece and technique, a notes thread per goal, a calendar that shows the shape of your months, and an analytics page that tells you how you really spend your time. It also carries the tools you reach for while practicing: a metronome, a piano keyboard, a take recorder, a tuner, a pitch pipe, sight-singing books and ear training.</p>
 
     <h2>What we believe</h2>
     <ul>

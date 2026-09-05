@@ -52,7 +52,7 @@ export function renderGoalPage(root, id, ctx) {
         <button class="lb-gp-type ${t.cls}" id="lb-gp-type" ${builtin ? "disabled" : ""} aria-label="type: ${t.label}${builtin ? "" : " — tap to change"}"><i class="lb-type ${t.cls}" aria-hidden="true">${t.glyph}</i>${t.label}</button>
       </div>
       ${builtin
-        ? `<h2 class="lb-gp-name-static">${esc(g.name)}</h2><p class="lb-dim lb-center lb-gp-builtin">${id === "sightsinging" ? "written automatically by the sight-singing books when nothing else is running." : "carried over from the first Logbook: daily minutes before time belonged to a goal."}</p>`
+        ? `<h2 class="lb-gp-name-static">${esc(g.name)}</h2><p class="lb-dim lb-center lb-gp-builtin">${id === "sightsinging" ? "written automatically by the sight-singing books when nothing else is running." : id === "eartraining" ? "written automatically by ear-training drills when nothing else is running." : "carried over from the first Logbook: daily minutes before time belonged to a goal."}</p>`
         : `<input class="lb-gp-name" id="lb-gp-name" value="${esc(g.name)}" aria-label="goal name" maxlength="120" autocomplete="off">
            ${g.type === "piece" ? `<input class="lb-gp-composer" id="lb-gp-composer" value="${esc(g.composer ?? "")}" placeholder="composer" aria-label="composer" maxlength="80" autocomplete="off" autocapitalize="words">` : ""}`}
       <div class="lb-stats">

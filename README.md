@@ -98,6 +98,10 @@ reward the wrong thing.
 - **Sight singing** — graded melodies on a real engraved staff, a tonic-chord
   count-in, then you sing them back and each note is judged for pitch and rhythm.
   Finished runs land in the logbook by themselves.
+- **Ear training** — pitch training first: hear a reference, hear one to five
+  notes (in a row or together), play them back on the keyboard and get a verdict
+  per press. A setup card of plain chips, from beginner to the whole piano;
+  runs land in the logbook like sight-singing lessons.
 - **Logbook** — goals, the clock, notes, today, history, analytics.
 
 ## Your data is yours
