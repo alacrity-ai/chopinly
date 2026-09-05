@@ -48,6 +48,22 @@ export function fitOctaves(width, minWhite = 25) {
   return Math.max(1, Math.min(4, Math.floor(width / (7 * minWhite))));
 }
 
+/** The octave count to start a player on: fat keys (≥ 40 px) — one on a phone, three on a desk. */
+export const autoOctaves = (width) => fitOctaves(width, 40);
+
+/**
+ * The biggest keyboard that fits a box: white-key width and height÷width ratio
+ * for `whites` keys in availW × availH px. Fills the width; when the box is
+ * short (a phone on its side) the keys get stubbier, down to `minRatio`, and
+ * then narrower — never taller or wider than the box.
+ */
+export function fitBox(whites, availW, availH, { maxWhite = 64, maxRatio = 5.2, minRatio = 3.2 } = {}) {
+  let white = Math.max(8, Math.min(availW / whites, maxWhite));
+  let ratio = Math.min(maxRatio, availH / white);
+  if (ratio < minRatio) { ratio = minRatio; white = Math.max(8, availH / minRatio); }
+  return { white, ratio };
+}
+
 /** The range for `octaves` octaves starting at the C `base`, top C included. */
 export const rangeFor = (base, octaves) => ({ from: toMidi(base), to: toMidi(base) + 12 * octaves });
 

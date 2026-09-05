@@ -87,7 +87,8 @@ reward the wrong thing.
   tempo onto it, so the goal page grows a tempo-over-time line.
 - **Piano** — a keyboard under your thumbs: multitouch chords and glides, a
   sustain pedal, velocity from where you strike the key, and the computer
-  keyboard plays it on a desk. Two octaves on a phone, up to four on a desk.
+  keyboard plays it on a desk. Pick one to four octaves and the keys grow to fill the screen, portrait or
+  landscape.
 - **Tuner** — hear where you are: microphone pitch detection with a cents dial.
 - **Pitch pipe** — any note, any octave, in tune, with A4 calibration.
 - **Sight singing** — graded melodies on a real engraved staff, a tonic-chord

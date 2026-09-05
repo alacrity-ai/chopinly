@@ -1617,11 +1617,10 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
    The view (js/lib/keyboard/keyboard.js) lays keys out in white-key units;
    --kb-whites turns them into percentages. Colors come from the skin's
    --key-* tokens; a pressed key blooms with the skin's accent. */
-.piano { width: min(100%, 60rem); display: flex; flex-direction: column; align-items: center; gap: clamp(0.8rem, 2.2vh, 1.3rem); }
+.piano { width: min(100%, 72rem); display: flex; flex-direction: column; align-items: center; gap: clamp(0.8rem, 2.2vh, 1.3rem); }
 .piano-read { min-height: 2.2rem; display: flex; align-items: center; justify-content: center; font-family: var(--serif); font-size: 1.35rem; color: var(--fg); font-variant-numeric: tabular-nums; }
 .piano-read-notes.dim { color: var(--fg-dim); }
-.piano-wrap .kb { max-height: 16rem; }
-.piano-wrap { width: min(100%, calc(var(--kb-whites, 15) * 3.4rem)); padding: 0.55rem 0.55rem 0.7rem; border-radius: 0.9rem; background: linear-gradient(180deg, var(--bg-raised), var(--bg-panel)); border: 1px solid var(--bg-edge); box-shadow: inset 0 2px 8px var(--shadow-soft); }
+.piano-wrap { width: fit-content; max-width: 100%; padding: 0.55rem 0.55rem 0.7rem; border-radius: 0.9rem; background: linear-gradient(180deg, var(--bg-raised), var(--bg-panel)); border: 1px solid var(--bg-edge); box-shadow: inset 0 2px 8px var(--shadow-soft); }
 /* Size: fills its host, or --kb-white-w (a CSS length per white key) fixes the width; --kb-ratio is white-key height ÷ width. Labels scale with the key (container units). */
 .kb { position: relative; container-type: inline-size; width: 100%; min-width: 0; aspect-ratio: var(--kb-whites, 15) / var(--kb-ratio, 5.2); touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
 .kb-key { position: absolute; top: 0; left: calc(var(--x) / var(--kb-whites) * 100%); width: calc(var(--w) / var(--kb-whites) * 100%); display: flex; align-items: flex-end; justify-content: center; padding-bottom: 0.4rem; transform-origin: top center; transition: transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 200ms, box-shadow 200ms; will-change: transform; }

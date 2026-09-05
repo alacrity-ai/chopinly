@@ -17,10 +17,14 @@ await page.evaluate(() => { localStorage.setItem("ws.shell.seen", "true"); local
 await page.goto(`${BASE}/?app=1&k=1#/keyboard`);
 await page.waitForSelector(".kb-key");
 
-await step("two octaves on a phone: 15 white keys, 10 black, C labels only, no widening", async () => {
+const fits = async () => { const r = await page.evaluate(() => { const k = document.querySelector(".kb").getBoundingClientRect(), p = document.querySelector(".piano-params").getBoundingClientRect(); return { l: k.left, r: k.right, b: k.bottom, pt: p.top, vw: innerWidth, vh: innerHeight, w: k.width }; }); if (r.l < 0 || r.r > r.vw + 0.5 || r.b > r.pt + 0.5 || r.b > r.vh) throw new Error("keyboard does not fit " + JSON.stringify(r)); return r; };
+
+await step("a phone starts on one fat octave: 8 white keys, 5 black, C labels only, fills the width, no widening", async () => {
   const n = await page.evaluate(() => ({ w: document.querySelectorAll(".kb-white").length, b: document.querySelectorAll(".kb-black").length, labels: [...document.querySelectorAll(".kb-label")].map((l) => l.textContent).filter(Boolean) }));
-  if (n.w !== 15 || n.b !== 10) throw new Error(JSON.stringify(n));
-  if (n.labels.join() !== "C4,C5,C6") throw new Error("labels " + n.labels.join());
+  if (n.w !== 8 || n.b !== 5) throw new Error(JSON.stringify(n));
+  if (n.labels.join() !== "C4,C5") throw new Error("labels " + n.labels.join());
+  const f = await fits();
+  if (f.w < f.vw * 0.8) throw new Error("should fill the width " + JSON.stringify(f));
   const black = await page.locator(".kb-black").first().boundingBox(), white = await page.locator(".kb-white").first().boundingBox();
   if (!(black.height < white.height * 0.75 && black.width < white.width)) throw new Error("black keys should be shorter and narrower");
   await noWiden();
@@ -59,20 +63,47 @@ await step("the computer keyboard plays: A = bottom C, K = the C above; chords h
 await step("octave shift moves the range and is remembered; sustain toggles", async () => {
   await page.click("#kb-up");
   await page.waitForFunction(() => document.querySelector(".kb-label")?.textContent === "C5");
-  if ((await page.textContent("#kb-range")).trim() !== "C5 – C7") throw new Error(await page.textContent("#kb-range"));
+  if ((await page.textContent("#kb-range")).trim() !== "C5 – C6") throw new Error(await page.textContent("#kb-range"));
   await page.click("#kb-sustain");
   if ((await page.getAttribute("#kb-sustain", "aria-pressed")) !== "true") throw new Error("pedal");
   await page.reload(); await page.waitForSelector(".kb-key");
-  if ((await page.textContent("#kb-range")).trim() !== "C5 – C7" || (await page.getAttribute("#kb-sustain", "aria-pressed")) !== "true") throw new Error("not remembered");
+  if ((await page.textContent("#kb-range")).trim() !== "C5 – C6" || (await page.getAttribute("#kb-sustain", "aria-pressed")) !== "true") throw new Error("not remembered");
   await page.click("#kb-down"); await page.click("#kb-sustain");
 });
 
 await step("labels: all / none", async () => {
   await page.click('#kb-labels [data-l="all"]');
-  if ((await page.$$eval(".kb-label", (els) => els.filter((l) => l.textContent).length)) !== 25) throw new Error("all labels");
+  if ((await page.$$eval(".kb-label", (els) => els.filter((l) => l.textContent).length)) !== 13) throw new Error("all labels");
   await page.click('#kb-labels [data-l="none"]');
   if ((await page.$$eval(".kb-label", (els) => els.filter((l) => l.textContent).length)) !== 0) throw new Error("no labels");
   await page.click('#kb-labels [data-l="c"]');
+});
+
+await step("octaves knob: 2 / 3 / 4 fill the width and never overflow; the choice is remembered", async () => {
+  for (const n of [2, 3, 4]) {
+    await page.click(`#kb-octaves [data-n="${n}"]`);
+    await page.waitForFunction((n) => document.querySelectorAll(".kb-white").length === 7 * n + 1, n);
+    const f = await fits();
+    if (f.w < f.vw * 0.8) throw new Error(`${n} octaves should fill the width ` + JSON.stringify(f));
+  }
+  await page.screenshot({ path: `${S}/kb-04-four-octaves.png` });
+  await page.reload(); await page.waitForSelector(".kb-key");
+  if ((await page.locator(".kb-white").count()) !== 29) throw new Error("octaves not remembered");
+});
+
+await step("landscape: the keyboard stays above the controls and inside the screen at 1 and 4 octaves", async () => {
+  await page.setViewportSize({ width: 860, height: 420 });
+  await page.waitForTimeout(250);
+  let f = await fits();
+  if (f.w < 300) throw new Error("landscape four octaves too small " + JSON.stringify(f));
+  await page.screenshot({ path: `${S}/kb-05-landscape-4.png` });
+  await page.click('#kb-octaves [data-n="1"]');
+  await page.waitForFunction(() => document.querySelectorAll(".kb-white").length === 8);
+  f = await fits();
+  await page.screenshot({ path: `${S}/kb-06-landscape-1.png` });
+  await page.setViewportSize({ width: 420, height: 860 });
+  await page.waitForTimeout(250);
+  await fits();
 });
 
 await step("the module renders sub-ranges and fixed sizes: C4–E4 at 2.4rem keys, one octave, four octaves", async () => {

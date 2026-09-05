@@ -1,6 +1,30 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { layoutKeys, fitOctaves, noteName, isBlack, clampBase, velocityAt, KEYMAP, rangeFor, toMidi } from "../js/lib/keyboard/layout.js";
+import { layoutKeys, fitOctaves, noteName, isBlack, clampBase, velocityAt, KEYMAP, rangeFor, toMidi, autoOctaves, fitBox } from "../js/lib/keyboard/layout.js";
+
+test("a player starts on fat keys: one octave on a phone, three on a desk", () => {
+  assert.equal(autoOctaves(388), 1);
+  assert.equal(autoOctaves(960), 3);
+  assert.equal(autoOctaves(2000), 4);
+});
+
+test("fitBox: fills the width in portrait, goes stubby then narrow on a short screen, never overflows", () => {
+  const tall = fitBox(8, 370, 600);      // phone portrait, one octave
+  assert.ok(Math.abs(tall.white - 370 / 8) < 1e-9 && tall.ratio === 5.2);
+  const two = fitBox(15, 370, 600);
+  assert.ok(two.white * 15 <= 370 + 1e-9 && two.white * two.ratio <= 600);
+  const side = fitBox(29, 830, 150);     // phone landscape, four octaves: 28.6 px keys at full ratio still fit 150 px
+  assert.ok(side.white * 29 <= 830 + 1e-9 && side.white * side.ratio <= 150 + 1e-9);
+  assert.equal(side.ratio, 5.2);
+  const squat = fitBox(29, 830, 80);     // a very short box: stubby to the floor, then narrower
+  assert.equal(squat.ratio, 3.2, "as stubby as allowed before narrowing");
+  assert.ok(squat.white * 29 <= 830 + 1e-9, "not past the edge");
+  assert.ok(Math.abs(squat.white * squat.ratio - 80) < 1e-9, "not under the controls");
+  const desk = fitBox(29, 1100, 700);
+  assert.equal(desk.white, 1100 / 29);
+  const huge = fitBox(8, 3000, 3000);
+  assert.equal(huge.white, 64, "keys stop growing at 64 px");
+});
 
 test("sub-ranges: C4–E4 is three whites and two blacks; names work as bounds", () => {
   const lay = layoutKeys("C4", "E4");
