@@ -16,7 +16,7 @@ export function normEmail(raw) {
 }
 
 /** Fixed hourly window per key in D1. Throws 429 when over. */
-async function limit(env, key, max, windowMs = HOUR) {
+export async function limit(env, key, max, windowMs = HOUR) {
   const now = Date.now();
   const row = await env.DB.prepare("SELECT window_start, count FROM rate_limits WHERE key = ?").bind(key).first();
   const fresh = !row || now - row.window_start >= windowMs;

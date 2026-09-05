@@ -55,6 +55,7 @@ export async function now() {
       set({ status: "synced", lastSyncAt: Date.now(), error: null });
     } catch (e) {
       if (e.status === 401) { set({ user: null, cursor: 0, status: "signed-out", error: null }); }
+      else if (e.status === 429) set({ status: "error", error: "syncing too often — paused for a minute" });
       else if (e.offline || navigator.onLine === false) set({ status: "offline", error: null });
       else set({ status: "error", error: e.message });
     } finally {
