@@ -26,7 +26,9 @@ are a folder each with their own question generator and judge.
 
 Runs land in the logbook like sight-singing lessons: a note on the running goal,
 else an auto segment on the built-in **Ear training** goal (`BUILTIN_EARTRAINING`;
-`logbook.addAuto` takes the `builtin` to credit). Every run is kept in
+`logbook.addAuto` takes the `builtin` to credit). A day's drills fold into one
+segment on that goal (LOGBOOK_V2_DESIGN §12), so a sitting is one session, not
+ten. Every run is kept in
 `ws.eartraining.runs` and listed under **drills**.
 
 ## The setup card

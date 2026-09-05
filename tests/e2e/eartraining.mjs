@@ -107,6 +107,25 @@ await step("again → a new seed; home shows the last run; drills lists it", asy
   await page.screenshot({ path: `${S}/et-05-history.png` });
 });
 
+await step("a second drill the same day folds into the same auto segment (WSHED-82): one chip, auto ×2, both runs in its detail", async () => {
+  await page.goto(`${BASE}/?app=1&e=2b#/eartraining/pitch/run?seed=8&setup=beginner`);
+  await page.waitForSelector("#et-run");
+  await answerPhase();
+  await playRun();
+  await page.waitForSelector("#et-score");
+  const segs = await lb((m) => m.logbook.doc.segments.filter((s) => s.goalId === "eartraining").map((s) => ({ label: s.auto.label, n: s.auto.n, runs: s.auto.runs?.map((r) => r.label), min: Math.round((s.endedAt - s.startedAt) / 60000) })));
+  if (segs.length !== 1 || segs[0].label !== "2 drills" || segs[0].n !== 2 || segs[0].runs.length !== 2 || !/9\/10/.test(segs[0].runs[0]) || !/10\/10/.test(segs[0].runs[1])) throw new Error("segments " + JSON.stringify(segs));
+  await page.goto(`${BASE}/?app=1&e=2c#/logbook/goals/eartraining`);
+  await page.waitForSelector(".lb-seg");
+  if ((await page.locator(".lb-seg").count()) !== 1) throw new Error("goal page should show one chip");
+  if ((await text(".lb-seg .lb-auto")) !== "auto ×2") throw new Error("badge " + await text(".lb-seg .lb-auto"));
+  const title = await page.getAttribute(".lb-seg", "title");
+  if (!/2 drills\n.*9\/10.*\n.*10\/10/.test(title)) throw new Error("title " + JSON.stringify(title));
+  const an = await lb((m) => m.logbook.doc.segments.filter((s) => s.goalId === "eartraining").length);
+  if (an !== 1) throw new Error("segments " + an);
+  await page.screenshot({ path: `${S}/et-05b-folded.png` });
+});
+
 await step("with a goal running, a finished drill becomes a note on that goal; harmonic questions accept any order", async () => {
   const gid = await lb((m) => { const g = m.logbook.addGoal({ name: "Intervals" , type: "technique" }); m.logbook.start(g.id); return g.id; });
   await page.goto(`${BASE}/?app=1&e=3#/eartraining/pitch`);

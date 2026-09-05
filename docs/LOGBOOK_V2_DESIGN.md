@@ -103,7 +103,8 @@ Segment = {
   startedAt: ms,
   endedAt:   ms | null,                // null ⇒ this is the running segment (at most one)
   bpm:       null | number,            // optional tempo stamped from the metronome
-  auto:      null | { source, label }, // written by another tool (sight singing)
+  auto:      null | { source, label, n?, runs?: [{ label, startedAt, endedAt }] },
+             // written by another tool; a day's runs fold into one segment (WSHED-82)
 }
 
 Note = { id, goalId, body, createdAt }
@@ -150,7 +151,7 @@ deleteSegment(id)
 notes(goalId) · addNote(goalId, body) · deleteNote(id)
 
 // sight singing
-addAuto({ source, label, startedAt, endedAt })   // §7
+addAuto({ source, label, startedAt, endedAt, builtin })   // §7; folds into the day's segment (WSHED-82)
 
 // read models (all derived from segments)
 today() · dayKey(ms) · minutesOn(key) · practicedOn(key)
@@ -582,3 +583,23 @@ Leif delegated these; decided for the smallest honest implementation.
 ## Takes (WSHED-75)
 
 A fourth entity, `take`, records a recording of a goal: see `docs/TAKES_DESIGN.md`. It syncs as metadata only; the audio stays on the device that made it.
+
+## 12. One auto segment per day (WSHED-82, 2026-09-05)
+
+Lesson runs are short and rapid, so one per segment made a dozen "sessions" of
+an afternoon's drilling. `addAuto` now folds a finished run into the goal's
+latest closed auto segment **started on the same local day**:
+
+- gap since that segment ended ≤ `AUTO_GAP_MS` (15 min) → its end stretches to
+  the run's end (a short break counts, like a clock left running);
+- longer gap, same day → only the run's own duration is added (a morning and an
+  evening drill never make a 13-hour segment);
+- no segment that day → a new one, as before.
+
+The folded segment carries `auto.n` and `auto.runs[]` (the last 40, each with
+its own label and times); `auto.label` becomes "6 drills" / "3 lessons". The goal
+page shows one chip per day with an `auto ×n` badge and lists the runs in its
+detail. Deleting the chip deletes the whole day's segment. Segments written
+before this change are compacted once on load (`compactAuto`: earliest survives,
+the rest are tombstoned); both devices of an account compute the same result,
+so sync converges. The running-goal branch (a note on that goal) is unchanged.
