@@ -9,6 +9,7 @@ export default {
   id: "recorder",
   name: "Recorder",
   glyph: icon("mic"),
+  category: "capture",
   mount(root, ctx) { ui = buildUI(root, ctx); },
   unmount() { ui?.destroy(); ui = null; },
 };
