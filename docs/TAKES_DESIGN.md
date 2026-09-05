@@ -16,7 +16,7 @@ goal, listen back, compare over time.** No trim, no effects, no rename.
   have takes carry a small red chip that jumps to the section. **compare** in
   the section header: tap A, tap B → a bar with *A then B* and **flip** (jump to
   the other take at the same relative spot).
-- **Recorder** (tool menu, instruments group): the same recorder with room — goal
+- **Recorder** (tool menu, its own group between the instruments and the lessons): the same recorder with room — goal
   chip (the running goal, else the last used, else pick), big red button, meter,
   elapsed, pause / resume / discard; every take grouped by goal, newest first,
   with compare and *save this take to a file*.
