@@ -1,0 +1,51 @@
+# Ear training — design (WSHED-81, 2026-09-05)
+
+**Ear training** sits beside Sight singing in the lessons group. Exercises share
+a run shell; the first is **pitch training**. Later exercises (intervals, chords)
+are a folder each with their own question generator and judge.
+
+## Pitch training
+
+1. **Set up** on one card, **begin**. No settings page.
+2. **The reference** plays and its key lights as a target (the tonic; C for
+   beginners, a white-key tonic in the middle octave otherwise). *Reference*
+   replays it any time during an answer.
+3. **Listen**: the question plays — one note, several one after another
+   (520 ms each), or a chord held 1.1 s. The keyboard is dimmed and inert.
+4. **Play it back**: the keyboard is live; every press sounds and is **judged
+   immediately** — green for right, red for wrong. A wrong press ends the
+   question with partial credit for the notes so far; the missing notes light as
+   targets and the answer plays. *Hear it again* replays the question.
+5. **Results**: percent of notes, stars (≥ 90 / 70 / 50 %), questions fully
+   right, one sentence about the most common miss as intervals above the tonic
+   (*you heard the major sixth as a fifth 3 times*), the setup sentence, **again**
+   (same setup, new seed) or **change the setup**.
+
+Runs land in the logbook like sight-singing lessons: a note on the running goal,
+else an auto segment on the built-in **Ear training** goal (`BUILTIN_EARTRAINING`;
+`logbook.addAuto` takes the `builtin` to credit). Every run is kept in
+`ws.eartraining.runs` and listed under **drills**.
+
+## The setup card
+
+| row | chips | note |
+|---|---|---|
+| level | beginner · intermediate · advanced · custom | presets set every row; touching a row flips to custom |
+| notes | in the key · all twelve | |
+| range | one octave · two · four · whole piano | whole piano hidden on a phone (< 700 px) |
+| how many at once | 1 · 2 · 3 · 4 · 5 | |
+| played | one after another · together | greyed at 1 |
+| reference | every question · once at the start · never | never = absolute pitch |
+| questions | 10 · 20 · 35 | |
+
+An italic sentence restates the setup: *C major, one octave around middle C,
+single notes, a reference before each question, 10 questions.* Remembered.
+
+## Module
+
+`js/lib/eartraining/pitch.js` is pure and tested: `OPTIONS`, `LEVELS`,
+`levelOf`, `cleanSetup`, `rangeMidi`, `describe` / `shortDescribe`, `rng`
+(mulberry32), `generate(setup, seed)`, `judgePress`, `scoreRun`, `starsFor`,
+`missLine`. A run is reproducible from (setup, seed): `#/eartraining/pitch/run?seed=7&setup=beginner`
+is the test seam. `js/tools/eartraining/pitchrun.js` drives the keyboard module
+(`light("target" | "correct" | "wrong")`) and the piano voice.

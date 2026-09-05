@@ -10,8 +10,9 @@ import tuner from "./tools/tuner/index.js";
 import keyboard from "./tools/keyboard/index.js";
 import recorder from "./tools/recorder/index.js";
 import sightsinging from "./tools/sightsinging/index.js";
+import eartraining from "./tools/eartraining/index.js";
 import logbook from "./tools/logbook/index.js";
 
-export const TOOLS = [logbook, metronome, keyboard, pitchpipe, tuner, recorder, sightsinging];
+export const TOOLS = [logbook, metronome, keyboard, pitchpipe, tuner, recorder, sightsinging, eartraining];
 /** What a first-time visitor lands on (the last-used tool is restored otherwise). */
 export const DEFAULT_TOOL = metronome;

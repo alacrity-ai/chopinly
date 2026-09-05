@@ -1751,3 +1751,46 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .rc-pause .ic { width: 1rem; height: 1rem; }
 .rc-takes .lb-takes { padding-left: 0; }
 @media (prefers-reduced-motion: reduce) { .lb-rec-dot { animation: none; } }
+
+/* ---------- ear training (WSHED-81) ---------- */
+.eartraining { width: min(100%, 44rem); display: flex; flex-direction: column; align-items: center; gap: clamp(0.8rem, 2vh, 1.2rem); }
+.et-home { flex-direction: row; flex-wrap: wrap; justify-content: center; align-content: center; min-height: 55vh; }
+.et-home .ss-mode-glyph .ic { width: 2.2rem; height: 2.2rem; }
+.et-setup, .et-run, .et-history { align-items: stretch; width: min(100%, 34rem); }
+.et-run { width: min(100%, 60rem); }
+.et-levels { align-self: center; }
+.et-levels button { text-transform: capitalize; }
+.et-rows { display: flex; flex-direction: column; gap: 0.7rem; }
+.et-row { display: flex; flex-direction: column; gap: 0.35rem; }
+.et-row.off { opacity: 0.45; }
+.et-row-label { font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-dim); }
+.et-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.et-chip { min-height: 2.2rem; }
+.et-chip:disabled { cursor: default; }
+.et-sentence { font-family: var(--serif); font-style: italic; color: var(--fg-dim); text-align: center; line-height: 1.45; margin: 0.2rem 0 0; }
+.et-stage { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; padding: 1rem 1rem 0.9rem; border-radius: 1rem; background: var(--bg-panel); border: 1px solid var(--bg-edge); text-align: center; transition: border-color 200ms; }
+.et-state { font-family: var(--serif); font-size: 1.6rem; color: var(--fg); min-height: 2rem; }
+.et-run[data-phase="answer"] .et-stage { border-color: var(--accent); }
+.et-run[data-phase="answer"] .et-state { color: var(--accent); }
+.et-run[data-phase="listen"] .et-state, .et-run[data-phase="reference"] .et-state { color: var(--fg-dim); }
+.et-ref { font-size: 0.85rem; color: var(--fg-dim); }
+.et-ref b { color: var(--fg); font-weight: 500; }
+.et-dots { display: flex; gap: 0.5rem; min-height: 0.8rem; margin-top: 0.3rem; }
+.et-dots i { width: 0.7rem; height: 0.7rem; border-radius: 50%; border: 2px solid var(--fg-dim); }
+.et-dots i.hit { background: var(--ok); border-color: var(--ok); }
+.et-kb { width: 100%; padding: 0.5rem; border-radius: 0.9rem; background: linear-gradient(180deg, var(--bg-raised), var(--bg-panel)); border: 1px solid var(--bg-edge); transition: opacity 200ms; }
+.et-run:not([data-phase="answer"]) .et-kb { opacity: 0.55; }
+.et-run:not([data-phase="answer"]) .kb { pointer-events: none; }
+.et-acts { justify-content: center; }
+.et-finished .et-stage, .et-finished .et-kb, .et-finished .et-acts { display: none; }
+.et-results { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; text-align: center; }
+.et-result-line { color: var(--fg-dim); }
+.et-result-line b { color: var(--fg); font-weight: 500; }
+.et-miss { font-family: var(--serif); font-style: italic; font-size: 1.05rem; color: var(--fg); }
+.et-runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.et-runrow { display: grid; grid-template-columns: 4rem 1fr auto; gap: 0.6rem; align-items: baseline; padding: 0.55rem 0; border-bottom: 1px dashed var(--bg-edge); font-size: 0.9rem; }
+.et-run-when { color: var(--fg-dim); font-size: 0.78rem; }
+.et-run-what { color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.et-run-what b { color: var(--fg); font-weight: 500; }
+.et-run-score { font-family: var(--serif); font-variant-numeric: tabular-nums; color: var(--fg); display: flex; gap: 0.4rem; align-items: baseline; }
+.et-run-score small { color: var(--hi); font-size: 0.75rem; }
