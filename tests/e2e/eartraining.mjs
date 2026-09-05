@@ -13,7 +13,9 @@ const step = async (name, f) => { try { await f(); console.log("ok  ", name); } 
 const lb = (fn, ...args) => page.evaluate(async ([src, a]) => { const m = await import("/js/lib/logbook.js"); return (new Function("m", "a", src))(m, a); }, [`return (${fn})(m, a)`, args]);
 const text = async (sel) => (await page.locator(sel).first().textContent())?.trim();
 const noWiden = async () => { const w = await page.evaluate(() => ({ vw: innerWidth, doc: document.documentElement.scrollWidth })); if (w.doc > w.vw) throw new Error("page widened " + JSON.stringify(w)); };
-const pressKey = async (midi) => { const b = await page.locator(`.kb-key[data-midi="${midi}"]`).boundingBox(); if (!b) throw new Error("no key " + midi); await page.mouse.click(b.x + b.width / 2, b.y + b.height * 0.82); };
+// The answer keyboard is one octave: press the question note's pitch class where it sits on that octave.
+const onKb = async (midi) => page.evaluate((m) => { const keys = [...document.querySelectorAll(".kb-key")].map((k) => Number(k.dataset.midi)); const from = Math.min(...keys); return from + ((m % 12) + 12) % 12; }, midi);
+const pressKey = async (midi) => { const k = await onKb(midi); const b = await page.locator(`.kb-key[data-midi="${k}"]`).boundingBox(); if (!b) throw new Error("no key " + k); await page.mouse.click(b.x + b.width / 2, b.y + b.height * 0.82); };
 /** The questions the running drill was dealt (same module, same seed, same setup). */
 const dealt = () => page.evaluate(async () => {
   const { generate, cleanSetup, LEVELS } = await import("/js/lib/eartraining/pitch.js");
@@ -29,8 +31,8 @@ async function playRun({ wrongAt = new Set() } = {}) {
     await answerPhase();
     if ((await text("#et-title")) !== `question ${i + 1} of ${d.questions.length}`) throw new Error("title " + await text("#et-title"));
     const notes = d.questions[i].notes;
-    if (wrongAt.has(i)) { const wrong = notes.includes(60) ? 62 : 60; await pressKey(wrong); await page.waitForSelector(".kb-key[data-light=\"wrong\"]"); }
-    else for (const n of notes) { await pressKey(n); await page.waitForFunction((m) => document.querySelector(`.kb-key[data-midi="${m}"][data-light="correct"]`), n); }
+    if (wrongAt.has(i)) { const wrong = notes.some((n) => n % 12 === 0) ? 62 : 60; await pressKey(wrong); await page.waitForSelector(".kb-key[data-light=\"wrong\"]"); }
+    else for (const n of notes) { await pressKey(n); await page.waitForFunction((m) => document.querySelector(`.kb-key[data-midi="${m}"][data-light="correct"]`), await onKb(n)); }
     await page.waitForFunction((i) => document.querySelector("#et-run").dataset.phase === "done" || document.querySelector("#et-title")?.textContent.startsWith(`question ${i + 2} `), i, { timeout: 15000 });
   }
   await page.waitForSelector("#et-score");
@@ -71,6 +73,7 @@ await step("a seeded beginner drill: reference lit → listen → answer; 9 righ
   await page.waitForSelector("#et-run");
   await page.waitForSelector('#et-run[data-phase="reference"]', { timeout: 5000 });
   if (!(await page.locator('.kb-key[data-midi="60"][data-light="target"]').count())) throw new Error("reference C4 should be lit");
+  if ((await page.locator(".kb-white").count()) !== 8) throw new Error("the answer keyboard is one octave");
   if (!(await text("#et-ref")).includes("C4")) throw new Error("reference line " + await text("#et-ref"));
   await page.waitForSelector('#et-run[data-phase="listen"]', { timeout: 5000 });
   const inert = await page.$eval(".et-kb .kb", (e) => getComputedStyle(e).pointerEvents);
@@ -117,13 +120,13 @@ await step("with a goal running, a finished drill becomes a note on that goal; h
   if (d.setup.mode !== "harmonic" || d.setup.count !== 3) throw new Error("setup " + JSON.stringify(d.setup));
   // first question: press the chord's notes in reverse order
   await answerPhase();
-  for (const n of [...d.questions[0].notes].reverse()) { await pressKey(n); await page.waitForFunction((m) => document.querySelector(`.kb-key[data-midi="${m}"][data-light="correct"]`), n); }
+  for (const n of [...d.questions[0].notes].reverse()) { await pressKey(n); await page.waitForFunction((m) => document.querySelector(`.kb-key[data-midi="${m}"][data-light="correct"]`), await onKb(n)); }
   await page.waitForFunction(() => document.querySelector("#et-title")?.textContent.startsWith("question 2 "), null, { timeout: 15000 });
   if (await page.locator('#et-run[data-phase="reference"]').count()) throw new Error("reference should play once at the start only");
   // the rest right
   for (let i = 1; i < d.questions.length; i++) {
     await answerPhase();
-    for (const n of d.questions[i].notes) { await pressKey(n); await page.waitForFunction((m) => document.querySelector(`.kb-key[data-midi="${m}"][data-light="correct"]`), n); }
+    for (const n of d.questions[i].notes) { await pressKey(n); await page.waitForFunction((m) => document.querySelector(`.kb-key[data-midi="${m}"][data-light="correct"]`), await onKb(n)); }
     await page.waitForFunction((i) => document.querySelector("#et-run").dataset.phase === "done" || document.querySelector("#et-title")?.textContent.startsWith(`question ${i + 2} `), i, { timeout: 15000 });
   }
   await page.waitForSelector("#et-score");
@@ -131,6 +134,32 @@ await step("with a goal running, a finished drill becomes a note on that goal; h
   const note = await lb((m, [gid]) => m.logbook.notes(gid)[0]?.body, gid);
   if (!/Ear training · pitch · 30\/30 · ★★★ · in the key · 1 oct · 3 together/.test(note ?? "")) throw new Error("note " + note);
   await lb((m) => m.logbook.stop());
+});
+
+await step("two octaves of questions still answer on one octave, by pitch class; landscape fits without scrolling", async () => {
+  await page.goto(`${BASE}/?app=1&e=4#/eartraining/pitch`);
+  await page.waitForSelector("#et-begin");
+  await page.click('#et-levels [data-level="beginner"]');
+  await page.click('.et-row[data-key="range"] .et-chip[data-v="2"]');
+  await page.click('.et-row[data-key="reference"] .et-chip[data-v="each"]');
+  await page.click("#et-begin");
+  await page.waitForSelector("#et-run");
+  const d = await dealt();
+  if (d.setup.range !== 2) throw new Error("range " + d.setup.range);
+  if ((await page.locator(".kb-white").count()) !== 8) throw new Error("still one octave of keys");
+  const spread = d.questions.some((q) => q.notes[0] < 60);
+  if (!spread) throw new Error("two-octave questions should reach below middle C (seed-dependent; rerun)");
+  await answerPhase();
+  const n = d.questions[0].notes[0];
+  await pressKey(n);
+  await page.waitForFunction((m) => document.querySelector(`.kb-key[data-midi="${m}"][data-light="correct"]`), await onKb(n));
+  await page.setViewportSize({ width: 860, height: 420 });
+  await page.waitForTimeout(300);
+  const fit = await page.evaluate(() => ({ doc: document.documentElement.scrollHeight, vh: innerHeight, kb: document.querySelector(".et-kb").getBoundingClientRect().bottom, acts: document.querySelector(".et-acts").getBoundingClientRect().bottom }));
+  if (fit.doc > fit.vh + 1 || fit.acts > fit.vh) throw new Error("landscape scrolls " + JSON.stringify(fit));
+  await page.screenshot({ path: `${S}/et-06-landscape.png` });
+  await page.setViewportSize({ width: 420, height: 860 });
+  await page.click("#et-quit");
 });
 
 await browser.close();

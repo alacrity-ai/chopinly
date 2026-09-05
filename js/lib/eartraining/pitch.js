@@ -87,21 +87,32 @@ export function generate(setup, seed = Date.now()) {
   return { seed, tonic, key: setup.notes === "key" ? `${PC_NAMES[tonic % 12]} major` : null, questions };
 }
 
+export const pc = (m) => ((m % 12) + 12) % 12;
+/** Semitones between two pitch classes, the short way round (0–6). */
+const pcDist = (a, b) => { const d = Math.abs(pc(a) - pc(b)); return Math.min(d, 12 - d); };
 /**
- * Judge one press against a question in progress. `hits` = notes already
- * credited. → { correct, expected } where expected is the note (melodic: the
- * next one; harmonic: the nearest unhit one) for the miss analysis.
+ * Judge one press against a question in progress. The answer keyboard is one
+ * octave, so a press counts by pitch class: the question plays C6, any C is
+ * right. `hits` = the question's notes already credited (push `expected` on a
+ * hit). → { correct, expected } — expected is the question note this press
+ * answered (melodic: the next one; harmonic: the matching one, else the
+ * nearest unhit by pitch class) for the miss analysis.
  */
 export function judgePress(question, hits, midi, mode) {
   if (mode === "harmonic") {
     const left = question.notes.filter((n) => !hits.includes(n));
-    if (left.includes(midi)) return { correct: true, expected: midi };
-    const expected = left.reduce((best, n) => (Math.abs(n - midi) < Math.abs(best - midi) ? n : best), left[0]);
+    const hit = left.find((n) => pc(n) === pc(midi));
+    if (hit !== undefined) return { correct: true, expected: hit };
+    const expected = left.reduce((best, n) => (pcDist(n, midi) < pcDist(best, midi) ? n : best), left[0]);
     return { correct: false, expected };
   }
   const expected = question.notes[hits.length];
-  return { correct: midi === expected, expected };
+  return { correct: pc(midi) === pc(expected), expected };
 }
+/** The one-octave answer keyboard for a tonic: the C below it to the C above. */
+export function answerOctave(tonic) { const from = tonic - pc(tonic); return { from, to: from + 12 }; }
+/** Where a question note sits on the answer keyboard (its pitch class in that octave). */
+export const onAnswerKeyboard = (midi, from) => from + pc(midi);
 
 /** results: [{ notes, hits: number }] → { points, max, pct, right (questions fully right) }. */
 export function scoreRun(results) {

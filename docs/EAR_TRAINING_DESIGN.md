@@ -12,7 +12,10 @@ are a folder each with their own question generator and judge.
    replays it any time during an answer.
 3. **Listen**: the question plays — one note, several one after another
    (520 ms each), or a chord held 1.1 s. The keyboard is dimmed and inert.
-4. **Play it back**: the keyboard is live; every press sounds and is **judged
+4. **Play it back**: the keyboard is **one octave** (the C below the tonic to the
+   C above — fat keys on a phone) and a press counts **by pitch class**: the
+   question plays C6, any C is right. The range setting is where the questions
+   come from, not how many keys you see. Every press sounds and is **judged
    immediately** — green for right, red for wrong. A wrong press ends the
    question with partial credit for the notes so far; the missing notes light as
    targets and the answer plays. *Hear it again* replays the question.
@@ -49,3 +52,10 @@ single notes, a reference before each question, 10 questions.* Remembered.
 `missLine`. A run is reproducible from (setup, seed): `#/eartraining/pitch/run?seed=7&setup=beginner`
 is the test seam. `js/tools/eartraining/pitchrun.js` drives the keyboard module
 (`light("target" | "correct" | "wrong")`) and the piano voice.
+
+## Layout
+
+Portrait: stage card, then the one-octave keyboard (≈ 48 px keys on a phone).
+Landscape under 560 px tall: the stage collapses to one line and the keyboard is
+sized from the remaining height (`calc((100dvh - 16rem) * 8 / 5.2)`), so the
+run never scrolls.

@@ -6,7 +6,7 @@ import { logbook, BUILTIN_EARTRAINING } from "../../lib/logbook.js";
 import { icon } from "../../lib/icons.js";
 import { createKeyboard } from "../../lib/keyboard/keyboard.js";
 import { createPiano } from "../../lib/keyboard/piano.js";
-import { generate, judgePress, scoreRun, starsFor, missLine, describe, shortDescribe, rangeMidi, noteName, PC_NAMES } from "../../lib/eartraining/pitch.js";
+import { generate, judgePress, scoreRun, starsFor, missLine, describe, shortDescribe, noteName, answerOctave, onAnswerKeyboard } from "../../lib/eartraining/pitch.js";
 import { esc } from "../logbook/util.js";
 import { haptic } from "../logbook/motion.js";
 
@@ -15,7 +15,10 @@ const SCORE_WORDS = [[95, "flawless"], [85, "excellent — nearly there"], [70, 
 
 export function createPitchRun(root, { setup, seed, getAudio, runs, onAgain, onSetup, onHome }) {
   const gen = generate(setup, seed);
-  const { from, to } = rangeMidi(setup.range);
+  // The answer keyboard is always one octave (fat keys on a phone); a press
+  // counts by pitch class. The range setting is where the *questions* come from.
+  const { from, to } = answerOctave(gen.tonic);
+  const kbKey = (m) => onAnswerKeyboard(m, from);
   const piano = createPiano(getAudio, { volume: 0.7 });
   const state = { i: 0, phase: "idle", hits: [], results: [], misses: [], startedAt: Date.now(), logged: false, timers: new Set() };
   const later = (fn, ms) => { const t = setTimeout(() => { state.timers.delete(t); fn(); }, ms); state.timers.add(t); return t; };
@@ -30,7 +33,7 @@ export function createPitchRun(root, { setup, seed, getAudio, runs, onAgain, onS
       </div>
       <div class="et-stage">
         <div class="et-state" id="et-state">listen</div>
-        <div class="et-ref" id="et-ref">${setup.reference === "never" ? "no reference — absolute pitch" : `reference · <b>${esc(noteName(gen.tonic))}</b>${gen.key ? ` · ${esc(gen.key)}` : ""}`}</div>
+        <div class="et-ref" id="et-ref">${setup.reference === "never" ? "no reference — absolute pitch" : `reference · <b>${esc(noteName(gen.tonic))}</b>${gen.key ? ` · ${esc(gen.key)}` : ""}`}<span class="et-ref-hint"> · any octave counts</span></div>
         <div class="et-dots" id="et-dots" aria-hidden="true"></div>
       </div>
       <div class="et-kb"><div id="et-kb"></div></div>
@@ -61,7 +64,7 @@ export function createPitchRun(root, { setup, seed, getAudio, runs, onAgain, onS
     const needRef = setup.reference === "each" || (setup.reference === "start" && i === 0);
     if (needRef) {
       setPhase("reference");
-      kb.light(gen.tonic, "target");
+      kb.light(kbKey(gen.tonic), "target");
       play(gen.tonic, T.ref);
       later(() => listen(q, true), T.ref + 250);
     } else listen(q, false);
@@ -78,7 +81,7 @@ export function createPitchRun(root, { setup, seed, getAudio, runs, onAgain, onS
     const q = gen.questions[state.i];
     const { correct, expected } = judgePress(q, state.hits, midi, setup.mode);
     if (correct) {
-      state.hits.push(midi); kb.light(midi, "correct"); drawDots(q); haptic(6);
+      state.hits.push(expected); kb.light(midi, "correct"); drawDots(q); haptic(6);
       if (state.hits.length === q.notes.length) finishQuestion(q, true);
     } else {
       state.misses.push({ expected, heard: midi });
@@ -93,7 +96,7 @@ export function createPitchRun(root, { setup, seed, getAudio, runs, onAgain, onS
     el("et-hear").disabled = true;
     if (right) { later(next, T.afterRight); return; }
     later(() => {
-      for (const n of q.notes) if (!state.hits.includes(n)) kb.light(n, "target");
+      for (const n of q.notes) if (!state.hits.includes(n)) kb.light(kbKey(n), "target");
       const dur = playQuestion(q);
       later(next, dur + T.afterReveal);
     }, T.beforeReveal);

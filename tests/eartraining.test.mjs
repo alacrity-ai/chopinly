@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { OPTIONS, LEVELS, DEFAULT_SETUP, levelOf, cleanSetup, rangeMidi, describe, shortDescribe, rng, generate, judgePress, scoreRun, starsFor, missLine, intervalName, noteName } from "../js/lib/eartraining/pitch.js";
+import { OPTIONS, LEVELS, DEFAULT_SETUP, levelOf, cleanSetup, rangeMidi, describe, shortDescribe, rng, generate, judgePress, scoreRun, starsFor, missLine, intervalName, noteName, pc, answerOctave, onAnswerKeyboard } from "../js/lib/eartraining/pitch.js";
 import { createRuns } from "../js/lib/eartraining/runs.js";
 import { createLogbook, BUILTIN_EARTRAINING } from "../js/lib/logbook.js";
 
@@ -43,6 +43,14 @@ test("generate: seeded and repeatable; beginners get C; in-key notes stay in the
 test("judging: melodic in order, harmonic any order; scoring, stars, misses", () => {
   const q = { notes: [60, 64, 67] };
   assert.deepEqual(judgePress(q, [], 60, "melodic"), { correct: true, expected: 60 });
+  assert.deepEqual(judgePress(q, [], 72, "melodic"), { correct: true, expected: 60 }, "any octave counts");
+  assert.deepEqual(judgePress(q, [60], 76, "melodic"), { correct: true, expected: 64 });
+  assert.deepEqual(judgePress(q, [], 55, "harmonic"), { correct: true, expected: 67 }, "harmonic: a G in any octave hits the G");
+  assert.deepEqual(answerOctave(67), { from: 60, to: 72 });
+  assert.deepEqual(answerOctave(48), { from: 48, to: 60 });
+  assert.equal(onAnswerKeyboard(79, 60), 67);
+  assert.equal(onAnswerKeyboard(48, 60), 60);
+  assert.equal(pc(-1), 11);
   assert.deepEqual(judgePress(q, [60], 67, "melodic"), { correct: false, expected: 64 });
   assert.deepEqual(judgePress(q, [], 67, "harmonic"), { correct: true, expected: 67 });
   assert.deepEqual(judgePress(q, [67], 67, "harmonic"), { correct: false, expected: 64 }, "a repeat is not a hit; nearest unhit note is the expected");
