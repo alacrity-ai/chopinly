@@ -86,6 +86,10 @@ await step("signed-in sheet: email, sync line, actions; sign out keeps local dat
   if (!/synced/.test(await text("#acct-status"))) throw new Error("status " + await text("#acct-status"));
   const href = await page.getAttribute("#acct-export", "href");
   if (href !== "/api/me/export") throw new Error("export href");
+  // WSHED-62: settings-style list — equal-height full-width rows, icons, the homepage link
+  if ((await page.getAttribute("#acct-home", "href")) !== "/welcome") throw new Error("homepage href");
+  const rows = await page.$$eval(".lb-acct-row", (els) => els.map((e) => ({ h: Math.round(e.getBoundingClientRect().height), w: Math.round(e.getBoundingClientRect().width), icon: !!e.querySelector("svg") })));
+  if (rows.length !== 6 || rows.some((r) => !r.icon) || Math.max(...rows.map((r) => r.h)) - Math.min(...rows.map((r) => r.h)) > 1 || new Set(rows.map((r) => r.w)).size !== 1) throw new Error("rows " + JSON.stringify(rows));
   await page.waitForTimeout(250);
   await page.screenshot({ path: `${S}/ui-04-signed-in-sheet.png` });
   await page.click("#acct-signout");

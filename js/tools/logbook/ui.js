@@ -1,8 +1,8 @@
 // Logbook shell: routes, the today · goals · history strip, the Today screen
 // (hero + practiced-today list), the 1 s ticker, and the ctx handed to the
-// other screens. Routes: #/logbook · /goals · /goals/<id> · /history.
+// other screens. Routes: #/logbook · /goals · /goals/<id> · /history · /history/analytics.
 // The picker, creation and quick-note sheets are overlays, not routes.
-import { logbook, TYPES } from "../../lib/logbook.js";
+import { logbook, TYPES, displayName } from "../../lib/logbook.js";
 import { icon } from "../../lib/icons.js";
 import { esc, longPress, fmtMin, fmtClock, fmtDate, relDay, toast, sheetOpen } from "./util.js";
 import { openPicker } from "./picker.js";
@@ -11,13 +11,14 @@ import { openQuickNote } from "./notes.js";
 import { renderLibrary } from "./library.js";
 import { renderGoalPage } from "./goalpage.js";
 import { renderHistory } from "./history.js";
+import { renderAnalytics } from "./analytics.js";
 import { whoosh, tickRow, stamp, glow, haptic } from "./motion.js";
 import { engage, bow } from "./ceremony.js";
 
 export function buildUI(root) {
   let ticker = 0;
   const tickFns = new Set();
-  const libState = {}, histState = {};
+  const libState = {}, histState = {}, anxState = {};
   let practicedToday = logbook.practicedOn(logbook.today());
 
   const nav = (sub) => { location.hash = `#/logbook${sub}`; };
@@ -53,7 +54,7 @@ export function buildUI(root) {
     return `<li class="lb-trow ${r.live ? "live" : ""}" data-id="${r.goal.id}">
       <button class="lb-trow-main" data-open="${r.goal.id}" title="tap to open · hold for a note">
         <i class="lb-type ${t.cls}" aria-hidden="true">${t.glyph}</i>
-        <span class="lb-trow-name">${esc(r.goal.name)}</span>
+        <span class="lb-trow-name">${esc(displayName(r.goal))}</span>
         ${auto ? `<span class="lb-auto">auto</span>` : ""}
         <span class="lb-trow-min" data-live-min="${r.live ? r.goal.id : ""}">${fmtMin(r.minutes)}</span>
       </button>
@@ -73,6 +74,7 @@ export function buildUI(root) {
     const path = route();
     if (path === "goals") { setStrip("goals"); renderLibrary(root, ctx, libState); }
     else if (path.startsWith("goals/")) { setStrip("goals"); renderGoalPage(root, path.slice(6), ctx); }
+    else if (path === "history/analytics") { setStrip("history"); renderAnalytics(root, ctx, anxState); }
     else if (path === "history") { setStrip("history"); renderHistory(root, ctx, histState); }
     else if (path === "log") { history.replaceState(null, "", "#/logbook"); setStrip("today"); renderToday(); }
     else { setStrip("today"); renderToday(); }
@@ -96,7 +98,7 @@ export function buildUI(root) {
         ${run ? `
         <div class="lb-hero running">
           <div class="lb-hero-type ${rt.cls}"><i class="lb-type ${rt.cls}" aria-hidden="true">${rt.glyph}</i>${rt.label}</div>
-          <button class="lb-hero-goal" id="lb-hero-goal" data-open="${run.goal.id}">${esc(run.goal.name)}</button>
+          <button class="lb-hero-goal" id="lb-hero-goal" data-open="${run.goal.id}">${esc(displayName(run.goal))}</button>
           <div class="lb-hero-elapsed" id="lb-elapsed" aria-live="off">${fmtClock(run.elapsedMs)}</div>
           <div class="lb-hero-sub">today on this goal <b id="lb-goal-today">${fmtMin(goalToday)}</b></div>
           <div class="lb-hero-note">
@@ -190,7 +192,7 @@ export function buildUI(root) {
     logbook.addTime({ goalId: r.goal.id, minutes: r.minutes });
     render();
     stamp(root.querySelector(`.lb-trow[data-id="${r.goal.id}"]`));
-    toast(`${fmtMin(r.minutes)} added to ${r.goal.name}`);
+    toast(`${fmtMin(r.minutes)} added to ${displayName(r.goal)}`);
   }
 
   // --- ticker -------------------------------------------------------------------

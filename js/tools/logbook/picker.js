@@ -2,7 +2,7 @@
 // One sheet used by play, switch, the shell chip, the metronome, and add-time.
 // It only *chooses*; the caller starts / switches / adds time, so it can whoosh
 // the chosen row into its own hero.
-import { logbook, TYPES, TYPE_IDS, norm } from "../../lib/logbook.js";
+import { logbook, TYPES, TYPE_IDS, norm, displayName } from "../../lib/logbook.js";
 import { esc, openSheet, finePointer, fmtMin, ago } from "./util.js";
 import { openCreate } from "./create.js";
 import { haptic } from "./motion.js";
@@ -39,7 +39,7 @@ export function openPicker({ mode = "start", excludeId = null } = {}) {
   const row = (g, extra = "") => `
     <button type="button" class="lb-pick-row ${extra}" role="option" data-id="${g.id}" aria-selected="false">
       <i class="lb-type ${TYPES[g.type]?.cls ?? ""}" aria-hidden="true">${TYPES[g.type]?.glyph ?? "●"}</i>
-      <span class="lb-pick-name">${esc(g.name)}</span>
+      <span class="lb-pick-name">${esc(displayName(g))}</span>
       <span class="lb-pick-sub">${g.id === excludeId ? "now" : g.status !== "active" ? g.status : stats(g)}</span>
     </button>`;
 
@@ -48,7 +48,7 @@ export function openPicker({ mode = "start", excludeId = null } = {}) {
     let html = "";
     if (needle) {
       const pool = logbook.goals({ status: "all", q, sort: "recent" })
-        .filter((g) => showFinished || g.status === "active" || norm(g.name).includes(needle));
+        .filter((g) => showFinished || g.status === "active" || norm(displayName(g)).includes(needle));
       const active = pool.filter((g) => g.status === "active"), rest = pool.filter((g) => g.status !== "active");
       html += active.map((g) => row(g)).join("") + rest.map((g) => row(g, "lb-pick-dim")).join("");
       html += `<button type="button" class="lb-pick-row lb-pick-new" role="option" data-new="1" aria-selected="false"><i class="lb-type" aria-hidden="true">+</i><span class="lb-pick-name">new goal “${esc(q.trim())}”</span></button>`;
@@ -58,7 +58,7 @@ export function openPicker({ mode = "start", excludeId = null } = {}) {
       const recentIds = new Set(recent.map((g) => g.id));
       if (recent.length) html += `<div class="lb-pick-sect">recent</div>${recent.map((g) => row(g)).join("")}`;
       for (const t of TYPE_IDS) {
-        const rows = all.filter((g) => g.type === t && !recentIds.has(g.id)).sort((a, b) => a.name.localeCompare(b.name));
+        const rows = all.filter((g) => g.type === t && !recentIds.has(g.id)).sort((a, b) => displayName(a).localeCompare(displayName(b)));
         if (rows.length) html += `<div class="lb-pick-sect">${TYPES[t].label}${t === "piece" ? "s" : ""}</div>${rows.map((g) => row(g, g.id === excludeId ? "lb-pick-now" : "")).join("")}`;
       }
       if (showFinished) {
@@ -103,7 +103,7 @@ export function openPicker({ mode = "start", excludeId = null } = {}) {
   function askMinutes(goal, created) {
     let minutes = 30;
     body.innerHTML = `
-      <h3 class="lb-pick-goal"><i class="lb-type ${TYPES[goal.type]?.cls ?? ""}" aria-hidden="true">${TYPES[goal.type]?.glyph ?? "●"}</i> ${esc(goal.name)}</h3>
+      <h3 class="lb-pick-goal"><i class="lb-type ${TYPES[goal.type]?.cls ?? ""}" aria-hidden="true">${TYPES[goal.type]?.glyph ?? "●"}</i> ${esc(displayName(goal))}</h3>
       <div class="lb-chips lb-minute-chips" role="radiogroup" aria-label="minutes">
         ${QUICK_MINUTES.map((m) => `<button type="button" class="lb-chip ${m === minutes ? "on" : ""}" data-m="${m}" role="radio" aria-checked="${m === minutes}">${m}m</button>`).join("")}
       </div>

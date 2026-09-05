@@ -2,7 +2,7 @@
 // dedicated modal (a few lines of textarea, cancel + save) opened from the
 // goal page's "add a note" button, the running hero's "+ note", or a
 // long-press on a Today row (docs/LOGBOOK_V2_DESIGN.md §3.3, WSHED-42).
-import { logbook } from "../../lib/logbook.js";
+import { logbook, displayName } from "../../lib/logbook.js";
 import { esc, longPress, relDay, openSheet, toast } from "./util.js";
 import { slideIn, stamp, haptic } from "./motion.js";
 
@@ -56,7 +56,7 @@ export function openQuickNote(goalId) {
   if (!g) return Promise.resolve(null);
   const last = logbook.notes(goalId)[0];
   const sheet = openSheet({
-    title: g.name,
+    title: displayName(g),
     cls: "lb-note-wrap",
     html: `
       ${last ? `<p class="lb-lastnote"><span class="lb-dim">last note · ${esc(relDay(last.createdAt))}</span><br>${esc(last.body)}</p>` : ""}

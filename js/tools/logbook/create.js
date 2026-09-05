@@ -8,7 +8,7 @@ import { haptic } from "./motion.js";
  * @param {{ name?: string, type?: string }} opts
  * @returns {Promise<object|null>} the new goal, or null if dismissed
  */
-export function openCreate({ name = "", type = "piece" } = {}) {
+export function openCreate({ name = "", type = "piece", composer = "" } = {}) {
   let current = TYPES[type] ? type : "piece";
   const sheet = openSheet({
     title: "new goal",
@@ -21,6 +21,7 @@ export function openCreate({ name = "", type = "piece" } = {}) {
       <p class="lb-examples" id="lb-create-ex">${esc(TYPES[current].examples)}</p>
       <form class="lb-create-form" id="lb-create-form">
         <input class="lb-input lb-input-lg" id="lb-create-name" placeholder="name" autocomplete="off" autocapitalize="sentences" maxlength="120" value="${esc(name)}">
+        <input class="lb-input" id="lb-create-composer" placeholder="composer (optional)" autocomplete="off" autocapitalize="words" maxlength="80" value="${esc(composer)}" ${current === "piece" ? "" : "hidden"}>
         <p class="lb-err" id="lb-create-err" role="alert"></p>
         <div class="transport"><button class="start" type="submit">create</button></div>
       </form>`,
@@ -29,18 +30,20 @@ export function openCreate({ name = "", type = "piece" } = {}) {
   const chips = [...body.querySelectorAll(".lb-typechip")];
   const ex = body.querySelector("#lb-create-ex");
   const input = body.querySelector("#lb-create-name");
+  const composerEl = body.querySelector("#lb-create-composer");
   const err = body.querySelector("#lb-create-err");
   const pick = (t) => {
     current = t;
     for (const c of chips) c.setAttribute("aria-checked", String(c.dataset.type === t));
     ex.textContent = TYPES[t].examples;
+    composerEl.hidden = t !== "piece"; // composer is a piece's optional second line (WSHED-60); Enter on either line creates
   };
   for (const c of chips) c.addEventListener("click", () => { pick(c.dataset.type); input.focus(); });
   let result = null;
   body.querySelector("#lb-create-form").addEventListener("submit", (e) => {
     e.preventDefault();
     try {
-      result = logbook.addGoal({ name: input.value, type: current });
+      result = logbook.addGoal({ name: input.value, type: current, composer: composerEl.hidden ? "" : composerEl.value });
       haptic();
       close();
     } catch (ex2) { err.textContent = ex2.message; input.focus(); }

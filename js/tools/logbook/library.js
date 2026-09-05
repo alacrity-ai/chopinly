@@ -1,5 +1,5 @@
 // Goals tab — the practice library (docs/LOGBOOK_V2_DESIGN.md §3.2).
-import { logbook, TYPES, TYPE_IDS, SORTS } from "../../lib/logbook.js";
+import { logbook, TYPES, TYPE_IDS, SORTS, displayName } from "../../lib/logbook.js";
 import { makeStore } from "../../lib/store.js";
 import { esc, fmtMin, ago, plural } from "./util.js";
 import { stamp } from "./motion.js";
@@ -29,7 +29,7 @@ export function renderLibrary(root, ctx, state) {
     return `<li class="lb-row" data-id="${g.id}">
       <button class="lb-row-main" data-open="${g.id}">
         <i class="lb-type ${t.cls}" aria-hidden="true">${t.glyph}</i>
-        <span class="lb-row-text"><span class="lb-row-title">${esc(g.name)}</span><span class="lb-row-sub">${sub}</span></span>
+        <span class="lb-row-text"><span class="lb-row-title">${esc(displayName(g))}</span><span class="lb-row-sub">${sub}</span></span>
       </button>
     </li>`;
   };
@@ -78,7 +78,7 @@ export function renderLibrary(root, ctx, state) {
     state.q = ""; state.type = null;
     renderLibrary(root, ctx, state);
     stamp(root.querySelector(`.lb-row[data-id="${g.id}"]`));
-    ctx.toast(`${g.name} — in the library`);
+    ctx.toast(`${displayName(g)} — in the library`);
   };
   root.querySelector("#lb-lib-add").addEventListener("click", add);
   root.querySelector("#lb-lib-first")?.addEventListener("click", add);

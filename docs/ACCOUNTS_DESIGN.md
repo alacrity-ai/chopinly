@@ -124,7 +124,7 @@ CSRF: every mutating call must carry `X-Chopinly: 1` and a JSON content type; th
 
 ### 6.2 Account sheet (`js/ui/account.js`, reuses `openSheet`)
 - **Signed out:** one line of copy — *"Back up your practice and pick it up on any device. Free."* — an email field, **send code**. Then a six-digit field (`inputmode=numeric`, `autocomplete=one-time-code`), **sign in**, and *"didn't get it? send again"* (respects the rate limit). Success: toast *"signed in"*, haptic, the sheet closes, the navbar ring **stamps** (the sticker move), and the first sync runs.
-- **Signed in:** the email, the sync line (*"synced just now" / "3 changes waiting" / "offline — will sync when you're back"*), **sync now**, **download my data**, **sign out**, and a quiet felt-red *delete account* behind a confirm.
+- **Signed in:** the email, the sync line (*"synced just now" / "3 changes waiting" / "offline — will sync when you're back"*), then a settings-style list (WSHED-62): full-width rows of equal height, a vector icon, a label and a one-line hint — **sync now** · **download my data** · **show homepage** (`/welcome`); **sign out** (*keeps what's on this device*) · **sign out & clear this device**; and a felt-red **delete account** row behind a confirm. The signed-out sheet ends with a quiet *see the homepage* link.
 - Errors are sentences, not codes: *"that code didn't match"*, *"that code has expired — send a new one"*, *"too many tries — wait a bit"*.
 
 ### 6.3 Landing page `/welcome`
