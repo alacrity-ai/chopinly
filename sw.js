@@ -1,6 +1,6 @@
 // Network-first, cache-fallback. Installable + fully offline, but never serves
 // a stale shell when the network is up (see docs/DESIGN.md §5).
-const CACHE = "chopinly-v26";
+const CACHE = "chopinly-v27";
 const SHELL = [
   "/",
   "/css/app.css",
@@ -62,8 +62,22 @@ const SHELL = [
   "/icons/icon-512.png"
 ];
 
+// Every shell fetch carries ?v=<CACHE> and bypasses the HTTP cache, so a new
+// worker version can never precache a stale module from the browser or edge
+// cache (WSHED-58). Responses are stored under the clean URL.
+const BUSTABLE = (path) => path === "/" || path === "/manifest.webmanifest" || /^\/(js|css)\//.test(path);
+function netRequest(url) {
+  const u = new URL(url, self.location.origin);
+  if (BUSTABLE(u.pathname)) u.searchParams.set("v", CACHE);
+  return fetch(u.href, { cache: "no-cache", credentials: "same-origin" });
+}
+
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => Promise.all(SHELL.map(async (p) => { const r = await netRequest(p); if (!r.ok) throw new Error(`precache ${p} ${r.status}`); await c.put(p, r); })))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener("activate", (e) => {
@@ -71,6 +85,8 @@ self.addEventListener("activate", (e) => {
     caches.keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: "window" }))
+      .then((clients) => { for (const c of clients) c.postMessage({ type: "sw-updated", cache: CACHE }); }),
   );
 });
 
@@ -83,7 +99,7 @@ self.addEventListener("fetch", (e) => {
     // cache:"no-cache" forces ETag revalidation — without it, fetch() serves the
     // browser HTTP cache (Pages sends max-age=14400 on assets) and "network-first"
     // can hand out files from before the latest deploy.
-    fetch(req, { cache: "no-cache" })
+    netRequest(req.url)
       .then((res) => {
         if (res.ok) {
           const copy = res.clone();

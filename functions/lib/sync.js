@@ -3,6 +3,7 @@
 // both sides agree by construction.
 import { json, HttpError, readJson, requireSameOrigin } from "./http.js";
 import { requireUser } from "./session.js";
+import { limit } from "./auth.js";
 import { KINDS, key, pick, same } from "../../js/lib/merge.js";
 
 const MAX_CHANGES = 5000;
@@ -63,6 +64,9 @@ async function writeWinners(db, userId, winners) {
 async function sync(ctx) {
   requireSameOrigin(ctx.request);
   const { user } = await requireUser(ctx);
+  // A well-behaved client syncs a few times a minute at most; a stale or
+  // broken one must never be able to hammer D1 (WSHED-58).
+  await limit(ctx.env, `sync:${user.id}`, 40, 60_000);
   const body = await readJson(ctx.request);
   const cursor = Number.isFinite(body.cursor) && body.cursor >= 0 ? Math.floor(body.cursor) : 0;
   const incoming = validate(body.changes ?? []);

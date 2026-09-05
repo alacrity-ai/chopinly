@@ -168,4 +168,14 @@ sync.start();
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js"));
+  // A new worker took over (a deploy): pick up the new modules by reloading —
+  // now if nothing is running, otherwise the next time the app is idle and
+  // visible. Only for pages that already had a worker (never on first install).
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    if (e.data?.type !== "sw-updated" || !hadController) return;
+    const idle = () => !logbook.running() && !document.querySelector(".lb-sheet-wrap, .lb-ceremony") && document.visibilityState === "visible";
+    if (idle()) { location.reload(); return; }
+    const t = setInterval(() => { if (idle()) { clearInterval(t); location.reload(); } }, 5000);
+  });
 }
