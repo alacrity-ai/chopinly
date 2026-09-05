@@ -7,6 +7,11 @@ import { haptic, stamp } from "../tools/logbook/motion.js";
 import { icon } from "../lib/icons.js";
 import { account } from "../lib/account.js";
 import { sync } from "../lib/sync.js";
+import { openAppearance } from "./appearance.js";
+import { SKINS, currentSkin } from "../lib/skins.js";
+
+const skinName = () => SKINS.find((s) => s.id === currentSkin())?.name ?? "";
+const appearanceRow = () => `<li><button type="button" class="lb-acct-row" id="acct-appearance">${icon("palette")}<span><b>appearance</b><small>${esc(skinName())}</small></span></button></li>`;
 
 /** "just now", "4 min ago", "2 h ago", "yesterday", or a date. */
 function relTime(ts, now = Date.now()) {
@@ -73,6 +78,7 @@ function openSignIn() {
           <button type="submit" class="lb-modal-save" id="acct-verify">sign in</button>
         </div>
       </form>
+      <ul class="lb-acct-list lb-acct-list-out">${appearanceRow()}</ul>
       <p class="lb-acct-fine lb-acct-fine-center">By signing in you agree to the <a class="lb-link" href="/terms">terms</a> and <a class="lb-link" href="/privacy">privacy policy</a> — no tracking, no sharing, delete any time.<br><a class="lb-link" id="acct-home-out" href="/welcome">see the homepage</a></p>`,
   });
   const { body, close, closed } = sheet;
@@ -116,6 +122,7 @@ function openSignIn() {
       setTimeout(close, 120);
     } catch (ex) { err2.textContent = ex.message; codeEl.select(); busy(btn, false); }
   }
+  body.querySelector("#acct-appearance").addEventListener("click", () => { close(); openAppearance(); });
   emailForm.addEventListener("submit", send);
   codeForm.addEventListener("submit", verify);
   body.querySelector("#acct-again").addEventListener("click", async () => {
@@ -141,6 +148,7 @@ function openSignedIn() {
       <ul class="lb-acct-list">
         <li><button type="button" class="lb-acct-row" id="acct-sync">${icon("redo")}<span><b>sync now</b><small>push what's here, pull what's new</small></span></button></li>
         <li><a class="lb-acct-row" id="acct-export" href="${account.exportUrl}" download>${icon("download")}<span><b>download my data</b><small>everything in your account, as a file</small></span></a></li>
+        ${appearanceRow()}
         <li><a class="lb-acct-row" id="acct-home" href="/welcome">${icon("home")}<span><b>show homepage</b><small>the page new visitors see</small></span></a></li>
       </ul>
       <ul class="lb-acct-list">
@@ -156,6 +164,7 @@ function openSignedIn() {
   const status = body.querySelector("#acct-status"), err = body.querySelector("#acct-err");
   const off = sync.on((s) => { if (!s.user) { close(); return; } status.textContent = statusLine(s); });
   closed.then(off);
+  body.querySelector("#acct-appearance").addEventListener("click", () => { close(); openAppearance(); });
   body.querySelector("#acct-sync").addEventListener("click", async () => { err.textContent = ""; await sync.now(); const s = sync.snapshot(); if (s.status === "synced") { haptic(10); toast("synced"); } });
   body.querySelector("#acct-signout").addEventListener("click", async () => { await sync.signOut(); toast("signed out — your practice is still here"); close(); });
   body.querySelector("#acct-signout-clear").addEventListener("click", async () => {

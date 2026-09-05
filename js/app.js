@@ -7,6 +7,9 @@ import { logbook } from "./lib/logbook.js";
 import { sync } from "./lib/sync.js";
 import { openAccount, renderAccountButton } from "./ui/account.js";
 import { icon } from "./lib/icons.js";
+import { initSkin } from "./lib/skins.js";
+
+initSkin(); // WSHED-71: the inline head script already set data-skin; this syncs theme-color
 
 const root = document.getElementById("tool-root");
 const picker = document.getElementById("tool-picker");

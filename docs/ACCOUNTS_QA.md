@@ -10,7 +10,7 @@ Scripts live in `tests/e2e/`; screenshots are attached to the WSHED cards.
 |---|---|---|---|
 | `anonymous.mjs` — the app without an account (Logbook v2 driver + WSHED-42…47 checks) | 23 | 23/23 | 23/23 |
 | `accounts-sync.mjs` — two isolated browser contexts on one account | 6 | 6/6 | 6/6 |
-| `account-ui.mjs` — the navbar button + account sheet | 6 | 6/6 | 6/6 |
+| `account-ui.mjs` — the navbar button + account sheet (+ appearance, WSHED-71) | 7 | 7/7 | 7/7 |
 | `landing.mjs` — `/welcome`, OG, first-run redirect | 4 | 4/4 | 4/4 |
 | Unit (`npm test`, incl. `tests/merge.test.mjs`) | 56 | — | 56/56 |
 
@@ -28,11 +28,12 @@ Scripts live in `tests/e2e/`; screenshots are attached to the WSHED cards.
 **account-ui.mjs**
 
 1. Signed-out button shows the person glyph and no dot; the page never widens.
-2. Bad email → *that doesn't look like an email address*; good email → code form with *we sent a code to …*.
-3. Local: the echoed dev code types in and auto-submits at six digits. Prod: a wrong code → *that code didn't match*; then the allowlist sign-in behind the sheet. Either way the button flips to the initial with a **brass** dot.
-4. A Logbook change flips the dot to **pending**, then back to **synced** after the debounce.
-5. Signed-in sheet shows the email, *synced just now*, the export link; **sign out keeps local data**.
-6. Cleanup through the API.
+2. Appearance (WSHED-71): the default body is ebony; picking **Green Piano** flips `data-skin`, the body color, `color-scheme` and `theme-color` at once and is still in force after a reload; picking **Ebony** restores the original values.
+3. Bad email → *that doesn't look like an email address*; good email → code form with *we sent a code to …*.
+4. Local: the echoed dev code types in and auto-submits at six digits. Prod: a wrong code → *that code didn't match*; then the allowlist sign-in behind the sheet. Either way the button flips to the initial with a **brass** dot.
+5. A Logbook change flips the dot to **pending**, then back to **synced** after the debounce.
+6. Signed-in sheet shows the email, *synced just now*, the export link; **sign out keeps local data**.
+7. Cleanup through the API.
 
 **landing.mjs**
 
