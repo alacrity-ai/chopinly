@@ -61,6 +61,36 @@ await step("analytics section: three real screenshots load; In the case lists An
   await ctx.close();
 });
 
+await step("legal pages: five documents render, cross-link, no widening; landing footer + sign-in copy link them (WSHED-65)", async () => {
+  const { page, ctx } = await fresh();
+  for (const slug of ["about", "privacy", "terms", "cookies", "disclaimer"]) {
+    const res = await page.goto(`${BASE}/${slug}`);
+    if (res.status() !== 200) throw new Error(`${slug} ${res.status()}`);
+    await page.waitForSelector(".l-doc h1");
+    const h1 = await page.textContent(".l-doc h1");
+    const links = await page.$$eval(".l-nav a", (els) => els.map((a) => a.getAttribute("href")));
+    if (links.length !== 5 || !links.includes("/privacy")) throw new Error(`${slug} nav ${JSON.stringify(links)}`);
+    if (!(await page.textContent(".l-meta")).includes("Effective")) throw new Error(`${slug} no effective date`);
+    if (slug !== "about" && !(await page.locator(".l-summary li").count())) throw new Error(`${slug} no summary`);
+    const w = await page.evaluate(() => ({ vw: innerWidth, doc: document.documentElement.scrollWidth }));
+    if (w.doc > w.vw) throw new Error(`${slug} widened ` + JSON.stringify(w));
+    if (slug === "privacy" && !/Privacy Policy/.test(h1)) throw new Error("privacy h1 " + h1);
+  }
+  const lic = await page.goto(`${BASE}/LICENSE.md`);
+  if (lic.status() !== 200 || !(await lic.text()).includes("Elastic License 2.0")) throw new Error("LICENSE.md");
+  await page.goto(`${BASE}/welcome`);
+  const foot = await page.$$eval(".w-foot-nav a", (els) => els.map((a) => a.getAttribute("href")));
+  for (const h of ["/about", "/privacy", "/terms", "/cookies", "/disclaimer"]) if (!foot.includes(h)) throw new Error("footer missing " + h);
+  await page.goto(`${BASE}/?app=1`);
+  await page.waitForSelector("#account-btn");
+  await page.click("#account-btn");
+  await page.waitForSelector(".lb-acct-wrap.open");
+  const sheet = await page.$$eval(".lb-acct-wrap a", (els) => els.map((a) => a.getAttribute("href")));
+  if (!sheet.includes("/terms") || !sheet.includes("/privacy")) throw new Error("sign-in sheet links " + JSON.stringify(sheet));
+  await page.screenshot({ path: `${S}/landing-03-privacy.png`, fullPage: false });
+  await ctx.close();
+});
+
 await step("desktop landing renders (no horizontal scroll)", async () => {
   const { page, ctx } = await fresh({ viewport: { width: 1280, height: 900 }, isMobile: false, hasTouch: false, deviceScaleFactor: 1 });
   await page.goto(`${BASE}/welcome`);

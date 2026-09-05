@@ -70,6 +70,11 @@ main { width: min(100% - 2rem, 58rem); margin: 0 auto; padding: 0 0 4rem; }
 .w-data { text-align: center; }
 .w-data p { color: var(--ivory-dim); margin: 0 auto 1.4rem; max-width: 52ch; }
 
-.w-foot { display: flex; justify-content: space-between; gap: 1rem; width: min(100% - 2rem, 58rem); margin: 0 auto; padding: 1.2rem 0 calc(1.5rem + env(safe-area-inset-bottom, 0)); border-top: 1px solid var(--ebony-edge); color: var(--ivory-dim); font-size: 0.85rem; }
+.w-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem 1rem; width: min(100% - 2rem, 58rem); margin: 0 auto; padding: 1.2rem 0 calc(1.5rem + env(safe-area-inset-bottom, 0)); border-top: 1px solid var(--ebony-edge); color: var(--ivory-dim); font-size: 0.85rem; }
+
+.w-foot-nav { display: flex; flex-wrap: wrap; gap: 0.2rem 0.9rem; }
+.w-foot-nav a, .w-fine a { color: var(--ivory-dim); text-decoration: none; }
+.w-foot-nav a:hover, .w-fine a:hover { color: var(--brass); }
+.w-fine a { text-decoration: underline dotted; }
 
 @media (prefers-reduced-motion: reduce) { .w-open { transition: none; } }

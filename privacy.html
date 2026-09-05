@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Privacy Policy — Chopinly</title>
+  <meta name="description" content="What Chopinly holds (an email and the practice you choose to back up), why, for how long, who helps us run it, and the buttons that let you download or delete everything. No analytics, no ads, no sharing. GDPR and CCPA.">
+  <link rel="canonical" href="https://chopinly.com/privacy">
+  <meta property="og:title" content="Privacy Policy — Chopinly">
+  <meta property="og:description" content="What Chopinly holds (an email and the practice you choose to back up), why, for how long, who helps us run it, and the buttons that let you download or delete everything. No analytics, no ads, no sharing. GDPR and CCPA.">
+  <meta property="og:url" content="https://chopinly.com/privacy">
+  <meta property="og:image" content="https://chopinly.com/og/chopinly.png">
+  <meta name="theme-color" content="#191410">
+  <link rel="icon" href="/icons/icon-192.png" type="image/png">
+  <link rel="preload" href="/fonts/fraunces-roman.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/fraunces-italic.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/legal.css">
+</head>
+<body>
+  <header class="l-top">
+    <a class="l-brand" href="/welcome" aria-label="Chopinly"><img src="/icons/icon-192.png" alt="" width="32" height="32"><span>Chopinly</span></a>
+    <nav class="l-nav" aria-label="documents">
+      <a href="/about" >about</a>
+      <a href="/privacy" aria-current="page">privacy</a>
+      <a href="/terms" >terms</a>
+      <a href="/cookies" >cookies</a>
+      <a href="/disclaimer" >disclaimer</a>
+    </nav>
+  </header>
+  <main class="l-doc">
+
+    <h1>Privacy Policy</h1>
+    <p class="l-meta">Effective September 5, 2026 · LaLa Solutions LLC (the data controller)</p>
+    <aside class="l-summary" aria-label="summary">
+      <h2>In plain English</h2>
+      <ul>
+        <li><b>Without an account, your practice data stays on your device.</b> We never see it.</li>
+        <li><b>With an account, we store your email address and the practice data you back up.</b> That is the whole list.</li>
+        <li><b>No analytics, no ads, no trackers, no third-party scripts.</b> One strictly necessary cookie, set only when you sign in.</li>
+        <li><b>We do not sell, share, rent, or train models on your data.</b> Not now, not later without asking you first.</li>
+        <li><b>Two companies help us run it:</b> Cloudflare (servers and database) and Mailgun (delivering the sign-in email). Nobody else.</li>
+        <li><b>You are in control, in the app:</b> download everything, delete everything, sign out anywhere — buttons, not request forms.</li>
+      </ul>
+    </aside>
+
+    <h2>1. Who we are</h2>
+    <p>Chopinly (chopinly.com and the installable app) is operated by <b>LaLa Solutions LLC</b>, a Delaware limited liability company ("we", "us"). For the purposes of the EU and UK General Data Protection Regulation (GDPR) we are the <b>data controller</b> for the personal data described here.</p>
+    <p>Contact: <a href="mailto:leif@lalalimited.com">leif@lalalimited.com</a> · Postal: LaLa Solutions LLC, c/o ZenBusiness Inc., 611 South DuPont Highway, Suite 102, Dover, DE 19901, USA. We have not appointed a Data Protection Officer because the law does not require one for a service of this size and kind; the email above reaches the person responsible.</p>
+
+    <h2>2. Two ways to use Chopinly</h2>
+    <h3>Without an account</h3>
+    <p>Everything — your goals, practice segments, notes, preferences — is stored in your browser on your device (localStorage and the browser's cache). It is never sent to us. The only thing that reaches our servers is what any website receives when you open it: your browser asks for the app's files (HTML, scripts, styles, fonts, icons). Those requests pass through Cloudflare, which processes your IP address and request headers to deliver and protect the site (see §6 and §7). We run no analytics of any kind.</p>
+    <h3>With an account</h3>
+    <p>If you sign in, we store the items in §3 so that your practice is backed up and available on your other devices. Signing in is optional and reversible: sign out keeps your data on the device, <em>delete account</em> removes it from our servers.</p>
+
+    <h2>3. What we hold when you have an account</h2>
+    <div class="l-table-wrap"><table>
+      <thead><tr><th>Data</th><th>What exactly</th><th>Why</th><th>Kept</th></tr></thead>
+      <tbody>
+        <tr><td><b>Email address</b></td><td>The address you sign in with.</td><td>To identify your account and send you sign-in codes.</td><td>Until you delete your account.</td></tr>
+        <tr><td><b>Practice data</b></td><td>Goals (name, optional composer, type, status), practice segments (start and end times, optional tempo), notes you write, and deletion markers so devices agree.</td><td>Backup and sync — the service you asked for.</td><td>Until you delete the item or your account.</td></tr>
+        <tr><td><b>Session records</b></td><td>One per signed-in device: a random token stored only as a SHA-256 hash, created / renewed / expiry timestamps, and the browser's user-agent string (cut to 200 characters).</td><td>To keep you signed in and let you see and end sessions.</td><td>180 days from last use, or until you sign out.</td></tr>
+        <tr><td><b>Sign-in codes</b></td><td>A salted hash of the six-digit code, the email it was sent to, an attempt counter.</td><td>To verify it is you.</td><td>10 minutes, or until used.</td></tr>
+        <tr><td><b>Rate-limit counters</b></td><td>A count of recent requests keyed by your email address and by the IP address of the request.</td><td>To stop abuse — someone hammering the sign-in or sync endpoints.</td><td>One hour.</td></tr>
+      </tbody>
+    </table></div>
+    <p>There are no passwords: Chopinly signs you in with a one-time code sent to your email. We hold no payment details because there is nothing to pay for. We do not ask for your name, age, location, or anything about you beyond the email address.</p>
+
+    <h2>4. What we never do</h2>
+    <ul>
+      <li>No analytics, advertising, or tracking of any kind — no Google Analytics, no pixels, no fingerprinting, no session recording.</li>
+      <li>No third-party scripts on our pages. Everything the browser runs is ours and served from chopinly.com.</li>
+      <li>No selling, renting, or sharing of personal data with anyone for their own purposes. No data brokers, no "partners".</li>
+      <li>No use of your practice data to train machine-learning or AI models.</li>
+      <li>No marketing email. The only messages we send are the sign-in code you requested and, rarely, a notice that materially affects your account (for example a change to these terms or a shutdown, see the <a href="/terms">Terms</a>).</li>
+      <li>No profiling or automated decisions about you.</li>
+    </ul>
+
+    <h2>5. Why we process your data, and the legal bases</h2>
+    <ul>
+      <li><b>To provide the account you asked for</b> — storing, backing up and syncing your practice, signing you in. Legal basis: performance of a contract with you (GDPR Art. 6(1)(b)).</li>
+      <li><b>To keep the service secure and working</b> — rate limits, abuse prevention, debugging failures. Legal basis: our legitimate interest in running a safe service (Art. 6(1)(f)), which we have weighed against your interests and which involves only the minimal data in §3.</li>
+      <li><b>To comply with the law</b> if we are ever legally required to. Legal basis: legal obligation (Art. 6(1)(c)).</li>
+    </ul>
+    <p>We do not rely on consent for anything today. If we ever add an optional feature that needs it, we will ask you clearly first and you can say no.</p>
+
+    <h2>6. Who else sees your data</h2>
+    <p>Two service providers ("processors") handle data on our behalf, under contracts that limit them to providing their service to us:</p>
+    <ul>
+      <li><b>Cloudflare, Inc.</b> (USA) — hosts the app, runs the database that stores account data, and sits in front of the site as a content-delivery and security network. Cloudflare processes request metadata (IP address, headers, URL, timestamp) to serve and protect the site and keeps standard, short-lived server logs. <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener">Cloudflare's privacy policy</a>.</li>
+      <li><b>Mailgun</b> (Sinch, USA) — delivers the sign-in email. It receives your email address and the message containing your code. <a href="https://www.mailgun.com/legal/privacy-policy/" rel="noopener">Mailgun's privacy policy</a>.</li>
+    </ul>
+    <p>We disclose personal data to no one else, except if compelled by a valid legal process — and then only what is required, and we will tell you unless the law forbids it. If LaLa Solutions LLC were ever acquired, this policy would still bind the data, and you would be told before anything changed.</p>
+
+    <h2>7. Where your data is processed</h2>
+    <p>We are a US company and our processors are US companies. Account data is stored on Cloudflare's infrastructure, primarily in the United States; Cloudflare's global network may handle your requests at the data center nearest you. If you are in the EEA, the UK or Switzerland, transfers to the US rely on the EU–US Data Privacy Framework (and its UK and Swiss extensions) where the recipient is certified, and otherwise on Standard Contractual Clauses in our processors' data-processing terms. By using an account you understand that your data is processed in the United States.</p>
+
+    <h2>8. How long we keep it</h2>
+    <p>Each item's retention is in the table in §3. In addition: our database keeps a rolling 30-day history for disaster recovery, so deleted data leaves that history within 30 days. Cloudflare's server logs are kept for its own short operational window. When you delete your account we delete your practice data, sessions, codes and the account record immediately in one operation.</p>
+
+    <h2>9. Your rights, and where the buttons are</h2>
+    <p>Whether or not GDPR applies to you, you have these rights over your data, and most of them are a tap away in the app (the account button in the header):</p>
+    <ul>
+      <li><b>Access and portability</b> — <em>download my data</em> gives you everything we hold, as a file you can keep or import elsewhere.</li>
+      <li><b>Rectification</b> — edit any goal, note or segment in the app; the correction syncs.</li>
+      <li><b>Erasure</b> — <em>delete account</em> removes everything from our servers at once. <em>Sign out &amp; clear this device</em> removes the local copy too.</li>
+      <li><b>Restriction and objection</b> — sign out to stop all processing while keeping your account, or email us.</li>
+      <li><b>Withdrawal of consent</b> — not applicable today, since nothing rests on consent; if that changes, withdrawing will be as easy as giving it.</li>
+      <li><b>Complaint</b> — you may complain to your local data-protection authority (in the EU, see the <a href="https://www.edpb.europa.eu/about-edpb/about-edpb/members_en" rel="noopener">list of supervisory authorities</a>; in the UK, the ICO). We would appreciate the chance to help first.</li>
+    </ul>
+    <p>For anything you can't do in the app, email <a href="mailto:leif@lalalimited.com">leif@lalalimited.com</a>. We answer within 30 days, free of charge. We verify requests through the email address on the account.</p>
+
+    <h2>10. Security</h2>
+    <p>All traffic is encrypted in transit (TLS). Session tokens are stored only as hashes; sign-in codes are salted and hashed, expire in ten minutes, and allow five attempts. There are no passwords to leak. The session cookie is HttpOnly, Secure and SameSite, and every state-changing request checks its origin. Requests are rate-limited. We collect as little as the service needs, which is the best security measure of all. No system is perfect: if we learn of a breach affecting your personal data we will notify you and, where required, the relevant authority without undue delay.</p>
+
+    <h2>11. Children</h2>
+    <p>Chopinly is not directed at children under 13, and an account requires you to be 16 or older, or to have a parent's or guardian's permission. We do not knowingly collect personal data from children; if you believe a child has created an account, email us and we will delete it.</p>
+
+    <h2>12. California and other US state privacy laws</h2>
+    <p>We do not sell personal information, do not "share" it for cross-context behavioral advertising, and do not collect sensitive personal information. We honor requests to know, delete and correct as described in §9, and we will never treat you differently for exercising a right. We do not respond to "Do Not Track" signals because we do not track.</p>
+
+    <h2>13. Changes to this policy</h2>
+    <p>If we change this policy we will post the new version here with a new effective date. If a change materially affects account holders, we will tell you by email or in the app at least 14 days before it takes effect.</p>
+
+    <h2>14. Contact</h2>
+    <p>LaLa Solutions LLC · <a href="mailto:leif@lalalimited.com">leif@lalalimited.com</a> · LaLa Solutions LLC, c/o ZenBusiness Inc., 611 South DuPont Highway, Suite 102, Dover, DE 19901, USA</p>
+
+  </main>
+  <footer class="l-foot">
+    <span>Chopinly · made by LaLa Solutions LLC</span>
+    <nav aria-label="more">
+      <a href="/welcome">home</a>
+      <a href="/?app=1">open the app</a>
+      <a href="/about" >about</a>
+      <a href="/privacy" >privacy</a>
+      <a href="/terms" >terms</a>
+      <a href="/cookies" >cookies</a>
+      <a href="/disclaimer" >disclaimer</a>
+      <a href="mailto:leif@lalalimited.com">contact</a>
+    </nav>
+  </footer>
+</body>
+</html>
