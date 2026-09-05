@@ -114,7 +114,7 @@ test("goals: add / rename / retype / status / delete cascade", () => {
   assert.equal(lb.goal(b.id), null);
   assert.equal(lb.doc.segments.length, 0);
   assert.equal(lb.doc.notes.length, 0);
-  assert.deepEqual(lb.doc.deleted.map((d) => d.kind).sort(), ["goal", "note", "segment"]);
+  assert.deepEqual(lb.doc.deleted.map((d) => d.kind).sort(), ["goal", "note", "segment", "segment"], "the dropped tap is tombstoned too (it may have synced while open)");
   assert.throws(() => lb.deleteGoal("nope"));
 });
 
@@ -145,7 +145,8 @@ test("practice: start / switch / stop / drop / reactivate", () => {
   lb.start(p.id); tick(MIN_SEGMENT_MS - 1);
   assert.equal(lb.stop(), null);
   assert.equal(lb.doc.segments.length, 2);
-  assert.equal(lb.doc.deleted.length, 0, "dropped segments leave no tombstone");
+  assert.equal(lb.doc.deleted.length, 1, "a dropped segment leaves a tombstone (it may have synced while open)");
+  assert.equal(lb.doc.deleted[0].kind, "segment");
   // switching within 10 s also drops the first one
   lb.start(p.id); tick(3000); lb.switchTo(s.id); tick(M);
   assert.equal(lb.doc.segments.filter((x) => x.goalId === p.id).length, 1);
