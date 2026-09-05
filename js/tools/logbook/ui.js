@@ -14,12 +14,15 @@ import { renderHistory } from "./history.js";
 import { renderAnalytics } from "./analytics.js";
 import { whoosh, tickRow, stamp, glow, haptic } from "./motion.js";
 import { engage, bow } from "./ceremony.js";
+import { recording, recordingStrip, wireRecording, takeRow, wireTakeRows } from "./takes.js";
+import { takeStore } from "../../lib/takes/store.js";
 
 export function buildUI(root) {
   let ticker = 0;
   const tickFns = new Set();
   const libState = {}, histState = {}, anxState = {};
   let practicedToday = logbook.practicedOn(logbook.today());
+  let cleanups = [];
 
   const nav = (sub) => { location.hash = `#/logbook${sub}`; };
   const route = () => {
@@ -71,6 +74,7 @@ export function buildUI(root) {
   // --- render -----------------------------------------------------------------
   function render() {
     tickFns.clear();
+    for (const c of cleanups) c(); cleanups = [];
     const path = route();
     if (path === "goals") { setStrip("goals"); renderLibrary(root, ctx, libState); }
     else if (path.startsWith("goals/")) { setStrip("goals"); renderGoalPage(root, path.slice(6), ctx); }
@@ -91,6 +95,9 @@ export function buildUI(root) {
     const lastNote = run ? logbook.notes(run.goal.id)[0] : null;
     const goalToday = run ? rep.goals.find((r) => r.goal.id === run.goal.id)?.minutes ?? 0 : 0;
     const rt = run ? (TYPES[run.goal.type] ?? TYPES.other) : null;
+    const rec = recording.current();
+    const takesToday = logbook.takes({ day: t });
+    const canRec = recording.supported();
 
     root.innerHTML = `
       <section class="logbook lb-today">
@@ -102,9 +109,10 @@ export function buildUI(root) {
           <div class="lb-hero-elapsed" id="lb-elapsed" aria-live="off">${fmtClock(run.elapsedMs)}</div>
           <div class="lb-hero-sub">today on this goal <b id="lb-goal-today">${fmtMin(goalToday)}</b></div>
           <div class="lb-hero-note">
-            <div class="lb-hero-note-head"><span class="lb-dim">${lastNote ? `last note · ${esc(relDay(lastNote.createdAt))}` : "no notes yet"}</span><button class="lb-link" id="lb-hero-addnote">+ note</button></div>
+            <div class="lb-hero-note-head"><span class="lb-dim">${lastNote ? `last note · ${esc(relDay(lastNote.createdAt))}` : "no notes yet"}</span><span class="lb-hero-note-acts">${canRec && !rec ? `<button class="lb-link lb-rec-link" id="lb-hero-rec" aria-label="record a take of this goal"><i class="lb-rec-glyph" aria-hidden="true"></i>take</button>` : ""}<button class="lb-link" id="lb-hero-addnote">+ note</button></span></div>
             ${lastNote ? `<button class="lb-hero-note-body" data-open="${run.goal.id}">${esc(lastNote.body)}</button>` : ""}
           </div>
+          ${recordingStrip()}
           <div class="lb-hero-acts">
             <button class="lb-stop" id="lb-stop" aria-label="stop">${icon("stop")}<span>stop</span></button>
             <button class="lb-switch" id="lb-switch" aria-label="switch goal"><span aria-hidden="true">&#8644;</span><span>switch</span></button>
@@ -112,8 +120,9 @@ export function buildUI(root) {
         </div>` : `
         <div class="lb-hero idle">
           <button class="lb-hero-play" id="lb-play" aria-label="play — choose what you're working on" title="hold to add time without the clock">${icon("play")}</button>
-          <div class="lb-hero-total">${rep.minutes ? `<b>${fmtMin(rep.minutes)}</b> today` : `<span class="lb-dim">press play and say what you're working on</span>`}</div>
-        </div>`}
+          <div class="lb-hero-total">${rep.minutes ? `<b>${fmtMin(rep.minutes)}</b> today` : `<span class="lb-dim">press play and say what you're working on</span>`}${canRec && !rec ? `<button class="lb-link lb-rec-link lb-rec-idle" id="lb-rec-idle" aria-label="record a take"><i class="lb-rec-glyph" aria-hidden="true"></i>record a take</button>` : ""}</div>
+        </div>
+        ${rec ? `<div class="lb-hero lb-hero-rec">${recordingStrip()}</div>` : ""}`}
         <div class="lb-week" aria-label="this week">
           ${strip7.map((d) => `<i class="${d.practiced ? `on b-${d.band}` : ""} ${d.best ? "best" : ""} ${d.today ? "today" : ""}" title="${d.key}"></i>`).join("")}
           <span class="lb-dim">${streak ? `streak ${streak} day${streak === 1 ? "" : "s"}` : "no streak yet"}</span>
@@ -122,6 +131,8 @@ export function buildUI(root) {
         <div class="lb-sect">practiced today</div>
         ${rep.goals.length ? `<ul class="lb-today-list" id="lb-today-list">${rep.goals.map(goalRow).join("")}</ul>`
           : `<p class="lb-empty lb-dim">nothing yet.</p>`}
+        ${takesToday.length ? `<div class="lb-sect">takes today<span class="lb-sect-sub">${takesToday.length}</span></div>
+        <ul class="lb-takes" id="lb-today-takes">${takesToday.map((tk) => takeRow(tk, { goal: true })).join("")}</ul>` : ""}
       </section>`;
 
     root.querySelector("#lb-play") && longPress(root.querySelector("#lb-play"), play, addTime);
@@ -135,6 +146,15 @@ export function buildUI(root) {
       if (n) stamp(root.querySelector(".lb-hero-note"));
     });
     wireGoalRows(root);
+    const startTake = async (goalId) => {
+      if (!goalId) { const r = await openPicker({ mode: "take" }); if (!r) return; goalId = r.goal.id; }
+      try { await recording.start(goalId); render(); } catch (e) { toast(e.message); }
+    };
+    root.querySelector("#lb-hero-rec")?.addEventListener("click", () => startTake(run.goal.id));
+    root.querySelector("#lb-rec-idle")?.addEventListener("click", () => startTake(null));
+    cleanups.push(wireRecording(root, (tk) => { render(); if (tk) stamp(root.querySelector(`.lb-take[data-id="${tk.id}"]`)); }));
+    const takesEl = root.querySelector("#lb-today-takes");
+    if (takesEl) cleanups.push(wireTakeRows(takesEl));
 
     if (run) {
       const el = root.querySelector("#lb-elapsed"), gt = root.querySelector("#lb-goal-today"), tot = root.querySelector("#lb-total");
@@ -208,6 +228,7 @@ export function buildUI(root) {
   window.addEventListener("hashchange", onHash);
   const typing = () => { const a = document.activeElement; return a && root.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); };
   const off = logbook.on(() => { if (sheetOpen() || typing()) return; render(); });
+  const offStore = takeStore.on(() => { if (typing()) return; render(); });
   const onKey = (e) => {
     if (e.key === "/" && route() === "goals" && !typing() && !sheetOpen()) { e.preventDefault(); root.querySelector("#lb-lib-q")?.focus(); }
   };
@@ -220,8 +241,9 @@ export function buildUI(root) {
       clearInterval(ticker);
       window.removeEventListener("hashchange", onHash);
       document.removeEventListener("keydown", onKey);
+      for (const c of cleanups) c();
       slot?.replaceChildren();
-      off();
+      off(); offStore();
     },
   };
 }

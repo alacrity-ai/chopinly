@@ -9,8 +9,43 @@ import { account } from "../lib/account.js";
 import { sync } from "../lib/sync.js";
 import { openAppearance } from "./appearance.js";
 import { SKINS, currentSkin } from "../lib/skins.js";
+import { takeStore } from "../lib/takes/store.js";
+import { logbook } from "../lib/logbook.js";
+import { fmtBytes } from "../lib/takes/peaks.js";
 
 const skinName = () => SKINS.find((s) => s.id === currentSkin())?.name ?? "";
+const takesRow = () => `<li><button type="button" class="lb-acct-row" id="acct-takes">${icon("mic")}<span><b>takes on this device</b><small id="acct-takes-sub">…</small></span></button></li>`;
+const takesSub = async (el) => { const u = await takeStore.usage(); if (el) el.textContent = u.count ? `${u.count} take${u.count === 1 ? "" : "s"} · ${fmtBytes(u.bytes)} — audio never leaves this device` : "none yet — audio never leaves this device"; };
+function openTakesStorage() {
+  const sheet = openSheet({
+    title: "takes on this device",
+    cls: "lb-acct-wrap",
+    html: `
+      <p class="lb-acct-copy" id="tk-copy">…</p>
+      <ul class="lb-acct-list">
+        <li><button type="button" class="lb-acct-row" data-purge="30">${icon("eraser")}<span><b>remove unstarred takes older than 30 days</b><small>starred takes stay</small></span></button></li>
+        <li><button type="button" class="lb-acct-row" data-purge="90">${icon("eraser")}<span><b>remove unstarred takes older than 90 days</b><small>starred takes stay</small></span></button></li>
+      </ul>
+      <ul class="lb-acct-list">
+        <li><button type="button" class="lb-acct-row lb-danger" data-purge="all">${icon("trash")}<span><b>remove all takes from this device</b><small>the list stays; rows go grey</small></span></button></li>
+      </ul>
+      <p class="lb-acct-fine">A take's audio lives only on the device that recorded it. With an account, the list (goal, time, length, star) is backed up — never the sound.</p>`,
+  });
+  const { body } = sheet;
+  const copy = body.querySelector("#tk-copy");
+  const refresh = async () => { const u = await takeStore.usage(); copy.textContent = u.count ? `${u.count} take${u.count === 1 ? "" : "s"} here, ${fmtBytes(u.bytes)} of audio.` : "No takes stored on this device."; };
+  refresh();
+  for (const b of body.querySelectorAll("[data-purge]")) b.addEventListener("click", async () => {
+    const which = b.dataset.purge;
+    const cutoff = which === "all" ? Infinity : Date.now() - Number(which) * 86400000;
+    const victims = logbook.doc.takes.filter((t) => takeStore.has(t.id) && (which === "all" || (!t.starred && t.recordedAt < cutoff)));
+    if (!victims.length) { toast("nothing to remove"); return; }
+    if (!confirm(`Remove the audio of ${victims.length} take${victims.length === 1 ? "" : "s"} from this device? The rows stay in your list.`)) return;
+    for (const t of victims) await takeStore.del(t.id);
+    haptic(10); toast(`${victims.length} removed`); refresh();
+  });
+  return sheet.closed;
+}
 const appearanceRow = () => `<li><button type="button" class="lb-acct-row" id="acct-appearance">${icon("palette")}<span><b>appearance</b><small>${esc(skinName())}</small></span></button></li>`;
 
 /** "just now", "4 min ago", "2 h ago", "yesterday", or a date. */
@@ -78,7 +113,7 @@ function openSignIn() {
           <button type="submit" class="lb-modal-save" id="acct-verify">sign in</button>
         </div>
       </form>
-      <ul class="lb-acct-list lb-acct-list-out">${appearanceRow()}</ul>
+      <ul class="lb-acct-list lb-acct-list-out">${appearanceRow()}${takesRow()}</ul>
       <p class="lb-acct-fine lb-acct-fine-center">By signing in you agree to the <a class="lb-link" href="/terms">terms</a> and <a class="lb-link" href="/privacy">privacy policy</a> — no tracking, no sharing, delete any time.<br><a class="lb-link" id="acct-home-out" href="/welcome">see the homepage</a></p>`,
   });
   const { body, close, closed } = sheet;
@@ -123,6 +158,8 @@ function openSignIn() {
     } catch (ex) { err2.textContent = ex.message; codeEl.select(); busy(btn, false); }
   }
   body.querySelector("#acct-appearance").addEventListener("click", () => { close(); openAppearance(); });
+  body.querySelector("#acct-takes").addEventListener("click", () => { close(); openTakesStorage(); });
+  takesSub(body.querySelector("#acct-takes-sub"));
   emailForm.addEventListener("submit", send);
   codeForm.addEventListener("submit", verify);
   body.querySelector("#acct-again").addEventListener("click", async () => {
@@ -149,6 +186,7 @@ function openSignedIn() {
         <li><button type="button" class="lb-acct-row" id="acct-sync">${icon("redo")}<span><b>sync now</b><small>push what's here, pull what's new</small></span></button></li>
         <li><a class="lb-acct-row" id="acct-export" href="${account.exportUrl}" download>${icon("download")}<span><b>download my data</b><small>everything in your account, as a file</small></span></a></li>
         ${appearanceRow()}
+        ${takesRow()}
         <li><a class="lb-acct-row" id="acct-home" href="/welcome">${icon("home")}<span><b>show homepage</b><small>the page new visitors see</small></span></a></li>
       </ul>
       <ul class="lb-acct-list">
@@ -165,6 +203,8 @@ function openSignedIn() {
   const off = sync.on((s) => { if (!s.user) { close(); return; } status.textContent = statusLine(s); });
   closed.then(off);
   body.querySelector("#acct-appearance").addEventListener("click", () => { close(); openAppearance(); });
+  body.querySelector("#acct-takes").addEventListener("click", () => { close(); openTakesStorage(); });
+  takesSub(body.querySelector("#acct-takes-sub"));
   body.querySelector("#acct-sync").addEventListener("click", async () => { err.textContent = ""; await sync.now(); const s = sync.snapshot(); if (s.status === "synced") { haptic(10); toast("synced"); } });
   body.querySelector("#acct-signout").addEventListener("click", async () => { await sync.signOut(); toast("signed out — your practice is still here"); close(); });
   body.querySelector("#acct-signout-clear").addEventListener("click", async () => {

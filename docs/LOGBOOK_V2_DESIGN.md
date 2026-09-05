@@ -578,3 +578,7 @@ Leif delegated these; decided for the smallest honest implementation.
 5. **Last note on the hero** (Leif's addition, §0.1 / §3.1): ships in slice 3
    with a **+ note** affordance; the quick-note sheet (slice 4) is shared.
 6. **Sound: none.** Haptics only.
+
+## Takes (WSHED-75)
+
+A fourth entity, `take`, records a recording of a goal: see `docs/TAKES_DESIGN.md`. It syncs as metadata only; the audio stays on the device that made it.

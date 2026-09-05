@@ -89,6 +89,10 @@ reward the wrong thing.
   sustain pedal, velocity from where you strike the key, and the computer
   keyboard plays it on a desk. Pick one to four octaves and the keys grow to fill the screen, portrait or
   landscape.
+- **Recorder** — record a take of the goal you're practicing with one tap from
+  the clock. Takes are linked to the goal and the day, play back with a waveform,
+  take a star, and compare A-then-B against an earlier day. The audio never leaves
+  your device; with an account, only the list is backed up.
 - **Tuner** — hear where you are: microphone pitch detection with a cents dial.
 - **Pitch pipe** — any note, any octave, in tune, with A4 calibration.
 - **Sight singing** — graded melodies on a real engraved staff, a tonic-chord

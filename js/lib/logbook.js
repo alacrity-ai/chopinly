@@ -72,7 +72,7 @@ const uuid = () =>
 export const norm = (s) => String(s ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
 
 function emptyDoc() {
-  return { schemaVersion: SCHEMA_VERSION, goals: [], segments: [], notes: [], deleted: [], pending: [] };
+  return { schemaVersion: SCHEMA_VERSION, goals: [], segments: [], notes: [], takes: [], deleted: [], pending: [] };
 }
 
 // --- migration ---------------------------------------------------------------
@@ -247,8 +247,10 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     tomb(id, "goal");
     for (const s of doc.segments) if (s.goalId === id) tomb(s.id, "segment");
     for (const n of doc.notes) if (n.goalId === id) tomb(n.id, "note");
+    for (const t of doc.takes) if (t.goalId === id) tomb(t.id, "take");
     doc.segments = doc.segments.filter((s) => s.goalId !== id);
     doc.notes = doc.notes.filter((n) => n.goalId !== id);
+    doc.takes = doc.takes.filter((t) => t.goalId !== id);
     save();
   }
   function ensureBuiltin(id, name, type) {
@@ -335,6 +337,39 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     doc.notes = doc.notes.filter((n) => n.id !== id);
     if (doc.notes.length !== before) { tomb(id, "note"); save(); }
   }
+
+  // --- takes (WSHED-75): recordings linked to a goal; audio lives on the device ---
+  const TAKE_MAX_MS = 10 * 60 * 1000, PEAKS_MAX = 64;
+  const cleanPeaks = (p) => (Array.isArray(p) ? p.slice(0, PEAKS_MAX).map((v) => Math.max(0, Math.min(1, Math.round(Number(v) * 100) / 100 || 0))) : []);
+  /** Newest first. Filters: goalId, day (a day key). */
+  function takes({ goalId = null, day = null } = {}) {
+    const from = day ? dayStart(day) : -Infinity, to = day ? dayEnd(day) : Infinity;
+    return doc.takes.map((t, i) => [t, i]).filter(([t]) => (!goalId || t.goalId === goalId) && t.recordedAt >= from && t.recordedAt < to)
+      .sort((a, b) => (b[0].recordedAt - a[0].recordedAt) || (b[1] - a[1])).map(([t]) => t);
+  }
+  const take = (id) => doc.takes.find((t) => t.id === id) ?? null;
+  /** Register a recording that has already been stored on this device. */
+  function addTake({ id = uuid(), goalId, recordedAt = now(), durationMs, size = 0, mime = "", peaks = [] }) {
+    mustGoal(goalId);
+    const d = Math.round(Number(durationMs));
+    if (!(d > 0 && d <= TAKE_MAX_MS)) throw new Error("a take is between a moment and ten minutes");
+    const t = touch("take", { id, goalId, recordedAt, durationMs: d, size: Math.max(0, Math.round(Number(size)) || 0), mime: String(mime ?? "").slice(0, 60), starred: false, peaks: cleanPeaks(peaks) });
+    doc.takes.push(t); save(); return t;
+  }
+  /** "Keep this one." */
+  function starTake(id, on) {
+    const t = take(id);
+    if (!t) throw new Error(`no take ${id}`);
+    t.starred = on === undefined ? !t.starred : !!on;
+    touch("take", t); save(); return t;
+  }
+  function deleteTake(id) {
+    const before = doc.takes.length;
+    doc.takes = doc.takes.filter((t) => t.id !== id);
+    if (doc.takes.length !== before) { tomb(id, "take"); save(); }
+  }
+  /** Day keys with at least one take on a goal (any goal when null). */
+  const takeDays = (goalId = null) => new Set(doc.takes.filter((t) => !goalId || t.goalId === goalId).map((t) => dayKey(t.recordedAt)));
 
   // --- other tools writing in -----------------------------------------------
   /**
@@ -470,7 +505,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   const on = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
 
   // --- sync (docs/ACCOUNTS_DESIGN.md §4) --------------------------------------
-  const listOf = { goal: () => doc.goals, segment: () => doc.segments, note: () => doc.notes };
+  const listOf = { goal: () => doc.goals, segment: () => doc.segments, note: () => doc.notes, take: () => doc.takes };
   const findEntity = (kind, id) => listOf[kind]().find((x) => x.id === id) ?? null;
   const findTomb = (kind, id) => doc.deleted.find((t) => t.kind === kind && t.id === id) ?? null;
   const localEnvelope = (kind, id) => {
@@ -508,7 +543,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   }
   /** Merge remote envelopes in. Returns how many changed the document. */
   function applyRemote(envelopes) {
-    const order = { goal: 0, segment: 1, note: 2 };
+    const order = { goal: 0, segment: 1, note: 2, take: 3 };
     const sorted = [...envelopes].filter((e) => listOf[e.kind]).sort((a, b) => order[a.kind] - order[b.kind]);
     let applied = 0;
     for (const env of sorted) {
@@ -548,6 +583,8 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     running, start, switchTo, stop, stampTempo, addTime, deleteSegment,
     // notes
     notes, addNote, deleteNote,
+    // takes
+    takes, take, addTake, starTake, deleteTake, takeDays,
     // other tools
     addAuto,
     // sync
