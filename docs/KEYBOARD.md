@@ -56,8 +56,12 @@ the key (container-query units), so a 1.4rem key still reads.
 
 The host gets `--kb-whites` (count of white keys); the CSS turns `--x`/`--w`
 per key into percentages and gives the keyboard a `whites / ratio` aspect ratio.
-`fitOctaves(width)` says how many octaves have touchable (≥ 25 px) white keys:
-two on a phone, up to four on a desk.
+`fitOctaves(width)` says how many octaves have touchable (≥ 25 px) white keys;
+`autoOctaves(width)` is the fat-key default a player starts on (one on a phone,
+three on a desk); `fitBox(whites, availW, availH)` returns the biggest
+`{ white, ratio }` for a box — fill the width, get stubbier on a short screen
+(down to 3.2), then narrower. The Piano tool uses it with the space above its
+controls, so the keyboard never overflows in either orientation.
 
 ## Colors
 
