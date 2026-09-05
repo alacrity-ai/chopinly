@@ -2,9 +2,11 @@
 // auth (P1) and sync (P3) register here.
 import { json } from "./http.js";
 import { authRoutes } from "./auth.js";
+import { syncRoutes } from "./sync.js";
 
 export const routes = {
   ...authRoutes,
+  ...syncRoutes,
   "GET /api/health": async ({ env }) => {
     let db = false;
     try { db = (await env.DB.prepare("SELECT 1 AS one").first("one")) === 1; } catch { db = false; }
