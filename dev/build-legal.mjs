@@ -8,6 +8,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const EFFECTIVE = "September 5, 2026";
 const CO = "LaLa Solutions LLC";
 const MAIL = "leif@lalalimited.com";
+const REPO = "https://github.com/alacrity-ai/chopinly";
 const ADDRESS = "LaLa Solutions LLC, c/o ZenBusiness Inc., 611 South DuPont Highway, Suite 102, Dover, DE 19901, USA";
 const PAGES = [
   { slug: "about", title: "About", nav: "about" },
@@ -53,6 +54,7 @@ ${body}
       <a href="/welcome">home</a>
       <a href="/?app=1">open the app</a>
       ${nav("")}
+      <a href="${REPO}" rel="noopener">source</a>
       <a href="mailto:${MAIL}">contact</a>
     </nav>
   </footer>
@@ -90,7 +92,7 @@ const about = `
     </ul>
 
     <h2>The source code and its license</h2>
-    <p>Chopinly's source code is licensed under the <b>Elastic License 2.0</b> (ELv2). In plain English: you may use, copy, modify and self-host the software and build things on top of it, for any purpose, free of charge. The one thing you may not do is offer Chopinly itself, or a substantially similar fork, to other people as a hosted or managed service. The full license text, with a longer plain-English summary, is at <a href="/LICENSE.md">chopinly.com/LICENSE.md</a>. The legal text governs.</p>
+    <p>Chopinly is open source. The code is public at <a href="${REPO}" rel="noopener">github.com/alacrity-ai/chopinly</a> — read it, run it yourself, open an issue, send a fix. It is licensed under the <b>Elastic License 2.0</b> (ELv2). In plain English: you may use, copy, modify and self-host the software and build things on top of it, for any purpose, free of charge. The one thing you may not do is offer Chopinly itself, or a substantially similar fork, to other people as a hosted or managed service. The full license text, with a longer plain-English summary, is in the repository's <a href="${REPO}/blob/main/LICENSE.md" rel="noopener">LICENSE.md</a> (also served at <a href="/LICENSE.md">chopinly.com/LICENSE.md</a>). The legal text governs.</p>
     <p>The license covers the <em>code</em>. Your use of the hosted service at chopinly.com is governed by the <a href="/terms">Terms of Service</a>.</p>
 
     <h2>Trademarks</h2>

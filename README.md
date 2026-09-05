@@ -42,6 +42,12 @@ tuner, practice log…) = one folder under `js/tools/` + one entry in
 `js/registry.js` — the shell grows a tab strip automatically. Full rationale,
 palette, and audio-engine design: [`docs/DESIGN.md`](docs/DESIGN.md).
 
+## Source
+
+Public at <https://github.com/alacrity-ai/chopinly> under the Elastic License
+2.0 (`LICENSE.md`). The Cloudflare Pages project keeps its original name,
+`woodshed`; the site is <https://chopinly.com>.
+
 ## Legal
 
 Chopinly's source is under the Elastic License 2.0 (`LICENSE.md`). The hosted
