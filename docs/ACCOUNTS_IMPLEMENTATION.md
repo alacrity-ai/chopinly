@@ -20,8 +20,8 @@ Companion to [ACCOUNTS_DESIGN.md](ACCOUNTS_DESIGN.md). Six phases, each its own 
    database_id = "<from wrangler d1 create>"
    migrations_dir = "migrations"
    [vars]
-   MAILGUN_DOMAIN = "mg.kbrelay.com"
-   MAIL_FROM = "Chopinly <chopinly@mg.kbrelay.com>"
+   MAILGUN_DOMAIN = "mg.chopinly.com"
+   MAIL_FROM = "Chopinly <hello@mg.chopinly.com>"
    ```
 2. `wrangler d1 create chopinly` (token `cloudflare_api_token`), id into the toml, `migrations/0001_init.sql` (§3 of the design), `wrangler d1 migrations apply chopinly --remote`.
 3. `functions/api/[[route]].js`: tiny router (method + path → handler), JSON helpers, error envelope `{ error: "sentence" }`, `GET /api/health` doing `SELECT 1`.
@@ -34,7 +34,7 @@ Companion to [ACCOUNTS_DESIGN.md](ACCOUNTS_DESIGN.md). Six phases, each its own 
 1. `functions/lib/db.js` (queries), `functions/lib/crypto.js` (sha256, random token, constant-time compare), `functions/lib/mail.js` (Mailgun, ported from kbRelay's `mailgun.ts`; short-circuits and logs when `MAILGUN_KEY` is unset), `functions/lib/session.js` (cookie build/parse, `requireUser(ctx)`).
 2. Routes: `POST /api/auth/code`, `POST /api/auth/verify`, `GET /api/me`, `POST /api/auth/signout`, `DELETE /api/me`, `GET /api/me/export` (returns an empty doc until P3).
 3. Rate limits (`rate_limits` table, hourly window), attempts, expiry, single-use, E2E allowlist (`E2E_SECRET`, `@e2e.chopinly.com`).
-4. Secrets: `MAILGUN_KEY` ← `agentsecrets get mailgun_kbrelay_com_sending_key`; `E2E_SECRET` ← freshly generated, stored in agentsecrets as `chopinly_e2e_secret`.
+4. Secrets: `MAILGUN_KEY` ← `agentsecrets get chopinly_mailgun_sending_key` (mg.chopinly.com since WSHED-56, 2026-09-05; the first days ran on kbRelay's key); `E2E_SECRET` ← freshly generated, stored in agentsecrets as `chopinly_e2e_secret`.
 5. Verify: `curl` the code flow with a real address (Leif's) once; E2E allowlist sign-in returns a cookie; `GET /api/me` 401 → 200.
 
 ## Phase 2 — Logbook sync-readiness (WSHED-51)

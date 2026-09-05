@@ -43,10 +43,10 @@ Scripts live in `tests/e2e/`; screenshots are attached to the WSHED cards.
 
 ## Auth checks done by hand (curl, P1)
 
-Wrong code 400 · reused code 400 (*expired — send a new one*) · missing `X-Chopinly` header 403 · `/api/me` without cookie 401 · sign-out → 401 · allowlist with a non-allowlisted domain rejected · sixth code request within an hour 429 · a real code delivered to Leif's address via `mg.kbrelay.com`.
+Wrong code 400 · reused code 400 (*expired — send a new one*) · missing `X-Chopinly` header 403 · `/api/me` without cookie 401 · sign-out → 401 · allowlist with a non-allowlisted domain rejected · sixth code request within an hour 429 · a real code delivered to Leif's address via `mg.kbrelay.com` (P1) and again via `mg.chopinly.com` after the WSHED-56 swap.
 
 ## Known limits (by design)
 
 - The E2E allowlist (`E2E_SECRET` + `@e2e.chopinly.com`) is the only way to sign in without a mailbox; the domain does not deliver mail.
 - `migrations/*.sql`, `wrangler.toml` and `docs/*.md` are served as static files by Pages (no secrets in them). `functions/` is not.
-- Mail goes out from `mg.kbrelay.com` until WSHED-56.
+- Mail goes out from `hello@mg.chopinly.com` (WSHED-56, 2026-09-05); the launch days used kbRelay's domain.
