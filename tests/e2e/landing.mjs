@@ -44,6 +44,23 @@ await step("existing local data → no redirect even without the seen flag", asy
   await ctx.close();
 });
 
+await step("analytics section: three real screenshots load; In the case lists Analytics (WSHED-64)", async () => {
+  const { page, ctx } = await fresh();
+  await page.goto(`${BASE}/welcome`);
+  await page.waitForSelector(".w-analytics img");
+  const imgs = await page.$$eval(".w-analytics img", (els) => els.map((i) => i.getAttribute("src")));
+  if (imgs.length !== 3) throw new Error("images " + JSON.stringify(imgs));
+  for (const src of imgs) {
+    const r = await page.evaluate(async (s) => { const x = await fetch(s); const b = await x.blob(); const bm = await createImageBitmap(b); return { status: x.status, w: bm.width, h: bm.height }; }, src);
+    if (r.status !== 200 || r.w < 600) throw new Error(src + " " + JSON.stringify(r));
+  }
+  const tools = await page.$$eval(".w-tools li b", (els) => els.map((e) => e.textContent));
+  if (!tools.includes("Analytics")) throw new Error("tools " + JSON.stringify(tools));
+  const w = await page.evaluate(() => ({ vw: innerWidth, doc: document.documentElement.scrollWidth }));
+  if (w.doc > w.vw) throw new Error("landing widened " + JSON.stringify(w));
+  await ctx.close();
+});
+
 await step("desktop landing renders (no horizontal scroll)", async () => {
   const { page, ctx } = await fresh({ viewport: { width: 1280, height: 900 }, isMobile: false, hasTouch: false, deviceScaleFactor: 1 });
   await page.goto(`${BASE}/welcome`);

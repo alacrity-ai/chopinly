@@ -62,7 +62,7 @@ export function renderAnalytics(root, ctx, state) {
         <div class="lb-anx-card wide lb-anx-time">
           <div class="lb-sect">time per ${a.series.unit}</div>
           ${columns(a.series.points, { width: full, titleOf: (p) => `${p.label} — ${fmtMin(p.minutes)}` })}
-          <p class="lb-anx-cap" id="lb-anx-cap">${a.series.unit === "day" ? "bars carry the day's band colour — tap one to read it" : `tap a ${a.series.unit} to read it`}</p>
+          <p class="lb-anx-cap" id="lb-anx-cap">${a.series.unit === "day" ? "bars carry the day's band color — tap one to read it" : `tap a ${a.series.unit} to read it`}</p>
         </div>
 
         <div class="lb-anx-card lb-anx-types">

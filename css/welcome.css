@@ -53,6 +53,14 @@ main { width: min(100% - 2rem, 58rem); margin: 0 auto; padding: 0 0 4rem; }
 .w-shots img { width: 100%; height: auto; border-radius: 1.1rem; border: 1px solid var(--ebony-edge); box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45); display: block; }
 .w-shots figcaption { font: italic 0.95rem var(--serif); color: var(--ivory-dim); margin-top: 0.6rem; }
 
+.w-analytics { margin: 0 0 3.5rem; text-align: center; }
+.w-analytics h2 { font-size: clamp(1.5rem, 4.5vw, 2rem); margin-bottom: 0.6rem; }
+.w-analytics > p { color: var(--ivory-dim); max-width: 56ch; margin: 0 auto 1.6rem; }
+.w-analytics figure { margin: 0; }
+.w-analytics img { width: 100%; height: auto; display: block; border-radius: 1.1rem; border: 1px solid var(--ebony-edge); box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45); }
+.w-analytics figcaption { font: italic 0.95rem var(--serif); color: var(--ivory-dim); margin-top: 0.6rem; }
+.w-phones { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 1rem; max-width: 34rem; margin: 1.6rem auto 0; }
+
 .w-tools, .w-data { max-width: 42rem; margin: 0 auto 3rem; }
 .w-tools h2, .w-data h2 { font-size: 1.6rem; margin-bottom: 0.8rem; }
 .w-tools ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.6rem; }
