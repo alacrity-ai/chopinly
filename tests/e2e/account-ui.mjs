@@ -41,6 +41,17 @@ await step("appearance (WSHED-71): Green Piano applies instantly, survives a rel
   if (green.skin !== "green-piano" || green.stored !== '"green-piano"' || green.bg !== "rgb(246, 243, 236)" || green.scheme !== "light" || green.theme !== "#f6f3ec") throw new Error("green " + JSON.stringify(green));
   await noWiden();
   await page.screenshot({ path: `${S}/ui-01b-appearance.png` });
+  // WSHED-72: every skin in the list applies, and no two share a body color
+  const ids = await page.$$eval(".lb-skin", (els) => els.map((e) => e.dataset.skin));
+  if (ids.length < 5) throw new Error("skins listed: " + ids.join());
+  const seen = new Set();
+  for (const id of ids) {
+    await page.click(`.lb-skin[data-skin="${id}"]`); await page.waitForTimeout(80);
+    const st = await state();
+    if (st.skin !== id || seen.has(st.bg)) throw new Error(`skin ${id}: ${JSON.stringify(st)}`);
+    seen.add(st.bg);
+  }
+  await page.click('.lb-skin[data-skin="green-piano"]'); await page.waitForTimeout(80);
   await page.reload(); await page.waitForSelector("#lb-play");
   const kept = await state();
   if (kept.skin !== "green-piano" || kept.bg !== "rgb(246, 243, 236)") throw new Error("not kept " + JSON.stringify(kept));
