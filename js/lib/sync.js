@@ -27,7 +27,11 @@ export const on = (fn) => { listeners.add(fn); return () => listeners.delete(fn)
 export const signedIn = () => !!state.user;
 
 function schedule(ms = DEBOUNCE_MS) {
-  if (!state.user || applying) return;
+  // Only a local change needs a push. Our own bookkeeping (clearing the
+  // pending set, applying remote rows) also fires the logbook listener —
+  // `applying` covers that, and an empty pending set is the belt to its braces
+  // (WSHED-57: without both, every sync scheduled the next one forever).
+  if (!state.user || applying || !logbook.pendingCount()) return;
   clearTimeout(timer);
   timer = setTimeout(() => now(), ms);
 }
@@ -44,9 +48,8 @@ export async function now() {
       do {
         sent = logbook.pendingEnvelopes();
         res = await account.sync(state.cursor, sent);
-        logbook.clearPending(sent);
         applying = true;
-        try { logbook.applyRemote(res.changes); } finally { applying = false; }
+        try { logbook.clearPending(sent); logbook.applyRemote(res.changes); } finally { applying = false; }
         state.cursor = res.cursor;
       } while (res.more);
       set({ status: "synced", lastSyncAt: Date.now(), error: null });
@@ -65,7 +68,8 @@ export async function now() {
 /** After a successful verify: everything on this device goes up, then we pull. */
 export async function signIn(user) {
   set({ user: { id: user.id, email: user.email }, cursor: 0, status: "idle", error: null });
-  logbook.markAllPending();
+  applying = true;
+  try { logbook.markAllPending(); } finally { applying = false; }
   syncInterval();
   return now();
 }
