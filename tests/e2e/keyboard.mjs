@@ -75,6 +75,27 @@ await step("labels: all / none", async () => {
   await page.click('#kb-labels [data-l="c"]');
 });
 
+await step("the module renders sub-ranges and fixed sizes: C4–E4 at 2.4rem keys, one octave, four octaves", async () => {
+  const r = await page.evaluate(async () => {
+    const { createKeyboard } = await import("/js/lib/keyboard/keyboard.js");
+    const out = [];
+    for (const [opts, name] of [[{ from: "C4", to: "E4", labels: "all", whiteWidth: "2.4rem", keymap: false }, "c-e"], [{ from: 60, to: 72, labels: "none", keymap: false }, "octave"], [{ from: "C2", to: "C6", ratio: 3.5, keymap: false }, "four"]]) {
+      const host = document.createElement("div"); host.style.width = "360px"; document.body.append(host);
+      const kb = createKeyboard(host, opts);
+      const w = host.querySelectorAll(".kb-white").length, b = host.querySelectorAll(".kb-black").length, box = host.getBoundingClientRect();
+      kb.light(64, "target"); kb.press(60);
+      out.push({ name, w, b, width: Math.round(box.width), height: Math.round(box.height), down: host.querySelectorAll(".down").length, lit: host.querySelectorAll('[data-light="target"]').length, held: kb.held() });
+      kb.destroy(); host.remove();
+    }
+    return out;
+  });
+  const [ce, oct, four] = r;
+  if (ce.w !== 3 || ce.b !== 2 || Math.abs(ce.width - 3 * 2.4 * 16) > 2) throw new Error("C–E " + JSON.stringify(ce));
+  if (ce.down !== 1 || ce.lit !== 1 || ce.held.join() !== "60") throw new Error("press/light " + JSON.stringify(ce));
+  if (oct.w !== 8 || oct.b !== 5 || oct.width !== 360) throw new Error("octave " + JSON.stringify(oct));
+  if (four.w !== 29 || four.b !== 20 || four.height >= oct.height) throw new Error("four octaves " + JSON.stringify(four));
+});
+
 await step("skins recolor the keys", async () => {
   const bg = () => page.$eval(".kb-white", (e) => getComputedStyle(e).backgroundColor);
   const ebony = await bg();

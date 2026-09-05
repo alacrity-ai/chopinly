@@ -1,6 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { layoutKeys, fitOctaves, noteName, isBlack, clampBase, velocityAt, KEYMAP, rangeFor } from "../js/lib/keyboard/layout.js";
+import { layoutKeys, fitOctaves, noteName, isBlack, clampBase, velocityAt, KEYMAP, rangeFor, toMidi } from "../js/lib/keyboard/layout.js";
+
+test("sub-ranges: C4–E4 is three whites and two blacks; names work as bounds", () => {
+  const lay = layoutKeys("C4", "E4");
+  assert.deepEqual(lay.keys.map((k) => k.name), ["C4", "C♯4", "D4", "D♯4", "E4"]);
+  assert.equal(lay.whites, 3);
+  assert.equal(layoutKeys("F3", "B3").whites, 4);
+  assert.equal(layoutKeys("A0", "C8").whites, 52, "the whole piano");
+  assert.equal(layoutKeys(60, 72).whites, 8, "one octave, top C included");
+  assert.equal(layoutKeys("C2", "C6").whites, 29, "four octaves");
+  assert.equal(toMidi("Bb2"), 46);
+  assert.equal(toMidi(61), 61);
+});
 
 test("two octaves C4–C6: 15 whites, 10 blacks, positions in white-key units", () => {
   const lay = layoutKeys(60, 84);

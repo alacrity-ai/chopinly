@@ -2,7 +2,11 @@
 // Positions are in "white-key units" from the keyboard's left edge, so the
 // view scales them with one CSS variable (--kb-whites).
 
+import { parsePitch } from "../music.js";
+
 const BLACK = new Set([1, 3, 6, 8, 10]);
+/** A MIDI number, or a name like "C4" / "F#3" / "Bb2" → MIDI. */
+export const toMidi = (x) => (typeof x === "number" ? x : parsePitch(x).midi);
 export const isBlack = (midi) => BLACK.has(((midi % 12) + 12) % 12);
 export const NAMES = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
 /** "C4", "F♯3"… (octave omitted with { octave: false }). */
@@ -22,7 +26,7 @@ export const whiteCeil = (midi) => (isBlack(midi) ? midi + 1 : midi);
  * → { from, to, whites, keys: [{ midi, black, name, x, w }] } with x/w in white-key units.
  */
 export function layoutKeys(from, to) {
-  from = whiteFloor(from); to = whiteCeil(to);
+  from = whiteFloor(toMidi(from)); to = whiteCeil(toMidi(to));
   if (to < from) [from, to] = [to, from];
   const keys = [];
   let wx = 0;
@@ -45,7 +49,7 @@ export function fitOctaves(width, minWhite = 25) {
 }
 
 /** The range for `octaves` octaves starting at the C `base`, top C included. */
-export const rangeFor = (base, octaves) => ({ from: base, to: base + 12 * octaves });
+export const rangeFor = (base, octaves) => ({ from: toMidi(base), to: toMidi(base) + 12 * octaves });
 
 export const LOWEST_C = 24;  // C1
 export const HIGHEST_C = 108; // C8

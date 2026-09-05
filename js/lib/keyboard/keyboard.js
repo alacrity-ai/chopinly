@@ -3,16 +3,26 @@
 // "noteon"/"noteoff" events. No sound of its own: the Piano tool wires it to
 // piano.js; an exercise can mount it silent and light keys as targets.
 //
-//   const kb = createKeyboard(host, { from: 60, to: 84, labels: "c" });
+//   const kb = createKeyboard(host, { from: "C4", to: "E4", labels: "all", whiteWidth: "2.4rem" });
 //   kb.on("noteon", ({ midi, velocity, source }) => …);
 //   kb.light(64, "target"); kb.press(60); kb.release(60); kb.setRange(48, 84);
 import { layoutKeys, noteName, velocityAt, KEYMAP } from "./layout.js";
 
-export function createKeyboard(host, { from = 60, to = 84, labels = "c", keymap = true } = {}) {
+/**
+ * Options: from/to — MIDI or names ("C4"), any sub-range (C–E, one octave, four);
+ * labels "c" | "all" | "none"; keymap — the computer keyboard plays it;
+ * whiteWidth — a CSS length per white key (else the keyboard fills its host);
+ * ratio — white-key height ÷ width (default 5.2; 3.5 is a stubby strip).
+ */
+export function createKeyboard(host, { from = 60, to = 84, labels = "c", keymap = true, whiteWidth = null, ratio = null } = {}) {
   host.classList.add("kb");
   host.setAttribute("role", "group");
   host.setAttribute("aria-label", "piano keyboard");
   const state = { from, to, labels };
+  // a fixed key size wins over whatever width the host had
+  const fixWidth = (w) => { if (w) { host.style.setProperty("--kb-white-w", w); host.style.width = "calc(var(--kb-whites) * var(--kb-white-w))"; } else { host.style.removeProperty("--kb-white-w"); host.style.removeProperty("width"); } };
+  if (whiteWidth) fixWidth(whiteWidth);
+  if (ratio) host.style.setProperty("--kb-ratio", String(ratio));
   const listeners = { noteon: new Set(), noteoff: new Set() };
   const emit = (ev, d) => { for (const f of listeners[ev]) f(d); };
   const pointers = new Map(); // pointerId → midi under that finger
@@ -101,6 +111,11 @@ export function createKeyboard(host, { from = 60, to = 84, labels = "c", keymap 
     get from() { return state.from; }, get to() { return state.to; },
     on(ev, fn) { listeners[ev].add(fn); return () => listeners[ev].delete(fn); },
     setRange(f, t) { releaseAll(); state.from = f; state.to = t; render(); },
+    /** Resize after mount: { whiteWidth, ratio } (null clears one). */
+    setSize({ whiteWidth, ratio } = {}) {
+      if (whiteWidth !== undefined) fixWidth(whiteWidth);
+      if (ratio !== undefined) { if (ratio) host.style.setProperty("--kb-ratio", String(ratio)); else host.style.removeProperty("--kb-ratio"); }
+    },
     setLabels(l) { state.labels = l; for (const [midi, el] of keys) el.querySelector(".kb-label").textContent = labelFor({ midi, name: noteName(midi), black: el.classList.contains("kb-black") }); },
     /** Mark a key: "target" | "correct" | "wrong" | null. */
     light(midi, kind) { const el = keys.get(midi); if (!el) return; if (kind) el.dataset.light = kind; else delete el.dataset.light; },
@@ -113,7 +128,7 @@ export function createKeyboard(host, { from = 60, to = 84, labels = "c", keymap 
     destroy() {
       releaseAll();
       window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); window.removeEventListener("blur", onBlur);
-      host.replaceChildren(); host.classList.remove("kb");
+      host.replaceChildren(); host.classList.remove("kb"); fixWidth(null); host.style.removeProperty("--kb-ratio"); host.style.removeProperty("--kb-whites");
     },
   };
 }
