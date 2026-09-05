@@ -1,0 +1,18 @@
+# Chopinly — Cloudflare Pages project "woodshed" (static shell + /api Functions).
+# Deploy: npm run deploy · migrations: npm run db:migrate · local: npm run dev
+name = "woodshed"
+compatibility_date = "2026-05-01"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "."
+
+[[d1_databases]]
+binding = "DB"
+database_name = "chopinly"
+database_id = "ce1482b5-42fa-45e2-a9c5-fa99f2a9b7a9"
+migrations_dir = "migrations"
+
+[vars]
+MAILGUN_DOMAIN = "mg.kbrelay.com"
+MAIL_FROM = "Chopinly <chopinly@mg.kbrelay.com>"
+PUBLIC_BASE_URL = "https://chopinly.com"
+# Secrets (wrangler pages secret put): MAILGUN_KEY, E2E_SECRET

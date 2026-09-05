@@ -1,6 +1,6 @@
 // Network-first, cache-fallback. Installable + fully offline, but never serves
 // a stale shell when the network is up (see docs/DESIGN.md §5).
-const CACHE = "chopinly-v16";
+const CACHE = "chopinly-v17";
 const SHELL = [
   "/",
   "/css/app.css",
@@ -72,7 +72,9 @@ self.addEventListener("activate", (e) => {
 
 self.addEventListener("fetch", (e) => {
   const req = e.request;
-  if (req.method !== "GET" || new URL(req.url).origin !== self.location.origin) return;
+  const url = new URL(req.url);
+  if (req.method !== "GET" || url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith("/api/")) return; // the API is never cached (WSHED-48)
   e.respondWith(
     // cache:"no-cache" forces ETag revalidation — without it, fetch() serves the
     // browser HTTP cache (Pages sends max-age=14400 on assets) and "network-first"
