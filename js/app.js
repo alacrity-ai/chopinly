@@ -5,6 +5,8 @@ import { getAudio } from "./lib/audio.js";
 import { makeStore } from "./lib/store.js";
 import { logbook } from "./lib/logbook.js";
 import { sync } from "./lib/sync.js";
+import { openAccount, renderAccountButton } from "./ui/account.js";
+import { icon } from "./lib/icons.js";
 
 const root = document.getElementById("tool-root");
 const picker = document.getElementById("tool-picker");
@@ -79,7 +81,7 @@ function mount(tool) {
   shellStore.set("activeTool", tool.id);
   syncHash(tool);
   pickerBtn.innerHTML =
-    `<span class="picker-glyph" aria-hidden="true">${tool.glyph}</span>${tool.name}` +
+    `<span class="picker-glyph" aria-hidden="true">${tool.glyph}</span><span class="picker-name">${tool.name}</span>` +
     `<span class="chevron" aria-hidden="true">&#9662;</span>`;
   for (const item of pickerMenu.children) {
     item.setAttribute("aria-checked", String(item.dataset.tool === tool.id));
@@ -140,7 +142,15 @@ mount(
     ?? DEFAULT_TOOL
 );
 
-// Accounts: confirm the session (if any) and sync (WSHED-52). Never blocks the shell.
+// Accounts (WSHED-52/53): the navbar button mirrors the sync state; the
+// session is confirmed in the background and never blocks the shell.
+const accountBtn = document.getElementById("account-btn");
+accountBtn.querySelector(".account-glyph").innerHTML = icon("user");
+const paintAccount = () => renderAccountButton(accountBtn, sync.snapshot());
+sync.on(paintAccount);
+logbook.on(paintAccount);
+paintAccount();
+accountBtn.addEventListener("click", () => openAccount());
 sync.start();
 
 if ("serviceWorker" in navigator) {
