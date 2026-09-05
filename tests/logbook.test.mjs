@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   createLogbook, dayKey, dayStart, addDays, SCHEMA_VERSION, TYPES, SORTS,
-  BUILTIN_SIGHTSINGING, BUILTIN_FREEPRACTICE, MIN_SEGMENT_MS,
+  BUILTIN_SIGHTSINGING, BUILTIN_FREEPRACTICE, MIN_SEGMENT_MS, band, BANDS,
 } from "../js/lib/logbook.js";
 
 function memStore() {
@@ -220,7 +220,7 @@ test("goalStats: minutes, days, avg, week / month windows, last practiced", () =
   assert.deepEqual([empty.minutes, empty.days, empty.avgSessionMin, empty.lastPracticedAt, empty.daysSince], [0, 0, 0, null, null]);
 });
 
-// --- 6. streak + gold ---------------------------------------------------------
+// --- 6. streak + bands + best-tempo days ---------------------------------------------------------
 test("streak: consecutive days, a fresh morning keeps it, a gap breaks it", () => {
   const { lb, tick, day } = fresh();
   const p = lb.addGoal({ name: "Pathétique" });
@@ -238,21 +238,32 @@ test("streak: consecutive days, a fresh morning keeps it, a gap breaks it", () =
   assert.equal(strip.filter((d) => d.practiced).length, 4);
 });
 
-test("gold days: new best daily total, new best tempo; never for a 30-second day", () => {
+test("band(): thresholds at 15 / 45 / 120 / 240 / 360 minutes", () => {
+  const keys = (mins) => mins.map((m) => band(m).key);
+  assert.deepEqual(keys([0, 14, 15, 44, 45, 119, 120, 239, 240, 359, 360, 840]),
+    ["touched", "touched", "okay", "okay", "good", "good", "sweet", "sweet", "much", "much", "over", "over"]);
+  assert.equal(BANDS.length, 6);
+});
+
+test("best days: only a new best tempo on a goal; a bigger daily total is never a best", () => {
   const { lb, tick, day } = fresh();
   const p = lb.addGoal({ name: "Pathétique" });
   const k0 = lb.today();
-  lb.start(p.id); tick(20 * M); lb.stop(); day(1);          // day0 20 — first day, not gold
+  lb.start(p.id); tick(20 * M); lb.stop(); day(1);          // day0 20
   lb.start(p.id); tick(10 * M); lb.stop(); day(1);          // day1 10
-  lb.start(p.id); tick(30 * M); lb.stop(); day(1);          // day2 30 → gold (beats 20)
-  lb.start(p.id); lb.stampTempo(100); tick(5 * M); lb.stop(); day(1); // day3 5, first tempo — not gold
-  lb.start(p.id); lb.stampTempo(112); tick(5 * M); lb.stop(); day(1); // day4 5, tempo 112 > 100 → gold
-  lb.start(p.id); tick(20000); lb.stop();                   // day5 20 s → never gold
-  const gold = lb.metrics.goldDays();
-  assert.deepEqual([...gold].sort(), [addDays(k0, 2), addDays(k0, 4)]);
+  lb.start(p.id); tick(200 * M); lb.stop(); day(1);         // day2 200 — a record, but not a "best"
+  lb.start(p.id); lb.stampTempo(100); tick(5 * M); lb.stop(); day(1); // day3 first tempo — not best
+  lb.start(p.id); lb.stampTempo(112); tick(5 * M); lb.stop(); day(1); // day4 112 > 100 → best
+  lb.start(p.id); tick(20000); lb.stop();                   // day5 20 s → not practiced
+  assert.deepEqual([...lb.metrics.bestDays()].sort(), [addDays(k0, 4)]);
   const m = lb.metrics.month(new Date(NOON).getFullYear(), new Date(NOON).getMonth());
-  assert.equal(m.cells.filter((c) => c?.gold).length, 2);
+  const cell = (k) => m.cells.find((c) => c?.key === k);
+  assert.equal(m.cells.filter((c) => c?.best).length, 1);
+  assert.deepEqual([cell(k0).band, cell(addDays(k0, 1)).band, cell(addDays(k0, 2)).band, cell(addDays(k0, 3)).band], ["okay", "touched", "sweet", "touched"]);
+  assert.equal(cell(addDays(k0, 5)).band, null, "an unpracticed day has no band");
   assert.equal(m.totals.days, 5, "the 20-second day doesn't count");
+  const strip = lb.metrics.weekStrip();
+  assert.ok(strip.every((d) => "band" in d && "best" in d));
 });
 
 // --- 7. library query ---------------------------------------------------------

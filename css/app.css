@@ -34,6 +34,13 @@
   --brass: #c9a35c;
   --brass-bright: #e3c284;
   --felt: #b0463c;
+  /* practice bands (WSHED-59): colour + dot size per daily total; size peaks at the sweet spot */
+  --band-touched: #6b5c4a;
+  --band-okay: #b3a58e;
+  --band-good: var(--ivory);
+  --band-sweet: var(--gold);
+  --band-much: #d99b47;
+  --band-over: #c2503f;
   --serif: "Fraunces", "Didot", "Bodoni MT", Georgia, serif;
   --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -1100,8 +1107,14 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 /* week strip */
 .lb-week { display: flex; align-items: center; gap: 0.45rem; font-size: 0.8rem; justify-content: center; flex-wrap: wrap; }
 .lb-week i { width: 0.55rem; height: 0.55rem; border-radius: 50%; border: 1px solid var(--ivory-dim); display: block; }
-.lb-week i.on { background: var(--ivory); border-color: var(--ivory); }
-.lb-week i.gold { background: var(--gold); border-color: var(--gold); }
+.lb-week i.on { background: var(--band); border-color: var(--band); }
+.lb-week i.best { box-shadow: 0 0 0 1.5px var(--brass-bright); }
+.b-touched { --band: var(--band-touched); --sz: 0.5; }
+.b-okay { --band: var(--band-okay); --sz: 0.65; }
+.b-good { --band: var(--band-good); --sz: 0.8; }
+.b-sweet { --band: var(--band-sweet); --sz: 0.96; }
+.b-much { --band: var(--band-much); --sz: 0.86; }
+.b-over { --band: var(--band-over); --sz: 0.66; }
 .lb-week i.today { outline: 1px solid var(--brass); outline-offset: 2px; }
 .lb-week .lb-dim { margin-left: 0.4rem; }
 .lb-week-total b { color: var(--ivory); font-weight: 500; font-variant-numeric: tabular-nums; }
@@ -1171,12 +1184,24 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 /* ---- history ---- */
 .lb-month-head { grid-template-columns: 2.75rem 1fr 2.75rem; }
 .lb-month-title { font-family: var(--serif); font-size: 1.2rem; text-align: center; }
-.lb-cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.3rem; max-width: 20rem; align-self: center; width: 100%; }
+.lb-cal-wrap { position: relative; max-width: 20rem; align-self: center; width: 100%; display: flex; flex-direction: column; gap: 0.8rem; }
+.lb-cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.3rem; width: 100%; }
+.lb-cal-info { position: absolute; right: -0.2rem; bottom: -0.35rem; width: 1.9rem; height: 1.9rem; border-radius: 50%; background: none; border: none; padding: 0; color: var(--ivory-dim); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.lb-cal-info .ic { width: 1.15rem; height: 1.15rem; }
+.lb-cal-info:hover, .lb-cal-info:focus-visible { color: var(--brass-bright); }
 .lb-cal-h { text-align: center; font-size: 0.65rem; letter-spacing: 0.1em; color: var(--ivory-dim); }
-.lb-day { aspect-ratio: 1; background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 50%; }
+.lb-day { position: relative; aspect-ratio: 1; background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 50%; }
 .lb-day i { width: 78%; height: 78%; border-radius: 50%; background: var(--ebony-raised); transform: scale(0.5); transition: transform 120ms; }
-.lb-day.on i { background: var(--ivory); transform: scale(var(--sz)); }
-.lb-day.gold i { background: var(--gold); box-shadow: 0 0 8px rgba(236, 199, 102, 0.5); }
+.lb-day.on i { background: var(--band); transform: scale(var(--sz)); }
+.lb-day.b-sweet i { box-shadow: 0 0 8px rgba(236, 199, 102, 0.5); }
+.lb-day.best::after, .lb-band-cell.best::after { content: ""; position: absolute; top: 8%; right: 8%; width: 26%; height: 26%; border-radius: 50%; background: var(--brass-bright); box-shadow: 0 0 0 1.5px var(--ebony); }
+/* legend (the circled-i sheet) */
+.lb-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; font-size: 0.9rem; line-height: 1.4; color: var(--ivory-dim); }
+.lb-legend li { display: grid; grid-template-columns: 2rem 1fr; align-items: center; gap: 0.7rem; }
+.lb-legend b { color: var(--ivory); font-weight: 500; }
+.lb-band-cell { position: relative; width: 2rem; height: 2rem; display: flex; align-items: center; justify-content: center; }
+.lb-band { width: 78%; height: 78%; border-radius: 50%; background: var(--band); transform: scale(var(--sz)); }
+.lb-band.b-sweet { box-shadow: 0 0 8px rgba(236, 199, 102, 0.5); }
 .lb-day.today { outline: 1px solid var(--brass); outline-offset: -2px; }
 .lb-day.sel { background: var(--ebony-raised); }
 .lb-totals { text-align: center; color: var(--ivory-dim); font-size: 0.9rem; }
