@@ -21,7 +21,7 @@
 | What syncs? | **The Logbook document**: goals, segments, notes, tombstones. Not tool settings (bpm, voice), not the active tool, not sight-singing campaign progress. | The Logbook is the data Leif fears losing. Settings are per-device by nature. Campaign progress can follow later as a generic `blob` entity kind (the envelope already allows it). |
 | Merge strategy? | **Entity-level last-write-wins with tombstones**, plus one domain rule: a *closed* segment beats an *open* one regardless of timestamps. | Goals, segments and notes are independent rows with ids; the only real conflict is "stopped on one device, still running on another", and *stopped wins* is the answer a musician expects. |
 | Landing page location? | **`/welcome`** (static `welcome.html`). The app stays at `/`. First-time visitors with no local data and not in standalone mode are redirected from `/` to `/welcome`. | Installed PWAs, bookmarks, the service worker scope and the manifest `start_url` all point at `/`. Moving the app would break every existing install. |
-| Email sender? | `Chopinly <chopinly@mg.kbrelay.com>` via the kbRelay Mailgun sending key, as a stopgap. | Leif's instruction. Spin-off ticket to mint `mg.chopinly.com` when he is at his computer. |
+| Email sender? | `Chopinly <hello@mg.chopinly.com>` via Chopinly's own Mailgun domain (WSHED-56, live 2026-09-05). Launched on kbRelay's key as a stopgap. | Leif's instruction. |
 | Session length? | **180 days, HttpOnly, Secure, SameSite=Lax**, sliding (re-issued when older than 30 days on any authenticated call). | A practice app opened daily should not ask for a code every week. |
 | Account deletion / export? | Both in the account sheet. `DELETE /api/me` wipes every row; `GET /api/me/export` returns the merged document as JSON. | Free app, no lock-in. "Your data is yours" is on the landing page, so it must be true. |
 | Bot / abuse protection? | Rate limits in D1 (per email and per IP), 5 attempts per code, codes expire in 10 minutes, generic responses. No Turnstile. | Proportionate to a free app with no payment surface. |
@@ -35,7 +35,7 @@ chopinly.com (Cloudflare Pages project "woodshed")
 ├── /welcome          static landing (welcome.html) + /og/chopinly.png
 └── /api/*            Pages Functions (functions/api/[[route]].js)
         ├── D1 "chopinly"      users · sessions · login_codes · rate_limits · entities
-        └── Mailgun            mg.kbrelay.com (stopgap)
+        └── Mailgun            mg.chopinly.com
 ```
 
 - `wrangler.toml` at the repo root: `pages_build_output_dir = "."`, `[[d1_databases]] binding = "DB"`, `[vars] MAILGUN_DOMAIN`, secrets `MAILGUN_KEY`, `E2E_SECRET` set with `wrangler pages secret put`.
@@ -164,6 +164,6 @@ OG: `og:title` *Chopinly — practice assistant*, `og:description` the one sente
 
 ## 10. Out of scope (spin-offs)
 
-- `mg.chopinly.com` Mailgun domain + key (Leif; WSHED-56).
+- ~~`mg.chopinly.com` Mailgun domain + key (Leif; WSHED-56).~~ Done 2026-09-05.
 - Syncing sight-singing campaign progress and tool settings (`blob` kind; later).
 - Sharing / teacher views / multi-tenant anything. Chopinly is single-user by design.

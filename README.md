@@ -56,7 +56,7 @@ Cloudflare D1 database and syncs it across devices. Design:
   The merge rule `js/lib/merge.js` is shared by the browser and the API.
 - **Data** — D1 `chopinly` (`wrangler.toml`), migrations in `migrations/`
   (`npm run db:migrate`). Secrets on the Pages project: `MAILGUN_KEY`
-  (kbRelay's Mailgun sending key, stopgap — WSHED-56) and `E2E_SECRET`.
+  (`agentsecrets get chopinly_mailgun_sending_key`, mg.chopinly.com) and `E2E_SECRET`.
 - **Local** — `npm run dev` (Miniflare + local D1; `npm run db:migrate:local`
   once). Put `E2E_SECRET=…` and `DEV_ECHO_CODE=1` in `.dev.vars` (git-ignored)
   so sign-in codes are echoed in the response.

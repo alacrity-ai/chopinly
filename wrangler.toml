@@ -12,7 +12,7 @@ database_id = "ce1482b5-42fa-45e2-a9c5-fa99f2a9b7a9"
 migrations_dir = "migrations"
 
 [vars]
-MAILGUN_DOMAIN = "mg.kbrelay.com"
-MAIL_FROM = "Chopinly <chopinly@mg.kbrelay.com>"
+MAILGUN_DOMAIN = "mg.chopinly.com"
+MAIL_FROM = "Chopinly <hello@mg.chopinly.com>"
 PUBLIC_BASE_URL = "https://chopinly.com"
 # Secrets (wrangler pages secret put): MAILGUN_KEY, E2E_SECRET
