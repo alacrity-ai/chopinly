@@ -136,6 +136,35 @@ await step("with a goal running, a finished drill becomes a note on that goal; h
   await lb((m) => m.logbook.stop());
 });
 
+await step("the Ear training goal's 'practice this' asks: open the trainer (no clock) or just start the clock", async () => {
+  await lb((m) => { if (m.logbook.running()) m.logbook.stop(); });
+  await page.goto(`${BASE}/?app=1&e=5#/logbook/goals/eartraining`);
+  await page.waitForSelector("#lb-gp-practice");
+  await page.click("#lb-gp-practice");
+  await page.waitForSelector(".lb-lesson-wrap.open #lb-lesson-open");
+  if ((await text(".lb-lesson-wrap .lb-sheet-title")) !== "practicing ear training?") throw new Error("title " + await text(".lb-lesson-wrap .lb-sheet-title"));
+  await page.screenshot({ path: `${S}/et-07-practice-this.png` });
+  await page.click("#lb-lesson-open");
+  await page.waitForSelector("#et-go-pitch");
+  if (await lb((m) => !!m.logbook.running())) throw new Error("the clock should not start when opening the trainer");
+  await page.goto(`${BASE}/?app=1&e=6#/logbook/goals/eartraining`);
+  await page.waitForSelector("#lb-gp-practice");
+  await page.click("#lb-gp-practice");
+  await page.waitForSelector("#lb-lesson-clock");
+  await page.click("#lb-lesson-clock");
+  await page.waitForSelector("#lb-hero-goal", { timeout: 8000 });
+  if ((await lb((m) => m.logbook.running()?.goal.id)) !== "eartraining") throw new Error("the clock should run on Ear training");
+  await lb((m) => m.logbook.stop());
+  // a piece asks nothing
+  const gid = await lb((m) => m.logbook.addGoal({ name: "Nocturne" }).id);
+  await page.goto(`${BASE}/?app=1&e=7#/logbook/goals/${gid}`);
+  await page.waitForSelector("#lb-gp-practice");
+  await page.click("#lb-gp-practice");
+  await page.waitForSelector("#lb-hero-goal", { timeout: 8000 });
+  if (await page.locator(".lb-lesson-wrap").count()) throw new Error("a piece should start straight away");
+  await lb((m) => m.logbook.stop());
+});
+
 await step("two octaves of questions still answer on one octave, by pitch class; landscape fits without scrolling", async () => {
   await page.goto(`${BASE}/?app=1&e=4#/eartraining/pitch`);
   await page.waitForSelector("#et-begin");
