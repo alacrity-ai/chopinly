@@ -71,6 +71,14 @@ await step("a change flips the dot to pending, then back to synced", async () =>
   await page.waitForFunction(() => document.querySelector("#account-btn .account-dot")?.classList.contains("synced"), null, { timeout: 10000 });
 });
 
+await step("no sync loop: at most 2 sync calls in 8 s while idle (WSHED-57)", async () => {
+  let calls = 0;
+  const onReq = (r) => { if (r.url().endsWith("/api/sync")) calls++; };
+  page.on("request", onReq);
+  await page.waitForTimeout(8000);
+  page.off("request", onReq);
+  if (calls > 2) throw new Error(`${calls} sync calls in 8 s`);
+});
 await step("signed-in sheet: email, sync line, actions; sign out keeps local data", async () => {
   await page.click("#account-btn");
   await page.waitForSelector(".lb-acct-wrap.open #acct-status");
