@@ -118,6 +118,132 @@
   --series-8: #7f9a58;
 }
 
+/* Nocturne — the practical one: true OLED black for the late session under a
+   dim stand light. Cool silver type, a moonlit periwinkle accent, pale-moon
+   gold for nailed. Black pixels are simply off on an OLED phone. */
+:root[data-skin="nocturne"], .skin-nocturne {
+  color-scheme: dark;
+  --bg: #050507;
+  --bg-glow: #14141c;
+  --bg-panel: #0e0e13;
+  --bg-raised: #17171f;
+  --bg-edge: #2a2a37;
+  --bg-ring: #111117;
+  --bg-chip-on: #1f1f2d;
+  --nav-top: #0f0f15;
+  --nav-mid: #0a0a0e;
+  --fg: #e4e4ee;
+  --fg-dim: #8b8ba2;
+  --fg-bright: #ffffff;
+  --fg-on-accent: #0a0a12;
+  --staff-line: #6a6a80;
+  --accent: #a6b3ff;
+  --accent-bright: #c8d0ff;
+  --hi: #f3e7b9;
+  --ok: #7fd1a8;
+  --rough: #c29a5a;
+  --red: #e0574b;
+  --scrim: rgba(0, 0, 0, 0.7);
+  --shadow-deep: rgba(0, 0, 0, 0.8);
+  --shadow-sheet: rgba(0, 0, 0, 0.75);
+  --shadow-soft: rgba(0, 0, 0, 0.6);
+  --band-touched: #363648;
+  --band-okay: #6c6c88;
+  --band-good: var(--fg);
+  --band-sweet: var(--hi);
+  --band-much: #d9a04a;
+  --band-over: #e0574b;
+  --series-3: #7fa3d6;
+  --series-4: #b08ad6;
+  --series-5: #6fbfb8;
+  --series-7: #d68a7a;
+  --series-8: #8fa07a;
+}
+
+/* Manuscript — the scholarly one: aged parchment, sepia ink, fountain-pen blue
+   for the action color, gilt for nailed. Red stays the teacher's pencil:
+   downbeat, missed, delete. */
+:root[data-skin="manuscript"], .skin-manuscript {
+  color-scheme: light;
+  --bg: #eee3c8;
+  --bg-glow: #f9f0da;
+  --bg-panel: #f6ecd4;
+  --bg-raised: #f9f1dd;
+  --bg-edge: #d4c4a0;
+  --bg-ring: #f3e8cf;
+  --bg-chip-on: #e4d9bc;
+  --nav-top: #f3e9d0;
+  --nav-mid: #eee3c8;
+  --fg: #2e2416;
+  --fg-dim: #79694e;
+  --fg-bright: #1a1208;
+  --fg-on-accent: #f8f1e0;
+  --staff-line: #8b7a5b;
+  --accent: #2f4f8f;
+  --accent-bright: #4a6cb0;
+  --hi: #b8860b;
+  --ok: #5f8a4c;
+  --rough: #a8703a;
+  --red: #a8382b;
+  --scrim: rgba(60, 45, 20, 0.45);
+  --shadow-deep: rgba(60, 45, 20, 0.22);
+  --shadow-sheet: rgba(60, 45, 20, 0.2);
+  --shadow-soft: rgba(60, 45, 20, 0.14);
+  --band-touched: #cdc1a2;
+  --band-okay: #a5b585;
+  --band-good: #5f8a4c;
+  --band-sweet: var(--hi);
+  --band-much: #d08a2e;
+  --band-over: #b8412f;
+  --series-3: #8a5a9a;
+  --series-4: #4f8f8a;
+  --series-5: #c07a4a;
+  --series-7: #7a8f5a;
+  --series-8: #9a6a5a;
+}
+
+/* Neon — the whimsical one: midnight indigo, hot magenta, cyan for nailed,
+   coral for the downbeat. Rhodes-and-arcade energy for students who find the
+   piano case too serious. */
+:root[data-skin="neon"], .skin-neon {
+  color-scheme: dark;
+  --bg: #120f24;
+  --bg-glow: #261b4d;
+  --bg-panel: #191436;
+  --bg-raised: #221b45;
+  --bg-edge: #3a2f6b;
+  --bg-ring: #1c1640;
+  --bg-chip-on: #2d2262;
+  --nav-top: #1a1438;
+  --nav-mid: #150f2c;
+  --fg: #f2eaff;
+  --fg-dim: #a596c9;
+  --fg-bright: #ffffff;
+  --fg-on-accent: #16102a;
+  --staff-line: #6f62a0;
+  --accent: #ff4fa3;
+  --accent-bright: #ff8ac4;
+  --hi: #5df2ff;
+  --ok: #6ef0b0;
+  --rough: #f5a35c;
+  --red: #ff5e5e;
+  --scrim: rgba(10, 5, 30, 0.65);
+  --shadow-deep: rgba(5, 0, 20, 0.65);
+  --shadow-sheet: rgba(5, 0, 20, 0.6);
+  --shadow-soft: rgba(5, 0, 20, 0.45);
+  --band-touched: #3f3470;
+  --band-okay: #7b6bb0;
+  --band-good: #b39dff;
+  --band-sweet: var(--hi);
+  --band-much: #ffb347;
+  --band-over: #ff5e5e;
+  --series-3: #8f7bff;
+  --series-4: #56d6c9;
+  --series-5: #ffd166;
+  --series-7: #ff9a76;
+  --series-8: #7bd1ff;
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 /* No pull-to-refresh: the pages are shorter than the screen, so every downward

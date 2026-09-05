@@ -96,9 +96,16 @@ is a device setting (`ws.shell.skin`, never synced), applied as `data-skin` on
 | `--red` | `#b0463c` | felt: the **downbeat** color only (and missed / delete) |
 | `--band-*`, `--series-*`, `--scrim`, `--shadow-*`, `--staff-line`, … | see the block | practice bands, chart palette, and the small stuff |
 
-The second skin, **Green Piano** (paper white `#f6f3ec`, black type, accent
-`#00b06a`), is the first white-label appearance for studios and teachers. To
-add a skin: one more `:root[data-skin="…"], .skin-…` block and one entry in
+The other skins, in picker order:
+
+| skin | ground / type / accent | why |
+|---|---|---|
+| **Green Piano** | paper white `#f6f3ec` / black / `#00b06a` | the first white-label appearance for studios and teachers |
+| **Nocturne** | OLED black `#050507` / silver / periwinkle `#a6b3ff`, pale-moon gold for nailed | the practical one: the late session under a dim stand light; black pixels are off on an OLED phone |
+| **Manuscript** | parchment `#eee3c8` / sepia ink / fountain-pen blue `#2f4f8f`, gilt for nailed | the scholarly one: the autograph score as an interface; red stays the teacher's pencil |
+| **Neon** | midnight indigo `#120f24` / lavender-white / magenta `#ff4fa3`, cyan for nailed | the whimsical one: Rhodes-and-arcade energy for students who find the piano case too serious |
+
+To add a skin: one more `:root[data-skin="…"], .skin-…` block and one entry in
 `SKINS` (`js/lib/skins.js`) — the picker's swatch is drawn from the block
 itself. The landing page and the legal pages keep their own fixed styling.
 

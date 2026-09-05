@@ -8,6 +8,9 @@ import { makeStore } from "./store.js";
 export const SKINS = [
   { id: "ebony", name: "Ebony", blurb: "inside the piano — the original", theme: "#191410" },
   { id: "green-piano", name: "Green Piano", blurb: "paper white, black type, one green", theme: "#f6f3ec" },
+  { id: "nocturne", name: "Nocturne", blurb: "lights out — OLED black for the late session", theme: "#050507" },
+  { id: "manuscript", name: "Manuscript", blurb: "parchment, sepia ink, a fountain pen", theme: "#eee3c8" },
+  { id: "neon", name: "Neon", blurb: "midnight arcade — magenta and cyan", theme: "#120f24" },
 ];
 export const DEFAULT_SKIN = SKINS[0].id;
 
