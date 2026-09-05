@@ -73,7 +73,7 @@ function openSignIn() {
           <button type="submit" class="lb-modal-save" id="acct-verify">sign in</button>
         </div>
       </form>
-      <p class="lb-acct-fine lb-acct-fine-center"><a class="lb-link" id="acct-home-out" href="/welcome">see the homepage</a></p>`,
+      <p class="lb-acct-fine lb-acct-fine-center">By signing in you agree to the <a class="lb-link" href="/terms">terms</a> and <a class="lb-link" href="/privacy">privacy policy</a> — no tracking, no sharing, delete any time.<br><a class="lb-link" id="acct-home-out" href="/welcome">see the homepage</a></p>`,
   });
   const { body, close, closed } = sheet;
   const emailForm = body.querySelector("#acct-email-form"), codeForm = body.querySelector("#acct-code-form");
