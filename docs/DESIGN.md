@@ -176,3 +176,7 @@ that goal; switch splits a sitting into per-goal segments; goals are type +
 name with a dated notes thread; Today and History are derived from segments.
 Full design: [`LOGBOOK_V2_DESIGN.md`](LOGBOOK_V2_DESIGN.md); plan:
 [`LOGBOOK_V2_IMPLEMENTATION.md`](LOGBOOK_V2_IMPLEMENTATION.md).
+
+## 8. Accounts + cloud sync (WSHED-48, 2026-09-04)
+
+Passwordless email-code sign-in, D1-backed entity sync of the Logbook, the navbar account button, and the `/welcome` landing. See [ACCOUNTS_DESIGN.md](ACCOUNTS_DESIGN.md).

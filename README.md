@@ -40,6 +40,36 @@ tuner, practice log…) = one folder under `js/tools/` + one entry in
 `js/registry.js` — the shell grows a tab strip automatically. Full rationale,
 palette, and audio-engine design: [`docs/DESIGN.md`](docs/DESIGN.md).
 
+## Accounts and cloud sync (WSHED-48)
+
+Chopinly is local first — it works with no account. Signing in (the round
+button in the header → email → six-digit code) backs the Logbook up to a
+Cloudflare D1 database and syncs it across devices. Design:
+[`docs/ACCOUNTS_DESIGN.md`](docs/ACCOUNTS_DESIGN.md); plan:
+[`docs/ACCOUNTS_IMPLEMENTATION.md`](docs/ACCOUNTS_IMPLEMENTATION.md); QA:
+[`docs/ACCOUNTS_QA.md`](docs/ACCOUNTS_QA.md).
+
+- **API** — Pages Functions in `functions/` at `/api/*` (`auth/code`,
+  `auth/verify`, `auth/signout`, `me`, `me/export`, `sync`, `health`).
+  The merge rule `js/lib/merge.js` is shared by the browser and the API.
+- **Data** — D1 `chopinly` (`wrangler.toml`), migrations in `migrations/`
+  (`npm run db:migrate`). Secrets on the Pages project: `MAILGUN_KEY`
+  (kbRelay's Mailgun sending key, stopgap — WSHED-56) and `E2E_SECRET`.
+- **Local** — `npm run dev` (Miniflare + local D1; `npm run db:migrate:local`
+  once). Put `E2E_SECRET=…` and `DEV_ECHO_CODE=1` in `.dev.vars` (git-ignored)
+  so sign-in codes are echoed in the response.
+- **Landing** — `/welcome` (`welcome.html`, `css/welcome.css`), OG image
+  `og/chopinly.png` rendered from `dev/og.html` with `node dev/render-og.mjs`.
+
+## Tests
+
+- Unit: `npm test` (`tests/*.test.mjs`).
+- E2E (Playwright, vendored under
+  `claude_ops/.claude/skills/tcw-quote/node_modules`): `tests/e2e/anonymous.mjs`
+  (23 steps), `accounts-sync.mjs` (two devices), `account-ui.mjs` (the sheet),
+  `landing.mjs`. Run against `npm run dev` or production:
+  `E2E_SECRET=$(agentsecrets get chopinly_e2e_secret) BASE=https://chopinly.com SHOTS=/tmp/shots node tests/e2e/accounts-sync.mjs`.
+
 ## Deploy
 
 Cloudflare Pages on the shared LaLa Solutions account
