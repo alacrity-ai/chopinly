@@ -12,7 +12,9 @@ Scripts live in `tests/e2e/`; screenshots are attached to the WSHED cards.
 | `accounts-sync.mjs` — two isolated browser contexts on one account | 6 | 6/6 | 6/6 |
 | `account-ui.mjs` — the navbar button + account sheet (+ appearance, WSHED-71) | 7 | 7/7 | 7/7 |
 | `landing.mjs` — `/welcome`, OG, first-run redirect | 4 | 4/4 | 4/4 |
-| Unit (`npm test`, incl. `tests/merge.test.mjs`) | 56 | — | 56/56 |
+| `keyboard.mjs` — the Piano tool (WSHED-73) | 10 | 10/10 | 10/10 |
+| `takes.mjs` — recording, playback, star, goal page + compare, Recorder tool, storage sheet (WSHED-75; fake microphone) | 8 | 8/8 | 8/8 |
+| Unit (`npm test`) | 76 | — | 76/76 |
 
 ## What the accounts suites prove
 

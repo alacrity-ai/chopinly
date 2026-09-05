@@ -1,6 +1,6 @@
 // Network-first, cache-fallback. Installable + fully offline, but never serves
 // a stale shell when the network is up (see docs/DESIGN.md §5).
-const CACHE = "chopinly-v33";
+const CACHE = "chopinly-v34";
 const SHELL = [
   "/",
   "/css/app.css",
@@ -26,6 +26,13 @@ const SHELL = [
   "/js/tools/metronome/engine.js",
   "/js/tools/metronome/voices.js",
   "/js/tools/metronome/ui.js",
+  "/js/lib/takes/peaks.js",
+  "/js/lib/takes/store.js",
+  "/js/lib/takes/recorder.js",
+  "/js/lib/takes/player.js",
+  "/js/tools/logbook/takes.js",
+  "/js/tools/recorder/index.js",
+  "/js/tools/recorder/ui.js",
   "/js/lib/keyboard/layout.js",
   "/js/lib/keyboard/keyboard.js",
   "/js/lib/keyboard/piano.js",

@@ -6,10 +6,14 @@ import { sparkline } from "./sparkline.js";
 import { haptic } from "./motion.js";
 import { icon } from "../../lib/icons.js";
 import { engage } from "./ceremony.js";
+import { takeRow, wireTakeRows, mountCompare } from "./takes.js";
+import { dayKey } from "../../lib/logbook.js";
 
 const PAGE = 10;
 /** How many day rows each goal page has been expanded to this session (WSHED-61). */
 const shownDays = new Map();
+const shownTakes = new Map();
+let cleanup = null;
 
 export function renderGoalPage(root, id, ctx) {
   const g = logbook.goal(id);
@@ -32,6 +36,13 @@ export function renderGoalPage(root, id, ctx) {
   const shown = Math.min(days.length, shownDays.get(id) ?? PAGE);
   const left = days.length - shown;
   const nextPage = Math.min(PAGE, left);
+  // takes (WSHED-75): grouped by day, starred first within a day, PAGE at a time
+  const takesAll = logbook.takes({ goalId: id }).sort((a, b) => (dayKey(b.recordedAt) > dayKey(a.recordedAt) ? 1 : dayKey(b.recordedAt) < dayKey(a.recordedAt) ? -1 : (Number(b.starred) - Number(a.starred)) || (b.recordedAt - a.recordedAt)));
+  const tShown = Math.min(takesAll.length, shownTakes.get(id) ?? PAGE);
+  const takeDays = logbook.takeDays(id);
+  const takeGroups = [];
+  for (const tk of takesAll.slice(0, tShown)) { const k = relDay(tk.recordedAt); const last = takeGroups[takeGroups.length - 1]; if (last && last.day === k) last.takes.push(tk); else takeGroups.push({ day: k, takes: [tk] }); }
+  if (cleanup) { cleanup(); cleanup = null; }
 
   root.innerHTML = `
     <section class="logbook lb-goalpage">
@@ -61,9 +72,13 @@ export function renderGoalPage(root, id, ctx) {
       </div>
       <div class="lb-sect">notes</div>
       <div id="lb-gp-notes"></div>
+      ${takesAll.length ? `<div class="lb-sect" id="lb-gp-takes-h">takes<span class="lb-sect-sub">${takesAll.length}</span></div>
+      <div id="lb-gp-cmp"></div>
+      <ul class="lb-takes lb-gp-takes" id="lb-gp-takes">${takeGroups.map((gr) => `<li class="lb-takeday"><div class="lb-takeday-h">${esc(gr.day)}</div><ul class="lb-takes">${gr.takes.map((tk) => takeRow(tk)).join("")}</ul></li>`).join("")}</ul>
+      ${takesAll.length > tShown ? `<div class="lb-foot"><button class="lb-link" id="lb-gp-more-takes">show ${Math.min(PAGE, takesAll.length - tShown)} more takes</button></div>` : ""}` : ""}
       <div class="lb-sect">practice${days.length > PAGE ? `<span class="lb-sect-sub">${shown} of ${days.length} days</span>` : ""}</div>
       ${days.length ? `<ul class="lb-seglist">${days.slice(0, shown).map(([day, segs]) => `
-        <li class="lb-segday"><span class="lb-segday-h">${esc(day)}</span>
+        <li class="lb-segday"><span class="lb-segday-h">${esc(day)}${takeDays.has(dayKey(segs[0].startedAt)) ? `<a class="lb-take-chip" href="#lb-gp-takes-h" title="this day has takes"><i></i></a>` : ""}</span>
           <span class="lb-segs">${segs.map((s) => `<button class="lb-seg ${s.endedAt === null ? "live" : ""}" data-seg="${s.id}" title="${fmtDate(s.startedAt, { hour: "numeric", minute: "2-digit" })}${s.auto ? ` · ${esc(s.auto.label)}` : ""}${s.endedAt === null ? "" : " · hold to delete"}">${s.endedAt === null ? "now" : fmtMin(Math.round((s.endedAt - s.startedAt) / 60000))}${s.bpm ? ` <small>♩${s.bpm}</small>` : ""}${s.auto ? ` <span class="lb-auto">auto</span>` : ""}</button>`).join("")}</span>
         </li>`).join("")}</ul>
         ${left ? `<div class="lb-foot"><button class="lb-link" id="lb-gp-more">show ${nextPage} more${left > nextPage ? ` · ${left - nextPage} left` : ""}</button></div>` : ""}` : `<p class="lb-empty lb-dim">no practice yet.</p>`}
@@ -72,6 +87,13 @@ export function renderGoalPage(root, id, ctx) {
 
   root.querySelector("#lb-back").addEventListener("click", () => ctx.nav("/goals"));
   root.querySelector("#lb-gp-more")?.addEventListener("click", () => { shownDays.set(id, shown + PAGE); renderGoalPage(root, id, ctx); });
+  root.querySelector("#lb-gp-more-takes")?.addEventListener("click", () => { shownTakes.set(id, tShown + PAGE); renderGoalPage(root, id, ctx); });
+  const takesEl = root.querySelector("#lb-gp-takes");
+  if (takesEl) {
+    cleanup = wireTakeRows(takesEl, { onChange: () => renderGoalPage(root, id, ctx) });
+    mountCompare({ head: root.querySelector("#lb-gp-takes-h"), barEl: root.querySelector("#lb-gp-cmp"), listEl: takesEl });
+    for (const a of root.querySelectorAll(".lb-take-chip")) a.addEventListener("click", (e) => { e.preventDefault(); root.querySelector("#lb-gp-takes-h")?.scrollIntoView({ behavior: "smooth", block: "start" }); });
+  }
   root.querySelector("#lb-gp-today")?.addEventListener("click", () => ctx.nav(""));
   root.querySelector("#lb-gp-practice")?.addEventListener("click", () => {
     logbook.start(id); ctx.nav("");
@@ -97,8 +119,8 @@ export function renderGoalPage(root, id, ctx) {
     root.querySelector("#lb-gp-shelve")?.addEventListener("click", () => { logbook.shelveGoal(id); renderGoalPage(root, id, ctx); });
     root.querySelector("#lb-gp-reactivate")?.addEventListener("click", () => { logbook.reactivateGoal(id); renderGoalPage(root, id, ctx); });
     root.querySelector("#lb-gp-delete").addEventListener("click", () => {
-      const n = logbook.notes(id).length;
-      if (confirm(`Delete “${displayName(g)}” with ${plural(st.segments.length, "practice segment")} and ${plural(n, "note")}? This can't be undone.`)) { logbook.deleteGoal(id); ctx.nav("/goals"); }
+      const n = logbook.notes(id).length, tk = takesAll.length;
+      if (confirm(`Delete “${displayName(g)}” with ${plural(st.segments.length, "practice segment")}, ${plural(n, "note")}${tk ? ` and ${plural(tk, "take")}` : ""}? This can't be undone.`)) { logbook.deleteGoal(id); ctx.nav("/goals"); }
     });
   }
   for (const b of root.querySelectorAll(".lb-seg:not(.live)")) longPress(b, null, () => {

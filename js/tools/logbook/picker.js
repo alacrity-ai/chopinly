@@ -7,11 +7,11 @@ import { esc, openSheet, finePointer, fmtMin, ago } from "./util.js";
 import { openCreate } from "./create.js";
 import { haptic } from "./motion.js";
 
-const TITLES = { start: "What are you working on?", switch: "Switch to…", addtime: "Add time to…" };
+const TITLES = { start: "What are you working on?", switch: "Switch to…", addtime: "Add time to…", take: "What is this a take of?" };
 const QUICK_MINUTES = [15, 30, 45, 60];
 
 /**
- * @param {{ mode?: "start"|"switch"|"addtime", excludeId?: string|null }} opts
+ * @param {{ mode?: "start"|"switch"|"addtime"|"take", excludeId?: string|null }} opts
  * @returns {Promise<{ goal, rowEl, created: boolean, minutes?: number }|null>}
  */
 export function openPicker({ mode = "start", excludeId = null } = {}) {

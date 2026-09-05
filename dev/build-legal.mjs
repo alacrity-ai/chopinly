@@ -68,7 +68,7 @@ const meta = (extra = "") => `<p class="l-meta">Effective ${EFFECTIVE} · ${CO}$
 const about = `
     <h1>About Chopinly</h1>
     ${meta("")}
-    <p>Chopinly is a free practice assistant for musicians. You press play, say what you're working on, and it keeps an honest record of your practice: minutes on each piece and technique, a notes thread per goal, a calendar that shows the shape of your months, and an analytics page that tells you how you really spend your time. It also carries the tools you reach for while practicing: a metronome, a tuner, a pitch pipe and sight-singing books.</p>
+    <p>Chopinly is a free practice assistant for musicians. You press play, say what you're working on, and it keeps an honest record of your practice: minutes on each piece and technique, a notes thread per goal, a calendar that shows the shape of your months, and an analytics page that tells you how you really spend your time. It also carries the tools you reach for while practicing: a metronome, a piano keyboard, a take recorder, a tuner, a pitch pipe and sight-singing books.</p>
 
     <h2>What we believe</h2>
     <ul>
@@ -138,7 +138,8 @@ const privacy = `
       <thead><tr><th>Data</th><th>What exactly</th><th>Why</th><th>Kept</th></tr></thead>
       <tbody>
         <tr><td><b>Email address</b></td><td>The address you sign in with.</td><td>To identify your account and send you sign-in codes.</td><td>Until you delete your account.</td></tr>
-        <tr><td><b>Practice data</b></td><td>Goals (name, optional composer, type, status), practice segments (start and end times, optional tempo), notes you write, and deletion markers so devices agree.</td><td>Backup and sync — the service you asked for.</td><td>Until you delete the item or your account.</td></tr>
+        <tr><td><b>Practice data</b></td><td>Goals (name, optional composer, type, status), practice segments (start and end times, optional tempo), notes you write, the <em>list</em> of takes you record (which goal, when, how long, a 48-number loudness outline, whether you starred it), and deletion markers so devices agree.</td><td>Backup and sync — the service you asked for.</td><td>Until you delete the item or your account.</td></tr>
+        <tr><td><b>Take audio</b></td><td><b>Never sent.</b> The recordings themselves are stored only in the browser storage of the device that made them (IndexedDB). We cannot hear them; no server ever receives them. Removing them is a device setting in the account sheet, and clearing the device removes them all.</td><td>—</td><td>Until you remove them on that device.</td></tr>
         <tr><td><b>Session records</b></td><td>One per signed-in device: a random token stored only as a SHA-256 hash, created / renewed / expiry timestamps, and the browser's user-agent string (cut to 200 characters).</td><td>To keep you signed in and let you see and end sessions.</td><td>180 days from last use, or until you sign out.</td></tr>
         <tr><td><b>Sign-in codes</b></td><td>A salted hash of the six-digit code, the email it was sent to, an attempt counter.</td><td>To verify it is you.</td><td>10 minutes, or until used.</td></tr>
         <tr><td><b>Rate-limit counters</b></td><td>A count of recent requests keyed by your email address and by the IP address of the request.</td><td>To stop abuse — someone hammering the sign-in or sync endpoints.</td><td>One hour.</td></tr>
