@@ -28,6 +28,32 @@ await step("signed-out button: person glyph, no dot, opens the sign-in sheet", a
   await page.screenshot({ path: `${S}/ui-01-signin-sheet.png` });
 });
 
+await step("appearance (WSHED-71): Green Piano applies instantly, survives a reload, Ebony restores", async () => {
+  const state = () => page.evaluate(() => ({ skin: document.documentElement.dataset.skin ?? "ebony", stored: localStorage.getItem("ws.shell.skin"), bg: getComputedStyle(document.body).backgroundColor, scheme: getComputedStyle(document.documentElement).colorScheme, theme: document.querySelector('meta[name="theme-color"]').content }));
+  const before = await state();
+  if (before.skin !== "ebony" || before.bg !== "rgb(25, 20, 16)") throw new Error("default " + JSON.stringify(before));
+  await page.click("#acct-appearance");
+  await page.waitForSelector(".lb-skins-wrap.open .lb-skin");
+  if ((await page.locator('.lb-skin[aria-checked="true"]').getAttribute("data-skin")) !== "ebony") throw new Error("ebony not checked");
+  await page.click('.lb-skin[data-skin="green-piano"]');
+  await page.waitForTimeout(150);
+  const green = await state();
+  if (green.skin !== "green-piano" || green.stored !== '"green-piano"' || green.bg !== "rgb(246, 243, 236)" || green.scheme !== "light" || green.theme !== "#f6f3ec") throw new Error("green " + JSON.stringify(green));
+  await noWiden();
+  await page.screenshot({ path: `${S}/ui-01b-appearance.png` });
+  await page.reload(); await page.waitForSelector("#lb-play");
+  const kept = await state();
+  if (kept.skin !== "green-piano" || kept.bg !== "rgb(246, 243, 236)") throw new Error("not kept " + JSON.stringify(kept));
+  await page.click("#account-btn"); await page.waitForSelector(".lb-acct-wrap.open #acct-appearance");
+  if (!(await text("#acct-appearance small")).includes("Green Piano")) throw new Error("row hint");
+  await page.click("#acct-appearance"); await page.waitForSelector(".lb-skins-wrap.open .lb-skin");
+  await page.click('.lb-skin[data-skin="ebony"]'); await page.waitForTimeout(150);
+  const back = await state();
+  if (back.skin !== "ebony" || back.bg !== "rgb(25, 20, 16)" || back.stored !== '"ebony"') throw new Error("back " + JSON.stringify(back));
+  await page.keyboard.press("Escape"); await page.waitForSelector(".lb-skins-wrap", { state: "detached" });
+  await page.click("#account-btn"); await page.waitForSelector(".lb-acct-wrap.open #acct-email");
+});
+
 await step("bad email → sentence; good email → code form", async () => {
   await page.fill("#acct-email", "nope");
   await page.click("#acct-send");
@@ -89,7 +115,7 @@ await step("signed-in sheet: email, sync line, actions; sign out keeps local dat
   // WSHED-62: settings-style list — equal-height full-width rows, icons, the homepage link
   if ((await page.getAttribute("#acct-home", "href")) !== "/welcome") throw new Error("homepage href");
   const rows = await page.$$eval(".lb-acct-row", (els) => els.map((e) => ({ h: Math.round(e.getBoundingClientRect().height), w: Math.round(e.getBoundingClientRect().width), icon: !!e.querySelector("svg") })));
-  if (rows.length !== 6 || rows.some((r) => !r.icon) || Math.max(...rows.map((r) => r.h)) - Math.min(...rows.map((r) => r.h)) > 1 || new Set(rows.map((r) => r.w)).size !== 1) throw new Error("rows " + JSON.stringify(rows));
+  if (rows.length !== 7 || rows.some((r) => !r.icon) || Math.max(...rows.map((r) => r.h)) - Math.min(...rows.map((r) => r.h)) > 1 || new Set(rows.map((r) => r.w)).size !== 1) throw new Error("rows " + JSON.stringify(rows));
   await page.waitForTimeout(250);
   await page.screenshot({ path: `${S}/ui-04-signed-in-sheet.png` });
   await page.click("#acct-signout");

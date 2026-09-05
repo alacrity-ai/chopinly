@@ -22,6 +22,8 @@ const P = {
   signout: `<path d="M10 5H6.5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1H10"/><path d="M14 8.4 17.6 12 14 15.6"/><path d="M17.4 12H9.5"/>`,
   eraser: `<path d="M5.2 15.3 13.6 6.9a1.5 1.5 0 0 1 2.1 0l2.9 2.9a1.5 1.5 0 0 1 0 2.1L12.2 18.3a1 1 0 0 1-.7.3H7.9a1 1 0 0 1-.7-.3l-2-2a1 1 0 0 1 0-1Z"/><path d="M9.6 11l4.4 4.4"/><path d="M13 18.6h6"/>`,
   trash: `<path d="M5.5 7.5h13"/><path d="M9.5 7.5V5.8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.7"/><path d="M7 7.5l.8 10.6a1 1 0 0 0 1 .9h6.4a1 1 0 0 0 1-.9L17 7.5"/><path d="M10.3 10.5v5M13.7 10.5v5"/>`,
+  check: `<path d="M5 12.5l4.2 4.2L19 7.5" stroke-width="2.4"/>`,
+  palette: `<path d="M12 4.5a7.5 7.5 0 1 0 0 15h1.2a1.6 1.6 0 0 0 1.1-2.8 1.6 1.6 0 0 1 1.1-2.7h1.4a2.7 2.7 0 0 0 2.7-2.7A7.5 7.5 0 0 0 12 4.5Z"/><circle cx="8.3" cy="11.2" r="1.1" fill="currentColor" stroke="none"/><circle cx="11" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="8.6" r="1.1" fill="currentColor" stroke="none"/>`,
   chart: `<path d="M4.5 19.5h15"/><path d="M7 16v-5M12 16V6.5M17 16v-8"/>`,
   log: `<path d="M6 4.5h9.5l3 3V19.5H6V4.5Z"/><path d="M9 10h6M9 13.5h6M9 17h3.5"/>`,
 };

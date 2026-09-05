@@ -76,4 +76,4 @@ export function stack(bands, totalDays) {
 
 export const pct = (share) => `${Math.round(share * 100)}%`;
 /** Palette for composer bars — brass first, then the rest of the room. */
-export const PALETTE = ["var(--brass)", "var(--gold)", "#b08968", "#9c8fbf", "#7fa3a8", "var(--brass-bright)", "#c07a5a", "#8f9a7a"];
+export const PALETTE = ["var(--accent)", "var(--hi)", "var(--series-3)", "var(--series-4)", "var(--series-5)", "var(--accent-bright)", "var(--series-7)", "var(--series-8)"];

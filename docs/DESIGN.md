@@ -78,16 +78,29 @@ exponential decay envelopes) — no samples, no asset loading, fully offline.
 Everything on screen is derived from piano materials; no generic dashboard
 styling.
 
-**Palette**
+**Palette — skin tokens (WSHED-71).** Every color in `css/app.css` is a custom
+property from one block, so a *skin* is one block of values; translucent
+variants are `color-mix()`ed from the base tokens where they are used, and
+canvas code reads tokens via `token()` in `js/lib/skins.js`. The user's choice
+is a device setting (`ws.shell.skin`, never synced), applied as `data-skin` on
+`<html>` by an inline head script before first paint; `color-scheme` and
+`theme-color` follow it. The default skin is **Ebony**:
 
-| token | hex | source |
+| token | Ebony | role |
 |---|---|---|
-| `--ebony` | `#191410` | case interior, warm near-black (background) |
-| `--ebony-raised` | `#26201a` | control surfaces |
-| `--ivory` | `#eee5d3` | aged key ivory (primary text) |
-| `--ivory-dim` | `#a2947d` | secondary text |
-| `--brass` | `#c9a35c` | pedals / pendulum weight — the action accent (start, active states) |
-| `--felt` | `#b0463c` | red bushing felt — the **downbeat** color only |
+| `--bg` / `--bg-panel` / `--bg-raised` / `--bg-edge` | `#191410` / `#1e1913` / `#26201a` / `#3a3128` | case interior; cards and sheets; control surfaces; hairlines |
+| `--fg` / `--fg-dim` / `--fg-on-accent` | `#eee5d3` / `#a2947d` / `#191410` | aged ivory (primary text); secondary text; type on an accent button |
+| `--accent` / `--accent-bright` | `#c9a35c` / `#e3c284` | brass: pedals / pendulum weight — the action accent (start, active states) |
+| `--hi` | `#ecc766` | gold: a nailed note, the sweet-spot band |
+| `--ok` / `--rough` | `#8fae82` / `#9a6b3f` | sage and bronze grade tiers |
+| `--red` | `#b0463c` | felt: the **downbeat** color only (and missed / delete) |
+| `--band-*`, `--series-*`, `--scrim`, `--shadow-*`, `--staff-line`, … | see the block | practice bands, chart palette, and the small stuff |
+
+The second skin, **Green Piano** (paper white `#f6f3ec`, black type, accent
+`#00b06a`), is the first white-label appearance for studios and teachers. To
+add a skin: one more `:root[data-skin="…"], .skin-…` block and one entry in
+`SKINS` (`js/lib/skins.js`) — the picker's swatch is drawn from the block
+itself. The landing page and the legal pages keep their own fixed styling.
 
 Dark by intent: a glowing white rectangle next to sheet music is hostile;
 this sits quietly on the music desk.

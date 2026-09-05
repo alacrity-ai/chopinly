@@ -14,8 +14,11 @@
 import { reduced, haptic, whoosh, settle } from "./motion.js";
 import { displayName } from "../../lib/logbook.js";
 import { esc, fmtMin } from "./util.js";
+import { token } from "../../lib/skins.js";
 
-const SHAVINGS = ["#c9a35c", "#c9a35c", "#c9a35c", "#c9a35c", "#e3c284", "#e3c284", "#eee5d3", "#8fae82", "#b0463c"];
+// Mostly the accent, some bright accent, a little ivory / sage / red. Read from
+// the skin tokens when the ceremony starts (a canvas cannot take var()).
+const shavingColors = () => { const a = token("--accent"), b = token("--accent-bright"); return [a, a, a, a, b, b, token("--fg"), token("--ok"), token("--red")]; };
 
 function overlay(cls, html) {
   const el = document.createElement("div");
@@ -72,6 +75,7 @@ function shavings(canvas, count, originY) {
   canvas.width = w * dpr; canvas.height = h * dpr;
   const c = canvas.getContext("2d");
   c.scale(dpr, dpr);
+  const SHAVINGS = shavingColors();
   const ps = [];
   for (let i = 0; i < count; i++) {
     const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4, sp = 5 + Math.random() * 8;
