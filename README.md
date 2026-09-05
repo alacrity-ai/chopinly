@@ -85,6 +85,9 @@ reward the wrong thing.
   sample-accurate scheduling, four click voices, tap tempo, accents and mutes per
   beat, subdivisions, tempo markings. While a goal is running, one tap stamps the
   tempo onto it, so the goal page grows a tempo-over-time line.
+- **Piano** — a keyboard under your thumbs: multitouch chords and glides, a
+  sustain pedal, velocity from where you strike the key, and the computer
+  keyboard plays it on a desk. Two octaves on a phone, up to four on a desk.
 - **Tuner** — hear where you are: microphone pitch detection with a cents dial.
 - **Pitch pipe** — any note, any octave, in tune, with A4 calibration.
 - **Sight singing** — graded melodies on a real engraved staff, a tonic-chord

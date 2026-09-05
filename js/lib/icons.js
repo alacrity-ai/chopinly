@@ -24,6 +24,7 @@ const P = {
   trash: `<path d="M5.5 7.5h13"/><path d="M9.5 7.5V5.8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.7"/><path d="M7 7.5l.8 10.6a1 1 0 0 0 1 .9h6.4a1 1 0 0 0 1-.9L17 7.5"/><path d="M10.3 10.5v5M13.7 10.5v5"/>`,
   check: `<path d="M5 12.5l4.2 4.2L19 7.5" stroke-width="2.4"/>`,
   palette: `<path d="M12 4.5a7.5 7.5 0 1 0 0 15h1.2a1.6 1.6 0 0 0 1.1-2.8 1.6 1.6 0 0 1 1.1-2.7h1.4a2.7 2.7 0 0 0 2.7-2.7A7.5 7.5 0 0 0 12 4.5Z"/><circle cx="8.3" cy="11.2" r="1.1" fill="currentColor" stroke="none"/><circle cx="11" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="8.6" r="1.1" fill="currentColor" stroke="none"/>`,
+  keys: `<rect x="3.5" y="6" width="17" height="12" rx="1.5"/><path d="M8 6v7.5M12 6v7.5M16 6v7.5"/><path d="M6.6 6v5h2.8V6M10.6 6v5h2.8V6M14.6 6v5h2.8V6" fill="currentColor" stroke="none"/>`,
   chart: `<path d="M4.5 19.5h15"/><path d="M7 16v-5M12 16V6.5M17 16v-8"/>`,
   log: `<path d="M6 4.5h9.5l3 3V19.5H6V4.5Z"/><path d="M9 10h6M9 13.5h6M9 17h3.5"/>`,
 };

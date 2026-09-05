@@ -76,6 +76,9 @@
   --series-5: #7fa3a8;
   --series-7: #c07a5a;
   --series-8: #8f9a7a;
+  --key-white: #eee5d3;
+  --key-black: #1a150f;
+  --key-ink: #7d6e58;
 }
 
 /* Green Piano — paper white, black type, one green. The first white-label skin. */
@@ -116,6 +119,9 @@
   --series-5: #3fa39c;
   --series-7: #c8743f;
   --series-8: #7f9a58;
+  --key-white: #ffffff;
+  --key-black: #161616;
+  --key-ink: #6a665c;
 }
 
 /* Nocturne — the practical one: true OLED black for the late session under a
@@ -158,6 +164,9 @@
   --series-5: #6fbfb8;
   --series-7: #d68a7a;
   --series-8: #8fa07a;
+  --key-white: #e6e6ee;
+  --key-black: #0b0b10;
+  --key-ink: #6a6a80;
 }
 
 /* Manuscript — the scholarly one: aged parchment, sepia ink, fountain-pen blue
@@ -200,6 +209,9 @@
   --series-5: #c07a4a;
   --series-7: #7a8f5a;
   --series-8: #9a6a5a;
+  --key-white: #f6ecd4;
+  --key-black: #2e2416;
+  --key-ink: #8b7a5b;
 }
 
 /* Neon — the whimsical one: midnight indigo, hot magenta, cyan for nailed,
@@ -242,6 +254,9 @@
   --series-5: #ffd166;
   --series-7: #ff9a76;
   --series-8: #7bd1ff;
+  --key-white: #f2eaff;
+  --key-black: #16102a;
+  --key-ink: #7a6ca8;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1597,3 +1612,38 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .lb-swatch::after { content: ""; position: absolute; right: 0.4rem; bottom: 0.35rem; width: 0.9rem; height: 0.9rem; border-radius: 50%; background: var(--accent); }
 .lb-swatch i { position: absolute; left: 0.45rem; bottom: 0.5rem; width: 1.1rem; height: 3px; border-radius: 2px; background: var(--fg-dim); }
 .lb-skins-wrap .lb-acct-fine { margin-top: 0.9rem; }
+
+/* ---------- piano keyboard (WSHED-73) ----------
+   The view (js/lib/keyboard/keyboard.js) lays keys out in white-key units;
+   --kb-whites turns them into percentages. Colors come from the skin's
+   --key-* tokens; a pressed key blooms with the skin's accent. */
+.piano { width: min(100%, 60rem); display: flex; flex-direction: column; align-items: center; gap: clamp(0.8rem, 2.2vh, 1.3rem); }
+.piano-read { min-height: 2.2rem; display: flex; align-items: center; justify-content: center; font-family: var(--serif); font-size: 1.35rem; color: var(--fg); font-variant-numeric: tabular-nums; }
+.piano-read-notes.dim { color: var(--fg-dim); }
+.piano-wrap { width: min(100%, calc(var(--kb-whites, 15) * 3.4rem)); padding: 0.55rem 0.55rem 0.7rem; border-radius: 0.9rem; background: linear-gradient(180deg, var(--bg-raised), var(--bg-panel)); border: 1px solid var(--bg-edge); box-shadow: inset 0 2px 8px var(--shadow-soft); }
+.kb { position: relative; width: 100%; aspect-ratio: var(--kb-whites, 15) / 5.2; max-height: 16rem; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+.kb-key { position: absolute; top: 0; left: calc(var(--x) / var(--kb-whites) * 100%); width: calc(var(--w) / var(--kb-whites) * 100%); display: flex; align-items: flex-end; justify-content: center; padding-bottom: 0.4rem; transform-origin: top center; transition: transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 200ms, box-shadow 200ms; will-change: transform; }
+.kb-white { height: 100%; z-index: 1; background: var(--key-white); border-radius: 0 0 0.3rem 0.3rem; box-shadow: inset -1px 0 0 color-mix(in srgb, var(--key-black) 22%, transparent), inset 0 -4px 0 color-mix(in srgb, var(--key-black) 14%, transparent), 0 3px 0 color-mix(in srgb, var(--key-black) 35%, transparent); }
+.kb-white:first-child { border-radius: 0.3rem 0 0.3rem 0.3rem; }
+.kb-black { height: 62%; z-index: 2; background: linear-gradient(180deg, color-mix(in srgb, var(--key-black) 80%, white) 0%, var(--key-black) 14%, var(--key-black) 100%); border-radius: 0 0 0.25rem 0.25rem; box-shadow: inset 2px 0 0 color-mix(in srgb, var(--key-black) 60%, white), inset -2px 0 0 color-mix(in srgb, var(--key-black) 75%, black), 0 4px 6px var(--shadow-deep); }
+.kb-label { font: 500 0.7rem var(--sans); color: var(--key-ink); pointer-events: none; }
+.kb-black .kb-label { color: color-mix(in srgb, var(--key-white) 70%, transparent); font-size: 0.55rem; }
+/* down: a quick tip on the fulcrum, the shadow collapses, the accent blooms up from the bottom */
+.kb-key.down { transition-duration: 55ms, 55ms, 55ms; transition-timing-function: ease-out; transform: perspective(700px) rotateX(-7deg) translateY(1px); }
+.kb-white.down { background-color: color-mix(in srgb, var(--key-white) 62%, var(--accent)); box-shadow: inset -1px 0 0 color-mix(in srgb, var(--key-black) 22%, transparent), inset 0 -4px 0 color-mix(in srgb, var(--accent) 50%, transparent), 0 1px 0 color-mix(in srgb, var(--key-black) 35%, transparent); }
+.kb-black.down { background: linear-gradient(180deg, color-mix(in srgb, var(--key-black) 70%, var(--accent)) 0%, color-mix(in srgb, var(--key-black) 55%, var(--accent)) 100%); box-shadow: 0 1px 2px var(--shadow-deep); }
+.kb-key::after { content: ""; position: absolute; left: 10%; right: 10%; bottom: 4%; height: 36%; border-radius: 40% 40% 0.3rem 0.3rem; background: radial-gradient(ellipse at 50% 100%, color-mix(in srgb, var(--accent) 55%, transparent), transparent 70%); opacity: 0; transition: opacity 260ms; pointer-events: none; }
+.kb-key.down::after { opacity: 1; transition-duration: 40ms; }
+/* exercise lights */
+.kb-key[data-light="target"] { box-shadow: inset 0 0 0 2px var(--accent), 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent); }
+.kb-white[data-light="correct"] { background-color: color-mix(in srgb, var(--key-white) 55%, var(--ok)); }
+.kb-black[data-light="correct"] { background: color-mix(in srgb, var(--key-black) 55%, var(--ok)); }
+.kb-white[data-light="wrong"] { background-color: color-mix(in srgb, var(--key-white) 55%, var(--red)); }
+.kb-black[data-light="wrong"] { background: color-mix(in srgb, var(--key-black) 55%, var(--red)); }
+.piano-params { row-gap: 0.7rem; }
+.piano-range { font-family: var(--serif); font-size: 0.95rem; letter-spacing: 0; text-transform: none; color: var(--fg); min-width: 5.2rem; text-align: center; font-variant-numeric: tabular-nums; }
+.piano-pedal { letter-spacing: 0; text-transform: none; font-size: 0.9rem; padding: 0.45rem 1rem; }
+.piano-pedal[aria-pressed="true"] { color: var(--fg-on-accent); background: linear-gradient(180deg, var(--accent-bright), var(--accent)); border-color: transparent; }
+.piano-hint { display: none; color: var(--fg-dim); font-size: 0.8rem; text-align: center; max-width: 34rem; }
+@media (hover: hover) and (pointer: fine) { .piano-hint { display: block; } }
+@media (prefers-reduced-motion: reduce) { .kb-key, .kb-key.down { transition: background-color 80ms, box-shadow 80ms; transform: none; } }
