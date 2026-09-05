@@ -32,6 +32,25 @@ export const MIN_SEGMENT_MS = 10_000;
 export const SORTS = ["recent", "name", "created", "time", "week", "month"];
 
 const MIN = 60000;
+/**
+ * Lesson runs fold into one auto segment per goal per local day (WSHED-82).
+ * A break up to this long counts as practice, like a clock left running;
+ * past it only the run's own duration is added.
+ */
+export const AUTO_GAP_MS = 15 * MIN;
+const AUTO_RUNS_KEPT = 40;
+const AUTO_NOUN = { sightsinging: "lessons", eartraining: "drills" };
+/** Fold a finished run { label, startedAt, endedAt } into a closed auto segment (mutates, returns it). */
+export function foldAuto(seg, run) {
+  const runs = seg.auto.runs ?? [{ label: seg.auto.label, startedAt: seg.startedAt, endedAt: seg.endedAt }];
+  const dur = Math.max(0, run.endedAt - run.startedAt);
+  const gap = run.startedAt - seg.endedAt;
+  seg.endedAt = gap <= AUTO_GAP_MS ? Math.max(seg.endedAt, run.endedAt) : seg.endedAt + dur;
+  runs.push({ label: run.label, startedAt: run.startedAt, endedAt: run.endedAt });
+  const n = (seg.auto.n ?? runs.length - 1) + 1;
+  seg.auto = { source: seg.auto.source, label: `${n} ${AUTO_NOUN[seg.auto.source] ?? "runs"}`, n, runs: runs.slice(-AUTO_RUNS_KEPT) };
+  return seg;
+}
 
 /** Daily-total bands (WSHED-59). Grounded in the deliberate-practice ceiling —
  *  focused work tops out around four hours a day — and in overuse risk, which
@@ -156,6 +175,25 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   const goalById = (id) => doc.goals.find((g) => g.id === id) ?? null;
   const mustGoal = (id) => { const g = goalById(id); if (!g) throw new Error(`no goal ${id}`); return g; };
   const tomb = (id, kind) => { const at = now(); doc.deleted.push({ id, kind, at, updatedAt: at }); markPending(kind, id); };
+  /** Auto segments written before WSHED-82 (one per run) fold into one per goal per day, once. */
+  function compactAuto() {
+    const groups = new Map();
+    for (const x of doc.segments) if (x.auto && x.endedAt !== null) { const k = `${x.goalId}|${dayKey(x.startedAt)}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); }
+    let changed = false;
+    for (const segs of groups.values()) {
+      if (segs.length < 2) continue;
+      segs.sort((a, b) => a.startedAt - b.startedAt);
+      const [head, ...rest] = segs;
+      for (const x of rest) {
+        for (const r of x.auto.runs ?? [{ label: x.auto.label, startedAt: x.startedAt, endedAt: x.endedAt }]) foldAuto(head, r);
+        doc.segments = doc.segments.filter((y) => y !== x);
+        tomb(x.id, "segment");
+      }
+      touch("segment", head); changed = true;
+    }
+    if (changed) save();
+  }
+  compactAuto();
 
   // --- time helpers ----------------------------------------------------------
   const today = () => dayKey(now());
@@ -377,16 +415,23 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
    * A finished lesson run (sight singing, ear training). With a goal running
    * it becomes a note on that goal (you chose what you're practicing — don't
    * double count); idle, it becomes an auto segment on the lesson's built-in
-   * goal (`builtin` — Sight singing by default).
+   * goal (`builtin` — Sight singing by default). Runs on the same local day
+   * fold into that day's segment (`foldAuto`): a short break stretches it, a
+   * long one adds only the run's own minutes.
    */
   function addAuto({ source, label, startedAt, endedAt = now(), builtin = { id: BUILTIN_SIGHTSINGING, name: "Sight singing" } }) {
     const r = running();
     if (r) return { kind: "note", note: addNote(r.goal.id, label) };
     if (!Number.isFinite(startedAt)) throw new Error("addAuto needs startedAt");
     const g = ensureBuiltin(builtin.id, builtin.name, "other");
-    const s = touch("segment", { id: uuid(), goalId: g.id, startedAt: Math.min(startedAt, endedAt), endedAt, bpm: null, auto: { source, label } });
+    const run = { label, startedAt: Math.min(startedAt, endedAt), endedAt };
+    // the same day's earlier runs on this goal: one segment, not a dozen (WSHED-82)
+    const day = dayKey(run.startedAt);
+    const prev = doc.segments.filter((x) => x.goalId === g.id && x.auto && x.endedAt !== null && dayKey(x.startedAt) === day).sort((a, b) => b.endedAt - a.endedAt)[0];
+    if (prev) { foldAuto(prev, run); touch("segment", prev); save(); return { kind: "segment", segment: prev, folded: true }; }
+    const s = touch("segment", { id: uuid(), goalId: g.id, ...run, bpm: null, auto: { source, label } });
     doc.segments.push(s); save();
-    return { kind: "segment", segment: s };
+    return { kind: "segment", segment: s, folded: false };
   }
 
   // --- read models -----------------------------------------------------------

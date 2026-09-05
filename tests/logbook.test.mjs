@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   createLogbook, dayKey, dayStart, addDays, SCHEMA_VERSION, TYPES, SORTS,
-  BUILTIN_SIGHTSINGING, BUILTIN_FREEPRACTICE, MIN_SEGMENT_MS, band, BANDS, displayName,
+  BUILTIN_SIGHTSINGING, BUILTIN_FREEPRACTICE, MIN_SEGMENT_MS, band, BANDS, displayName, AUTO_GAP_MS, foldAuto,
 } from "../js/lib/logbook.js";
 
 function memStore() {
@@ -414,4 +414,77 @@ test("monthByGoal sums to the month total; minutesBetween clips", () => {
 test("TYPES: three types with glyph + examples", () => {
   assert.deepEqual(Object.keys(TYPES), ["piece", "technique", "other"]);
   for (const t of Object.values(TYPES)) assert.ok(t.glyph && t.examples && t.cls);
+});
+
+// --- 9b. addAuto folds a day's runs into one segment (WSHED-82) ---------------
+test("addAuto: same-day runs fold into one segment; a short break stretches it, a long one adds only the run", () => {
+  const { lb, tick, now } = fresh();
+  const ss = () => lb.doc.segments.filter((s) => s.goalId === BUILTIN_SIGHTSINGING);
+  // 10:00–10:03
+  const r1 = lb.addAuto({ source: "sightsinging", label: "L1", startedAt: now() - 3 * M });
+  assert.equal(r1.folded, false);
+  // 2 min break, 10:05–10:07 → stretched: one segment 10:00–10:07
+  tick(4 * M);
+  const r2 = lb.addAuto({ source: "sightsinging", label: "L2", startedAt: now() - 2 * M });
+  assert.equal(r2.folded, true);
+  assert.equal(ss().length, 1);
+  assert.equal(ss()[0].endedAt - ss()[0].startedAt, 7 * M);
+  assert.equal(ss()[0].auto.label, "2 lessons");
+  assert.equal(ss()[0].auto.n, 2);
+  assert.deepEqual(ss()[0].auto.runs.map((r) => r.label), ["L1", "L2"]);
+  assert.equal(ss()[0].auto.source, "sightsinging");
+  // 8 hours later, a 2-minute run → same segment, only +2 min
+  tick(8 * 60 * M);
+  lb.addAuto({ source: "sightsinging", label: "L3", startedAt: now() - 2 * M });
+  assert.equal(ss().length, 1);
+  assert.equal(ss()[0].endedAt - ss()[0].startedAt, 9 * M, "the gap is not practice");
+  assert.equal(ss()[0].auto.label, "3 lessons");
+  assert.equal(lb.dayReport(lb.today()).goals.find((r) => r.goal.id === BUILTIN_SIGHTSINGING).minutes, 9);
+  assert.equal(lb.doc.pending.filter((k) => k.startsWith("segment:")).length, 1, "one entity to sync");
+  // the next day starts a new segment; a different lesson goal never folds in
+  tick(24 * 60 * M);
+  lb.addAuto({ source: "sightsinging", label: "L4", startedAt: now() - M });
+  assert.equal(ss().length, 2);
+  lb.addAuto({ source: "eartraining", label: "E1", startedAt: now() - M, builtin: { id: "eartraining", name: "Ear training" } });
+  assert.equal(ss().length, 2);
+  assert.equal(lb.doc.segments.filter((s) => s.goalId === "eartraining").length, 1);
+  assert.equal(lb.doc.segments.filter((s) => s.goalId === "eartraining")[0].auto.label, "E1", "a single run keeps its own label");
+});
+
+test("foldAuto: pure rules, run list capped, unknown source says runs", () => {
+  const seg = { startedAt: 0, endedAt: 2 * M, auto: { source: "x", label: "a" } };
+  foldAuto(seg, { label: "b", startedAt: 2 * M + AUTO_GAP_MS, endedAt: 4 * M + AUTO_GAP_MS });
+  assert.equal(seg.endedAt, 4 * M + AUTO_GAP_MS, "a gap of exactly the window still stretches");
+  assert.equal(seg.auto.label, "2 runs");
+  foldAuto(seg, { label: "c", startedAt: seg.endedAt + AUTO_GAP_MS + 1, endedAt: seg.endedAt + AUTO_GAP_MS + 1 + 3 * M });
+  assert.equal(seg.endedAt, 7 * M + AUTO_GAP_MS, "past the window only the run's minutes are added");
+  for (let i = 0; i < 60; i++) foldAuto(seg, { label: `r${i}`, startedAt: seg.endedAt, endedAt: seg.endedAt + 1000 });
+  assert.equal(seg.auto.n, 63);
+  assert.equal(seg.auto.runs.length, 40);
+  assert.equal(seg.auto.runs[39].label, "r59");
+});
+
+test("load compacts the old one-segment-per-run days into one per goal per day, with tombstones", () => {
+  const store = memStore();
+  const at = (h, m = 0) => new Date(2026, 8, 4, h, m).getTime();
+  const seg = (id, goalId, s, e, label) => ({ id, goalId, startedAt: s, endedAt: e, bpm: null, auto: { source: "eartraining", label }, updatedAt: e });
+  store.set("data", { schemaVersion: SCHEMA_VERSION, goals: [{ id: "eartraining", name: "Ear training", type: "other", status: "active", kind: "builtin", createdAt: 1, updatedAt: 1, finishedAt: null }],
+    segments: [
+      seg("b", "eartraining", at(9, 5), at(9, 7), "d2"), seg("a", "eartraining", at(9, 0), at(9, 2), "d1"), seg("c", "eartraining", at(21, 0), at(21, 3), "d3"),
+      seg("d", "eartraining", at(9, 0) + D, at(9, 2) + D, "next day"),
+      { id: "h", goalId: "eartraining", startedAt: at(8), endedAt: at(8, 30), bpm: null, auto: null, updatedAt: at(8, 30) },
+    ], notes: [], takes: [], deleted: [], pending: [] });
+  const lb = createLogbook({ store, now: () => at(22) });
+  const et = lb.doc.segments.filter((s) => s.goalId === "eartraining").sort((a, b) => a.startedAt - b.startedAt);
+  assert.deepEqual(et.map((s) => s.id), ["h", "a", "d"]);
+  assert.equal(et[1].endedAt - et[1].startedAt, 10 * M, "9:00–9:07 stretched, plus the 3-minute evening drill");
+  assert.equal(et[1].auto.label, "3 drills");
+  assert.deepEqual(et[1].auto.runs.map((r) => r.label), ["d1", "d2", "d3"]);
+  assert.deepEqual(lb.doc.deleted.map((t) => t.id).sort(), ["b", "c"]);
+  assert.deepEqual(lb.doc.pending.sort(), ["segment:a", "segment:b", "segment:c"]);
+  assert.equal(JSON.parse(store.m.get("data")).segments.length, 3, "persisted");
+  // idempotent
+  const lb2 = createLogbook({ store, now: () => at(23) });
+  assert.equal(lb2.doc.segments.length, 3);
+  assert.equal(lb2.doc.deleted.length, 2);
 });
