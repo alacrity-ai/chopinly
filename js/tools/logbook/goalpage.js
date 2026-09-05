@@ -1,6 +1,6 @@
 // One goal: identity, stats, notes, practice list (docs/LOGBOOK_V2_DESIGN.md §3.3).
 import { logbook, TYPES, TYPE_IDS, displayName } from "../../lib/logbook.js";
-import { esc, fmtMin, ago, fmtDate, relDay, longPress, plural } from "./util.js";
+import { esc, fmtMin, ago, fmtDate, relDay, longPress, plural, openSheet } from "./util.js";
 import { renderNotes } from "./notes.js";
 import { sparkline } from "./sparkline.js";
 import { haptic } from "./motion.js";
@@ -95,9 +95,27 @@ export function renderGoalPage(root, id, ctx) {
     for (const a of root.querySelectorAll(".lb-take-chip")) a.addEventListener("click", (e) => { e.preventDefault(); root.querySelector("#lb-gp-takes-h")?.scrollIntoView({ behavior: "smooth", block: "start" }); });
   }
   root.querySelector("#lb-gp-today")?.addEventListener("click", () => ctx.nav(""));
-  root.querySelector("#lb-gp-practice")?.addEventListener("click", () => {
+  const startClock = () => {
     logbook.start(id); ctx.nav("");
     engage({ goal: g, type: t, landOn: () => document.querySelector("#lb-hero-goal") });
+  };
+  // The lesson goals (sight singing, ear training) are usually practiced in
+  // the app, where a finished run credits itself — so ask first (WSHED-81).
+  const LESSON = { sightsinging: { title: "sight singing", open: "open the sight-singing books", hash: "#/sightsinging" }, eartraining: { title: "ear training", open: "open the ear trainer", hash: "#/eartraining" } };
+  root.querySelector("#lb-gp-practice")?.addEventListener("click", () => {
+    const lesson = LESSON[id];
+    if (!lesson) { startClock(); return; }
+    const { body, close } = openSheet({
+      title: `practicing ${lesson.title}?`,
+      cls: "lb-acct-wrap lb-lesson-wrap",
+      html: `
+        <ul class="lb-acct-list">
+          <li><button type="button" class="lb-acct-row" id="lb-lesson-open">${icon("play")}<span><b>${esc(lesson.open)}</b><small>set up a drill there — a finished run lands here by itself</small></span></button></li>
+          <li><button type="button" class="lb-acct-row" id="lb-lesson-clock">${icon("log")}<span><b>just start the clock</b><small>practicing ${esc(lesson.title)} away from the app</small></span></button></li>
+        </ul>`,
+    });
+    body.querySelector("#lb-lesson-open").addEventListener("click", () => { close(); location.hash = lesson.hash; });
+    body.querySelector("#lb-lesson-clock").addEventListener("click", () => { close(); startClock(); });
   });
   if (!builtin) {
     const name = root.querySelector("#lb-gp-name");
