@@ -4,12 +4,15 @@
 // See docs/LOGBOOK_V2_DESIGN.md §2 and docs/LOGBOOK_V2_IMPLEMENTATION.md §2.
 //
 // One document lives under ws.logbook.data (via makeStore("logbook")):
-//   { schemaVersion: 2, goals[], segments[], notes[], deleted[] }
+//   { schemaVersion: 2, goals[], segments[], notes[], deleted[], pending[] }
+// `pending` is the set of "kind:id" keys changed locally since the last sync
+// (docs/ACCOUNTS_DESIGN.md §4.4); every entity carries updatedAt.
 // A Goal is what you practice; a Segment is time spent on one goal (the
 // running segment has endedAt: null — at most one); a Note is a dated line
 // on a goal. Days are never stored: every number is derived from segments.
 
 import { makeStore } from "./store.js";
+import { KINDS, key as entityKey, pick, same, toEnvelope, tombEnvelope, fromEnvelope } from "./merge.js";
 
 export const SCHEMA_VERSION = 2;
 export const TYPES = {
@@ -51,7 +54,7 @@ const uuid = () =>
 export const norm = (s) => String(s ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
 
 function emptyDoc() {
-  return { schemaVersion: SCHEMA_VERSION, goals: [], segments: [], notes: [], deleted: [] };
+  return { schemaVersion: SCHEMA_VERSION, goals: [], segments: [], notes: [], deleted: [], pending: [] };
 }
 
 // --- migration ---------------------------------------------------------------
@@ -128,10 +131,12 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   const listeners = new Set();
   const save = () => { store.set("data", doc); for (const fn of listeners) fn(doc); };
   if (raw && raw.schemaVersion !== SCHEMA_VERSION) store.set("data", doc); // persist the upgrade once
-  const stamp = (obj) => { obj.updatedAt = now(); return obj; };
+  const markPending = (kind, id) => { const k = `${kind}:${id}`; if (!doc.pending.includes(k)) doc.pending.push(k); };
+  const touch = (kind, obj) => { obj.updatedAt = now(); markPending(kind, obj.id); return obj; };
+  const stamp = (g) => touch("goal", g);
   const goalById = (id) => doc.goals.find((g) => g.id === id) ?? null;
   const mustGoal = (id) => { const g = goalById(id); if (!g) throw new Error(`no goal ${id}`); return g; };
-  const tomb = (id, kind) => doc.deleted.push({ id, kind, at: now() });
+  const tomb = (id, kind) => { const at = now(); doc.deleted.push({ id, kind, at, updatedAt: at }); markPending(kind, id); };
 
   // --- time helpers ----------------------------------------------------------
   const today = () => dayKey(now());
@@ -243,8 +248,10 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     s.endedAt = Math.max(at, s.startedAt);
     if (s.endedAt - s.startedAt < MIN_SEGMENT_MS && !s.auto) {
       doc.segments = doc.segments.filter((x) => x !== s);
+      tomb(s.id, "segment"); // it may already have synced while open
       return null;
     }
+    touch("segment", s);
     return s;
   }
   /** Start practicing a goal. If something is already running this is a switch. */
@@ -256,7 +263,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
       closeRunning();
     }
     if (g.status !== "active") setStatus(goalId, "active", { persist: false });
-    const s = { id: uuid(), goalId, startedAt: now(), endedAt: null, bpm: null, auto: null };
+    const s = touch("segment", { id: uuid(), goalId, startedAt: now(), endedAt: null, bpm: null, auto: null });
     doc.segments.push(s); save(); return s;
   }
   const switchTo = start;
@@ -267,14 +274,14 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     if (!s) throw new Error("nothing is running");
     const b = Math.round(Number(bpm));
     if (!(b >= 20 && b <= 300)) throw new Error("tempo must be 20–300");
-    s.bpm = b; save(); return s;
+    s.bpm = b; touch("segment", s); save(); return s;
   }
   /** Time without the clock (forgot to press play): a closed segment ending at `endedAt`. */
   function addTime({ goalId, minutes, endedAt = now() }) {
     mustGoal(goalId);
     const m = Math.round(Number(minutes));
     if (!(m >= 1 && m <= 24 * 60)) throw new Error("minutes must be 1–1440");
-    const s = { id: uuid(), goalId, startedAt: endedAt - m * MIN, endedAt, bpm: null, auto: null };
+    const s = touch("segment", { id: uuid(), goalId, startedAt: endedAt - m * MIN, endedAt, bpm: null, auto: null });
     doc.segments.push(s); save(); return s;
   }
   function deleteSegment(id) {
@@ -294,7 +301,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     mustGoal(goalId);
     const b = String(body ?? "").trim();
     if (!b) throw new Error("an empty note isn't worth keeping");
-    const n = { id: uuid(), goalId, body: b, createdAt: now() };
+    const n = touch("note", { id: uuid(), goalId, body: b, createdAt: now() });
     doc.notes.push(n); save(); return n;
   }
   function deleteNote(id) {
@@ -314,7 +321,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     if (r) return { kind: "note", note: addNote(r.goal.id, label) };
     if (!Number.isFinite(startedAt)) throw new Error("addAuto needs startedAt");
     const g = ensureBuiltin(BUILTIN_SIGHTSINGING, "Sight singing", "other");
-    const s = { id: uuid(), goalId: g.id, startedAt: Math.min(startedAt, endedAt), endedAt, bpm: null, auto: { source, label } };
+    const s = touch("segment", { id: uuid(), goalId: g.id, startedAt: Math.min(startedAt, endedAt), endedAt, bpm: null, auto: { source, label } });
     doc.segments.push(s); save();
     return { kind: "segment", segment: s };
   }
@@ -442,6 +449,77 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
 
   const on = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
 
+  // --- sync (docs/ACCOUNTS_DESIGN.md §4) --------------------------------------
+  const listOf = { goal: () => doc.goals, segment: () => doc.segments, note: () => doc.notes };
+  const findEntity = (kind, id) => listOf[kind]().find((x) => x.id === id) ?? null;
+  const findTomb = (kind, id) => doc.deleted.find((t) => t.kind === kind && t.id === id) ?? null;
+  const localEnvelope = (kind, id) => {
+    const e = findEntity(kind, id);
+    if (e) return toEnvelope(kind, e);
+    const t = findTomb(kind, id);
+    return t ? tombEnvelope(t) : null;
+  };
+  /** Envelopes for every locally changed entity (dropping stale keys). */
+  function pendingEnvelopes() {
+    const out = [];
+    doc.pending = doc.pending.filter((k) => {
+      const [kind, ...rest] = k.split(":"); const env = listOf[kind] ? localEnvelope(kind, rest.join(":")) : null;
+      if (env) out.push(env);
+      return !!env;
+    });
+    return out;
+  }
+  /** Every entity and tombstone as envelopes (first sign-in upload, export). */
+  function allEnvelopes() {
+    const out = [];
+    for (const kind of KINDS) for (const e of listOf[kind]()) out.push(toEnvelope(kind, e));
+    for (const t of doc.deleted) out.push(tombEnvelope(t));
+    return out;
+  }
+  function markAllPending() {
+    doc.pending = allEnvelopes().map(entityKey);
+    save();
+  }
+  /** Forget pending keys whose current version is the one that was sent (a change made mid-flight stays pending). */
+  function clearPending(sent) {
+    const done = new Set(sent.filter((e) => { const cur = localEnvelope(e.kind, e.id); return cur && same(cur, e); }).map(entityKey));
+    doc.pending = doc.pending.filter((k) => !done.has(k));
+    save();
+  }
+  /** Merge remote envelopes in. Returns how many changed the document. */
+  function applyRemote(envelopes) {
+    const order = { goal: 0, segment: 1, note: 2 };
+    const sorted = [...envelopes].filter((e) => listOf[e.kind]).sort((a, b) => order[a.kind] - order[b.kind]);
+    let applied = 0;
+    for (const env of sorted) {
+      const cur = localEnvelope(env.kind, env.id);
+      if (cur && same(cur, env)) continue;
+      if (pick(cur, env) !== env) continue;
+      const list = listOf[env.kind]();
+      const idx = list.findIndex((x) => x.id === env.id);
+      if (env.deleted) {
+        if (idx >= 0) list.splice(idx, 1);
+        const t = findTomb(env.kind, env.id);
+        if (t) { t.at = env.updatedAt; t.updatedAt = env.updatedAt; } else doc.deleted.push({ id: env.id, kind: env.kind, at: env.updatedAt, updatedAt: env.updatedAt });
+      } else {
+        const obj = fromEnvelope(env);
+        if (idx >= 0) list[idx] = obj; else list.push(obj);
+        doc.deleted = doc.deleted.filter((t) => !(t.kind === env.kind && t.id === env.id));
+      }
+      applied++;
+    }
+    // At most one segment may be open: two devices that both pressed play
+    // while apart — the later start stays, the earlier closes at that instant.
+    const open = doc.segments.filter((s) => s.endedAt === null).sort((a, b) => a.startedAt - b.startedAt);
+    if (open.length > 1) {
+      const keep = open[open.length - 1];
+      for (const s of open.slice(0, -1)) { s.endedAt = Math.max(s.startedAt, keep.startedAt); touch("segment", s); applied++; }
+    }
+    if (applied) save();
+    return { applied };
+  }
+  const pendingCount = () => doc.pending.length;
+
   return {
     get doc() { return doc; }, save, on,
     // goals
@@ -452,6 +530,8 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     notes, addNote, deleteNote,
     // other tools
     addAuto,
+    // sync
+    pendingEnvelopes, allEnvelopes, markAllPending, clearPending, applyRemote, pendingCount,
     // read models
     today, minutesOn, practicedOn, dayReport,
     metrics: { streak, weekStrip, month, monthByGoal, minutesBetween, tempoSeries, goalStats, goldDays: goldDaySet },
