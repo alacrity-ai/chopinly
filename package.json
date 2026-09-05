@@ -5,9 +5,9 @@
   "description": "Piano practice assistant PWA — no build step, no dependencies",
   "scripts": {
     "test": "node --test \"tests/*.test.mjs\"",
-    "deploy": "wrangler pages deploy . --project-name woodshed --branch main",
-    "dev": "wrangler pages dev . --local --port 8788",
-    "db:migrate": "wrangler d1 migrations apply chopinly --remote",
-    "db:migrate:local": "wrangler d1 migrations apply chopinly --local"
+    "deploy": "npx wrangler pages deploy . --project-name woodshed --branch main",
+    "dev": "npx wrangler pages dev . --local --port 8788",
+    "db:migrate": "npx wrangler d1 migrations apply chopinly --remote",
+    "db:migrate:local": "npx wrangler d1 migrations apply chopinly --local"
   }
 }
