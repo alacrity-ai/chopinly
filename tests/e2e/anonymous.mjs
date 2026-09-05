@@ -168,7 +168,23 @@ await step("history: calendar, day report, month by goal", async () => {
   if ((await page.locator(".lb-bar").count()) !== 2) throw new Error("bars");
   const tot = await text(".lb-totals");
   if (!tot.includes("1h 32m")) throw new Error("totals " + tot);
+  // WSHED-59: every practiced day carries exactly one band; today (92 min) is "good"; nothing is gold-for-volume
+  const bands = await page.$$eval(".lb-day.on", (els) => els.map((e) => [...e.classList].filter((c) => c.startsWith("b-"))));
+  if (!bands.length || bands.some((b) => b.length !== 1)) throw new Error("bands " + JSON.stringify(bands));
+  const todayCls = await page.getAttribute(".lb-day.today", "class");
+  if (!/\bb-good\b/.test(todayCls) || /\bgold\b/.test(todayCls)) throw new Error("today class " + todayCls);
+  const info = await page.$eval("#lb-cal-info", (b) => { const r = b.getBoundingClientRect(), g = b.closest(".lb-cal-wrap").getBoundingClientRect(); return { rightGap: g.right - r.right, belowGrid: r.top >= g.bottom - r.height - 12 }; });
+  if (info.rightGap > 8 || !info.belowGrid) throw new Error("info button placement " + JSON.stringify(info));
   await shot("10-history");
+  await page.click("#lb-cal-info");
+  await page.waitForSelector(".lb-legend-wrap.open .lb-legend li");
+  const rows = await page.locator(".lb-legend li").count();
+  if (rows !== 7) throw new Error("legend rows " + rows);
+  const w = await page.evaluate(() => ({ vw: innerWidth, doc: document.documentElement.scrollWidth }));
+  if (w.doc > w.vw) throw new Error("legend widened " + JSON.stringify(w));
+  await shot("10b-history-legend");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".lb-legend-wrap", { state: "detached" });
 });
 await step("add time (long-press play)", async () => {
   await page.click('.lb-strip [data-go=""]');

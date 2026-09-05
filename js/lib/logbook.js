@@ -28,6 +28,21 @@ export const MIN_SEGMENT_MS = 10_000;
 export const SORTS = ["recent", "name", "created", "time", "week", "month"];
 
 const MIN = 60000;
+
+/** Daily-total bands (WSHED-59). Grounded in the deliberate-practice ceiling —
+ *  focused work tops out around four hours a day — and in overuse risk, which
+ *  rises past four hours and sharply past six. Colour says "how much", never
+ *  "more than yesterday". */
+export const BANDS = [
+  { key: "touched", min: 0,   label: "under 15 min",  note: "a few minutes at the keys." },
+  { key: "okay",    min: 15,  label: "15 to 45 min",  note: "a real session. a little every day beats a big weekend." },
+  { key: "good",    min: 45,  label: "45 min to 2 h", note: "focused work. for most of us this is the sweet spot." },
+  { key: "sweet",   min: 120, label: "2 to 4 h",      note: "where serious study lives, in sessions with breaks between." },
+  { key: "much",    min: 240, label: "4 to 6 h",      note: "attention fades past four hours. the extra hour teaches little." },
+  { key: "over",    min: 360, label: "6 h and up",    note: "hands and focus both need rest. this is overuse territory." },
+];
+/** The band a daily total (minutes) falls in. */
+export function band(minutes) { let b = BANDS[0]; for (const x of BANDS) if (minutes >= x.min) b = x; return b; }
 const pad = (n) => String(n).padStart(2, "0");
 /** Local-time day key, YYYY-MM-DD. */
 export function dayKey(ms) {
@@ -368,37 +383,32 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     }
     return [...keys].sort();
   }
-  /** Gold = a day that beat every earlier day's total, or set a new best tempo on a goal. */
-  function goldDaySet() {
-    const gold = new Set();
-    let best = 0, seen = false;
-    for (const k of practicedKeys()) {
-      const ms = msOn(k);
-      if (ms < MIN / 2) continue;
-      if (seen && ms > best) gold.add(k);
-      if (ms > best) best = ms;
-      seen = true;
-    }
+  /** Best = a day that set a new best tempo on a goal. A bigger daily total is
+   *  never a "best" — that only rewards volume (WSHED-59). */
+  function bestTempoDaySet() {
+    const best = new Set();
     const bestBpm = new Map();
     for (const s of [...doc.segments].filter((x) => x.bpm != null).sort((a, b) => a.startedAt - b.startedAt)) {
       const prev = bestBpm.get(s.goalId);
-      if (prev != null && s.bpm > prev) gold.add(dayKey(s.startedAt));
+      if (prev != null && s.bpm > prev) best.add(dayKey(s.startedAt));
       if (prev == null || s.bpm > prev) bestBpm.set(s.goalId, s.bpm);
     }
-    return gold;
+    return best;
+  }
+  /** { key, practiced, minutes, band, best, today } for one day. */
+  function dayCell(key, best, t) {
+    const practiced = practicedOn(key), minutes = minutesOn(key);
+    return { key, practiced, minutes, band: practiced ? band(minutes).key : null, best: best.has(key), today: key === t };
   }
   function weekStrip() {
-    const gold = goldDaySet();
+    const best = bestTempoDaySet();
     const t = today();
-    return Array.from({ length: 7 }, (_, i) => {
-      const key = addDays(t, i - 6);
-      return { key, practiced: practicedOn(key), gold: gold.has(key), today: key === t };
-    });
+    return Array.from({ length: 7 }, (_, i) => dayCell(addDays(t, i - 6), best, t));
   }
   const minutesBetween = (fromKey, toKey) => toMin(msIn(dayStart(fromKey), dayEnd(toKey)));
-  /** Calendar for a month: cells [{ key, minutes, practiced, gold, goals }] + totals. */
+  /** Calendar for a month: cells [{ key, minutes, practiced, band, best, goals }] + totals. */
   function month(year, monthIndex) {
-    const gold = goldDaySet();
+    const best = bestTempoDaySet(), t = today();
     const first = new Date(year, monthIndex, 1);
     const daysIn = new Date(year, monthIndex + 1, 0).getDate();
     const lead = (first.getDay() + 6) % 7; // Monday-first grid
@@ -406,8 +416,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     for (let i = 0; i < lead; i++) cells.push(null);
     for (let d = 1; d <= daysIn; d++) {
       const key = dayKey(new Date(year, monthIndex, d).getTime());
-      const rep = dayReport(key);
-      cells.push({ key, minutes: rep.minutes, practiced: practicedOn(key), gold: gold.has(key), goals: rep.goals.length });
+      cells.push({ ...dayCell(key, best, t), goals: dayReport(key).goals.length });
     }
     const from = dayKey(first.getTime()), to = dayKey(new Date(year, monthIndex, daysIn).getTime());
     return { cells, totals: { days: cells.filter((c) => c?.practiced).length, minutes: minutesBetween(from, to) } };
@@ -534,7 +543,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     pendingEnvelopes, allEnvelopes, markAllPending, clearPending, applyRemote, pendingCount,
     // read models
     today, minutesOn, practicedOn, dayReport,
-    metrics: { streak, weekStrip, month, monthByGoal, minutesBetween, tempoSeries, goalStats, goldDays: goldDaySet },
+    metrics: { streak, weekStrip, month, monthByGoal, minutesBetween, tempoSeries, goalStats, bestDays: bestTempoDaySet },
   };
 }
 

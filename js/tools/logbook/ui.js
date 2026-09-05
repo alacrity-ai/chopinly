@@ -113,7 +113,7 @@ export function buildUI(root) {
           <div class="lb-hero-total">${rep.minutes ? `<b>${fmtMin(rep.minutes)}</b> today` : `<span class="lb-dim">press play and say what you're working on</span>`}</div>
         </div>`}
         <div class="lb-week" aria-label="this week">
-          ${strip7.map((d) => `<i class="${d.practiced ? "on" : ""} ${d.gold ? "gold" : ""} ${d.today ? "today" : ""}" title="${d.key}"></i>`).join("")}
+          ${strip7.map((d) => `<i class="${d.practiced ? `on b-${d.band}` : ""} ${d.best ? "best" : ""} ${d.today ? "today" : ""}" title="${d.key}"></i>`).join("")}
           <span class="lb-dim">${streak ? `streak ${streak} day${streak === 1 ? "" : "s"}` : "no streak yet"}</span>
           ${run ? `<span class="lb-week-total lb-dim"><b id="lb-total">${fmtMin(rep.minutes)}</b> today</span>` : ""}
         </div>

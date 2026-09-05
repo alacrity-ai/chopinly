@@ -290,7 +290,7 @@ and Switch, and from the shell chip.
 
 ```
  ◀  September 2026  ▶
-   M  T  W  T  F  S  S          (dot size = minutes, gold = personal-best day)
+   M  T  W  T  F  S  S     ⓘ    (dot colour + size = the day's band; brass corner = new best tempo)
  12 days · 17h 20m · streak 4
  ── Thu 4 Sep · 1h 30m ───────────────────────────────
    ● Pathétique Sonata — 1st mvt      30m
@@ -301,8 +301,15 @@ and Switch, and from the shell chip.
    ◆ Sight reading                 2h      ████
 ```
 
-- Calendar as today (Monday-first, dot size by minutes). **Gold** = the day
-  set a new lifetime-best *daily* total, or a new best bpm on a goal.
+- Calendar as today (Monday-first). Each practiced day is coloured by its
+  **band** — the daily total against what the practice and injury literature
+  calls healthy: *touched* < 15 min · *okay* 15–45 · *good* 45 min–2 h ·
+  *sweet spot* 2–4 h (gold) · *diminishing* 4–6 h (amber) · *too much* ≥ 6 h
+  (ember, smaller). Dot size is fixed per band and peaks at the sweet spot;
+  nothing is ever coloured for beating yesterday (WSHED-59 replaced the
+  "personal-best day" gold, which had no ceiling). A **brass corner** marks a
+  new best bpm on a goal. A circled-i at the bottom right of the grid opens
+  the key as a sheet — no inline legend.
 - Selecting a day shows `dayReport(key)`: goals + minutes, tap → goal page.
 - Below: **month by goal** bars from `monthByGoal`. The per-goal sparklines
   move to the goal page (they belong to the goal, not the month).
@@ -407,7 +414,7 @@ opacity only) and use `navigator.vibrate?.(10)` where available.
 | Row tick (running) | minutes text updates once a minute, the type dot **breathes** on the active row | alive, not busy |
 | Day dot fills (first minute of the day) | the week-strip dot fills with the brass glow | "today counts" |
 | Note saved | the new note slides in at the top (120 ms), input clears | fast, quiet |
-| Gold day (personal best) in History | stamp on the calendar dot | rare, so it lands |
+| Best-tempo day in History | brass corner on the calendar dot | progress on a piece, not hours |
 
 Sound: **none** by default. The metronome owns audio; a practice tracker that
 clicks is a nuisance next to a piano. (A future "tick on start" setting can
