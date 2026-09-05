@@ -91,6 +91,7 @@ One document under `ws.logbook.data`, unchanged storage mechanism
 
 Goal = {
   id, name,
+  composer?: string,                  // pieces only, optional (WSHED-60): shown as "Bach – Prelude in C"
   type:   "piece" | "technique" | "other",
   status: "active" | "finished" | "shelved",
   kind:   "user" | "builtin",          // builtin: "sightsinging"
@@ -264,6 +265,7 @@ and Switch, and from the shell chip.
 ```
  ←  active                                       ● PIECE ▾
  Pathétique Sonata — 1st mvt                    (tap to rename)
+ Beethoven                                       (composer, pieces only — tap to edit)
  2h 10m lifetime · 5 days · avg 26m · last today · ♩ best 112
  ▂▃▅▆ tempo (only if any segment has a bpm)
  ( ▶ practice this )   [ finish ] [ shelve ]
@@ -273,8 +275,11 @@ and Switch, and from the shell chip.
  Sep 4   mm. 51–66 still unstable. RH octave entry is late.
  Sep 6   Fixed fingering in 54–57. Dotted rhythms tomorrow.
  Sep 9   Much cleaner. Transition into development weakest.
- ── practice ─────────────────────────────────────────
- Sep 4   27m · 30m           Sep 3   40m           (last 30 segments, grouped by day)
+ ── practice · 10 of 153 days ────────────────────────
+ Sep 4   27m · 30m
+ Sep 3   40m
+ …
+              [ show 10 more · 133 left ]          (WSHED-61: every day, ten at a time)
 ```
 
 - Notes are **append-only, newest first**, dated, one line or many
@@ -285,6 +290,15 @@ and Switch, and from the shell chip.
   the third way into a segment besides Play and Switch.
 - Rename inline; retype via the type badge; delete under a `…` menu with the
   same confirm as today (cascade count in the prompt).
+- **Composer** (WSHED-60) is a piece's second line: set in the creation sheet
+  (*name*, then *composer (optional)*), edited inline here like the name. One
+  `displayName(goal)` — `"Bach – Prelude in C"`, or just the name — is used
+  everywhere a goal is named; search matches it; the *name* sort orders by it
+  so a composer's works sit together. The field rides in the sync envelope
+  body like any other.
+- **Practice record** (WSHED-61): every segment grouped by day, newest first,
+  ten days at a time behind *show more* — a piece practiced daily for years
+  stays readable.
 
 ### 3.4 History — truthful reconstruction
 
@@ -313,6 +327,29 @@ and Switch, and from the shell chip.
 - Selecting a day shows `dayReport(key)`: goals + minutes, tap → goal page.
 - Below: **month by goal** bars from `monthByGoal`. The per-goal sparklines
   move to the goal page (they belong to the goal, not the month).
+
+A **detailed analytics** button closes the screen (WSHED-63, §3.5).
+
+### 3.5 Analytics — how you spend your practice time (WSHED-63)
+
+`#/logbook/history/analytics`, reached from the bottom of History; the back
+chevron returns. Everything is computed client-side by the pure
+`js/lib/analytics.js` (`resolveRange` → `analyze(doc, range + focus)`) and
+drawn by hand-rolled SVG in `js/tools/logbook/charts.js` — no chart library.
+
+- **Range** chips *7d · 30d · 90d · 1y · all · custom* (two date inputs);
+  the choice persists (`makeStore("logbook").analytics`). Segments are clipped
+  to `[from, to)`; the running one counts to now.
+- **Focus**: tapping a type, a composer or a work narrows every view to it —
+  a chip names the focus, × clears it, a focused work offers *open goal*.
+- **Views**: headline cards (total with % vs the previous period of the same
+  length, days practiced / days elapsed, per practiced day, sessions with
+  average + median, longest streak) · time per day/week/month (unit picked by
+  range length; daily bars carry the §3.4 band colour; tap a bar to read it)
+  · by type donut · by composer (pieces only, *no composer* bucket, share of
+  piece time) · by work (top 10, *show all*) · time of day (24 bins) · day of
+  the week · session length buckets · days by band (stacked bar).
+- Phone: one column. ≥ 52rem: two columns, time/works full width.
 
 ## 4. The goal picker — "What are you working on?"
 

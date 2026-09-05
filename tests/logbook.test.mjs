@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   createLogbook, dayKey, dayStart, addDays, SCHEMA_VERSION, TYPES, SORTS,
-  BUILTIN_SIGHTSINGING, BUILTIN_FREEPRACTICE, MIN_SEGMENT_MS, band, BANDS,
+  BUILTIN_SIGHTSINGING, BUILTIN_FREEPRACTICE, MIN_SEGMENT_MS, band, BANDS, displayName,
 } from "../js/lib/logbook.js";
 
 function memStore() {
@@ -264,6 +264,25 @@ test("best days: only a new best tempo on a goal; a bigger daily total is never 
   assert.equal(m.totals.days, 5, "the 20-second day doesn't count");
   const strip = lb.metrics.weekStrip();
   assert.ok(strip.every((d) => "band" in d && "best" in d));
+});
+
+test("composer (WSHED-60): optional on pieces, shown as 'Composer – Name', searchable, sorted by display name, clearable", () => {
+  const { lb } = fresh();
+  const bach = lb.addGoal({ name: "Prelude in C", type: "piece", composer: "  Bach " });
+  const plain = lb.addGoal({ name: "Clair de lune", type: "piece" });
+  assert.equal(bach.composer, "Bach");
+  assert.equal("composer" in plain, false, "no empty composer field is stored");
+  assert.equal(displayName(bach), "Bach – Prelude in C");
+  assert.equal(displayName(plain), "Clair de lune");
+  assert.deepEqual(lb.goals({ q: "bach" }).map((g) => g.id), [bach.id]);
+  assert.deepEqual(lb.goals({ sort: "name" }).map(displayName), ["Bach – Prelude in C", "Clair de lune"]);
+  lb.setComposer(plain.id, "Debussy");
+  assert.deepEqual(lb.goals({ sort: "name" }).map(displayName), ["Bach – Prelude in C", "Debussy – Clair de lune"]);
+  lb.setComposer(bach.id, "   ");
+  assert.equal("composer" in lb.goal(bach.id), false, "blank clears it");
+  assert.equal(displayName(lb.goal(bach.id)), "Prelude in C");
+  const env = lb.allEnvelopes().find((e) => e.kind === "goal" && e.id === plain.id);
+  assert.equal(env.body.composer, "Debussy", "composer rides in the sync envelope body");
 });
 
 // --- 7. library query ---------------------------------------------------------

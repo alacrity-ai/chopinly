@@ -1,11 +1,15 @@
 // One goal: identity, stats, notes, practice list (docs/LOGBOOK_V2_DESIGN.md §3.3).
-import { logbook, TYPES, TYPE_IDS } from "../../lib/logbook.js";
+import { logbook, TYPES, TYPE_IDS, displayName } from "../../lib/logbook.js";
 import { esc, fmtMin, ago, fmtDate, relDay, longPress, plural } from "./util.js";
 import { renderNotes } from "./notes.js";
 import { sparkline } from "./sparkline.js";
 import { haptic } from "./motion.js";
 import { icon } from "../../lib/icons.js";
 import { engage } from "./ceremony.js";
+
+const PAGE = 10;
+/** How many day rows each goal page has been expanded to this session (WSHED-61). */
+const shownDays = new Map();
 
 export function renderGoalPage(root, id, ctx) {
   const g = logbook.goal(id);
@@ -17,13 +21,17 @@ export function renderGoalPage(root, id, ctx) {
   const run = logbook.running();
   const isRunning = run?.goal?.id === id;
 
-  // segments grouped by day, newest first, last 30
+  // every segment grouped by day, newest first; the page shows PAGE days at a time
   const byDay = new Map();
-  for (const s of st.segments.slice(0, 30)) {
+  for (const s of st.segments) {
     const k = relDay(s.startedAt);
     if (!byDay.has(k)) byDay.set(k, []);
     byDay.get(k).push(s);
   }
+  const days = [...byDay];
+  const shown = Math.min(days.length, shownDays.get(id) ?? PAGE);
+  const left = days.length - shown;
+  const nextPage = Math.min(PAGE, left);
 
   root.innerHTML = `
     <section class="logbook lb-goalpage">
@@ -34,7 +42,8 @@ export function renderGoalPage(root, id, ctx) {
       </div>
       ${builtin
         ? `<h2 class="lb-gp-name-static">${esc(g.name)}</h2><p class="lb-dim lb-center lb-gp-builtin">${id === "sightsinging" ? "written automatically by the sight-singing books when nothing else is running." : "carried over from the first Logbook: daily minutes before time belonged to a goal."}</p>`
-        : `<input class="lb-gp-name" id="lb-gp-name" value="${esc(g.name)}" aria-label="goal name" maxlength="120" autocomplete="off">`}
+        : `<input class="lb-gp-name" id="lb-gp-name" value="${esc(g.name)}" aria-label="goal name" maxlength="120" autocomplete="off">
+           ${g.type === "piece" ? `<input class="lb-gp-composer" id="lb-gp-composer" value="${esc(g.composer ?? "")}" placeholder="composer" aria-label="composer" maxlength="80" autocomplete="off" autocapitalize="words">` : ""}`}
       <div class="lb-stats">
         <span><b>${fmtMin(st.minutes)}</b> lifetime</span>
         <span><b>${st.days}</b> ${st.days === 1 ? "day" : "days"}</span>
@@ -52,15 +61,17 @@ export function renderGoalPage(root, id, ctx) {
       </div>
       <div class="lb-sect">notes</div>
       <div id="lb-gp-notes"></div>
-      <div class="lb-sect">practice</div>
-      ${byDay.size ? `<ul class="lb-seglist">${[...byDay].map(([day, segs]) => `
+      <div class="lb-sect">practice${days.length > PAGE ? `<span class="lb-sect-sub">${shown} of ${days.length} days</span>` : ""}</div>
+      ${days.length ? `<ul class="lb-seglist">${days.slice(0, shown).map(([day, segs]) => `
         <li class="lb-segday"><span class="lb-segday-h">${esc(day)}</span>
           <span class="lb-segs">${segs.map((s) => `<button class="lb-seg ${s.endedAt === null ? "live" : ""}" data-seg="${s.id}" title="${fmtDate(s.startedAt, { hour: "numeric", minute: "2-digit" })}${s.auto ? ` · ${esc(s.auto.label)}` : ""}${s.endedAt === null ? "" : " · hold to delete"}">${s.endedAt === null ? "now" : fmtMin(Math.round((s.endedAt - s.startedAt) / 60000))}${s.bpm ? ` <small>♩${s.bpm}</small>` : ""}${s.auto ? ` <span class="lb-auto">auto</span>` : ""}</button>`).join("")}</span>
-        </li>`).join("")}</ul>` : `<p class="lb-empty lb-dim">no practice yet.</p>`}
+        </li>`).join("")}</ul>
+        ${left ? `<div class="lb-foot"><button class="lb-link" id="lb-gp-more">show ${nextPage} more${left > nextPage ? ` · ${left - nextPage} left` : ""}</button></div>` : ""}` : `<p class="lb-empty lb-dim">no practice yet.</p>`}
       ${builtin ? "" : `<div class="lb-foot"><button class="lb-link lb-danger" id="lb-gp-delete">delete goal</button></div>`}
     </section>`;
 
   root.querySelector("#lb-back").addEventListener("click", () => ctx.nav("/goals"));
+  root.querySelector("#lb-gp-more")?.addEventListener("click", () => { shownDays.set(id, shown + PAGE); renderGoalPage(root, id, ctx); });
   root.querySelector("#lb-gp-today")?.addEventListener("click", () => ctx.nav(""));
   root.querySelector("#lb-gp-practice")?.addEventListener("click", () => {
     logbook.start(id); ctx.nav("");
@@ -72,6 +83,12 @@ export function renderGoalPage(root, id, ctx) {
       try { logbook.renameGoal(id, name.value); ctx.toast("renamed"); } catch (err) { ctx.toast(err.message); name.value = g.name; }
     });
     name.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); name.blur(); } });
+    const composer = root.querySelector("#lb-gp-composer");
+    composer?.addEventListener("change", () => {
+      logbook.setComposer(id, composer.value);
+      ctx.toast(composer.value.trim() ? "composer saved" : "composer cleared");
+    });
+    composer?.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); composer.blur(); } });
     root.querySelector("#lb-gp-type").addEventListener("click", () => {
       const next = TYPE_IDS[(TYPE_IDS.indexOf(g.type) + 1) % TYPE_IDS.length];
       logbook.retypeGoal(id, next); ctx.toast(`${TYPES[next].glyph} ${TYPES[next].label}`); renderGoalPage(root, id, ctx);
@@ -81,7 +98,7 @@ export function renderGoalPage(root, id, ctx) {
     root.querySelector("#lb-gp-reactivate")?.addEventListener("click", () => { logbook.reactivateGoal(id); renderGoalPage(root, id, ctx); });
     root.querySelector("#lb-gp-delete").addEventListener("click", () => {
       const n = logbook.notes(id).length;
-      if (confirm(`Delete “${g.name}” with ${plural(st.segments.length, "practice segment")} and ${plural(n, "note")}? This can't be undone.`)) { logbook.deleteGoal(id); ctx.nav("/goals"); }
+      if (confirm(`Delete “${displayName(g)}” with ${plural(st.segments.length, "practice segment")} and ${plural(n, "note")}? This can't be undone.`)) { logbook.deleteGoal(id); ctx.nav("/goals"); }
     });
   }
   for (const b of root.querySelectorAll(".lb-seg:not(.live)")) longPress(b, null, () => {

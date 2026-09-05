@@ -12,6 +12,7 @@
 //             into the goal's row.
 
 import { reduced, haptic, whoosh, settle } from "./motion.js";
+import { displayName } from "../../lib/logbook.js";
 import { esc, fmtMin } from "./util.js";
 
 const SHAVINGS = ["#c9a35c", "#c9a35c", "#c9a35c", "#c9a35c", "#e3c284", "#e3c284", "#eee5d3", "#8fae82", "#b0463c"];
@@ -54,7 +55,7 @@ export async function engage({ goal, type, landOn = null }) {
     <div class="lb-cer-ring" aria-hidden="true"></div><div class="lb-cer-ring two" aria-hidden="true"></div>
     <div class="lb-cer-body">
       <div class="lb-cer-type ${type.cls}"><i class="lb-type ${type.cls}" aria-hidden="true">${type.glyph}</i>${type.label}</div>
-      <div class="lb-cer-goal">${esc(goal.name)}</div>
+      <div class="lb-cer-goal">${esc(displayName(goal))}</div>
       <div class="lb-cer-clock">0:00</div>
     </div>`);
   await hold(el, rm ? 500 : 1100, 400);
@@ -113,7 +114,7 @@ export async function bow({ goal, ms, todayMinutes = 0, streak = 0, landOn = nul
     <div class="lb-cer-bloom" aria-hidden="true"></div>
     <div class="lb-cer-body">
       <div class="lb-cer-num" aria-label="${esc(fmtMin(Math.max(1, Math.round(ms / 60000))))}">${rm ? bigNum(ms) : bigNum(0)}</div>
-      <div class="lb-cer-on">on <em>${esc(goal.name)}</em></div>
+      <div class="lb-cer-on">on <em>${esc(displayName(goal))}</em></div>
       <div class="lb-cer-sub">${sub}</div>
     </div>
     <div class="lb-cer-hint" aria-hidden="true">tap to continue</div>`);

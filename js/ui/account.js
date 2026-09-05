@@ -72,7 +72,8 @@ function openSignIn() {
           <button type="button" class="lb-modal-cancel" id="acct-again">send again</button>
           <button type="submit" class="lb-modal-save" id="acct-verify">sign in</button>
         </div>
-      </form>`,
+      </form>
+      <p class="lb-acct-fine lb-acct-fine-center"><a class="lb-link" id="acct-home-out" href="/welcome">see the homepage</a></p>`,
   });
   const { body, close, closed } = sheet;
   const emailForm = body.querySelector("#acct-email-form"), codeForm = body.querySelector("#acct-code-form");
@@ -137,15 +138,19 @@ function openSignedIn() {
     html: `
       <p class="lb-acct-email">${icon("user")}<span>${esc(s0.user.email)}</span></p>
       <p class="lb-acct-status" id="acct-status" aria-live="polite">${esc(statusLine(s0))}</p>
-      <div class="lb-acct-acts">
-        <button type="button" class="tap" id="acct-sync">sync now</button>
-        <a class="tap" id="acct-export" href="${account.exportUrl}" download>download my data</a>
-        <button type="button" class="tap" id="acct-signout">sign out</button>
-        <button type="button" class="tap" id="acct-signout-clear">sign out &amp; clear this device</button>
-      </div>
-      <p class="lb-err" id="acct-err" role="alert"></p>
-      <p class="lb-acct-fine">Signing out keeps what's on this device. Clearing wipes it here — your account still has everything.</p>
-      <button type="button" class="lb-link lb-danger" id="acct-delete">delete account</button>`,
+      <ul class="lb-acct-list">
+        <li><button type="button" class="lb-acct-row" id="acct-sync">${icon("redo")}<span><b>sync now</b><small>push what's here, pull what's new</small></span></button></li>
+        <li><a class="lb-acct-row" id="acct-export" href="${account.exportUrl}" download>${icon("download")}<span><b>download my data</b><small>everything in your account, as a file</small></span></a></li>
+        <li><a class="lb-acct-row" id="acct-home" href="/welcome">${icon("home")}<span><b>show homepage</b><small>the page new visitors see</small></span></a></li>
+      </ul>
+      <ul class="lb-acct-list">
+        <li><button type="button" class="lb-acct-row" id="acct-signout">${icon("signout")}<span><b>sign out</b><small>keeps what's on this device</small></span></button></li>
+        <li><button type="button" class="lb-acct-row" id="acct-signout-clear">${icon("eraser")}<span><b>sign out &amp; clear this device</b><small>your account keeps everything</small></span></button></li>
+      </ul>
+      <ul class="lb-acct-list">
+        <li><button type="button" class="lb-acct-row lb-danger" id="acct-delete">${icon("trash")}<span><b>delete account</b><small>this device keeps its local copy</small></span></button></li>
+      </ul>
+      <p class="lb-err" id="acct-err" role="alert"></p>`,
   });
   const { body, close, closed } = sheet;
   const status = body.querySelector("#acct-status"), err = body.querySelector("#acct-err");

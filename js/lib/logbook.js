@@ -21,6 +21,9 @@ export const TYPES = {
   other: { id: "other", label: "other", glyph: "◆", cls: "t-other", examples: "Sight reading, improvisation, ear training" },
 };
 export const TYPE_IDS = Object.keys(TYPES);
+/** How a goal is named everywhere: "Bach – Prelude in C" when a composer is set (WSHED-60). */
+export const displayName = (g) => (g?.composer ? `${g.composer} – ${g.name}` : (g?.name ?? ""));
+const cleanComposer = (c) => String(c ?? "").trim().slice(0, 80);
 export const BUILTIN_SIGHTSINGING = "sightsinging";
 export const BUILTIN_FREEPRACTICE = "freepractice";
 /** Segments shorter than this are dropped when closed (an accidental tap). */
@@ -185,7 +188,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
       if (lb === null) return -1;
       return lb - la || b.createdAt - a.createdAt;
     },
-    name: (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+    name: (a, b) => displayName(a).localeCompare(displayName(b), undefined, { sensitivity: "base" }),
     created: (a, b) => b.createdAt - a.createdAt,
     time: (a, b) => goalMs(b.id) - goalMs(a.id) || b.createdAt - a.createdAt,
     week: (a, b) => goalMs(b.id, weekFrom()) - goalMs(a.id, weekFrom()) || b.createdAt - a.createdAt,
@@ -197,14 +200,15 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     const needle = norm(q);
     const cmp = COMPARE[sort] ?? COMPARE.recent;
     return doc.goals
-      .filter((g) => (status === "all" || g.status === status) && (!type || g.type === type) && (!needle || norm(g.name).includes(needle)))
+      .filter((g) => (status === "all" || g.status === status) && (!type || g.type === type) && (!needle || norm(displayName(g)).includes(needle)))
       .sort(cmp);
   }
-  function addGoal({ name, type = "piece", kind = "user", id = uuid() }) {
+  function addGoal({ name, type = "piece", kind = "user", id = uuid(), composer = "" }) {
     const n = String(name ?? "").trim();
     if (!n) throw new Error("a goal needs a name");
     if (!TYPES[type]) throw new Error(`unknown type ${type}`);
-    const g = stamp({ id, name: n, type, status: "active", kind, createdAt: now(), finishedAt: null });
+    const c = cleanComposer(composer);
+    const g = stamp({ id, name: n, ...(c ? { composer: c } : {}), type, status: "active", kind, createdAt: now(), finishedAt: null });
     doc.goals.push(g); save(); return g;
   }
   function renameGoal(id, name) {
@@ -212,6 +216,13 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     const n = String(name ?? "").trim();
     if (!n) throw new Error("a goal needs a name");
     g.name = n; stamp(g); save(); return g;
+  }
+  /** Set or clear (blank) a goal's composer (WSHED-60). */
+  function setComposer(id, composer) {
+    const g = mustGoal(id);
+    const c = cleanComposer(composer);
+    if (c) g.composer = c; else delete g.composer;
+    stamp(g); save(); return g;
   }
   function retypeGoal(id, type) {
     const g = mustGoal(id);
@@ -532,7 +543,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   return {
     get doc() { return doc; }, save, on,
     // goals
-    goals, goal: goalById, addGoal, renameGoal, retypeGoal, finishGoal, shelveGoal, reactivateGoal, deleteGoal,
+    goals, goal: goalById, addGoal, renameGoal, setComposer, retypeGoal, finishGoal, shelveGoal, reactivateGoal, deleteGoal,
     // practice
     running, start, switchTo, stop, stampTempo, addTime, deleteSegment,
     // notes

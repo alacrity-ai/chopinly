@@ -12,7 +12,9 @@ pitch+rhythm judging with a gold/green/bronze/red grade per note — and a
 working on, and it quietly builds your practice history: time per goal per
 day, a searchable library of what you practice (pieces · technique · other),
 a dated notes thread per goal whose last line greets you when you press play
-again, and a history that reconstructs what you actually did. Sight-singing
+again, a history that reconstructs what you actually did, and an analytics
+page (any range; by type, composer, work, time of day, weekday, session
+length) that shows how you really spend your practice time. Sight-singing
 results and metronome tempos log themselves. Installable and fully offline;
 tools live at `#/<tool-id>` behind the navbar dropdown.
 
