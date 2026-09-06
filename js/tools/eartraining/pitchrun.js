@@ -1,31 +1,39 @@
 // The pitch-training run (WSHED-81): reference → listen → play it back →
 // verdict per press → reveal → next; then the results card. The keyboard
 // module is the answer surface and the piano voice plays both question and
-// answer, so what you hear is what you play.
+// answer, so what you hear is what you play. With `input: "mic"` (WSHED-86)
+// the real piano answers: the mic's pitch stream becomes presses through the
+// note tracker, only during the answer phase and after a hold-off so the
+// speaker never answers for you; `octave: "exact"` judges the octave too.
 import { logbook, BUILTIN_EARTRAINING } from "../../lib/logbook.js";
 import { icon } from "../../lib/icons.js";
+import { makeStore } from "../../lib/store.js";
 import { createKeyboard } from "../../lib/keyboard/keyboard.js";
 import { createPiano } from "../../lib/keyboard/piano.js";
-import { generate, judgePress, scoreRun, starsFor, missLine, describe, shortDescribe, noteName, answerOctave, onAnswerKeyboard } from "../../lib/eartraining/pitch.js";
+import { createMicPitch } from "../../lib/pitch/mic.js";
+import { createNoteTracker } from "../../lib/eartraining/listen.js";
+import { generate, judgePress, scoreRun, starsFor, missLine, describe, shortDescribe, noteName, answerOctave, onAnswerKeyboard, isExact } from "../../lib/eartraining/pitch.js";
 import { esc } from "../logbook/util.js";
 import { haptic } from "../logbook/motion.js";
 
 const T = { ref: 700, note: 520, gap: 560, chord: 1100, afterListen: 250, afterRight: 650, beforeReveal: 450, afterReveal: 700 };
+const MIC_HOLDOFF_S = 0.35; // after the app's own playback, the mic waits this long before it may answer
 const SCORE_WORDS = [[95, "flawless"], [85, "excellent — nearly there"], [70, "solid — keep going"], [50, "getting there — narrow the range"], [0, "rough one — try fewer notes"]];
 
 export function createPitchRun(root, { setup, seed, getAudio, runs, onAgain, onSetup, onHome }) {
   const gen = generate(setup, seed);
+  const useMic = setup.input === "mic", exact = isExact(setup);
   // The answer keyboard is always one octave (fat keys on a phone); a press
   // counts by pitch class. The range setting is where the *questions* come from.
   const { from, to } = answerOctave(gen.tonic);
   const kbKey = (m) => onAnswerKeyboard(m, from);
   const piano = createPiano(getAudio, { volume: 0.7 });
-  const state = { i: 0, phase: "idle", hits: [], results: [], misses: [], startedAt: Date.now(), logged: false, timers: new Set() };
+  const state = { i: 0, phase: "idle", hits: [], results: [], misses: [], startedAt: Date.now(), logged: false, timers: new Set(), muteUntil: 0 };
   const later = (fn, ms) => { const t = setTimeout(() => { state.timers.delete(t); fn(); }, ms); state.timers.add(t); return t; };
   const clearTimers = () => { for (const t of state.timers) clearTimeout(t); state.timers.clear(); };
 
   root.innerHTML = `
-    <section class="eartraining et-run" id="et-run" data-phase="idle">
+    <section class="eartraining et-run ${useMic ? "et-mic" : ""}" id="et-run" data-phase="idle">
       <div class="ss-head">
         <button class="icon-btn" id="et-quit" aria-label="leave the drill">${icon("back")}</button>
         <div class="ss-head-title" id="et-title">question 1 of ${gen.questions.length}</div>
@@ -33,8 +41,9 @@ export function createPitchRun(root, { setup, seed, getAudio, runs, onAgain, onS
       </div>
       <div class="et-stage">
         <div class="et-state" id="et-state">listen</div>
-        <div class="et-ref" id="et-ref">${setup.reference === "never" ? "no reference — absolute pitch" : `reference · <b>${esc(noteName(gen.tonic))}</b>${gen.key ? ` · ${esc(gen.key)}` : ""}`}<span class="et-ref-hint"> · any octave counts</span></div>
+        <div class="et-ref" id="et-ref">${setup.reference === "never" ? "no reference — absolute pitch" : `reference · <b>${esc(noteName(gen.tonic))}</b>${gen.key ? ` · ${esc(gen.key)}` : ""}`}<span class="et-ref-hint"> · ${exact ? "the exact octave" : "any octave counts"}</span></div>
         <div class="et-dots" id="et-dots" aria-hidden="true"></div>
+        <div class="et-heard" id="et-heard" ${useMic ? "" : "hidden"} aria-live="polite"><i class="et-ear" aria-hidden="true">${icon("mic")}</i><span id="et-heard-text">opening the microphone…</span></div>
       </div>
       <div class="et-kb"><div id="et-kb"></div></div>
       <div class="transport et-acts">
@@ -44,9 +53,14 @@ export function createPitchRun(root, { setup, seed, getAudio, runs, onAgain, onS
       <div class="et-results" id="et-results" hidden></div>
     </section>`;
   const el = (id) => root.querySelector(`#${id}`);
-  const section = el("et-run"), stateEl = el("et-state"), dots = el("et-dots"), title = el("et-title"), points = el("et-points");
+  const section = el("et-run"), stateEl = el("et-state"), dots = el("et-dots"), title = el("et-title"), points = el("et-points"), heard = el("et-heard"), heardText = el("et-heard-text");
   const kb = createKeyboard(el("et-kb"), { from, to, labels: "none", keymap: true });
-  const setPhase = (p) => { state.phase = p; section.dataset.phase = p; stateEl.textContent = p === "reference" ? "the reference" : p === "listen" ? "listen" : p === "answer" ? "play it back" : p === "reveal" ? "the answer" : p === "done" ? "done" : ""; };
+  const audioNow = () => getAudio().context.currentTime;
+  const setPhase = (p) => {
+    state.phase = p; section.dataset.phase = p;
+    stateEl.textContent = p === "reference" ? "the reference" : p === "listen" ? "listen" : p === "answer" ? "play it back" : p === "reveal" ? "the answer" : p === "done" ? "done" : "";
+    if (p === "answer" && tracker) { state.muteUntil = audioNow() + MIC_HOLDOFF_S; tracker.reset(); if (micOn) heardText.textContent = "listening…"; }
+  };
 
   const play = (midi, ms) => { piano.noteOn(midi, 0.8); later(() => piano.noteOff(midi), ms); };
   const playQuestion = (q) => {
@@ -76,16 +90,18 @@ export function createPitchRun(root, { setup, seed, getAudio, runs, onAgain, onS
     const dur = playQuestion(q);
     later(() => { setPhase("answer"); el("et-hear").disabled = false; }, dur + T.afterListen);
   }
-  function onPress(midi) {
+  /** One answer. `fromMic` presses carry the real octave and are judged exactly in strict mode; screen keys are one octave, by pitch class. */
+  function onPress(midi, fromMic = false) {
     if (state.phase !== "answer") return;
     const q = gen.questions[state.i];
-    const { correct, expected } = judgePress(q, state.hits, midi, setup.mode);
+    const { correct, expected } = judgePress(q, state.hits, midi, setup.mode, exact && fromMic);
+    const key = fromMic ? kbKey(midi) : midi;
     if (correct) {
-      state.hits.push(expected); kb.light(midi, "correct"); drawDots(q); haptic(6);
+      state.hits.push(expected); kb.light(key, "correct"); drawDots(q); haptic(6);
       if (state.hits.length === q.notes.length) finishQuestion(q, true);
     } else {
       state.misses.push({ expected, heard: midi });
-      kb.light(midi, "wrong"); haptic([20, 30, 20]);
+      kb.light(key, "wrong"); haptic([20, 30, 20]);
       finishQuestion(q, false);
     }
   }
@@ -108,6 +124,7 @@ export function createPitchRun(root, { setup, seed, getAudio, runs, onAgain, onS
 
   function results() {
     setPhase("done");
+    mic?.stop();
     const s = scoreRun(state.results), stars = starsFor(s.pct), line = missLine(state.misses, gen.tonic);
     if (!state.logged) {
       state.logged = true;
@@ -138,11 +155,28 @@ export function createPitchRun(root, { setup, seed, getAudio, runs, onAgain, onS
   el("et-refbtn")?.addEventListener("click", () => { if (state.phase === "answer") play(gen.tonic, T.ref); });
   el("et-quit").addEventListener("click", onHome);
 
+  // --- the real piano, through the mic (WSHED-86) ------------------------------
+  let mic = null, tracker = null, micOn = false;
+  if (useMic) {
+    tracker = createNoteTracker({ a4: makeStore("tuner").get("a4", 440) });
+    mic = createMicPitch(getAudio, { all: true, intervalMs: 50 });
+    const onSample = (s) => {
+      if (state.phase !== "answer" || s.t < state.muteUntil) return; // the speaker is talking, or it just was
+      const r = tracker.feed(s);
+      if (r.midi !== null) heardText.innerHTML = `heard <b>${esc(noteName(r.midi))}</b>`;
+      if (r.press !== null) onPress(r.press, true);
+    };
+    // E2E seam: Playwright can't play a piano; it feeds pitch samples here.
+    window.__etMic = { feed: (s) => onSample({ ...s, t: audioNow() }) };
+    mic.start(onSample).then(() => { micOn = true; if (state.phase === "answer") heardText.textContent = "listening…"; else heardText.textContent = "the microphone is on"; })
+      .catch((err) => { heard.classList.add("off"); heardText.textContent = err?.name === "NotAllowedError" ? "microphone denied — answer on the keys" : "no microphone — answer on the keys"; });
+  }
+
   getAudio();
   later(() => begin(0), 400);
 
   return {
     get state() { return state; }, gen,
-    destroy() { clearTimers(); kb.destroy(); piano.destroy(); },
+    destroy() { clearTimers(); kb.destroy(); piano.destroy(); mic?.stop(); if (window.__etMic) delete window.__etMic; },
   };
 }

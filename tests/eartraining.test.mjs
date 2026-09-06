@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { OPTIONS, LEVELS, DEFAULT_SETUP, levelOf, cleanSetup, rangeMidi, describe, shortDescribe, rng, generate, judgePress, scoreRun, starsFor, missLine, intervalName, noteName, pc, answerOctave, onAnswerKeyboard } from "../js/lib/eartraining/pitch.js";
+import { OPTIONS, LEVELS, DEFAULT_SETUP, levelOf, cleanSetup, rangeMidi, describe, shortDescribe, rng, generate, judgePress, scoreRun, starsFor, missLine, intervalName, noteName, pc, answerOctave, onAnswerKeyboard, isExact } from "../js/lib/eartraining/pitch.js";
 import { createRuns } from "../js/lib/eartraining/runs.js";
 import { createLogbook, BUILTIN_EARTRAINING } from "../js/lib/logbook.js";
 
@@ -10,7 +10,7 @@ test("setup: presets, custom detection, cleaning, ranges, sentences", () => {
   assert.equal(levelOf(DEFAULT_SETUP), "beginner");
   assert.equal(levelOf(LEVELS.advanced), "advanced");
   assert.equal(levelOf({ ...LEVELS.beginner, questions: 20 }), "custom");
-  assert.deepEqual(cleanSetup({ notes: "nope", range: 4, count: 1, mode: "harmonic", reference: "never", questions: 35 }), { notes: "key", range: 4, count: 1, mode: "melodic", reference: "never", questions: 35 }, "unknown → default; one note is always melodic");
+  assert.deepEqual(cleanSetup({ notes: "nope", range: 4, count: 1, mode: "harmonic", reference: "never", questions: 35 }), { notes: "key", range: 4, count: 1, mode: "melodic", reference: "never", questions: 35, input: "keys", octave: "any" }, "unknown → default; one note is always melodic");
   assert.deepEqual(cleanSetup(null), DEFAULT_SETUP);
   assert.deepEqual(rangeMidi(1), { from: 60, to: 72 });
   assert.deepEqual(rangeMidi(2), { from: 48, to: 72 });
@@ -83,4 +83,32 @@ test("runs store + logbook attribution on the Ear training built-in", () => {
   assert.equal(lb.addAuto({ source: "sightsinging", label: "x", startedAt: t - 1000 }).segment.goalId, "sightsinging", "the default is still Sight singing");
   const g = lb.addGoal({ name: "Waltz" }); lb.start(g.id); t += 1000;
   assert.equal(lb.addAuto({ source: "eartraining", label: "note instead", startedAt: t - 500, builtin: { id: BUILTIN_EARTRAINING, name: "Ear training" } }).kind, "note", "a running goal takes the note");
+});
+
+// --- WSHED-86: answering on a real piano ----------------------------------------
+test("setup: input/octave are sticky (not part of a level), cleaned, and read in the sentences", () => {
+  assert.equal(DEFAULT_SETUP.input, "keys"); assert.equal(DEFAULT_SETUP.octave, "any");
+  assert.equal(levelOf({ ...LEVELS.beginner, input: "mic", octave: "exact" }), "beginner", "how you answer never makes a level custom");
+  const c = cleanSetup({ ...LEVELS.advanced, input: "mic", octave: "exact" });
+  assert.equal(c.input, "mic"); assert.equal(c.octave, "exact"); assert.equal(isExact(c), true);
+  assert.equal(cleanSetup({ ...LEVELS.beginner, input: "keys", octave: "exact" }).octave, "any", "exact needs the mic");
+  assert.equal(cleanSetup({ ...LEVELS.beginner, input: "wat" }).input, "keys");
+  assert.match(describe(c), /answered on your piano in the exact octave\.$/);
+  assert.match(describe({ ...c, octave: "any" }), /answered on your piano\.$/);
+  assert.doesNotMatch(describe(LEVELS.beginner), /piano/);
+  assert.match(shortDescribe(c), /piano · exact oct$/);
+  assert.match(shortDescribe({ ...c, octave: "any" }), /· piano$/);
+});
+
+test("judgePress: exact compares the octave; melodic and harmonic; nearest miss by real distance", () => {
+  const q = { notes: [72] };
+  assert.equal(judgePress(q, [], 60, "melodic").correct, true, "pitch class by default");
+  assert.equal(judgePress(q, [], 60, "melodic", true).correct, false, "wrong octave in strict mode");
+  assert.equal(judgePress(q, [], 72, "melodic", true).correct, true);
+  const chord = { notes: [60, 64, 67] };
+  assert.deepEqual(judgePress(chord, [], 76, "harmonic", true), { correct: false, expected: 67 }, "E5 is nearest G4 by real distance");
+  assert.deepEqual(judgePress(chord, [], 76, "harmonic", false), { correct: true, expected: 64 }, "by pitch class E5 is the E");
+  assert.deepEqual(judgePress(chord, [64], 64, "harmonic", true), { correct: false, expected: 67 }, "already-hit note is not credited twice; nearest unhit by real distance");
+  // a wrong-octave slip reads as such in the miss line
+  assert.equal(missLine([{ expected: 67, heard: 79 }], 60), "one slip: the right interval in the wrong octave");
 });

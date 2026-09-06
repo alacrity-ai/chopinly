@@ -2,7 +2,9 @@
 // test computes the expected answers with the same pure module the app uses.
 import { chromium } from "/home/leif/lets-get-rich/claude_ops/.claude/skills/tcw-quote/node_modules/playwright/index.mjs";
 const S = process.env.SHOTS ?? ".", BASE = process.env.BASE ?? "http://127.0.0.1:8789";
-const browser = await chromium.launch({ args: ["--autoplay-policy=no-user-gesture-required"] });
+// A fake mic that plays silence: Chromium's default fake device hums a tone, which would answer the drill by itself.
+const SILENCE = new URL("../fixtures/silence.wav", import.meta.url).pathname;
+const browser = await chromium.launch({ args: ["--autoplay-policy=no-user-gesture-required", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-audio-capture=${SILENCE}`] });
 const ctx = await browser.newContext({ viewport: { width: 420, height: 860 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
 const page = await ctx.newPage();
 const errors = [];
@@ -124,6 +126,58 @@ await step("a second drill the same day folds into the same auto segment (WSHED-
   const an = await lb((m) => m.logbook.doc.segments.filter((s) => s.goalId === "eartraining").length);
   if (an !== 1) throw new Error("segments " + an);
   await page.screenshot({ path: `${S}/et-05b-folded.png` });
+});
+
+await step("answer on your piano (WSHED-86): setup rows are sticky, the mic opens, the hold-off ignores the speaker, ±cents count, exact octave judges the octave", async () => {
+  await page.goto(`${BASE}/?app=1&e=2m#/eartraining/pitch`);
+  await page.waitForSelector("#et-begin");
+  if (!(await page.locator('.et-row[data-key="octave"].off').count())) throw new Error("octave should be greyed on the keys");
+  await page.click('.et-row[data-key="input"] .et-chip[data-v="mic"]');
+  if (await page.locator('.et-row[data-key="octave"].off').count()) throw new Error("octave should wake with the mic");
+  await page.click('.et-row[data-key="octave"] .et-chip[data-v="exact"]');
+  if (!(await text("#et-sentence")).endsWith("answered on your piano in the exact octave.")) throw new Error("sentence " + await text("#et-sentence"));
+  await page.click('#et-levels [data-level="beginner"]');
+  if ((await page.getAttribute('.et-row[data-key="input"] .et-chip[data-v="mic"]', "aria-checked")) !== "true" || (await page.getAttribute('#et-levels [data-level="beginner"]', "aria-pressed")) !== "true") throw new Error("a level should not reset how you answer, nor mic make it custom");
+  await page.screenshot({ path: `${S}/et-05c-setup-mic.png` });
+  // a seeded strict run on the (fake) mic
+  await page.goto(`${BASE}/?app=1&e=2n#/eartraining/pitch/run?seed=7&setup=beginner&input=mic&octave=exact`);
+  await page.waitForSelector("#et-run.et-mic");
+  await page.waitForFunction(() => /microphone is on|listening/.test(document.querySelector("#et-heard-text")?.textContent ?? ""), null, { timeout: 8000 });
+  if (!(await text(".et-ref-hint")).includes("the exact octave")) throw new Error("hint " + await text(".et-ref-hint"));
+  const d = await dealt();
+  const hz = (m, cents = 0) => 440 * 2 ** ((m - 69) / 12) * 2 ** (cents / 1200);
+  const feed = (freq, rms = 0.05) => page.evaluate(([f, r]) => window.__etMic.feed({ freq: f, rms: r }), [freq, rms]);
+  const hear = async (m, cents = 0) => { await feed(hz(m, cents)); await feed(hz(m, cents)); await feed(hz(m, cents)); };
+  const silence = async () => { for (let i = 0; i < 5; i++) await feed(-1, 0); };
+  // question 1: samples during the hold-off must not answer; then a 30-cent-sharp note does
+  await answerPhase();
+  await hear(d.questions[0].notes[0]);
+  await page.waitForTimeout(120);
+  if (await page.locator('.kb-key[data-light]').count()) throw new Error("the hold-off should ignore the first samples");
+  await page.waitForTimeout(400);
+  await silence(); await hear(d.questions[0].notes[0], 30);
+  await page.waitForFunction((m) => document.querySelector(`.kb-key[data-midi="${m}"][data-light="correct"]`), await onKb(d.questions[0].notes[0]));
+  if (!(await text("#et-heard-text")).startsWith("heard")) throw new Error("heard readout " + await text("#et-heard-text"));
+  // question 2: the right pitch class an octave up is wrong in strict mode
+  await page.waitForFunction(() => document.querySelector("#et-title")?.textContent.startsWith("question 2 "));
+  await answerPhase(); await page.waitForTimeout(450);
+  await silence(); await hear(d.questions[1].notes[0] + 12);
+  await page.waitForSelector('.kb-key[data-light="wrong"]', { timeout: 5000 });
+  // the rest right, in the exact octave
+  for (let i = 2; i < d.questions.length; i++) {
+    await page.waitForFunction((i) => document.querySelector("#et-title")?.textContent.startsWith(`question ${i + 1} `), i, { timeout: 15000 });
+    await answerPhase(); await page.waitForTimeout(450);
+    await silence(); await hear(d.questions[i].notes[0]);
+    await page.waitForFunction((m) => document.querySelector(`.kb-key[data-midi="${m}"][data-light="correct"]`), await onKb(d.questions[i].notes[0]), { timeout: 5000 });
+  }
+  await page.waitForSelector("#et-score");
+  if ((await text("#et-score")) !== "90%") throw new Error("score " + await text("#et-score"));
+  if ((await text(".et-miss")) !== "one slip: the right interval in the wrong octave") throw new Error("miss line " + await text(".et-miss"));
+  if (!(await text(".et-sentence")).endsWith("answered on your piano in the exact octave.")) throw new Error("result sentence");
+  const segs = await lb((m) => m.logbook.doc.segments.filter((s) => s.goalId === "eartraining").map((s) => s.auto.runs?.at(-1)?.label ?? s.auto.label));
+  if (!segs.some((l) => /piano · exact oct/.test(l))) throw new Error("logbook label " + JSON.stringify(segs));
+  await page.screenshot({ path: `${S}/et-05d-mic-results.png` });
+  await page.evaluate(() => localStorage.removeItem("ws.eartraining.pitch-setup"));
 });
 
 await step("with a goal running, a finished drill becomes a note on that goal; harmonic questions accept any order", async () => {

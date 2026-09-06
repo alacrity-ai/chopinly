@@ -9,6 +9,9 @@ export const OPTIONS = {
   mode: [["melodic", "one after another"], ["harmonic", "together"]],
   reference: [["each", "every question"], ["start", "once at the start"], ["never", "never"]],
   questions: [[10, "10"], [20, "20"], [35, "35"]],
+  // sticky — not part of a level (WSHED-86)
+  input: [["keys", "the keys on screen"], ["mic", "your piano, through the mic"]],
+  octave: [["any", "any octave"], ["exact", "the exact octave"]],
 };
 export const LEVELS = {
   beginner: { notes: "key", range: 1, count: 1, mode: "melodic", reference: "each", questions: 10 },
@@ -16,8 +19,11 @@ export const LEVELS = {
   advanced: { notes: "all", range: 2, count: 3, mode: "melodic", reference: "start", questions: 20 },
 };
 export const LEVEL_NAMES = [...Object.keys(LEVELS), "custom"];
-export const DEFAULT_SETUP = { ...LEVELS.beginner };
+export const DEFAULT_SETUP = { ...LEVELS.beginner, input: "keys", octave: "any" };
 const KEYS = ["notes", "range", "count", "mode", "reference", "questions"];
+/** How you answer; remembered across levels. The exact octave only makes sense on a real piano. */
+const STICKY = ["input", "octave"];
+export const isExact = (setup) => setup.input === "mic" && setup.octave === "exact";
 
 /** The preset a setup matches, or "custom". */
 export function levelOf(setup) {
@@ -26,8 +32,9 @@ export function levelOf(setup) {
 /** A setup with only known values (bad storage → defaults). */
 export function cleanSetup(s) {
   const out = { ...DEFAULT_SETUP };
-  for (const k of KEYS) if (s && OPTIONS[k].some(([v]) => v === s[k])) out[k] = s[k];
+  for (const k of [...KEYS, ...STICKY]) if (s && OPTIONS[k].some(([v]) => v === s[k])) out[k] = s[k];
   if (out.count === 1) out.mode = "melodic";
+  if (out.input !== "mic") out.octave = "any";
   return out;
 }
 
@@ -46,11 +53,12 @@ export function describe(setup, tonic = null) {
   const range = OPTIONS.range.find(([v]) => v === setup.range)[1] + (setup.range < 8 ? " around middle C" : "");
   const what = setup.count === 1 ? "single notes" : `${setup.count} notes ${setup.mode === "harmonic" ? "together" : "one after another"}`;
   const ref = setup.reference === "each" ? "a reference before each question" : setup.reference === "start" ? "a reference once at the start" : "no reference — absolute pitch";
-  return `${key}, ${range}, ${what}, ${ref}, ${setup.questions} questions.`;
+  const how = setup.input === "mic" ? `, answered on your piano${isExact(setup) ? " in the exact octave" : ""}` : "";
+  return `${key}, ${range}, ${what}, ${ref}, ${setup.questions} questions${how}.`;
 }
 /** The short form for a logbook line / history row. */
 export function shortDescribe(setup) {
-  return [OPTIONS.notes.find(([v]) => v === setup.notes)[1], setup.range >= 8 ? "88 keys" : `${setup.range} oct`, setup.count === 1 ? "single" : `${setup.count} ${setup.mode === "harmonic" ? "together" : "in a row"}`, setup.reference === "never" ? "no ref" : null].filter(Boolean).join(" · ");
+  return [OPTIONS.notes.find(([v]) => v === setup.notes)[1], setup.range >= 8 ? "88 keys" : `${setup.range} oct`, setup.count === 1 ? "single" : `${setup.count} ${setup.mode === "harmonic" ? "together" : "in a row"}`, setup.reference === "never" ? "no ref" : null, setup.input === "mic" ? (isExact(setup) ? "piano · exact oct" : "piano") : null].filter(Boolean).join(" · ");
 }
 
 /** mulberry32: a tiny seeded PRNG → () => [0, 1). */
@@ -93,21 +101,23 @@ const pcDist = (a, b) => { const d = Math.abs(pc(a) - pc(b)); return Math.min(d,
 /**
  * Judge one press against a question in progress. The answer keyboard is one
  * octave, so a press counts by pitch class: the question plays C6, any C is
- * right. `hits` = the question's notes already credited (push `expected` on a
+ * right — unless `exact` (answering on a real piano in strict mode). `hits` = the question's notes already credited (push `expected` on a
  * hit). → { correct, expected } — expected is the question note this press
  * answered (melodic: the next one; harmonic: the matching one, else the
  * nearest unhit by pitch class) for the miss analysis.
  */
-export function judgePress(question, hits, midi, mode) {
+export function judgePress(question, hits, midi, mode, exact = false) {
+  const same = exact ? (a, b) => a === b : (a, b) => pc(a) === pc(b);
+  const dist = exact ? (a, b) => Math.abs(a - b) : pcDist;
   if (mode === "harmonic") {
     const left = question.notes.filter((n) => !hits.includes(n));
-    const hit = left.find((n) => pc(n) === pc(midi));
+    const hit = left.find((n) => same(n, midi));
     if (hit !== undefined) return { correct: true, expected: hit };
-    const expected = left.reduce((best, n) => (pcDist(n, midi) < pcDist(best, midi) ? n : best), left[0]);
+    const expected = left.reduce((best, n) => (dist(n, midi) < dist(best, midi) ? n : best), left[0]);
     return { correct: false, expected };
   }
   const expected = question.notes[hits.length];
-  return { correct: pc(midi) === pc(expected), expected };
+  return { correct: same(midi, expected), expected };
 }
 /** The one-octave answer keyboard for a tonic: the C below it to the C above. */
 export function answerOctave(tonic) { const from = tonic - pc(tonic); return { from, to: from + 12 }; }
@@ -131,12 +141,13 @@ export function missLine(misses, tonic) {
   if (!misses.length) return "";
   const by = new Map();
   for (const m of misses) {
-    const k = `${intervalName(m.expected - tonic)}|${intervalName(m.heard - tonic)}`;
+    const k = pc(m.expected) === pc(m.heard) ? "octave" : `${intervalName(m.expected - tonic)}|${intervalName(m.heard - tonic)}`;
     by.set(k, (by.get(k) ?? 0) + 1);
   }
   const [k, n] = [...by].sort((a, b) => b[1] - a[1])[0];
+  if (k === "octave") return n === 1 ? "one slip: the right interval in the wrong octave" : `${n} slips: the right interval in the wrong octave`;
   const [exp, heard] = k.split("|");
-  if (exp === heard) return n === 1 ? "one slip: the right interval in the wrong octave" : `${n} slips: the right interval in the wrong octave`;
+  const an = (w) => (w === "octave" ? "an" : "a"); // "a unison"
   const times = n === 1 ? "once" : n === 2 ? "twice" : `${n} times`;
-  return misses.length === 1 ? `one slip: you heard the ${exp} as a ${heard}` : `you heard the ${exp} as a ${heard} ${times}`;
+  return misses.length === 1 ? `one slip: you heard the ${exp} as ${an(heard)} ${heard}` : `you heard the ${exp} as ${an(heard)} ${heard} ${times}`;
 }
