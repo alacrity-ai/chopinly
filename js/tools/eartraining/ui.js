@@ -8,7 +8,8 @@ import { createPitchRun } from "./pitchrun.js";
 import { esc, fmtDate } from "../logbook/util.js";
 import { haptic } from "../logbook/motion.js";
 
-const LABELS = { notes: "notes", range: "range", count: "how many at once", mode: "played", reference: "reference", questions: "questions" };
+const LABELS = { notes: "notes", range: "range", count: "how many at once", mode: "played", reference: "reference", questions: "questions", input: "answer with", octave: "octave" };
+const WORDS = new Set(["notes", "mode", "reference", "input", "octave"]);
 const phone = () => innerWidth < 700;
 
 export function buildUI(root, ctx) {
@@ -74,16 +75,18 @@ export function buildUI(root, ctx) {
       for (const b of root.querySelectorAll("#et-levels button")) { const on = b.dataset.level === lvl; b.setAttribute("aria-pressed", String(on)); b.setAttribute("aria-checked", String(on)); }
       for (const row of root.querySelectorAll(".et-row")) {
         const k = row.dataset.key;
-        row.classList.toggle("off", k === "mode" && s.count === 1);
-        for (const c of row.querySelectorAll(".et-chip")) { const on = String(s[k]) === c.dataset.v; c.classList.toggle("on", on); c.setAttribute("aria-checked", String(on)); c.disabled = k === "mode" && s.count === 1; }
+        const off = (k === "mode" && s.count === 1) || (k === "octave" && s.input !== "mic");
+        row.classList.toggle("off", off);
+        for (const c of row.querySelectorAll(".et-chip")) { const on = String(s[k]) === c.dataset.v; c.classList.toggle("on", on); c.setAttribute("aria-checked", String(on)); c.disabled = off; }
       }
       root.querySelector("#et-sentence").textContent = describe(s, s.notes === "key" && lvl === "beginner" ? 60 : null);
     };
     for (const b of root.querySelectorAll("#et-levels button")) b.addEventListener("click", () => { if (b.dataset.level === "custom") return; Object.assign(s, LEVELS[b.dataset.level]); if (phone() && s.range > 4) s.range = 4; save(); paint(); haptic(6); });
     for (const c of root.querySelectorAll(".et-chip")) c.addEventListener("click", () => {
       const k = c.closest(".et-row").dataset.key, raw = c.dataset.v;
-      s[k] = k === "notes" || k === "mode" || k === "reference" ? raw : Number(raw);
+      s[k] = WORDS.has(k) ? raw : Number(raw);
       if (s.count === 1) s.mode = "melodic";
+      if (s.input !== "mic") s.octave = "any";
       save(); paint(); haptic(6);
     });
     root.querySelector("#et-back").addEventListener("click", () => nav(""));
@@ -93,7 +96,7 @@ export function buildUI(root, ctx) {
 
   function renderRun() {
     const q = query();
-    const s = q.get("setup") && LEVELS[q.get("setup")] ? { ...LEVELS[q.get("setup")] } : setup();
+    const s = cleanSetup({ ...(q.get("setup") && LEVELS[q.get("setup")] ? LEVELS[q.get("setup")] : setup()), ...(q.get("input") ? { input: q.get("input") } : {}), ...(q.get("octave") ? { octave: q.get("octave") } : {}) });
     const seed = Number(q.get("seed")) || (Date.now() % 1e9);
     run = createPitchRun(root, {
       setup: s, seed, getAudio, runs,

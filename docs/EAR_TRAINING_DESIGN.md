@@ -42,6 +42,8 @@ ten. Every run is kept in
 | played | one after another · together | greyed at 1 |
 | reference | every question · once at the start · never | never = absolute pitch |
 | questions | 10 · 20 · 35 | |
+| answer with | the keys on screen · your piano, through the mic | sticky: not part of a level (WSHED-86) |
+| octave | any octave · the exact octave | greyed unless the mic answers; the screen keyboard is one octave |
 
 An italic sentence restates the setup: *C major, one octave around middle C,
 single notes, a reference before each question, 10 questions.* Remembered.
@@ -61,3 +63,33 @@ Portrait: stage card, then the one-octave keyboard (≈ 48 px keys on a phone).
 Landscape under 560 px tall: the stage collapses to one line and the keyboard is
 sized from the remaining height (`calc((100dvh - 16rem) * 8 / 5.2)`), so the
 run never scrolls.
+
+## Answering on your piano (WSHED-86, 2026-09-06)
+
+With **answer with: your piano, through the mic** the real instrument is the
+answer surface. `js/lib/pitch/mic.js` (the tuner's stream, now with `all: true`
+for unvoiced frames and RMS) feeds `js/lib/eartraining/listen.js`:
+
+- `createNoteTracker({ a4, stable, onsetRatio, quietFrames, settleFrames })`
+  turns pitch samples into presses. A note presses when the same nearest
+  semitone is heard on 2 consecutive frames (~100 ms). Rounding to the nearest
+  semitone is the wiggle room (±50 cents) for a piano that isn't quite in tune;
+  the tuner's A4 calibration is honored. A different note presses as soon as it
+  is stable; the *same* note presses again only after real silence (4 frames)
+  or a re-strike (an RMS jump of 2.2× once the attack has settled), so a
+  decaying sustain never answers twice. Pure, node-tested.
+- The runner opens the mic when the drill starts (the same gesture as *begin*);
+  denied → "microphone denied — answer on the keys" and the run goes on. Only
+  the **answer** phase listens, after a 350 ms hold-off from the app's own
+  playback, so the speaker never answers for you. The stage shows *heard · E4*
+  with a pulsing mic glyph; the screen keys still work and light what was heard.
+- **octave: the exact octave** judges the midi number (`judgePress(…, exact)`);
+  a right pitch class in the wrong octave is a miss and the results say "the
+  right interval in the wrong octave". On the screen keys everything stays by
+  pitch class (one octave of keys can't do otherwise), so the row is greyed.
+- Run URL seam: `#/eartraining/pitch/run?seed=7&setup=beginner&input=mic&octave=exact`;
+  `window.__etMic.feed({ freq, rms })` lets the E2E play the piano.
+
+On-device caveats: some iOS versions lower or re-route playback while the mic is
+open (headphones are the safe path); a bright top-octave note can fool the
+autocorrelator an octave up, which strict mode would count as a miss.
