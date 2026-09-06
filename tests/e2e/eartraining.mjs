@@ -44,7 +44,7 @@ async function playRun({ wrongAt = new Set() } = {}) {
 await page.goto(`${BASE}/?app=1`);
 await page.evaluate(() => { localStorage.setItem("ws.shell.seen", "true"); localStorage.removeItem("ws.shell.skin"); localStorage.removeItem("ws.logbook.data"); localStorage.removeItem("ws.eartraining.runs"); localStorage.removeItem("ws.eartraining.pitch-setup"); });
 
-await step("home: two cards; the setup card (WSHED-87): presets as a list, fine-tune folded until custom, equal cells, sentence, remembered", async () => {
+await step("home: two cards; the setup card (WSHED-87): presets as a list, Custom opens a drawer seeded from the level you were on, equal cells, sentence, remembered", async () => {
   await page.goto(`${BASE}/?app=1&e=1#/eartraining`);
   await page.waitForSelector("#et-go-pitch");
   if ((await text("#et-go-pitch .ss-mode-sub")) !== "no drills yet") throw new Error("home sub");
@@ -53,20 +53,26 @@ await step("home: two cards; the setup card (WSHED-87): presets as a list, fine-
   if ((await page.getAttribute('#et-levels [data-level="beginner"]', "aria-pressed")) !== "true") throw new Error("beginner not selected");
   if ((await page.locator("#et-levels .et-preset").count()) !== 4) throw new Error("four preset rows");
   if (!(await text('[data-level="beginner"] .et-preset-line')).startsWith("C major · one octave · single notes")) throw new Error("beginner blurb " + await text('[data-level="beginner"] .et-preset-line'));
-  if (!(await page.locator("#et-rows[hidden]").count()) || (await page.getAttribute("#et-tune", "aria-expanded")) !== "false") throw new Error("fine-tune should be folded on a preset");
+  if (!(await page.locator("#et-rows[hidden]").count()) || await page.locator("#et-rows").isVisible()) throw new Error("the drawer should be closed (and invisible) on a preset");
+  if (!(await text('[data-level="custom"] .et-preset-line')).startsWith("start from")) throw new Error("custom should have no mix yet: " + await text('[data-level="custom"] .et-preset-line'));
   if (!(await text("#et-sentence")).startsWith("C major, one octave around middle C, single notes, a reference before each question, 10 questions.")) throw new Error("sentence " + await text("#et-sentence"));
   await noWiden();
   await page.screenshot({ path: `${S}/et-01-setup-beginner.png`, fullPage: true });
-  await page.click("#et-tune");
+  // Custom: the drawer slides out under its row, seeded from Beginner
+  await page.click('#et-levels [data-level="custom"]');
   await page.waitForSelector("#et-rows:not([hidden])");
-  // every option is still there; the cells of a row are equal; whole piano hidden on a phone
+  if (!(await page.locator("#et-rows").isVisible())) throw new Error("the drawer should be visible on custom");
+  if ((await page.getAttribute('#et-levels [data-level="custom"]', "aria-pressed")) !== "true" || (await page.getAttribute('#et-levels [data-level="beginner"]', "aria-pressed")) !== "false") throw new Error("custom should be the selection");
+  const drawerInCard = await page.evaluate(() => document.querySelector("#et-rows").parentElement.id === "et-levels" && document.querySelector("#et-rows").previousElementSibling.dataset.level === "custom");
+  if (!drawerInCard) throw new Error("the drawer must sit under the Custom row, inside the presets card");
+  if (!(await text("#et-sentence")).includes("single notes") || !(await text("#et-sentence")).includes("10 questions")) throw new Error("custom should start from the level you were on");
   const rows = await page.$$eval(".et-row", (els) => els.map((r) => ({ key: r.dataset.key, n: r.querySelectorAll(".et-opt").length, widths: [...r.querySelectorAll(".et-opt")].map((o) => Math.round(o.getBoundingClientRect().width)), h: [...r.querySelectorAll(".et-opt")].map((o) => Math.round(o.getBoundingClientRect().height)) })));
   const expect = { notes: 2, range: 3, count: 5, mode: 2, reference: 3, questions: 3 };
   for (const r of rows) { if (r.n !== expect[r.key]) throw new Error(`row ${r.key} has ${r.n} options`); if (Math.max(...r.widths) - Math.min(...r.widths) > 2) throw new Error(`row ${r.key} cells unequal ${r.widths}`); }
   const heights = rows.flatMap((r) => r.h); if (Math.max(...heights) - Math.min(...heights) > 2) throw new Error("cell heights differ " + heights);
   if (!(await page.locator('.et-row[data-key="mode"].off').count())) throw new Error("played should be greyed at 1 note");
   await page.click('.et-row[data-key="questions"] .et-opt[data-v="20"]');
-  if ((await page.getAttribute('#et-levels [data-level="custom"]', "aria-pressed")) !== "true") throw new Error("touching a row should flip to custom");
+  if ((await page.getAttribute('#et-levels [data-level="custom"]', "aria-pressed")) !== "true") throw new Error("editing keeps custom selected");
   if (!(await text('[data-level="custom"] .et-preset-line')).includes("20 questions")) throw new Error("custom blurb " + await text('[data-level="custom"] .et-preset-line'));
   if (!(await text("#et-sentence")).includes("20 questions")) throw new Error("sentence not updated");
   await page.click('.et-row[data-key="count"] .et-opt[data-v="3"]');
@@ -77,9 +83,14 @@ await step("home: two cards; the setup card (WSHED-87): presets as a list, fine-
   await page.screenshot({ path: `${S}/et-01-setup-custom.png`, fullPage: true });
   await page.reload(); await page.waitForSelector("#et-begin");
   if (!(await text("#et-sentence")).includes("3 notes together") || !(await text("#et-sentence")).includes("20 questions")) throw new Error("setup not remembered");
-  if (await page.locator("#et-rows[hidden]").count()) throw new Error("fine-tune should open by itself on a custom setup");
+  if (await page.locator("#et-rows[hidden]").count()) throw new Error("the drawer should be open again on a custom setup");
+  // a preset closes the drawer and resets; Custom again brings the last mix back
   await page.click('#et-levels [data-level="beginner"]');
+  if (!(await page.locator("#et-rows[hidden]").count()) || await page.locator("#et-rows").isVisible()) throw new Error("the drawer should close on a preset");
   if (!(await text("#et-sentence")).includes("single notes")) throw new Error("preset did not reset the rows");
+  await page.click('#et-levels [data-level="custom"]');
+  if (!(await text("#et-sentence")).includes("3 notes together")) throw new Error("the last custom mix should come back");
+  await page.click('#et-levels [data-level="beginner"]');
   if ((await page.getAttribute('#et-levels [data-level="beginner"]', "aria-pressed")) !== "true") throw new Error("beginner not re-selected");
   await page.screenshot({ path: `${S}/et-02-setup-beginner.png` });
 });
@@ -215,10 +226,11 @@ await step("with a goal running, a finished drill becomes a note on that goal; h
   const gid = await lb((m) => { const g = m.logbook.addGoal({ name: "Intervals" , type: "technique" }); m.logbook.start(g.id); return g.id; });
   await page.goto(`${BASE}/?app=1&e=3#/eartraining/pitch`);
   await page.waitForSelector("#et-begin");
-  if (await page.locator("#et-rows[hidden]").count()) await page.click("#et-tune");
+  await page.click('#et-levels [data-level="custom"]');
   await page.click('.et-row[data-key="count"] .et-opt[data-v="3"]');
   await page.click('.et-row[data-key="mode"] .et-opt[data-v="harmonic"]');
   await page.click('.et-row[data-key="reference"] .et-opt[data-v="start"]');
+  await page.click('.et-row[data-key="questions"] .et-opt[data-v="10"]');
   await page.click("#et-begin");
   await page.waitForSelector("#et-run");
   const d = await dealt();
@@ -274,9 +286,11 @@ await step("two octaves of questions still answer on one octave, by pitch class;
   await page.goto(`${BASE}/?app=1&e=4#/eartraining/pitch`);
   await page.waitForSelector("#et-begin");
   await page.click('#et-levels [data-level="beginner"]');
-  if (await page.locator("#et-rows[hidden]").count()) await page.click("#et-tune");
+  await page.click('#et-levels [data-level="custom"]');
+  await page.click('.et-row[data-key="count"] .et-opt[data-v="1"]');
   await page.click('.et-row[data-key="range"] .et-opt[data-v="2"]');
   await page.click('.et-row[data-key="reference"] .et-opt[data-v="each"]');
+  await page.click('.et-row[data-key="questions"] .et-opt[data-v="10"]');
   await page.click("#et-begin");
   await page.waitForSelector("#et-run");
   const d = await dealt();

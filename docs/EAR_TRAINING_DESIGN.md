@@ -39,13 +39,16 @@ Two rules: no configuration lost, a calmer page for a newer musician.
    radio row with a name, a two-word tag and a one-line **blurb** of what it
    means (`blurb(setup)`: *C major · one octave · single notes · reference
    every time · 10 questions*). Tap one and press begin; nothing else to read.
-   The Custom row lights up (and shows its own blurb) the moment a setting no
-   longer matches a preset; tapping it opens fine-tune.
-2. **Fine-tune behind a disclosure** — folded when a preset matches, open by
-   itself when the setup is custom. Six uniform rows, each a label + short hint
-   on the left and an **equal-cell segmented control** on the right, the same
-   height and type size everywhere. On a phone under 380 px the label sits
-   above its control.
+2. **Custom is the one row with a drawer.** Choosing Custom (an explicit
+   choice, `pitch-level`) slides its six settings out directly under its row,
+   inside the same card; choosing a preset folds the drawer away. The first
+   time, Custom starts from the level you were on; after that it keeps your
+   last mix (`pitch-custom`) even while you drill a preset. Editing inside the
+   drawer never changes the selection — you are already on Custom, and its
+   blurb updates as you edit. Six uniform rows: label + short hint on the
+   left, an **equal-cell segmented control** on the right, the same height and
+   type size everywhere. On a phone under 380 px the label sits above its
+   control.
 
 | row | cells | hint |
 |---|---|---|
