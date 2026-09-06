@@ -211,21 +211,14 @@ export function buildUI(root, { getAudio, store, setRunning }) {
   });
 
   // --- transport ----------------------------------------------------------
-  function toggle() {
-    if (engine.running) {
-      engine.stop();
-      startBtn.innerHTML = icon("play");
-      startBtn.setAttribute("aria-label", "start");
-      startBtn.classList.remove("running");
-      setRunning(false);
-    } else {
-      engine.start();
-      startBtn.innerHTML = icon("stop");
-      startBtn.setAttribute("aria-label", "stop");
-      startBtn.classList.add("running");
-      setRunning(true);
-    }
-  }
+  // The engine reports state (lock-screen play/pause can flip it too, WSHED-85).
+  engine.onchange = (running) => {
+    startBtn.innerHTML = icon(running ? "stop" : "play");
+    startBtn.setAttribute("aria-label", running ? "stop" : "start");
+    startBtn.classList.toggle("running", running);
+    setRunning(running);
+  };
+  function toggle() { if (engine.running) engine.stop(); else engine.start(); }
   startBtn.addEventListener("click", toggle);
 
   let taps = [];

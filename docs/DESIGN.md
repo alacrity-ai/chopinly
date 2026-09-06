@@ -58,17 +58,40 @@ tool genuinely needs deps, Vite can be layered on then without moving files.
 | Transport | one big Start/Stop; Space toggles |
 | Practice-room niceties | screen **wake lock** while running (re-acquired on tab return); settings persist across sessions |
 
-## 3. Audio engine — why it won't drift
+## 3. Audio engine — why it won't drift, and why it survives a locked screen
 
-`setInterval`/`setTimeout` clicks jitter with main-thread load. We use the
-canonical **lookahead scheduler**: a coarse 25 ms timer that, on each pass,
-schedules every click falling in the next 120 ms *on the AudioContext clock*
-(`osc.start(t)` at exact times). Scheduling is sample-accurate even if the UI
-thread hiccups.
+**Until WSHED-85** the engine was the canonical lookahead scheduler: a 25 ms
+timer scheduling every click in the next 120 ms at exact AudioContext times.
+Sample-accurate while the page runs — but iOS suspends the page's JavaScript
+when the screen locks, and Android throttles background timers to once a
+second, so the clicks stopped or stuttered the moment a player locked the
+phone to save power.
 
-Every scheduled beat also pushes `{time, beat}` onto a queue; a
-`requestAnimationFrame` loop consumes it when `ctx.currentTime` passes, so the
-visuals are driven by the *audio* clock, never a second timer.
+**Now (2026-09-05)** the beat lives on the audio thread:
+
+1. `bar.js` (pure) lays out one bar — every click's time and kind for the
+   current tempo, meter, accents/mutes and subdivision. The bar is rounded to a
+   whole number of samples (≤ half a sample, ~10 µs, the same every bar: beats
+   stay perfectly even, the tempo is off by a few parts per million).
+2. `renderBar` synthesizes that bar with the existing voices into an
+   `OfflineAudioContext`, rendering 0.2 s past the end and **folding the tail
+   onto the bar start**, so the loop seam carries the last click's decay.
+3. The buffer loops on an `AudioBufferSourceNode` — no JS timer keeps time.
+4. A settings change re-renders and **swaps at the next beat boundary**: the
+   new source `start(T, offset)`s at the beat it should be on, the old one
+   `stop(T)`s, both sample-accurate. A knob still feels immediate.
+5. The clicks run through a `MediaStreamAudioDestinationNode` into a hidden
+   playing `<audio playsinline>`; the platform treats the page as playing media
+   (like a music app) and keeps the audio alive behind the lock screen.
+   `navigator.audioSession.type = "playback"` where Safari offers it. If the
+   sink can't start, the direct path stays.
+6. **Media Session**: "Metronome · 96 bpm / Chopinly" with play/pause on the
+   lock screen; the engine's `onchange` keeps the transport button honest.
+
+`pointer()` (dots + pendulum) is computed from the audio clock and the loop
+anchor in force, so visuals still follow the *audio*, never a second timer.
+The media-element path may add a few tens of ms of output latency; if the dots
+visibly lead the click on a device, a fixed visual offset is the fix.
 
 Voices are pure Web Audio synthesis (oscillators, noise buffers, bandpass,
 exponential decay envelopes) — no samples, no asset loading, fully offline.
