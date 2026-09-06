@@ -1,0 +1,29 @@
+<!doctype html><html><head><meta charset="utf-8"><title>og post</title>
+<style>
+@font-face { font-family: "Fraunces"; src: url("/fonts/fraunces-roman.woff2") format("woff2"); font-weight: 100 900; font-style: normal; }
+@font-face { font-family: "Fraunces"; src: url("/fonts/fraunces-italic.woff2") format("woff2"); font-weight: 100 900; font-style: italic; }
+html, body { margin: 0; }
+.card { width: 1200px; height: 630px; position: relative; overflow: hidden; color: #eee5d3; font-family: "Fraunces", Georgia, serif;
+  background: radial-gradient(ellipse at 20% 40%, #2e261d 0%, #191410 60%); }
+.kicker { position: absolute; left: 80px; top: 72px; display: flex; align-items: center; gap: 18px; font-family: system-ui, sans-serif; font-size: 26px; color: #c9a35c; letter-spacing: 0.06em; }
+.kicker img { width: 56px; height: 56px; border-radius: 13px; }
+.kicker b { font-family: "Fraunces", Georgia, serif; font-weight: 550; font-size: 34px; color: #eee5d3; letter-spacing: 0; }
+.title { position: absolute; left: 80px; right: 80px; top: 170px; font-size: 64px; font-weight: 550; line-height: 1.12; letter-spacing: -0.01em; max-height: 300px; overflow: hidden; }
+.title.long { font-size: 52px; }
+.tag { position: absolute; left: 80px; bottom: 96px; font-size: 30px; font-style: italic; color: #a2947d; }
+.rule { position: absolute; left: 80px; right: 80px; bottom: 76px; height: 1px; background: #3a3128; }
+.url { position: absolute; left: 80px; bottom: 36px; font-size: 24px; color: #a2947d; font-family: system-ui, sans-serif; letter-spacing: 0.04em; }
+</style></head><body>
+<div class="card">
+  <div class="kicker"><img src="/icons/icon-512.png" alt=""><b>Chopinly</b> · the blog</div>
+  <div class="title" id="title"></div>
+  <div class="tag" id="tag"></div>
+  <div class="rule"></div><div class="url">chopinly.com · free piano practice assistant</div>
+</div>
+<script>
+  const q = new URLSearchParams(location.search);
+  const t = document.getElementById("title"); t.textContent = q.get("title") ?? "";
+  if (t.textContent.length > 70) t.classList.add("long");
+  document.getElementById("tag").textContent = q.get("tag") ?? "";
+</script>
+</body></html>

@@ -1,0 +1,4 @@
+# The landing moved from /welcome to / (WSHED-95); the app lives at /app.
+/welcome  /  301
+/welcome.html  /  301
+/index.html  /  301

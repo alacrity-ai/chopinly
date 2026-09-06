@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Chopinly — practice assistant</title>
+  <meta name="description" content="The Chopinly app: practice clock, logbook, metronome, piano, tuner, pitch pipe, recorder, sight singing and ear training.">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#191410">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Chopinly">
+  <meta property="og:title" content="Chopinly — practice assistant">
+  <meta property="og:description" content="Choose something. Practice it. See what you actually did. Free, works offline, optional account for backup.">
+  <meta property="og:url" content="https://chopinly.com/app">
+  <meta property="og:image" content="https://chopinly.com/og/chopinly.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://chopinly.com/og/chopinly.png">
+  <script>if (location.hostname === "www.chopinly.com") location.replace("https://chopinly.com" + location.pathname + location.search + location.hash);</script>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="preload" href="/fonts/fraunces-roman.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/fraunces-italic.woff2" as="font" type="font/woff2" crossorigin>
+  <script>try { var s = JSON.parse(localStorage.getItem("ws.shell.skin")); if (s && s !== "ebony") document.documentElement.dataset.skin = s; } catch (e) {}</script>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <header class="navbar">
+    <div class="navbar-row">
+      <a class="brand" href="#/logbook" aria-label="Chopinly — today">
+        <h1 class="wordmark">Chopinly</h1>
+        <p class="tagline">practice assistant</p>
+      </a>
+      <div class="navbar-right">
+        <nav class="tool-picker" id="tool-picker" aria-label="tools"></nav>
+        <button class="icon-btn account-btn" id="account-btn" aria-label="account — sign in to back up your practice">
+          <span class="account-glyph"></span><span class="account-initial" hidden></span><i class="account-dot" hidden></i>
+        </button>
+      </div>
+    </div>
+    <div class="nav-slot" id="nav-slot"></div>
+  </header>
+  <main id="tool-root"></main>
+  <noscript><p class="noscript">Chopinly needs JavaScript — the metronome is built on the Web Audio clock.</p></noscript>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

@@ -1,8 +1,8 @@
 // Network-first, cache-fallback. Installable + fully offline, but never serves
 // a stale shell when the network is up (see docs/DESIGN.md §5).
-const CACHE = "chopinly-v46";
+const CACHE = "chopinly-v47";
 const SHELL = [
-  "/",
+  "/app",
   "/css/app.css",
   "/js/app.js",
   "/js/registry.js",
@@ -62,6 +62,9 @@ const SHELL = [
   "/js/tools/logbook/ceremony.js",
   "/js/tools/logbook/sparkline.js",
   "/js/tools/logbook/util.js",
+  "/js/tools/logbook/analytics.js",
+  "/js/tools/logbook/charts.js",
+  "/js/lib/analytics.js",
   "/js/tools/sightsinging/index.js",
   "/js/tools/sightsinging/ui.js",
   "/js/tools/sightsinging/runner.js",
@@ -87,7 +90,7 @@ const SHELL = [
 // Every shell fetch carries ?v=<CACHE> and bypasses the HTTP cache, so a new
 // worker version can never precache a stale module from the browser or edge
 // cache (WSHED-58). Responses are stored under the clean URL.
-const BUSTABLE = (path) => path === "/" || path === "/manifest.webmanifest" || /^\/(js|css)\//.test(path);
+const BUSTABLE = (path) => path === "/app" || path === "/manifest.webmanifest" || /^\/(js|css)\//.test(path);
 function netRequest(url) {
   const u = new URL(url, self.location.origin);
   if (BUSTABLE(u.pathname)) u.searchParams.set("v", CACHE);
@@ -132,7 +135,7 @@ self.addEventListener("fetch", (e) => {
       .catch(async () => {
         const hit = await caches.match(req);
         if (hit) return hit;
-        if (req.mode === "navigate") return caches.match("/");
+        if (req.mode === "navigate") return caches.match("/app");
         return Response.error();
       })
   );
