@@ -61,11 +61,18 @@ export function buildUI(root, ctx) {
     root.querySelector("#et-go-history").addEventListener("click", () => nav("/history"));
   }
 
-  // --- the setup card (WSHED-87): presets as a list, the fine-tune rows behind a disclosure, one sentence ---
+  // --- the setup card (WSHED-87): presets as a list; Custom is the one row with a drawer ---
+  // Three presets are self-contained. Custom is an explicit choice (`pitch-level`) whose
+  // settings live in a drawer under its row: it opens on select, seeds from the preset you
+  // were on the first time, and keeps your last mix (`pitch-custom`) when you switch away.
   function renderSetup() {
-    const s = setup();
-    const save = () => store.set("pitch-setup", s);
-    let tuneOpen = levelOf(s) === "custom";
+    let s = setup();
+    let level = store.get("pitch-level", null);
+    if (!LEVELS[level] && level !== "custom") level = levelOf(s);
+    const rawCustom = store.get("pitch-custom", null) ?? (level === "custom" ? s : null);
+    let custom = rawCustom ? cleanSetup(rawCustom) : null; // null until Custom is first chosen
+    if (level === "custom") s = custom;
+    const save = () => { store.set("pitch-level", level); store.set("pitch-custom", custom); store.set("pitch-setup", s); };
     const row = (k) => `<div class="et-row" data-key="${k}"><div class="et-row-head"><span class="et-row-label">${ROWS[k].label}</span><span class="et-row-hint">${ROWS[k].hint}</span></div><div class="et-seg" role="radiogroup" aria-label="${ROWS[k].label}" style="--n:${OPTIONS[k].filter(([v]) => !(k === "range" && v === 8 && phone())).length}">${OPTIONS[k].filter(([v]) => !(k === "range" && v === 8 && phone())).map(([v]) => `<button type="button" class="et-opt" data-v="${v}" role="radio">${ROWS[k].cells[v]}</button>`).join("")}</div></div>`;
     root.innerHTML = `
       <section class="eartraining et-setup">
@@ -76,11 +83,8 @@ export function buildUI(root, ctx) {
         </div>
         <div class="et-presets" id="et-levels" role="radiogroup" aria-label="level">
           ${PRESETS.map(([id, name, tag]) => `<button type="button" class="et-preset" data-level="${id}" role="radio"><i class="et-radio" aria-hidden="true"></i><span class="et-preset-body"><span class="et-preset-name">${name}<small>${tag}</small></span><span class="et-preset-line">${blurb(LEVELS[id], id === "beginner" ? 60 : null)}</span></span></button>`).join("")}
-          <button type="button" class="et-preset" data-level="custom" role="radio"><i class="et-radio" aria-hidden="true"></i><span class="et-preset-body"><span class="et-preset-name">Custom<small>your own mix</small></span><span class="et-preset-line" id="et-custom-line"></span></span></button>
-        </div>
-        <div class="et-tune-wrap">
-          <button type="button" class="et-tune" id="et-tune" aria-expanded="false" aria-controls="et-rows"><span>fine-tune</span><i class="chevron" aria-hidden="true">&#9662;</i></button>
-          <div class="et-panel" id="et-rows" hidden>
+          <button type="button" class="et-preset" data-level="custom" role="radio" aria-controls="et-rows"><i class="et-radio" aria-hidden="true"></i><span class="et-preset-body"><span class="et-preset-name">Custom<small>your own mix</small></span><span class="et-preset-line" id="et-custom-line"></span></span></button>
+          <div class="et-drawer" id="et-rows" hidden>
             ${Object.keys(ROWS).map(row).join("")}
           </div>
         </div>
@@ -88,24 +92,24 @@ export function buildUI(root, ctx) {
         <div class="transport"><button class="start" id="et-begin">${icon("play")}<span>begin</span></button></div>
       </section>`;
     const paint = () => {
-      const lvl = levelOf(s);
-      for (const b of root.querySelectorAll(".et-preset")) { const on = b.dataset.level === lvl; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); b.setAttribute("aria-checked", String(on)); }
-      root.querySelector("#et-custom-line").textContent = lvl === "custom" ? blurb(s, s.notes === "key" ? null : null) : "change anything below and this is yours";
+      for (const b of root.querySelectorAll(".et-preset")) { const on = b.dataset.level === level; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); b.setAttribute("aria-checked", String(on)); }
+      root.querySelector("#et-custom-line").textContent = custom ? blurb(custom) : "start from the level you're on and change anything";
+      root.querySelector("#et-rows").hidden = level !== "custom";
+      root.querySelector('[data-level="custom"]').setAttribute("aria-expanded", String(level === "custom"));
       for (const r of root.querySelectorAll(".et-row")) {
         const k = r.dataset.key;
         const off = k === "mode" && s.count === 1;
         r.classList.toggle("off", off);
         for (const c of r.querySelectorAll(".et-opt")) { const on = String(s[k]) === c.dataset.v; c.classList.toggle("on", on); c.setAttribute("aria-checked", String(on)); c.disabled = off; }
       }
-      root.querySelector("#et-tune").setAttribute("aria-expanded", String(tuneOpen));
-      root.querySelector("#et-rows").hidden = !tuneOpen;
-      root.querySelector("#et-sentence").textContent = describe(s, s.notes === "key" && lvl === "beginner" ? 60 : null);
+      root.querySelector("#et-sentence").textContent = describe(s, s.notes === "key" && level === "beginner" ? 60 : null);
     };
     for (const b of root.querySelectorAll(".et-preset")) b.addEventListener("click", () => {
-      if (b.dataset.level === "custom") { tuneOpen = true; paint(); haptic(6); return; }
-      Object.assign(s, LEVELS[b.dataset.level]); if (phone() && s.range > 4) s.range = 4; save(); paint(); haptic(6);
+      const id = b.dataset.level;
+      if (id === "custom") { if (level === "custom") return; custom = custom ?? cleanSetup({ ...s }); level = "custom"; s = custom; }
+      else { level = id; s = { ...LEVELS[id] }; if (phone() && s.range > 4) s.range = 4; }
+      save(); paint(); haptic(6);
     });
-    root.querySelector("#et-tune").addEventListener("click", () => { tuneOpen = !tuneOpen; paint(); });
     for (const c of root.querySelectorAll(".et-opt")) c.addEventListener("click", () => {
       const k = c.closest(".et-row").dataset.key, raw = c.dataset.v;
       s[k] = WORDS.has(k) ? raw : Number(raw);
