@@ -15,7 +15,8 @@ test("the committed site equals the generator's output (run `node dev/build-site
 test("every tool page and post carries canonical, one h1, JSON-LD that parses, and enough real copy", () => {
   for (const [rel, html] of files) {
     if (!rel.endsWith(".html") || rel === "index.html") continue;
-    const path = rel === "404.html" ? "/404" : "/" + rel.replace(/\.html$/, "").replace(/\/index$/, "");
+    const path = rel === "404.html" ? "/404" : "/" + rel.replace(/\.html$/, "");
+    assert.ok(!rel.endsWith("/index.html"), `${rel}: directory indexes 308 to a trailing slash on Pages`);
     assert.ok(html.includes(`<link rel="canonical" href="${SITE}${path}">`), `${rel} canonical`);
     assert.equal((html.match(/<h1[ >]/g) ?? []).length, 1, `${rel} has one h1`);
     const ld = /<script type="application\/ld\+json">\n([\s\S]*?)\n  <\/script>/.exec(html);

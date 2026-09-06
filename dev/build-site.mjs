@@ -311,7 +311,7 @@ export function build() {
   const files = new Map();
   files.set("tools.html", toolsIndex(tools));
   for (const t of tools) files.set(`${t.slug}.html`, toolPage(t, tools, posts));
-  files.set("blog/index.html", blogIndex(posts, tools));
+  files.set("blog.html", blogIndex(posts, tools)); // blog.html, not blog/index.html: Pages would 308 /blog → /blog/ for a directory index
   for (const p of posts) files.set(`blog/${p.slug}.html`, postPage(p, posts, tools));
   files.set("404.html", notFound(tools));
   files.set("sitemap.xml", sitemap(tools, posts));
