@@ -14,7 +14,9 @@ Scripts live in `tests/e2e/`; screenshots are attached to the WSHED cards.
 | `landing.mjs` — `/welcome`, OG, first-run redirect | 4 | 4/4 | 4/4 |
 | `keyboard.mjs` — the Piano tool (WSHED-73) | 10 | 10/10 | 10/10 |
 | `takes.mjs` — recording, playback, star, goal page + compare, Recorder tool, storage sheet (WSHED-75; fake microphone) | 8 | 8/8 | 8/8 |
-| Unit (`npm test`) | 76 | — | 76/76 |
+| `eartraining.mjs` — pitch training + logbook attribution + same-day fold (WSHED-81/82) | 7 | 7/7 | 7/7 |
+| `metronome.mjs` — looped-bar engine, media sink, media session (WSHED-85) | 4 | 4/4 | 4/4 |
+| Unit (`npm test`) | 89 | — | 89/89 |
 
 ## What the accounts suites prove
 
