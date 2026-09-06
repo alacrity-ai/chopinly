@@ -8,8 +8,8 @@ import { createPitchRun } from "./pitchrun.js";
 import { esc, fmtDate } from "../logbook/util.js";
 import { haptic } from "../logbook/motion.js";
 
-const LABELS = { notes: "notes", range: "range", count: "how many at once", mode: "played", reference: "reference", questions: "questions", input: "answer with", octave: "octave" };
-const WORDS = new Set(["notes", "mode", "reference", "input", "octave"]);
+const LABELS = { notes: "notes", range: "range", count: "how many at once", mode: "played", reference: "reference", questions: "questions" };
+const WORDS = new Set(["notes", "mode", "reference"]);
 const phone = () => innerWidth < 700;
 
 export function buildUI(root, ctx) {
@@ -75,7 +75,7 @@ export function buildUI(root, ctx) {
       for (const b of root.querySelectorAll("#et-levels button")) { const on = b.dataset.level === lvl; b.setAttribute("aria-pressed", String(on)); b.setAttribute("aria-checked", String(on)); }
       for (const row of root.querySelectorAll(".et-row")) {
         const k = row.dataset.key;
-        const off = (k === "mode" && s.count === 1) || (k === "octave" && s.input !== "mic");
+        const off = k === "mode" && s.count === 1;
         row.classList.toggle("off", off);
         for (const c of row.querySelectorAll(".et-chip")) { const on = String(s[k]) === c.dataset.v; c.classList.toggle("on", on); c.setAttribute("aria-checked", String(on)); c.disabled = off; }
       }
@@ -86,7 +86,6 @@ export function buildUI(root, ctx) {
       const k = c.closest(".et-row").dataset.key, raw = c.dataset.v;
       s[k] = WORDS.has(k) ? raw : Number(raw);
       if (s.count === 1) s.mode = "melodic";
-      if (s.input !== "mic") s.octave = "any";
       save(); paint(); haptic(6);
     });
     root.querySelector("#et-back").addEventListener("click", () => nav(""));
@@ -96,7 +95,7 @@ export function buildUI(root, ctx) {
 
   function renderRun() {
     const q = query();
-    const s = cleanSetup({ ...(q.get("setup") && LEVELS[q.get("setup")] ? LEVELS[q.get("setup")] : setup()), ...(q.get("input") ? { input: q.get("input") } : {}), ...(q.get("octave") ? { octave: q.get("octave") } : {}) });
+    const s = q.get("setup") && LEVELS[q.get("setup")] ? { ...LEVELS[q.get("setup")] } : setup();
     const seed = Number(q.get("seed")) || (Date.now() % 1e9);
     run = createPitchRun(root, {
       setup: s, seed, getAudio, runs,

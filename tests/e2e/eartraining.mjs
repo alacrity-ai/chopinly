@@ -128,56 +128,73 @@ await step("a second drill the same day folds into the same auto segment (WSHED-
   await page.screenshot({ path: `${S}/et-05b-folded.png` });
 });
 
-await step("answer on your piano (WSHED-86): setup rows are sticky, the mic opens, the hold-off ignores the speaker, ±cents count, exact octave judges the octave", async () => {
-  await page.goto(`${BASE}/?app=1&e=2m#/eartraining/pitch`);
-  await page.waitForSelector("#et-begin");
-  if (!(await page.locator('.et-row[data-key="octave"].off').count())) throw new Error("octave should be greyed on the keys");
-  await page.click('.et-row[data-key="input"] .et-chip[data-v="mic"]');
-  if (await page.locator('.et-row[data-key="octave"].off').count()) throw new Error("octave should wake with the mic");
-  await page.click('.et-row[data-key="octave"] .et-chip[data-v="exact"]');
-  if (!(await text("#et-sentence")).endsWith("answered on your piano in the exact octave.")) throw new Error("sentence " + await text("#et-sentence"));
-  await page.click('#et-levels [data-level="beginner"]');
-  if ((await page.getAttribute('.et-row[data-key="input"] .et-chip[data-v="mic"]', "aria-checked")) !== "true" || (await page.getAttribute('#et-levels [data-level="beginner"]', "aria-pressed")) !== "true") throw new Error("a level should not reset how you answer, nor mic make it custom");
-  await page.screenshot({ path: `${S}/et-05c-setup-mic.png` });
-  // a seeded strict run on the (fake) mic
-  await page.goto(`${BASE}/?app=1&e=2n#/eartraining/pitch/run?seed=7&setup=beginner&input=mic&octave=exact`);
-  await page.waitForSelector("#et-run.et-mic");
-  await page.waitForFunction(() => /microphone is on|listening/.test(document.querySelector("#et-heard-text")?.textContent ?? ""), null, { timeout: 8000 });
-  if (!(await text(".et-ref-hint")).includes("the exact octave")) throw new Error("hint " + await text(".et-ref-hint"));
+await step("answer on your piano (WSHED-86): the mic toggle in the drill, remembered; hold-off after the question, the reference button and a screen key; ±cents count; pitch class from any octave", async () => {
+  await page.goto(`${BASE}/?app=1&e=2m#/eartraining/pitch/run?seed=7&setup=beginner`);
+  await page.waitForSelector("#et-mic");
+  if ((await page.getAttribute("#et-mic", "aria-pressed")) !== "false" || !(await page.locator("#et-heard[hidden]").count())) throw new Error("mic should start off");
+  await page.click("#et-mic");
+  await page.waitForFunction(() => document.querySelector("#et-mic")?.getAttribute("aria-pressed") === "true", null, { timeout: 8000 });
+  if ((await text("#et-mic span")) !== "mic on" || await page.locator("#et-heard[hidden]").count()) throw new Error("mic on state");
+  await noWiden();
+  const acts = await page.$$eval(".et-acts .tap", (els) => els.map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right)]; }));
+  if (acts.some(([l, r]) => l < 0 || r > 420)) throw new Error("transport clipped " + JSON.stringify(acts));
+  await page.screenshot({ path: `${S}/et-05c-mic-on.png` });
   const d = await dealt();
   const hz = (m, cents = 0) => 440 * 2 ** ((m - 69) / 12) * 2 ** (cents / 1200);
-  const feed = (freq, rms = 0.05) => page.evaluate(([f, r]) => window.__etMic.feed({ freq: f, rms: r }), [freq, rms]);
-  const hear = async (m, cents = 0) => { await feed(hz(m, cents)); await feed(hz(m, cents)); await feed(hz(m, cents)); };
-  const silence = async () => { for (let i = 0; i < 5; i++) await feed(-1, 0); };
-  // question 1: samples during the hold-off must not answer; then a 30-cent-sharp note does
-  await answerPhase();
-  await hear(d.questions[0].notes[0]);
-  await page.waitForTimeout(120);
-  if (await page.locator('.kb-key[data-light]').count()) throw new Error("the hold-off should ignore the first samples");
-  await page.waitForTimeout(400);
-  await silence(); await hear(d.questions[0].notes[0], 30);
+  // one evaluate per burst: frames must land together, well inside (or outside) a hold-off window
+  const feedMany = (samples) => page.evaluate((list) => { for (const [f, r] of list) window.__etMic.feed({ freq: f, rms: r }); }, samples);
+  const hear = (m, cents = 0) => feedMany([[hz(m, cents), 0.05], [hz(m, cents), 0.05], [hz(m, cents), 0.05]]);
+  const silence = () => feedMany([[-1, 0], [-1, 0], [-1, 0], [-1, 0], [-1, 0]]);
+  const lit = () => page.locator(".kb-key[data-light]").count();
+  const q = (i) => page.waitForFunction((i) => document.querySelector("#et-title")?.textContent.startsWith(`question ${i + 1} `), i, { timeout: 15000 });
+  // q1: samples the instant the answer phase opens must not answer (hold-off) — fed from inside the page, the
+  // moment the phase flips, so Playwright's own latency can't eat the window; a 30-cent-sharp note an octave up then does
+  const trap = await page.evaluate((f) => new Promise((res) => {
+    const run = document.querySelector("#et-run");
+    const fire = () => { const muteFor = +window.__etMic.muteFor.toFixed(3); for (let i = 0; i < 3; i++) window.__etMic.feed({ freq: f, rms: 0.05 }); setTimeout(() => res({ muteFor, lit: document.querySelectorAll(".kb-key[data-light]").length, phase: run.dataset.phase }), 100); };
+    if (run.dataset.phase === "answer") { fire(); return; }
+    const mo = new MutationObserver(() => { if (run.dataset.phase === "answer") { mo.disconnect(); fire(); } });
+    mo.observe(run, { attributes: true, attributeFilter: ["data-phase"] });
+  }), hz(d.questions[0].notes[0]));
+  if (trap.lit || trap.phase !== "answer" || trap.muteFor < 0.3) throw new Error("the hold-off should ignore the first samples " + JSON.stringify(trap));
+  await page.waitForTimeout(450); await silence(); await hear(d.questions[0].notes[0] + 12, 30);
   await page.waitForFunction((m) => document.querySelector(`.kb-key[data-midi="${m}"][data-light="correct"]`), await onKb(d.questions[0].notes[0]));
   if (!(await text("#et-heard-text")).startsWith("heard")) throw new Error("heard readout " + await text("#et-heard-text"));
-  // question 2: the right pitch class an octave up is wrong in strict mode
-  await page.waitForFunction(() => document.querySelector("#et-title")?.textContent.startsWith("question 2 "));
-  await answerPhase(); await page.waitForTimeout(450);
-  await silence(); await hear(d.questions[1].notes[0] + 12);
+  // q2: the reference button sounds the tonic — the mic must stay hushed through it
+  await q(1); await answerPhase(); await page.waitForTimeout(450);
+  await page.click("#et-refbtn"); await silence(); await hear(d.questions[1].notes[0]); await page.waitForTimeout(150);
+  if (await lit()) throw new Error("the reference should hush the mic");
+  await page.waitForTimeout(1100); await silence(); await hear(d.questions[1].notes[0]);
+  await page.waitForFunction((m) => document.querySelector(`.kb-key[data-midi="${m}"][data-light="correct"]`), await onKb(d.questions[1].notes[0]));
+  // q3: a screen key sounds too — press a wrong key? no: hold a key that is NOT an answer… keys always answer; so hush is checked with a wrong mic note fed while the key is down
+  await q(2); await answerPhase(); await page.waitForTimeout(450);
+  const k3 = await onKb(d.questions[2].notes[0]); const box = await page.locator(`.kb-key[data-midi="${k3}"]`).boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height * 0.82); await page.mouse.down();
+  await page.waitForTimeout(80);
+  const st = await page.evaluate(() => document.querySelector("#et-run").dataset.phase);
+  await page.mouse.up();
+  if (st !== "reveal") throw new Error("the screen key should have answered (phase " + st + ")");
+  // q4: a wrong pitch class from the mic is wrong
+  await q(3); await answerPhase(); await page.waitForTimeout(450);
+  await silence(); await hear(d.questions[3].notes[0] + 1);
   await page.waitForSelector('.kb-key[data-light="wrong"]', { timeout: 5000 });
-  // the rest right, in the exact octave
-  for (let i = 2; i < d.questions.length; i++) {
-    await page.waitForFunction((i) => document.querySelector("#et-title")?.textContent.startsWith(`question ${i + 1} `), i, { timeout: 15000 });
-    await answerPhase(); await page.waitForTimeout(450);
-    await silence(); await hear(d.questions[i].notes[0]);
+  // the rest right, from the octave below
+  for (let i = 4; i < d.questions.length; i++) {
+    await q(i); await answerPhase(); await page.waitForTimeout(450);
+    await silence(); await hear(d.questions[i].notes[0] - 12);
     await page.waitForFunction((m) => document.querySelector(`.kb-key[data-midi="${m}"][data-light="correct"]`), await onKb(d.questions[i].notes[0]), { timeout: 5000 });
   }
   await page.waitForSelector("#et-score");
   if ((await text("#et-score")) !== "90%") throw new Error("score " + await text("#et-score"));
-  if ((await text(".et-miss")) !== "one slip: the right interval in the wrong octave") throw new Error("miss line " + await text(".et-miss"));
-  if (!(await text(".et-sentence")).endsWith("answered on your piano in the exact octave.")) throw new Error("result sentence");
   const segs = await lb((m) => m.logbook.doc.segments.filter((s) => s.goalId === "eartraining").map((s) => s.auto.runs?.at(-1)?.label ?? s.auto.label));
-  if (!segs.some((l) => /piano · exact oct/.test(l))) throw new Error("logbook label " + JSON.stringify(segs));
+  if (!segs.some((l) => /on the piano$/.test(l))) throw new Error("logbook label " + JSON.stringify(segs));
+  // remembered: the next drill starts with the mic on; off again is remembered too
+  await page.click("#et-again");
+  await page.waitForFunction(() => document.querySelector("#et-mic")?.getAttribute("aria-pressed") === "true", null, { timeout: 8000 });
+  await page.click("#et-mic");
+  if ((await page.getAttribute("#et-mic", "aria-pressed")) !== "false" || (await page.evaluate(() => localStorage.getItem("ws.eartraining.mic"))) !== "false") throw new Error("mic off not remembered");
+  await page.click("#et-quit");
   await page.screenshot({ path: `${S}/et-05d-mic-results.png` });
-  await page.evaluate(() => localStorage.removeItem("ws.eartraining.pitch-setup"));
 });
 
 await step("with a goal running, a finished drill becomes a note on that goal; harmonic questions accept any order", async () => {
