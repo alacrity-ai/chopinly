@@ -1788,13 +1788,16 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .et-heard b { color: var(--fg); font-weight: 500; font-family: var(--serif); font-size: 1.05rem; min-width: 2.2rem; text-align: left; }
 .et-run[data-phase="answer"] .et-heard .et-ear { animation: et-pulse 1.2s ease-in-out infinite; }
 .et-heard.off .et-ear { color: var(--rough); animation: none; }
+.et-micbtn.on { border-color: var(--accent); color: var(--accent); }
+.et-micbtn.on svg { color: var(--accent); }
 @keyframes et-pulse { 0%, 100% { opacity: 0.55; transform: scale(1); } 50% { opacity: 1; transform: scale(1.18); } }
 .et-dots i { width: 0.7rem; height: 0.7rem; border-radius: 50%; border: 2px solid var(--fg-dim); }
 .et-dots i.hit { background: var(--ok); border-color: var(--ok); }
 .et-kb { width: min(100%, 34rem); align-self: center; padding: 0.5rem; border-radius: 0.9rem; background: linear-gradient(180deg, var(--bg-raised), var(--bg-panel)); border: 1px solid var(--bg-edge); transition: opacity 200ms; }
 .et-run:not([data-phase="answer"]) .et-kb { opacity: 0.55; }
 .et-run:not([data-phase="answer"]) .kb { pointer-events: none; }
-.et-acts { justify-content: center; }
+.et-acts { justify-content: center; flex-wrap: wrap; gap: 0.6rem; width: min(100%, 34rem); align-self: center; }
+.et-acts .tap { padding: 0.5rem 0.85rem; }
 .et-finished .et-stage, .et-finished .et-kb, .et-finished .et-acts { display: none; }
 .et-results { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; text-align: center; }
 .et-result-line { color: var(--fg-dim); }
