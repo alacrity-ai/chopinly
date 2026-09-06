@@ -48,6 +48,14 @@ export function describe(setup, tonic = null) {
   const ref = setup.reference === "each" ? "a reference before each question" : setup.reference === "start" ? "a reference once at the start" : "no reference — absolute pitch";
   return `${key}, ${range}, ${what}, ${ref}, ${setup.questions} questions.`;
 }
+/** One scannable line for a preset row: "C major · one octave · single notes · reference every time · 10 questions". */
+export function blurb(setup, tonic = null) {
+  const key = setup.notes === "key" ? (tonic === null ? "a major key" : `${PC_NAMES[tonic % 12]} major`) : "all twelve notes";
+  const range = setup.range >= 8 ? "the whole piano" : OPTIONS.range.find(([v]) => v === setup.range)[1];
+  const what = setup.count === 1 ? "single notes" : `${setup.count} notes ${setup.mode === "harmonic" ? "together" : "in a row"}`;
+  const ref = setup.reference === "each" ? "reference every time" : setup.reference === "start" ? "one reference at the start" : "no reference";
+  return `${key} · ${range} · ${what} · ${ref} · ${setup.questions} questions`;
+}
 /** The short form for a logbook line / history row. */
 export function shortDescribe(setup) {
   return [OPTIONS.notes.find(([v]) => v === setup.notes)[1], setup.range >= 8 ? "88 keys" : `${setup.range} oct`, setup.count === 1 ? "single" : `${setup.count} ${setup.mode === "harmonic" ? "together" : "in a row"}`, setup.reference === "never" ? "no ref" : null].filter(Boolean).join(" · ");

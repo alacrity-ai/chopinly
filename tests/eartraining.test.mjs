@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { OPTIONS, LEVELS, DEFAULT_SETUP, levelOf, cleanSetup, rangeMidi, describe, shortDescribe, rng, generate, judgePress, scoreRun, starsFor, missLine, intervalName, noteName, pc, answerOctave, onAnswerKeyboard } from "../js/lib/eartraining/pitch.js";
+import { OPTIONS, LEVELS, DEFAULT_SETUP, levelOf, cleanSetup, rangeMidi, describe, shortDescribe, rng, generate, judgePress, scoreRun, starsFor, missLine, intervalName, noteName, pc, answerOctave, onAnswerKeyboard, blurb } from "../js/lib/eartraining/pitch.js";
 import { createRuns } from "../js/lib/eartraining/runs.js";
 import { createLogbook, BUILTIN_EARTRAINING } from "../js/lib/logbook.js";
 
@@ -97,4 +97,11 @@ test("judgePress by pitch class from any octave; the tonic's own octave slip rea
   assert.equal(missLine([{ expected: 60, heard: 72 }], 60), "one slip: the right interval in the wrong octave", "the tonic itself, an octave off");
   assert.equal(missLine([{ expected: 60, heard: 72 }, { expected: 67, heard: 55 }], 60), "2 slips: the right interval in the wrong octave");
   assert.equal(missLine([{ expected: 60, heard: 71 }], 60), "one slip: you heard the unison as a major seventh", "\"a unison\", never \"an\"");
+});
+
+test("blurb: one scannable line per preset (WSHED-87)", () => {
+  assert.equal(blurb(LEVELS.beginner, 60), "C major · one octave · single notes · reference every time · 10 questions");
+  assert.equal(blurb(LEVELS.intermediate), "a major key · two octaves · 2 notes in a row · reference every time · 10 questions");
+  assert.equal(blurb(LEVELS.advanced), "all twelve notes · two octaves · 3 notes in a row · one reference at the start · 20 questions");
+  assert.equal(blurb({ ...LEVELS.advanced, range: 8, mode: "harmonic", reference: "never" }), "all twelve notes · the whole piano · 3 notes together · no reference · 20 questions");
 });

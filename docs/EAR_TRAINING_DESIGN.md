@@ -31,20 +31,34 @@ segment on that goal (LOGBOOK_V2_DESIGN §12), so a sitting is one session, not
 ten. Every run is kept in
 `ws.eartraining.runs` and listed under **drills**.
 
-## The setup card
+## The setup card (redesigned 2026-09-06, WSHED-87)
 
-| row | chips | note |
+Two rules: no configuration lost, a calmer page for a newer musician.
+
+1. **Presets as a list** — Beginner · Intermediate · Advanced · Custom, each a
+   radio row with a name, a two-word tag and a one-line **blurb** of what it
+   means (`blurb(setup)`: *C major · one octave · single notes · reference
+   every time · 10 questions*). Tap one and press begin; nothing else to read.
+   The Custom row lights up (and shows its own blurb) the moment a setting no
+   longer matches a preset; tapping it opens fine-tune.
+2. **Fine-tune behind a disclosure** — folded when a preset matches, open by
+   itself when the setup is custom. Six uniform rows, each a label + short hint
+   on the left and an **equal-cell segmented control** on the right, the same
+   height and type size everywhere. On a phone under 380 px the label sits
+   above its control.
+
+| row | cells | hint |
 |---|---|---|
-| level | beginner · intermediate · advanced · custom | presets set every row; touching a row flips to custom |
-| notes | in the key · all twelve | |
-| range | one octave · two · four · whole piano | whole piano hidden on a phone (< 700 px) |
-| how many at once | 1 · 2 · 3 · 4 · 5 | |
-| played | one after another · together | greyed at 1 |
-| reference | every question · once at the start · never | never = absolute pitch |
-| questions | 10 · 20 · 35 | |
+| notes | in the key · all twelve | which pitches |
+| range | one · two · four · all 88 | octaves, around middle C (all 88 hidden on a phone < 700 px) |
+| at once | 1 · 2 · 3 · 4 · 5 | notes per question |
+| played | in a row · together | two notes or more (greyed at 1) |
+| reference | every time · at the start · never | the key note first |
+| questions | 10 · 20 · 35 | per drill |
 
-An italic sentence restates the setup: *C major, one octave around middle C,
-single notes, a reference before each question, 10 questions.* Remembered.
+3. **The sentence** stays right above *begin*: *C major, one octave around
+   middle C, single notes, a reference before each question, 10 questions.*
+   Everything is remembered.
 
 ## Module
 
