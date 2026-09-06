@@ -1,8 +1,8 @@
 {
   "name": "Chopinly — Practice Assistant",
   "short_name": "Chopinly",
-  "description": "A piano practice assistant. Tool one: a metronome that keeps honest time.",
-  "start_url": "/",
+  "description": "A free piano practice assistant: goal-attributed practice clock and logbook, metronome, piano, tuner, pitch pipe, recorder, sight singing and ear training. Works offline.",
+  "start_url": "/app",
   "display": "standalone",
   "background_color": "#191410",
   "theme_color": "#191410",

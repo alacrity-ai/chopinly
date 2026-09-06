@@ -36,11 +36,11 @@ function shell({ slug, title, description, body }) {
   <link rel="icon" href="/icons/icon-192.png" type="image/png">
   <link rel="preload" href="/fonts/fraunces-roman.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/fraunces-italic.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/css/legal.css">
+  <link rel="stylesheet" href="/css/pages.css">
 </head>
 <body>
   <header class="l-top">
-    <a class="l-brand" href="/welcome" aria-label="Chopinly"><img src="/icons/icon-192.png" alt="" width="32" height="32"><span>Chopinly</span></a>
+    <a class="l-brand" href="/" aria-label="Chopinly"><img src="/icons/icon-192.png" alt="" width="32" height="32"><span>Chopinly</span></a>
     <nav class="l-nav" aria-label="documents">
       ${nav(slug)}
     </nav>
@@ -51,9 +51,10 @@ ${body}
   <footer class="l-foot">
     <span>Chopinly · made by ${CO}</span>
     <nav aria-label="more">
-      <a href="/welcome">home</a>
-      <a href="/?app=1">open the app</a>
+      <a href="/">home</a>
+      <a href="/app">open the app</a>
       ${nav("")}
+      <a href="/blog">blog</a>
       <a href="${REPO}" rel="noopener">source</a>
       <a href="mailto:${MAIL}">contact</a>
     </nav>

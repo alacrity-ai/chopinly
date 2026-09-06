@@ -115,7 +115,7 @@ function openSignIn() {
         </div>
       </form>
       <ul class="lb-acct-list lb-acct-list-out">${appearanceRow()}${takesRow()}</ul>
-      <p class="lb-acct-fine lb-acct-fine-center">By signing in you agree to the <a class="lb-link" href="/terms">terms</a> and <a class="lb-link" href="/privacy">privacy policy</a> — no tracking, no sharing, delete any time.<br><a class="lb-link" id="acct-home-out" href="/welcome">see the homepage</a></p>
+      <p class="lb-acct-fine lb-acct-fine-center">By signing in you agree to the <a class="lb-link" href="/terms">terms</a> and <a class="lb-link" href="/privacy">privacy policy</a> — no tracking, no sharing, delete any time.<br><a class="lb-link" id="acct-home-out" href="/?home">see the homepage</a></p>
       <p class="lb-acct-version" id="acct-version">Chopinly ${VERSION}</p>`,
   });
   const { body, close, closed } = sheet;
@@ -189,7 +189,7 @@ function openSignedIn() {
         <li><a class="lb-acct-row" id="acct-export" href="${account.exportUrl}" download>${icon("download")}<span><b>download my data</b><small>everything in your account, as a file</small></span></a></li>
         ${appearanceRow()}
         ${takesRow()}
-        <li><a class="lb-acct-row" id="acct-home" href="/welcome">${icon("home")}<span><b>show homepage</b><small>the page new visitors see</small></span></a></li>
+        <li><a class="lb-acct-row" id="acct-home" href="/?home">${icon("home")}<span><b>show homepage</b><small>the page new visitors see</small></span></a></li>
       </ul>
       <ul class="lb-acct-list">
         <li><button type="button" class="lb-acct-row" id="acct-signout">${icon("signout")}<span><b>sign out</b><small>keeps what's on this device</small></span></button></li>

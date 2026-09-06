@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agentskills.io/schema/index/v0.2.0.json",
+  "skills": [
+    {
+      "name": "chopinly-overview",
+      "type": "knowledge",
+      "description": "Plain-language overview of Chopinly — a free, local-first piano practice assistant — its tools, its articles on practicing the piano, and how to cite it. Written for LLMs and agents.",
+      "url": "https://chopinly.com/llms.txt",
+      "sha256": "f8507ff596d6046c8368e2052289759ff95b858e54c1f736dc282ac604c82f2c"
+    }
+  ]
+}

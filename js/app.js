@@ -15,17 +15,9 @@ const root = document.getElementById("tool-root");
 const picker = document.getElementById("tool-picker");
 const shellStore = makeStore("shell");
 
-// First run (WSHED-54): a brand-new visitor with nothing here and not
-// installed goes to the landing page. Everyone else — `?app=1` from the
-// landing, an installed PWA, anyone with practice data or a session — stays.
-const params = new URLSearchParams(location.search);
-const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
-const hasData = logbook.doc.goals.length > 0 || logbook.doc.segments.length > 0;
-if (!shellStore.get("seen", false) && !params.has("app") && !standalone && !hasData && !sync.signedIn()) {
-  location.replace("/welcome");
-} else {
-  shellStore.set("seen", true);
-}
+// The landing lives at / and forwards installed/returning visitors here (WSHED-95);
+// `seen` is what it checks, so every app load sets it.
+shellStore.set("seen", true);
 
 
 let active = null;

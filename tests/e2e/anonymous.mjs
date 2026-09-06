@@ -1,5 +1,6 @@
 import { chromium } from "/home/leif/lets-get-rich/claude_ops/.claude/skills/tcw-quote/node_modules/playwright/index.mjs";
 import { readFileSync } from "node:fs";
+import { VERSION } from "../../js/version.js";
 const S = process.env.SHOTS, BASE = process.env.BASE ?? "http://127.0.0.1:8789";
 const fixture = readFileSync("/home/leif/lets-get-rich/woodshed/tests/fixtures/logbook-v1.json", "utf8");
 const browser = await chromium.launch();
@@ -456,9 +457,11 @@ await step("offline: service worker serves the app", async () => {
   p4.on("pageerror", (e) => errors.push(`offline pageerror: ${e.message}`));
   await p4.goto(`${BASE}/?app=1#/logbook`);
   await p4.waitForSelector("#lb-play");
+  const CACHE = `chopinly-${VERSION}`;
   await p4.waitForFunction(async () => { const r = await navigator.serviceWorker.getRegistration(); return !!r?.active; }, null, { timeout: 20000 });
-  await p4.waitForFunction(async () => (await caches.keys()).includes("chopinly-v16"), null, { timeout: 20000 });
-  await p4.waitForFunction(async () => { const c = await caches.open("chopinly-v16"); return !!(await c.match("/js/tools/logbook/picker.js")); }, null, { timeout: 20000 });
+  await p4.waitForFunction(async (name) => (await caches.keys()).includes(name), CACHE, { timeout: 20000 });
+  await p4.waitForFunction(async (name) => { const c = await caches.open(name); return !!(await c.match("/js/tools/logbook/picker.js")) && !!(await c.match("/app")); }, CACHE, { timeout: 20000 });
+  await p4.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 20000 }); // claimed = the worker answers navigations
   await c.setOffline(true);
   await p4.goto(`${BASE}/?app=1#/logbook/goals`);
   await p4.waitForSelector(".lb-library", { timeout: 15000 });

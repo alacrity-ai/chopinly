@@ -1,4 +1,4 @@
-/* Chopinly landing (/welcome) — the app's palette and type, none of its JS. */
+/* Chopinly landing (/) — the app's palette and type, none of its JS. */
 @font-face { font-family: "Fraunces"; src: url("/fonts/fraunces-roman.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
 @font-face { font-family: "Fraunces"; src: url("/fonts/fraunces-italic.woff2") format("woff2"); font-weight: 100 900; font-style: italic; font-display: swap; }
 
@@ -78,3 +78,19 @@ main { width: min(100% - 2rem, 58rem); margin: 0 auto; padding: 0 0 4rem; }
 .w-fine a { text-decoration: underline dotted; }
 
 @media (prefers-reduced-motion: reduce) { .w-open { transition: none; } }
+
+/* WSHED-95: header nav + the blog teaser on the landing */
+.w-nav { display: flex; align-items: center; gap: 1rem; }
+.w-nav > a:not(.w-open) { color: var(--ivory-dim); text-decoration: none; font-size: 0.95rem; }
+.w-nav > a:not(.w-open):hover { color: var(--brass); }
+.w-blog { max-width: 42rem; margin: 0 auto 3rem; }
+.w-blog h2 { font-size: 1.6rem; margin-bottom: 0.5rem; }
+.w-blog-lede { color: var(--ivory-dim); margin: 0 0 1.1rem; }
+.w-posts { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.7rem; }
+.w-posts li { background: #1e1913; border: 1px solid var(--ebony-edge); border-radius: 0.9rem; padding: 0.9rem 1.1rem; }
+.w-posts a { font: 550 1.15rem var(--serif); color: var(--ivory); text-decoration: none; }
+.w-posts a:hover { color: var(--brass-bright); }
+.w-posts p { margin: 0.25rem 0 0; color: var(--ivory-dim); font-size: 0.95rem; }
+.w-posts time { display: block; margin-top: 0.3rem; color: var(--ivory-dim); font: italic 0.85rem var(--serif); }
+.w-blog-more { margin: 0.9rem 0 0; }
+.w-blog-more a { color: var(--brass); text-decoration: none; }

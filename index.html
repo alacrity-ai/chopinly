@@ -2,47 +2,187 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <!-- Installed app, returning visitor, ?app=1 or a #/… deep link → the app; runs before any paint (WSHED-95). -->
+  <script>(function () { try { var q = location.search, h = location.hash; if (/[?&]home\b/.test(q)) return; var st = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true; if (st || localStorage.getItem("ws.shell.seen") || /[?&]app=1\b/.test(q) || /^#\//.test(h)) location.replace("/app" + q + h); } catch (e) {} })();</script>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Chopinly — practice assistant</title>
-  <meta name="description" content="Chopinly is a piano practice assistant. Tool one: a metronome that keeps honest time.">
+  <title>Chopinly — free piano practice assistant: practice log, metronome, ear training</title>
+  <meta name="description" content="Chopinly is a free, ad-free piano practice assistant. A clock that logs every minute to a piece or technique, notes, history and analytics, plus a metronome, piano, tuner, pitch pipe, recorder, sight singing and ear training. Works offline, no account needed.">
   <meta name="theme-color" content="#191410">
+  <link rel="canonical" href="https://chopinly.com/">
+  <link rel="alternate" type="application/rss+xml" title="Chopinly — the blog" href="https://chopinly.com/rss.xml">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Chopinly">
-  <meta property="og:title" content="Chopinly — practice assistant">
+  <meta property="og:title" content="Chopinly — free piano practice assistant">
   <meta property="og:description" content="Choose something. Practice it. See what you actually did. Free, works offline, optional account for backup.">
   <meta property="og:url" content="https://chopinly.com/">
   <meta property="og:image" content="https://chopinly.com/og/chopinly.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Chopinly — practice assistant. A brass metronome pendulum on ebony.">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Chopinly — free piano practice assistant">
+  <meta name="twitter:description" content="Choose something. Practice it. See what you actually did.">
   <meta name="twitter:image" content="https://chopinly.com/og/chopinly.png">
-  <script>if (location.hostname === "www.chopinly.com") location.replace("https://chopinly.com" + location.pathname + location.search + location.hash);</script>
-  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icons/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="preload" href="/fonts/fraunces-roman.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/fraunces-italic.woff2" as="font" type="font/woff2" crossorigin>
-  <script>try { var s = JSON.parse(localStorage.getItem("ws.shell.skin")); if (s && s !== "ebony") document.documentElement.dataset.skin = s; } catch (e) {}</script>
-  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/landing.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://chopinly.com/#organization",
+        "name": "LaLa Solutions LLC",
+        "url": "https://chopinly.com/",
+        "logo": "https://chopinly.com/icons/icon-512.png",
+        "email": "leif@lalalimited.com",
+        "founder": { "@id": "https://chopinly.com/#leif-taylor" }
+      },
+      {
+        "@type": "Person",
+        "@id": "https://chopinly.com/#leif-taylor",
+        "name": "Leif Taylor",
+        "description": "Pianist and software engineer; makes Chopinly and writes its practice articles.",
+        "url": "https://chopinly.com/about",
+        "worksFor": { "@id": "https://chopinly.com/#organization" }
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://chopinly.com/#website",
+        "url": "https://chopinly.com/",
+        "name": "Chopinly",
+        "description": "A free, ad-free, local-first piano practice assistant.",
+        "publisher": { "@id": "https://chopinly.com/#organization" },
+        "inLanguage": "en"
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://chopinly.com/#app",
+        "name": "Chopinly",
+        "url": "https://chopinly.com/",
+        "image": "https://chopinly.com/og/chopinly.png",
+        "description": "A piano practice assistant: a clock that logs every minute to a piece or technique, notes, history and analytics, with a metronome, piano keyboard, tuner, pitch pipe, take recorder, sight singing and ear training. Free, no ads, works offline, optional account for backup.",
+        "applicationCategory": "MusicApplication",
+        "applicationSubCategory": "Practice log and practice tools",
+        "operatingSystem": "Any — runs in the browser, installs as a PWA on iOS, Android and desktop",
+        "browserRequirements": "Requires JavaScript and Web Audio",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "isAccessibleForFree": true,
+        "featureList": "Goal-attributed practice clock; practice log and calendar; notes per piece; analytics by composer, work and type; metronome; piano keyboard; chromatic tuner; pitch pipe; take recorder; sight singing; ear training; offline; optional email-code account for backup",
+        "license": "https://github.com/alacrity-ai/chopinly/blob/main/LICENSE.md",
+        "author": { "@id": "https://chopinly.com/#organization" },
+        "installUrl": "https://chopinly.com/app"
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
-  <header class="navbar">
-    <div class="navbar-row">
-      <a class="brand" href="#/logbook" aria-label="Chopinly — today">
-        <h1 class="wordmark">Chopinly</h1>
-        <p class="tagline">practice assistant</p>
-      </a>
-      <div class="navbar-right">
-        <nav class="tool-picker" id="tool-picker" aria-label="tools"></nav>
-        <button class="icon-btn account-btn" id="account-btn" aria-label="account — sign in to back up your practice">
-          <span class="account-glyph"></span><span class="account-initial" hidden></span><i class="account-dot" hidden></i>
-        </button>
-      </div>
-    </div>
-    <div class="nav-slot" id="nav-slot"></div>
+  <header class="w-top">
+    <a class="w-brand" href="/" aria-label="Chopinly"><img src="/icons/icon-192.png" alt="" width="36" height="36"><span>Chopinly</span></a>
+    <nav class="w-nav" aria-label="site">
+      <a href="/blog">blog</a>
+      <a href="/about">about</a>
+      <a class="w-open w-open-small" href="/app">open</a>
+    </nav>
   </header>
-  <main id="tool-root"></main>
-  <noscript><p class="noscript">Chopinly needs JavaScript — the metronome is built on the Web Audio clock.</p></noscript>
-  <script type="module" src="/js/app.js"></script>
+
+  <main>
+    <section class="w-hero">
+      <h1 class="w-wordmark">Chopinly</h1>
+      <p class="w-tagline">piano practice assistant</p>
+      <p class="w-line">Choose something. Practice it.<br>See what you actually did.</p>
+      <a class="w-open" href="/app" id="w-open">Open Chopinly</a>
+      <p class="w-fine">free · no ads · works offline · optional account for backup · <a href="/privacy">no tracking</a></p>
+    </section>
+
+    <section class="w-beats" aria-label="what it does">
+      <article class="w-beat">
+        <div class="w-glyphs" aria-hidden="true"><i class="t-piece">●</i><i class="t-technique">▲</i><i class="t-other">◆</i></div>
+        <h2>The clock is always on a goal</h2>
+        <p>Press play, say what you're working on, and the time lands on that piece or technique. Switch mid-sitting and nothing gets lost.</p>
+      </article>
+      <article class="w-beat">
+        <div class="w-glyphs" aria-hidden="true"><i class="brass">✎</i></div>
+        <h2>Notes where they belong</h2>
+        <p>A running thread on each goal. The last note greets you the next time you press play, so you pick up where your hands left off.</p>
+      </article>
+      <article class="w-beat">
+        <div class="w-glyphs" aria-hidden="true"><i class="ring"></i><i class="ring on"></i><i class="ring gold"></i></div>
+        <h2>History that reconstructs the day</h2>
+        <p>Today shows only what you practiced, with minutes per goal. The calendar keeps your streak and colors each day by how much you played, without a single form to fill in.</p>
+      </article>
+    </section>
+
+    <section class="w-shots" aria-label="screens">
+      <figure><img src="/img/landing/practicing.png" alt="The Today screen with a clock running on a piece, its last note beneath" loading="lazy" width="480" height="640"><figcaption>practicing</figcaption></figure>
+      <figure><img src="/img/landing/bow.png" alt="The bow: the session's duration counting up in a burst of brass shavings" loading="lazy" width="480" height="640"><figcaption>the bow, when you stop</figcaption></figure>
+      <figure><img src="/img/landing/goal.png" alt="A goal page with lifetime minutes, notes and practice history" loading="lazy" width="480" height="640"><figcaption>a goal</figcaption></figure>
+      <figure><img src="/img/landing/history.png" alt="The history calendar with a day report and this month by goal" loading="lazy" width="480" height="640"><figcaption>history</figcaption></figure>
+    </section>
+
+    <section class="w-analytics" aria-label="analytics">
+      <h2>See how you really spend your time</h2>
+      <p>Any range. Time by composer, work and type; when in the day you practice, which weekdays carry the load, how long a session tends to run. Tap Bach and every chart recomputes for Bach.</p>
+      <figure class="w-wide"><img src="/img/landing/analytics-desktop.png" alt="The analytics page on a desktop: headline cards, time per day, a type donut, bars by composer and by work, time of day, weekday, session length and days by band" loading="lazy" width="1920" height="2259"><figcaption>a week of real practice, on a desktop</figcaption></figure>
+      <div class="w-phones">
+        <figure><img src="/img/landing/analytics-phone-1.png" alt="Analytics on a phone: total with the change against the week before, days practiced, sessions, and time per day" loading="lazy" width="630" height="840"><figcaption>on a phone</figcaption></figure>
+        <figure><img src="/img/landing/analytics-phone-2.png" alt="Analytics on a phone: share of time by composer and by work" loading="lazy" width="630" height="840"><figcaption>by composer, by work</figcaption></figure>
+      </div>
+    </section>
+
+    <section class="w-tools" aria-label="the tools">
+      <h2>In the case</h2>
+      <ul>
+        <li><b><a href="/metronome">Metronome</a></b> — a pendulum that keeps honest time on the Web Audio clock, with subdivisions and tempo markings, and keeps clicking behind a locked screen. Stamp a tempo onto the goal you're practicing.</li>
+        <li><b><a href="/piano">Piano</a></b> — a keyboard under your thumbs: chords, glides, a sustain pedal, one to four octaves, as big as the screen allows.</li>
+        <li><b><a href="/recorder">Recorder</a></b> — record a take of what you're practicing, right from the clock. It stays on your device; listen back, star the keeper, compare this week against last.</li>
+        <li><b><a href="/pitch-pipe">Pitch pipe</a></b> — any note, any octave, in tune.</li>
+        <li><b><a href="/tuner">Tuner</a></b> — hear where you are.</li>
+        <li><b><a href="/sight-singing">Sight singing</a></b> — graded melodies, sung back and judged; finished runs land in the logbook by themselves.</li>
+        <li><b><a href="/ear-training">Ear training</a></b> — hear a reference, hear a note or a chord, play it back on the keyboard or on your real piano through the mic; judged as you go.</li>
+        <li><b><a href="/practice-log">Logbook</a></b> — goals, the clock, notes, today, history.</li>
+        <li><b><a href="/practice-log#analytics">Analytics</a></b> — any range; by composer, work and type; time of day, weekdays, session length. Focus on one thing and every chart follows.</li>
+      </ul>
+    </section>
+
+    <section class="w-blog" aria-label="from the blog">
+      <h2>From the blog</h2>
+      <p class="w-blog-lede">Real writing about practicing the piano: how to structure a session, what a metronome is actually for, how long to practice, and how to hear what you play.</p>
+      <!-- blog:start -->
+      <ul class="w-posts">
+        <li><a href="/blog/how-to-practice-piano-effectively">How to practice piano effectively: a session that actually moves the needle</a><p>Most piano practice is playing through pieces and hoping. Here is what a session looks like when it is designed to change something: a goal, a small unit, slow and correct, then a test you can't fake.</p><time datetime="2026-09-06">September 6, 2026 · 8 min read</time></li>
+        <li><a href="/blog/how-to-practice-piano-with-a-metronome">How to practice piano with a metronome (without playing like a machine)</a><p>A metronome is not there to make you play mechanically. It is there to tell you the truth about your rhythm. How to set the tempo, when to use subdivisions, why the off-beat click works, and when to switch it off.</p><time datetime="2026-09-06">September 6, 2026 · 6 min read</time></li>
+        <li><a href="/blog/how-long-should-you-practice-piano">How long should you practice piano each day? Less than you think, more often than you do</a><p>Twenty focused minutes beats a distracted hour, and six short days beat one long one. What the research on practice actually says, how to set a daily amount you will keep, and how to know whether it is enough.</p><time datetime="2026-09-06">September 6, 2026 · 6 min read</time></li>
+      </ul>
+      <!-- blog:end -->
+      <p class="w-blog-more"><a href="/blog">All articles →</a></p>
+    </section>
+
+    <section class="w-data" aria-label="your data">
+      <h2>Your data is yours</h2>
+      <p>Chopinly is local first — it works with no account at all. Sign in with an email code to back it up and pick it up on another device. Export or delete everything any time. No password to remember, nothing to subscribe to.</p>
+      <a class="w-open" href="/app">Open Chopinly</a>
+    </section>
+  </main>
+
+  <footer class="w-foot">
+    <span>Chopinly · made by LaLa Solutions LLC</span>
+    <nav class="w-foot-nav" aria-label="documents">
+      <a href="/blog">blog</a>
+      <a href="/about">about</a>
+      <a href="/privacy">privacy</a>
+      <a href="/terms">terms</a>
+      <a href="/cookies">cookies</a>
+      <a href="/disclaimer">disclaimer</a>
+      <a href="https://github.com/alacrity-ai/chopinly" rel="noopener">source</a>
+      <a href="/rss.xml">rss</a>
+      <a href="/app">open the app</a>
+    </nav>
+  </footer>
 </body>
 </html>

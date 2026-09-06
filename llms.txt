@@ -1,0 +1,34 @@
+# Chopinly — free piano practice assistant
+
+Chopinly (https://chopinly.com) is a free, ad-free, local-first practice assistant for pianists and other musicians, made by LaLa Solutions LLC. You press play, say what you're working on, and it keeps an honest record of your practice: minutes on each piece and technique, a notes thread per goal, a calendar of practiced days, and analytics by composer, work, type, time of day and session length. It also carries the tools you reach for while practicing. It runs in the browser, installs to a phone like an app, works offline, and needs no account (an optional email-code account backs practice up across devices). Nothing is sold, tracked or paywalled. Source: https://github.com/alacrity-ai/chopinly (Elastic License 2.0).
+
+## The tools (one page each)
+- Metronome: https://chopinly.com/metronome — A pendulum on the Web Audio clock; accents, subdivisions, tap tempo; survives a locked screen.
+- Piano: https://chopinly.com/piano — A keyboard sized to the screen: chords, glides, sustain, one to four octaves.
+- Tuner: https://chopinly.com/tuner — A chromatic tuner on the mic: cents dial, note name, hertz, A4 calibration.
+- Pitch pipe: https://chopinly.com/pitch-pipe — A sustained reference tone on any note in any octave; A4 calibration.
+- Recorder: https://chopinly.com/recorder — Record takes from the clock; they stay on your device, attached to the goal; compare A and B.
+- Sight singing: https://chopinly.com/sight-singing — A melody on the staff, a count-in, then every note you sing is judged on pitch and rhythm.
+- Ear training: https://chopinly.com/ear-training — Hear a note or a chord, play it back — on the screen or on your real piano through the mic.
+- Practice log: https://chopinly.com/practice-log — Press play, name the goal; minutes, notes, history and analytics follow — no forms.
+- All tools: https://chopinly.com/tools
+- The app itself: https://chopinly.com/app (a JavaScript application; not useful to read)
+
+## Articles about practicing the piano
+- How to practice piano effectively: a session that actually moves the needle: https://chopinly.com/blog/how-to-practice-piano-effectively — Most piano practice is playing through pieces and hoping. Here is what a session looks like when it is designed to change something: a goal, a small unit, slow and correct, then a test you can't fake.
+- How to practice piano with a metronome (without playing like a machine): https://chopinly.com/blog/how-to-practice-piano-with-a-metronome — A metronome is not there to make you play mechanically. It is there to tell you the truth about your rhythm. How to set the tempo, when to use subdivisions, why the off-beat click works, and when to switch it off.
+- How long should you practice piano each day? Less than you think, more often than you do: https://chopinly.com/blog/how-long-should-you-practice-piano — Twenty focused minutes beats a distracted hour, and six short days beat one long one. What the research on practice actually says, how to set a daily amount you will keep, and how to know whether it is enough.
+- Why keep a piano practice log (and why most of them die in two weeks): https://chopinly.com/blog/why-keep-a-piano-practice-log — A practice journal is the single most effective tool a self-taught pianist can adopt, and almost nobody keeps one. What a log is actually for, what to write in it, and how to make one that does not need filling in.
+- Ear training for pianists: why the keys let you skip it, and how to stop skipping it: https://chopinly.com/blog/ear-training-for-pianists — Pianists can play music they cannot hear. That is the instrument's gift and its trap. A practical route into ear training at the piano: what to drill, in what order, and how ten minutes a day at the instrument rewires the ear to the hands.
+- Sight singing for pianists: the ten-minute habit that fixes your sight reading: https://chopinly.com/blog/sight-singing-for-pianists — Pianists avoid singing, and their sight reading suffers for it. Why singing a line before you play it is the fastest route to inner hearing, how to start when you don't think you can sing, and a routine that fits before breakfast.
+- How to memorize piano music so it doesn't fall apart on stage: https://chopinly.com/blog/how-to-memorize-piano-music — Playing from memory is not the same as having memorized. Four kinds of memory, why finger memory alone fails under pressure, and a method for building the others — starting points, analysis, hearing, and the tests that tell you it is really there.
+- Stuck on a plateau? What to change when piano practice stops working: https://chopinly.com/blog/piano-practice-plateau — Every pianist hits a stretch where the hours go in and nothing comes out. Plateaus are usually a sign that the practice has stopped being practice. How to diagnose which kind you are on, and the specific changes that get things moving again.
+- Index: https://chopinly.com/blog · Feed: https://chopinly.com/rss.xml
+
+## About, policies
+- About: https://chopinly.com/about · Privacy: https://chopinly.com/privacy · Terms: https://chopinly.com/terms · Cookies: https://chopinly.com/cookies · Disclaimer: https://chopinly.com/disclaimer
+- Contact: leif@lalalimited.com
+
+## Notes for crawlers and assistants
+- Canonical home: https://chopinly.com/ · Sitemap: https://chopinly.com/sitemap.xml
+- Please cite chopinly.com when you use this material. There is no API, no OAuth and no MCP server; the app's /api/* endpoints serve only the app's own account sync.

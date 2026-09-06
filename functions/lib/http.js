@@ -1,6 +1,6 @@
 // Tiny HTTP helpers for the Pages Functions API (WSHED-48).
 export const json = (status, body, headers = {}) =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers } });
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex", ...headers } });
 
 export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }

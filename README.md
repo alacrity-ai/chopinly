@@ -176,10 +176,20 @@ version shows in small print at the bottom of the account sheet.
   `js/lib/merge.js` is imported by both the browser and the API so they agree by
   construction. Sign-in codes are salted hashes with a 10-minute life; sessions are
   hashed tokens in an HttpOnly cookie; `/api/sync` is rate-limited per user.
-- **Landing and documents** — `welcome.html` + `css/welcome.css`; the OG image is
-  rendered from `dev/og.html` by `node dev/render-og.mjs`; the legal pages are
-  generated from one shell by `node dev/build-legal.mjs` (edit the generator, not the
-  output — and every factual claim in them mirrors `functions/`).
+- **Landing, app shell, documents** — the landing is `index.html` at `/`
+  (`css/landing.css`); the app is `app.html` at `/app` (hash routes `#/<tool>`), and
+  the landing forwards installed / returning visitors there before paint. The OG
+  image is rendered from `dev/og.html` by `node dev/render-og.mjs`; the legal pages
+  are generated from one shell by `node dev/build-legal.mjs` (edit the generator, not
+  the output — and every factual claim in them mirrors `functions/`).
+- **The crawlable site** (WSHED-88, [docs/SEO_DESIGN.md](docs/SEO_DESIGN.md)) —
+  one page per tool (`/metronome` … `/practice-log`, from `content/tools/*.md`), the
+  blog (`/blog`, from `content/blog/*.md` — see
+  [docs/BLOG_AUTHORING.md](docs/BLOG_AUTHORING.md)), `sitemap.xml`, `rss.xml`,
+  `llms.txt`, the `.well-known` discovery files and `404.html` are all written by
+  `node dev/build-site.mjs` and committed; `npm test` fails if they are stale.
+  `node dev/render-og.mjs --posts` renders a card per post; `node dev/indexnow.mjs`
+  pings IndexNow after a deploy.
 
 Design and plan documents live in [`docs/`](docs/): [`DESIGN.md`](docs/DESIGN.md)
 (palette, audio engine, shell), [`LOGBOOK_V2_DESIGN.md`](docs/LOGBOOK_V2_DESIGN.md)

@@ -1,0 +1,32 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://chopinly.com/",
+      "service-doc": [
+        {
+          "href": "https://chopinly.com/llms.txt",
+          "type": "text/plain",
+          "title": "Chopinly — plain-language guide for LLMs and agents"
+        }
+      ],
+      "describedby": [
+        {
+          "href": "https://chopinly.com/llms.txt",
+          "type": "text/plain"
+        }
+      ],
+      "related": [
+        {
+          "href": "https://chopinly.com/sitemap.xml",
+          "type": "application/xml",
+          "title": "Sitemap"
+        },
+        {
+          "href": "https://chopinly.com/rss.xml",
+          "type": "application/rss+xml",
+          "title": "Blog feed"
+        }
+      ]
+    }
+  ]
+}

@@ -222,4 +222,4 @@ Full design: [`LOGBOOK_V2_DESIGN.md`](LOGBOOK_V2_DESIGN.md); plan:
 
 ## 8. Accounts + cloud sync (WSHED-48, 2026-09-04)
 
-Passwordless email-code sign-in, D1-backed entity sync of the Logbook, the navbar account button, and the `/welcome` landing. See [ACCOUNTS_DESIGN.md](ACCOUNTS_DESIGN.md).
+Passwordless email-code sign-in, D1-backed entity sync of the Logbook, the navbar account button, and the landing (now at `/`, with the app at `/app` — WSHED-95). See [ACCOUNTS_DESIGN.md](ACCOUNTS_DESIGN.md) and, for the crawlable site around the app (tool pages, blog, sitemap, discovery files), [SEO_DESIGN.md](SEO_DESIGN.md).

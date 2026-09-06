@@ -26,3 +26,33 @@
 
 /api/*
   Cache-Control: no-store
+
+# --- SEO / agent discovery (WSHED-95; SOP llm-seo-optimization.md §1c) ---
+# RFC 8288 Link headers point agents at machine-useful resources on every page.
+/*
+  Link: </.well-known/api-catalog>; rel="api-catalog", </llms.txt>; rel="service-doc"; type="text/plain", </sitemap.xml>; rel="sitemap"; type="application/xml", </rss.xml>; rel="alternate"; type="application/rss+xml"
+
+# Correct media types for the extension-less discovery files.
+/.well-known/api-catalog
+  Content-Type: application/linkset+json; charset=utf-8
+
+/.well-known/agent-skills/index.json
+  Content-Type: application/json; charset=utf-8
+
+/llms.txt
+  Content-Type: text/plain; charset=utf-8
+
+/robots.txt
+  Content-Type: text/plain; charset=utf-8
+
+/sitemap.xml
+  Content-Type: application/xml; charset=utf-8
+
+/rss.xml
+  Content-Type: application/rss+xml; charset=utf-8
+
+# The app shell has no content of its own; the landing is the page to index.
+/app
+  X-Robots-Tag: noindex
+
+# (/api/* is noindex too, but Pages Functions responses don't get _headers — functions/lib/http.js sets it in code.)
