@@ -48,6 +48,20 @@ await step("play → picker → search-to-create Scales (technique)", async () =
   await page.waitForSelector('.lb-trow[data-id]');
   await shot("04-running-scales");
 });
+await step("the wordmark is the way home: goals → today, metronome → today", async () => {
+  await page.goto(`${BASE}/#/logbook/goals`);
+  await page.waitForSelector("#lb-lib-q, .lb-lib, .lb-strip");
+  await page.click(".brand");
+  await page.waitForSelector("#lb-today-list", { timeout: 5000 });
+  if ((await page.evaluate(() => location.hash)) !== "#/logbook") throw new Error("hash " + await page.evaluate(() => location.hash));
+  const look = await page.$eval(".wordmark", (e) => { const c = getComputedStyle(e); return { deco: c.textDecorationLine, color: c.color, fg: getComputedStyle(document.documentElement).getPropertyValue("--fg").trim() }; });
+  if (look.deco !== "none") throw new Error("wordmark decorated " + JSON.stringify(look));
+  await page.goto(`${BASE}/#/metronome`);
+  await page.waitForSelector("#start");
+  await page.click(".brand");
+  await page.waitForSelector("#lb-today-list", { timeout: 5000 });
+  if ((await page.evaluate(() => location.hash)) !== "#/logbook") throw new Error("hash from metronome");
+});
 await step("shell chip shows goal", async () => {
   await page.waitForSelector(".session-chip:not([hidden])");
   if ((await text(".session-goal")) !== "Scales") throw new Error("chip goal");
