@@ -161,7 +161,9 @@ A static vanilla-ES-module PWA with a tool shell. A tool is
 `{ id, name, glyph, mount(rootEl, ctx), unmount() }`; a new tool is one folder under
 `js/tools/` plus one entry in `js/registry.js`, and the shell grows a menu entry.
 The service worker precaches the shell under a versioned cache name — bump `CACHE`
-in `sw.js` on every shipped change; idle pages reload onto the new worker.
+in `sw.js` **and** `VERSION` in `js/version.js` together on every shipped change
+(`tests/version.test.mjs` insists); idle pages reload onto the new worker. The
+version shows in small print at the bottom of the account sheet.
 
 - **Logbook data layer** — `js/lib/logbook.js`, pure and DOM-free: goals, segments,
   notes; every number is derived from segments, days are never stored. Practice
