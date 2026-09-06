@@ -24,6 +24,7 @@ await step("signed-out button: person glyph, no dot, opens the sign-in sheet", a
   await noWiden();
   await page.click("#account-btn");
   await page.waitForSelector(".lb-acct-wrap.open #acct-email");
+  if (!/^Chopinly v\d+$/.test(await text("#acct-version"))) throw new Error("version line " + await text("#acct-version"));
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${S}/ui-01-signin-sheet.png` });
 });
@@ -127,6 +128,7 @@ await step("signed-in sheet: email, sync line, actions; sign out keeps local dat
   if ((await page.getAttribute("#acct-home", "href")) !== "/welcome") throw new Error("homepage href");
   const rows = await page.$$eval(".lb-acct-row", (els) => els.map((e) => ({ h: Math.round(e.getBoundingClientRect().height), w: Math.round(e.getBoundingClientRect().width), icon: !!e.querySelector("svg") })));
   if (rows.length !== 8 || rows.some((r) => !r.icon) || Math.max(...rows.map((r) => r.h)) - Math.min(...rows.map((r) => r.h)) > 1 || new Set(rows.map((r) => r.w)).size !== 1) throw new Error("rows " + JSON.stringify(rows));
+  if (!/^Chopinly v\d+$/.test(await text("#acct-version"))) throw new Error("version line " + await text("#acct-version"));
   await page.waitForTimeout(250);
   await page.screenshot({ path: `${S}/ui-04-signed-in-sheet.png` });
   await page.click("#acct-signout");

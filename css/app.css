@@ -1474,6 +1474,7 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .lb-acct-row.lb-danger, .lb-acct-row.lb-danger .ic { color: var(--red); }
 .lb-acct-fine { color: var(--fg-dim); font-size: 0.8rem; line-height: 1.45; margin: 1rem 0 0.6rem; }
 .lb-acct-fine-center { text-align: center; margin-top: 1.2rem; }
+.lb-acct-version { color: var(--fg-dim); opacity: 0.7; font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; text-align: center; margin: 1.1rem 0 0; }
 .lb-danger { color: var(--red); }
 
 /* --- ceremonies (WSHED-47): engage + bow ---------------------------------- */

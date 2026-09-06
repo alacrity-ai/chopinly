@@ -10,6 +10,7 @@ import { sync } from "../lib/sync.js";
 import { openAppearance } from "./appearance.js";
 import { SKINS, currentSkin } from "../lib/skins.js";
 import { takeStore } from "../lib/takes/store.js";
+import { VERSION } from "../version.js";
 import { logbook } from "../lib/logbook.js";
 import { fmtBytes } from "../lib/takes/peaks.js";
 
@@ -114,7 +115,8 @@ function openSignIn() {
         </div>
       </form>
       <ul class="lb-acct-list lb-acct-list-out">${appearanceRow()}${takesRow()}</ul>
-      <p class="lb-acct-fine lb-acct-fine-center">By signing in you agree to the <a class="lb-link" href="/terms">terms</a> and <a class="lb-link" href="/privacy">privacy policy</a> — no tracking, no sharing, delete any time.<br><a class="lb-link" id="acct-home-out" href="/welcome">see the homepage</a></p>`,
+      <p class="lb-acct-fine lb-acct-fine-center">By signing in you agree to the <a class="lb-link" href="/terms">terms</a> and <a class="lb-link" href="/privacy">privacy policy</a> — no tracking, no sharing, delete any time.<br><a class="lb-link" id="acct-home-out" href="/welcome">see the homepage</a></p>
+      <p class="lb-acct-version" id="acct-version">Chopinly ${VERSION}</p>`,
   });
   const { body, close, closed } = sheet;
   const emailForm = body.querySelector("#acct-email-form"), codeForm = body.querySelector("#acct-code-form");
@@ -196,7 +198,8 @@ function openSignedIn() {
       <ul class="lb-acct-list">
         <li><button type="button" class="lb-acct-row lb-danger" id="acct-delete">${icon("trash")}<span><b>delete account</b><small>this device keeps its local copy</small></span></button></li>
       </ul>
-      <p class="lb-err" id="acct-err" role="alert"></p>`,
+      <p class="lb-err" id="acct-err" role="alert"></p>
+      <p class="lb-acct-version" id="acct-version">Chopinly ${VERSION}</p>`,
   });
   const { body, close, closed } = sheet;
   const status = body.querySelector("#acct-status"), err = body.querySelector("#acct-err");
