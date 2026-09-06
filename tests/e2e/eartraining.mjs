@@ -274,6 +274,7 @@ await step("two octaves of questions still answer on one octave, by pitch class;
   await page.goto(`${BASE}/?app=1&e=4#/eartraining/pitch`);
   await page.waitForSelector("#et-begin");
   await page.click('#et-levels [data-level="beginner"]');
+  if (await page.locator("#et-rows[hidden]").count()) await page.click("#et-tune");
   await page.click('.et-row[data-key="range"] .et-opt[data-v="2"]');
   await page.click('.et-row[data-key="reference"] .et-opt[data-v="each"]');
   await page.click("#et-begin");
