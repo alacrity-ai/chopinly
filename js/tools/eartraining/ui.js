@@ -2,13 +2,22 @@
 // → the run → results; and the drill history.
 // Routes: #/eartraining · /pitch · /pitch/run?seed=… · /history.
 import { icon } from "../../lib/icons.js";
-import { OPTIONS, LEVELS, LEVEL_NAMES, levelOf, cleanSetup, describe, shortDescribe } from "../../lib/eartraining/pitch.js";
+import { OPTIONS, LEVELS, levelOf, cleanSetup, describe, shortDescribe, blurb } from "../../lib/eartraining/pitch.js";
 import { createRuns } from "../../lib/eartraining/runs.js";
 import { createPitchRun } from "./pitchrun.js";
 import { esc, fmtDate } from "../logbook/util.js";
 import { haptic } from "../logbook/motion.js";
 
-const LABELS = { notes: "notes", range: "range", count: "how many at once", mode: "played", reference: "reference", questions: "questions" };
+// The fine-tune rows (WSHED-87): a label + a short hint on the left, equal cells on the right.
+const ROWS = {
+  notes: { label: "notes", hint: "which pitches", cells: { key: "in the key", all: "all twelve" } },
+  range: { label: "range", hint: "octaves, around middle C", cells: { 1: "one", 2: "two", 4: "four", 8: "all 88" } },
+  count: { label: "at once", hint: "notes per question", cells: { 1: "1", 2: "2", 3: "3", 4: "4", 5: "5" } },
+  mode: { label: "played", hint: "two notes or more", cells: { melodic: "in a row", harmonic: "together" } },
+  reference: { label: "reference", hint: "the key note first", cells: { each: "every time", start: "at the start", never: "never" } },
+  questions: { label: "questions", hint: "per drill", cells: { 10: "10", 20: "20", 35: "35" } },
+};
+const PRESETS = [["beginner", "Beginner", "start here"], ["intermediate", "Intermediate", "two at a time"], ["advanced", "Advanced", "every pitch"]];
 const WORDS = new Set(["notes", "mode", "reference"]);
 const phone = () => innerWidth < 700;
 
@@ -52,10 +61,12 @@ export function buildUI(root, ctx) {
     root.querySelector("#et-go-history").addEventListener("click", () => nav("/history"));
   }
 
-  // --- the setup card: one level switcher, six rows of chips, one sentence ---
+  // --- the setup card (WSHED-87): presets as a list, the fine-tune rows behind a disclosure, one sentence ---
   function renderSetup() {
     const s = setup();
     const save = () => store.set("pitch-setup", s);
+    let tuneOpen = levelOf(s) === "custom";
+    const row = (k) => `<div class="et-row" data-key="${k}"><div class="et-row-head"><span class="et-row-label">${ROWS[k].label}</span><span class="et-row-hint">${ROWS[k].hint}</span></div><div class="et-seg" role="radiogroup" aria-label="${ROWS[k].label}" style="--n:${OPTIONS[k].filter(([v]) => !(k === "range" && v === 8 && phone())).length}">${OPTIONS[k].filter(([v]) => !(k === "range" && v === 8 && phone())).map(([v]) => `<button type="button" class="et-opt" data-v="${v}" role="radio">${ROWS[k].cells[v]}</button>`).join("")}</div></div>`;
     root.innerHTML = `
       <section class="eartraining et-setup">
         <div class="ss-head">
@@ -63,26 +74,39 @@ export function buildUI(root, ctx) {
           <div class="ss-head-title">pitch training</div>
           <span></span>
         </div>
-        <div class="segmented et-levels" id="et-levels" role="radiogroup" aria-label="level">${LEVEL_NAMES.map((l) => `<button data-level="${l}" role="radio">${l}</button>`).join("")}</div>
-        <div class="et-rows" id="et-rows">
-          ${Object.keys(OPTIONS).map((k) => `<div class="et-row" data-key="${k}"><span class="et-row-label">${LABELS[k]}</span><div class="lb-chips et-chips" role="radiogroup" aria-label="${LABELS[k]}">${OPTIONS[k].filter(([v]) => !(k === "range" && v === 8 && phone())).map(([v, label]) => `<button type="button" class="lb-chip et-chip" data-v="${v}" role="radio">${label}</button>`).join("")}</div></div>`).join("")}
+        <div class="et-presets" id="et-levels" role="radiogroup" aria-label="level">
+          ${PRESETS.map(([id, name, tag]) => `<button type="button" class="et-preset" data-level="${id}" role="radio"><i class="et-radio" aria-hidden="true"></i><span class="et-preset-body"><span class="et-preset-name">${name}<small>${tag}</small></span><span class="et-preset-line">${blurb(LEVELS[id], id === "beginner" ? 60 : null)}</span></span></button>`).join("")}
+          <button type="button" class="et-preset" data-level="custom" role="radio"><i class="et-radio" aria-hidden="true"></i><span class="et-preset-body"><span class="et-preset-name">Custom<small>your own mix</small></span><span class="et-preset-line" id="et-custom-line"></span></span></button>
+        </div>
+        <div class="et-tune-wrap">
+          <button type="button" class="et-tune" id="et-tune" aria-expanded="false" aria-controls="et-rows"><span>fine-tune</span><i class="chevron" aria-hidden="true">&#9662;</i></button>
+          <div class="et-panel" id="et-rows" hidden>
+            ${Object.keys(ROWS).map(row).join("")}
+          </div>
         </div>
         <p class="et-sentence" id="et-sentence"></p>
         <div class="transport"><button class="start" id="et-begin">${icon("play")}<span>begin</span></button></div>
       </section>`;
     const paint = () => {
       const lvl = levelOf(s);
-      for (const b of root.querySelectorAll("#et-levels button")) { const on = b.dataset.level === lvl; b.setAttribute("aria-pressed", String(on)); b.setAttribute("aria-checked", String(on)); }
-      for (const row of root.querySelectorAll(".et-row")) {
-        const k = row.dataset.key;
+      for (const b of root.querySelectorAll(".et-preset")) { const on = b.dataset.level === lvl; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); b.setAttribute("aria-checked", String(on)); }
+      root.querySelector("#et-custom-line").textContent = lvl === "custom" ? blurb(s, s.notes === "key" ? null : null) : "change anything below and this is yours";
+      for (const r of root.querySelectorAll(".et-row")) {
+        const k = r.dataset.key;
         const off = k === "mode" && s.count === 1;
-        row.classList.toggle("off", off);
-        for (const c of row.querySelectorAll(".et-chip")) { const on = String(s[k]) === c.dataset.v; c.classList.toggle("on", on); c.setAttribute("aria-checked", String(on)); c.disabled = off; }
+        r.classList.toggle("off", off);
+        for (const c of r.querySelectorAll(".et-opt")) { const on = String(s[k]) === c.dataset.v; c.classList.toggle("on", on); c.setAttribute("aria-checked", String(on)); c.disabled = off; }
       }
+      root.querySelector("#et-tune").setAttribute("aria-expanded", String(tuneOpen));
+      root.querySelector("#et-rows").hidden = !tuneOpen;
       root.querySelector("#et-sentence").textContent = describe(s, s.notes === "key" && lvl === "beginner" ? 60 : null);
     };
-    for (const b of root.querySelectorAll("#et-levels button")) b.addEventListener("click", () => { if (b.dataset.level === "custom") return; Object.assign(s, LEVELS[b.dataset.level]); if (phone() && s.range > 4) s.range = 4; save(); paint(); haptic(6); });
-    for (const c of root.querySelectorAll(".et-chip")) c.addEventListener("click", () => {
+    for (const b of root.querySelectorAll(".et-preset")) b.addEventListener("click", () => {
+      if (b.dataset.level === "custom") { tuneOpen = true; paint(); haptic(6); return; }
+      Object.assign(s, LEVELS[b.dataset.level]); if (phone() && s.range > 4) s.range = 4; save(); paint(); haptic(6);
+    });
+    root.querySelector("#et-tune").addEventListener("click", () => { tuneOpen = !tuneOpen; paint(); });
+    for (const c of root.querySelectorAll(".et-opt")) c.addEventListener("click", () => {
       const k = c.closest(".et-row").dataset.key, raw = c.dataset.v;
       s[k] = WORDS.has(k) ? raw : Number(raw);
       if (s.count === 1) s.mode = "melodic";
