@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="icons/icon-192.png" width="72" height="72" alt="">
+  <img src="brand/chopinly-mark.svg" width="72" height="72" alt="">
 </p>
 
 <h1 align="center">Chopinly</h1>

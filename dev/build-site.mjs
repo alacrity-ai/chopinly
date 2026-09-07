@@ -81,8 +81,9 @@ function head({ title, description, path, ogImage, ogAlt, type = "website", ld, 
   <meta name="twitter:description" content="${escapeHtml(description)}">
   <meta name="twitter:image" content="${ogImage ?? OG_DEFAULT}">
   <meta name="theme-color" content="#191410">
-  <link rel="icon" href="/icons/icon-192.png" type="image/png">
-  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/icons/icon-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
   <link rel="preload" href="/fonts/fraunces-roman.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/fraunces-italic.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/pages.css">${extra}
@@ -93,7 +94,7 @@ ${json(ld)}
 }
 
 const topNav = (cur) => `  <header class="l-top">
-    <a class="l-brand" href="/" aria-label="Chopinly — home"><img src="/icons/icon-192.png" alt="" width="32" height="32"><span>Chopinly</span></a>
+    <a class="l-brand" href="/" aria-label="Chopinly — home"><img src="/brand/chopinly-mark.svg" alt="" width="32" height="32"><span>Chopinly</span></a>
     <nav class="l-nav" aria-label="site">
       <a href="/tools" ${cur === "tools" ? 'aria-current="page"' : ""}>tools</a>
       <a href="/blog" ${cur === "blog" ? 'aria-current="page"' : ""}>blog</a>
@@ -115,7 +116,7 @@ const footer = (tools) => `  <footer class="l-foot l-foot-site">
 `;
 
 const breadcrumb = (items) => ({ "@type": "BreadcrumbList", itemListElement: items.map(([name, path], i) => ({ "@type": "ListItem", position: i + 1, name, item: `${SITE}${path}` })) });
-const org = { "@type": "Organization", "@id": `${SITE}/#organization`, name: CO, url: `${SITE}/`, logo: `${SITE}/icons/icon-512.png` };
+const org = { "@type": "Organization", "@id": `${SITE}/#organization`, name: CO, url: `${SITE}/`, logo: `${SITE}/brand/chopinly-mark.png` };
 const person = { "@type": "Person", "@id": AUTHOR.id, name: AUTHOR.name, url: AUTHOR.url };
 
 const postCard = (p) => `<li><a href="/blog/${p.slug}">${escapeHtml(p.title)}</a><p>${escapeHtml(p.description)}</p><time datetime="${p.date}">${fmtDate(p.date)} · ${p.minutes} min read</time></li>`;
