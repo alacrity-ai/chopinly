@@ -82,7 +82,7 @@ function head({ title, description, path, ogImage, ogAlt, type = "website", ld, 
   <meta name="twitter:image" content="${ogImage ?? OG_DEFAULT}">
   <meta name="theme-color" content="#191410">
   <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
-  <link rel="icon" href="/icons/icon-192.png" type="image/png" sizes="192x192">
+  <link rel="icon" href="/icons/chopinly-192.png" type="image/png" sizes="192x192">
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
   <link rel="preload" href="/fonts/fraunces-roman.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/fraunces-italic.woff2" as="font" type="font/woff2" crossorigin>

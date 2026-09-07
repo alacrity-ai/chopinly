@@ -196,7 +196,7 @@ export class MetronomeEngine {
       ms.metadata = new MediaMetadata({
         title: `Metronome · ${this.settings.bpm} bpm`,
         artist: "Chopinly",
-        artwork: [{ src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" }],
+        artwork: [{ src: "/icons/chopinly-512.png", sizes: "512x512", type: "image/png" }],
       });
     } catch { /* optional */ }
   }

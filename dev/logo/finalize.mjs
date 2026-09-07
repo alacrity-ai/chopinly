@@ -83,9 +83,9 @@ const shot = async (inner, w, h, path, scale = 1) => {
   await p.close(); console.log("rendered", path.replace(ROOT + "/", ""));
 };
 const square = (size) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${size}" height="${size}"><rect width="100" height="100" fill="${C.ebony}"/>${keys({ bg: null })}</svg>`;
-await shot(square(512), 512, 512, join(ROOT, "icons/icon-512.png"));
-await shot(square(512), 512, 512, join(ROOT, "icons/icon-maskable-512.png"));
-await shot(square(192), 192, 192, join(ROOT, "icons/icon-192.png"));
+await shot(square(512), 512, 512, join(ROOT, "icons/chopinly-512.png"));
+await shot(square(512), 512, 512, join(ROOT, "icons/chopinly-maskable-512.png"));
+await shot(square(192), 192, 192, join(ROOT, "icons/chopinly-192.png"));
 await shot(square(180), 180, 180, join(ROOT, "icons/apple-touch-icon.png"));
 for (const name of ["chopinly-mark", "chopinly-mark-light", "chopinly-wordmark", "chopinly-wordmark-dark", "chopinly-lockup-horizontal", "chopinly-lockup-horizontal-light", "chopinly-lockup-stacked", "chopinly-lockup-stacked-light"]) {
   const s = files[`brand/${name}.svg`];
