@@ -14,12 +14,12 @@ export function middleC({ bg = C.ebony, ink = C.ivory, accent = C.brass } = {}) 
   <ellipse cx="51.8" cy="80" rx="10.2" ry="7" fill="${accent}" transform="rotate(-22 51.8 80)"/>`;
 }
 
-/** B — The Keys. A section of keyboard, C to G, with one key in brass: the note you are practicing. */
+/** B — The Keys. C, C#, D, D#, E — three white keys and two black, filling the tile, with C in brass: C for Chopin. */
 export function keys({ bg = C.ebony, key = C.ivory, accent = C.brass, black = null } = {}) {
-  const x0 = 17, w = 12.6, gap = 0.8, top = 22, bottom = 82;
-  const whites = [0, 1, 2, 3, 4].map((i) => { const x = x0 + i * (w + gap); const fill = i === 2 ? accent : key; return `<rect x="${x}" y="${top}" width="${w}" height="${bottom - top}" rx="2.6" fill="${fill}"/>`; }).join("");
+  const x0 = 17, w = 21.4, gap = 0.9, top = 20, bottom = 84;
+  const whites = [0, 1, 2].map((i) => { const x = x0 + i * (w + gap); const fill = i === 0 ? accent : key; return `<rect x="${x}" y="${top}" width="${w}" height="${bottom - top}" rx="3.2" fill="${fill}"/>`; }).join("");
   const bk = black ?? bg;
-  const blacks = [1, 2, 4].map((b) => { const x = x0 + b * (w + gap) - 4.3 - gap / 2; return `<rect x="${x}" y="${top - 0.01}" width="8.6" height="35" rx="1.8" fill="${bk}"/>`; }).join("");
+  const blacks = [1, 2].map((b) => { const bw = 12.4; const x = x0 + b * (w + gap) - bw / 2 - gap / 2; return `<rect x="${x}" y="${top - 0.01}" width="${bw}" height="39" rx="2.4" fill="${bk}"/>`; }).join("");
   return `${tile(bg)}${whites}${blacks}`;
 }
 
@@ -36,7 +36,7 @@ export function pendulum({ bg = C.ebony, ink = C.ivory, accent = C.brass } = {})
 
 export const CANDIDATES = [
   { id: "A", name: "Middle C", mark: middleC, why: "The pianist's home note, drawn where it lives: on its own ledger line below the treble staff. Reads as music at every size, and the note head doubles as the dot of the i.", tradeoff: "Says \"music\" more than \"piano\" — the staff could belong to any instrument.", idot: "note" },
-  { id: "B", name: "The Keys", mark: keys, why: "Five keys, C to G, with the black-key pattern that makes a keyboard unmistakable in a glance — and one key in brass: the one you are practicing.", tradeoff: "The most literal of the three; at 16px the black keys blur and it becomes a striped square.", idot: "key" },
+  { id: "B", name: "The Keys", mark: keys, why: "Five keys — C, C♯, D, D♯, E — filling the tile, so the keyboard reads even at favicon size. C is in brass: C for Chopin, and the key every pianist finds first.", tradeoff: "The most literal of the three.", idot: "key" },
   { id: "C", name: "The Pendulum", mark: pendulum, why: "The metronome we already have, composed: rod, weight, and the arc it swings through — time kept honestly, and the arc as the record of it. Continuity with the current icon.", tradeoff: "Says \"metronome\" first; Chopinly is more than its metronome.", idot: "round" },
 ];
 
