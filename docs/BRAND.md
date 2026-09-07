@@ -26,8 +26,8 @@ so it follows every skin.
 | `chopinly-lockup-horizontal(-light).svg` / `.png` | mark beside wordmark, caps centred on the tile |
 | `chopinly-lockup-stacked(-light).svg` / `.png` | mark above wordmark |
 
-Icons: `icons/favicon.svg` (the tile), `icons/icon-192.png`, `icons/icon-512.png`,
-`icons/icon-maskable-512.png`, `icons/apple-touch-icon.png` — all full-bleed ebony
+Icons: `icons/favicon.svg` (the tile), `icons/chopinly-192.png`, `icons/chopinly-512.png`,
+`icons/chopinly-maskable-512.png`, `icons/apple-touch-icon.png` — all full-bleed ebony
 squares (iOS/Android round their own corners; the keys sit inside the maskable safe
 zone). OG cards: `og/chopinly.png` and `og/blog/*.png` from `dev/og.html` / `dev/og-post.html`.
 
