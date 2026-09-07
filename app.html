@@ -19,8 +19,9 @@
   <meta name="twitter:image" content="https://chopinly.com/og/chopinly.png">
   <script>if (location.hostname === "www.chopinly.com") location.replace("https://chopinly.com" + location.pathname + location.search + location.hash);</script>
   <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="icon" href="/icons/icon-192.png" type="image/png">
-  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/icons/icon-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
   <link rel="preload" href="/fonts/fraunces-roman.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/fraunces-italic.woff2" as="font" type="font/woff2" crossorigin>
   <script>try { var s = JSON.parse(localStorage.getItem("ws.shell.skin")); if (s && s !== "ebony") document.documentElement.dataset.skin = s; } catch (e) {}</script>
@@ -30,8 +31,8 @@
   <header class="navbar">
     <div class="navbar-row">
       <a class="brand" href="#/logbook" aria-label="Chopinly — today">
-        <h1 class="wordmark">Chopinly</h1>
-        <p class="tagline">practice assistant</p>
+        <svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><rect x="17" y="20" width="21.4" height="64" rx="3.2" fill="var(--accent)"/><rect x="39.3" y="20" width="21.4" height="64" rx="3.2" fill="currentColor"/><rect x="61.6" y="20" width="21.4" height="64" rx="3.2" fill="currentColor"/><rect x="32.65" y="20" width="12.4" height="39" rx="2.4" fill="var(--bg)"/><rect x="54.95" y="20" width="12.4" height="39" rx="2.4" fill="var(--bg)"/></svg>
+        <span class="brand-text"><h1 class="wordmark">Chopinly</h1><p class="tagline">practice assistant</p></span>
       </a>
       <div class="navbar-right">
         <nav class="tool-picker" id="tool-picker" aria-label="tools"></nav>
