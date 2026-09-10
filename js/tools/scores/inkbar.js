@@ -6,13 +6,13 @@
 // logbook is debounced. Undo / redo are per page, per sitting.
 import { logbook } from "../../lib/logbook.js";
 import { icon } from "../../lib/icons.js";
-import { toast } from "../logbook/util.js";
+import { toast, esc, longPress } from "../logbook/util.js";
 import { haptic } from "../logbook/motion.js";
-import { encode, decode, simplify, travel, hit, draw, SCALE, PEN_W, HI_W, MIN_TRAVEL, COLORS } from "../../lib/scores/ink.js";
+import { encode, decode, simplify, travel, hit, draw, strokeFor, SCALE, MIN_TRAVEL } from "../../lib/scores/ink.js";
+import { openBrushes, swatch, brushSub } from "./brushes.js";
 
 const SAVE_MS = 400;
 const ERASE_R = 12 / 420; // normalised radius the eraser sweeps (≈ 12 px on a 420 px page)
-const COLOR_NAMES = ["ink", "brass", "red"];
 
 /**
  * @param {{ sheet: HTMLElement, bar: HTMLElement, scoreId: string, store: object,
@@ -24,7 +24,9 @@ export function createInkLayer({ sheet, bar, scoreId, store, onTap, onModeChange
   canvas.width = 1; canvas.height = 1;
   sheet.append(canvas);
   const cx = canvas.getContext("2d");
-  let on = false, tool = store.get("inkTool", "pen"), color = store.get("inkColor", 0), fingerInk = store.get("fingerInk", false);
+  // tool: "brush" | "eraser" (v52 stored "pen" / "hi" — both are brushes now). The brush in hand is by id (WSHED-106).
+  let on = false, tool = store.get("inkTool", "brush") === "eraser" ? "eraser" : "brush", brushId = store.get("inkBrush", null), fingerInk = store.get("fingerInk", false);
+  const curBrush = () => logbook.brush(brushId) ?? logbook.brushes()[0] ?? null;
   let page = 0, strokes = [], w = 1, h = 1, W = 1, H = 1, dpr = 1;
   let undo = [], redo = [], saveTimer = 0, dirty = false, live = null, erasing = false, capToastAt = 0;
 
@@ -32,23 +34,33 @@ export function createInkLayer({ sheet, bar, scoreId, store, onTap, onModeChange
   bar.className = "sc-inkbar";
   bar.hidden = true;
   const paintBar = () => {
+    const bs = logbook.brushes(), cur = curBrush();
     bar.innerHTML = `
-      <button type="button" class="sc-ink-btn ${tool === "pen" ? "on" : ""}" data-tool="pen" aria-label="pen" aria-pressed="${tool === "pen"}">${icon("pencil")}</button>
-      <button type="button" class="sc-ink-btn ${tool === "hi" ? "on" : ""}" data-tool="hi" aria-label="highlighter" aria-pressed="${tool === "hi"}">${icon("highlighter")}</button>
+      <span class="sc-ink-brushes" role="radiogroup" aria-label="brush">${bs.map((b) => `<button type="button" class="sc-ink-brush ${tool === "brush" && cur?.id === b.id ? "on" : ""}" data-brush="${esc(b.id)}" role="radio" aria-checked="${tool === "brush" && cur?.id === b.id}" aria-label="${esc(b.name)} — ${brushSub(b)}; hold to edit">${swatch(b)}</button>`).join("")}</span>
       <button type="button" class="sc-ink-btn ${tool === "eraser" ? "on" : ""}" data-tool="eraser" aria-label="eraser" aria-pressed="${tool === "eraser"}">${icon("eraser")}</button>
-      <span class="sc-ink-colors" role="radiogroup" aria-label="colour">${COLORS.map((c, i) => `<button type="button" class="sc-ink-color ${color === i ? "on" : ""}" data-color="${i}" role="radio" aria-checked="${color === i}" aria-label="${COLOR_NAMES[i]}" style="--c:${c}"></button>`).join("")}</span>
+      <button type="button" class="sc-ink-btn" data-act="brushes" aria-label="brushes: edit, add, reorder">${icon("palette")}</button>
       <span class="sc-ink-gap"></span>
       <button type="button" class="sc-ink-btn" data-act="undo" aria-label="undo" ${undo.length ? "" : "disabled"}>${icon("undo")}</button>
       <button type="button" class="sc-ink-btn" data-act="redo" aria-label="redo" ${redo.length ? "" : "disabled"}>${icon("redo")}</button>
       <button type="button" class="sc-ink-btn ${fingerInk ? "on" : ""}" data-act="finger" aria-label="draw with a finger" aria-pressed="${fingerInk}" title="draw with a finger (otherwise only the pen draws)">${icon("finger")}</button>
       <button type="button" class="sc-ink-btn" data-act="clear" aria-label="clear this page" ${strokes.length ? "" : "disabled"}>${icon("trash")}</button>`;
-    for (const b of bar.querySelectorAll("[data-tool]")) b.addEventListener("click", () => { tool = b.dataset.tool; store.set("inkTool", tool); paintBar(); });
-    for (const b of bar.querySelectorAll("[data-color]")) b.addEventListener("click", () => { color = Number(b.dataset.color); store.set("inkColor", color); if (tool === "eraser") { tool = "pen"; store.set("inkTool", tool); } paintBar(); });
+    bar.querySelector('[data-tool="eraser"]').addEventListener("click", () => { tool = tool === "eraser" ? "brush" : "eraser"; store.set("inkTool", tool); paintBar(); });
+    for (const b of bar.querySelectorAll("[data-brush]")) longPress(b, () => pickBrush(b.dataset.brush), () => { haptic(); openSheet(b.dataset.brush); });
+    bar.querySelector('[data-act="brushes"]').addEventListener("click", () => openSheet(cur?.id ?? null));
+    const strip = bar.querySelector(".sc-ink-brushes"), onEl = strip.querySelector(".on");
+    if (onEl) onEl.scrollIntoView({ block: "nearest", inline: "nearest" });
     bar.querySelector('[data-act="undo"]').addEventListener("click", () => { if (!undo.length) return; redo.push(strokes); strokes = undo.pop(); commit(); });
     bar.querySelector('[data-act="redo"]').addEventListener("click", () => { if (!redo.length) return; undo.push(strokes); strokes = redo.pop(); commit(); });
     bar.querySelector('[data-act="finger"]').addEventListener("click", () => { fingerInk = !fingerInk; store.set("fingerInk", fingerInk); applyTouchAction(); paintBar(); });
     bar.querySelector('[data-act="clear"]').addEventListener("click", () => { if (!strokes.length || !confirm("Clear the ink on this page?")) return; undo.push(strokes); redo = []; strokes = []; haptic(20); commit(); });
   };
+  /** The brushes sheet; whatever it hands back is the brush in hand. */
+  async function openSheet(id) {
+    const next = await openBrushes({ current: id });
+    if (next && logbook.brush(next)) pickBrush(next); else if (on) paintBar();
+  }
+  const pickBrush = (id) => { brushId = id; store.set("inkBrush", id); tool = "brush"; store.set("inkTool", tool); if (on) paintBar(); };
+  const offLb = logbook.on(() => { if (on && !document.querySelector(".lb-sheet-wrap:not(.closing)")) paintBar(); });
   const applyTouchAction = () => { canvas.style.touchAction = on ? "none" : ""; canvas.style.pointerEvents = on ? "auto" : "none"; };
 
   // --- geometry + rendering ---------------------------------------------------
@@ -103,7 +115,9 @@ export function createInkLayer({ sheet, bar, scoreId, store, onTap, onModeChange
     try { canvas.setPointerCapture(pid); } catch { /* not needed */ }
     const pt = norm(e);
     if (tool === "eraser") { erasing = true; lastErase = pt; eraseAt(pt); return; }
-    live = { t: tool === "hi" ? "hi" : "pen", c: color, w: tool === "hi" ? HI_W : PEN_W, pts: [pt] };
+    const b = curBrush();
+    if (!b) return;
+    live = strokeFor(b); live.pts = [pt];
   });
   canvas.addEventListener("pointermove", (e) => {
     if (pid !== e.pointerId) return;
@@ -173,6 +187,6 @@ export function createInkLayer({ sheet, bar, scoreId, store, onTap, onModeChange
     },
     size, load, flush, repaint,
     hasInk: () => strokes.length > 0,
-    destroy() { flush(); canvas.remove(); bar.hidden = true; bar.innerHTML = ""; },
+    destroy() { flush(); offLb(); canvas.remove(); bar.hidden = true; bar.innerHTML = ""; },
   };
 }

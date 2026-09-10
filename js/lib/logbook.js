@@ -14,6 +14,7 @@
 import { makeStore } from "./store.js";
 import { KINDS, key as entityKey, pick, same, toEnvelope, tombEnvelope, fromEnvelope, bodyCap } from "./merge.js";
 import { filterScores, sortScores } from "./scores/library.js";
+import { DEFAULT_BRUSHES, cleanBrush } from "./scores/ink.js";
 
 export const SCHEMA_VERSION = 2;
 export const TYPES = {
@@ -93,7 +94,7 @@ const uuid = () =>
 export const norm = (s) => String(s ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
 
 function emptyDoc() {
-  return { schemaVersion: SCHEMA_VERSION, goals: [], segments: [], notes: [], takes: [], scores: [], marks: [], ink: [], deleted: [], pending: [] };
+  return { schemaVersion: SCHEMA_VERSION, goals: [], segments: [], notes: [], takes: [], scores: [], marks: [], ink: [], brushes: [], deleted: [], pending: [] };
 }
 
 // --- migration ---------------------------------------------------------------
@@ -511,6 +512,52 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     if (doc.marks.length !== before) { tomb(id, "mark"); save(); }
   }
 
+  // --- brushes (WSHED-106): the pens the user defined, in their order; sync like marks ---
+  /** Brushes in the user's order (seeds the defaults the first time, unless they were deleted). */
+  function brushes() {
+    if (!doc.brushes.length && !doc.deleted.some((t) => t.kind === "brush")) {
+      for (const b of DEFAULT_BRUSHES) doc.brushes.push(touch("brush", { ...b }));
+      save();
+    }
+    return [...doc.brushes].sort((a, b) => (a.pos ?? 0) - (b.pos ?? 0) || String(a.id).localeCompare(String(b.id)));
+  }
+  const brush = (id) => doc.brushes.find((b) => b.id === id) ?? null;
+  function addBrush(fields = {}) {
+    const last = brushes().at(-1);
+    const b = touch("brush", { id: fields.id ?? uuid(), ...cleanBrush(fields), pos: (last?.pos ?? 0) + 1000 });
+    doc.brushes.push(b); save(); return b;
+  }
+  function updateBrush(id, patch = {}) {
+    const b = brush(id);
+    if (!b) throw new Error(`no brush ${id}`);
+    Object.assign(b, cleanBrush({ ...b, ...patch }));
+    touch("brush", b); save(); return b;
+  }
+  function removeBrush(id) {
+    const before = doc.brushes.length;
+    doc.brushes = doc.brushes.filter((b) => b.id !== id);
+    if (doc.brushes.length !== before) { tomb(id, "brush"); save(); }
+  }
+  /** Put the brushes in this id order; only the ones whose place changed are written. */
+  function reorderBrushes(ids) {
+    const cur = brushes();
+    const next = ids.map((id) => brush(id)).filter(Boolean);
+    for (const b of cur) if (!next.includes(b)) next.push(b);
+    let changed = 0;
+    next.forEach((b, i) => { const pos = (i + 1) * 1000; if (b.pos !== pos) { b.pos = pos; touch("brush", b); changed++; } });
+    if (changed) save();
+    return next;
+  }
+  /** Back to the starter set (deletes every custom brush). */
+  function resetBrushes() {
+    for (const b of doc.brushes) tomb(b.id, "brush");
+    const ids = new Set(DEFAULT_BRUSHES.map((b) => b.id));
+    doc.deleted = doc.deleted.filter((t) => !(t.kind === "brush" && ids.has(t.id)));
+    doc.brushes = DEFAULT_BRUSHES.map((b) => touch("brush", { ...b }));
+    save();
+    return brushes();
+  }
+
   // --- other tools writing in -----------------------------------------------
   /**
    * A finished lesson run (sight singing, ear training). With a goal running
@@ -653,7 +700,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   const on = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
 
   // --- sync (docs/ACCOUNTS_DESIGN.md §4) --------------------------------------
-  const listOf = { goal: () => doc.goals, segment: () => doc.segments, note: () => doc.notes, take: () => doc.takes, score: () => doc.scores, mark: () => doc.marks, ink: () => doc.ink };
+  const listOf = { goal: () => doc.goals, segment: () => doc.segments, note: () => doc.notes, take: () => doc.takes, score: () => doc.scores, mark: () => doc.marks, ink: () => doc.ink, brush: () => doc.brushes };
   const findEntity = (kind, id) => listOf[kind]().find((x) => x.id === id) ?? null;
   const findTomb = (kind, id) => doc.deleted.find((t) => t.kind === kind && t.id === id) ?? null;
   const localEnvelope = (kind, id) => {
@@ -691,7 +738,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   }
   /** Merge remote envelopes in. Returns how many changed the document. */
   function applyRemote(envelopes) {
-    const order = { goal: 0, segment: 1, note: 2, take: 3, score: 4, mark: 5, ink: 6 };
+    const order = { goal: 0, segment: 1, note: 2, take: 3, score: 4, mark: 5, ink: 6, brush: 7 };
     const sorted = [...envelopes].filter((e) => listOf[e.kind]).sort((a, b) => order[a.kind] - order[b.kind]);
     let applied = 0;
     for (const env of sorted) {
@@ -735,8 +782,8 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     takes, take, addTake, starTake, deleteTake, takeDays,
     // scores + bookmarks
     scores, score, scoreByHash, scoreForGoal, addScore, updateScore, touchScore, removeScore, marks, markAt, addMark, removeMark,
-    // ink
-    inkFor, inkPages, setInk,
+    // ink + brushes
+    inkFor, inkPages, setInk, brushes, brush, addBrush, updateBrush, removeBrush, reorderBrushes, resetBrushes,
     // other tools
     addAuto,
     // sync

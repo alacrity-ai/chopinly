@@ -39,6 +39,9 @@ const P = {
   bookmark: `<path d="M7 4.5h10v15l-5-3.6-5 3.6v-15Z"/>`,
   more: `<circle cx="6" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.4" fill="currentColor" stroke="none"/>`,
   plus: `<path d="M12 5.5v13M5.5 12h13"/>`,
+  grip: `<circle cx="9" cy="6.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="6.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="17.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="17.5" r="1.3" fill="currentColor" stroke="none"/>`,
+  tag: `<path d="M4.5 5.5h7.2l7.8 7.8-6.9 6.9-7.8-7.8V5.5Z"/><circle cx="8.6" cy="9.6" r="1.2" fill="currentColor" stroke="none"/>`,
+  group: `<path d="M4.5 7.5h15M4.5 12h9M4.5 16.5h12"/>`,
   log: `<path d="M6 4.5h9.5l3 3V19.5H6V4.5Z"/><path d="M9 10h6M9 13.5h6M9 17h3.5"/>`,
 };
 

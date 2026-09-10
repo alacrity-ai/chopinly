@@ -20,6 +20,15 @@ import { fmtBytes } from "../../lib/takes/peaks.js";
 
 export { MAX_FILE_BYTES };
 const THUMB_W = 120;
+const RAIL_MAX = 8; // tags shown on the rail before "+N" (WSHED-107)
+const SORT_LABELS = { recent: "recent", title: "title", composer: "composer" };
+
+/** Tag → how many scores carry it, most used first. */
+function tagCounts(scores) {
+  const count = new Map();
+  for (const s of scores) for (const t of s.tags ?? []) count.set(t, (count.get(t) ?? 0) + 1);
+  return count;
+}
 
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 async function sha256(blob) {
@@ -291,6 +300,44 @@ export function mountLibrary(root, { store, setRunning = null }, { open }) {
     </div>`;
   };
 
+  /** The tag rail: active filters first (with an ×), then the most-used tags, then "+N more". */
+  const rail = (allTags) => {
+    const rest = allTags.filter((t) => !tagFilter.includes(t)).slice(0, Math.max(0, RAIL_MAX - tagFilter.length));
+    const hidden = allTags.length - tagFilter.length - rest.length;
+    return [
+      ...tagFilter.map((t) => `<button type="button" class="sc-tag on" data-tag="${esc(t)}" aria-pressed="true">${esc(t)}<span class="sc-tag-x" aria-hidden="true">×</span></button>`),
+      ...rest.map((t) => `<button type="button" class="sc-tag" data-tag="${esc(t)}" aria-pressed="false">${esc(t)}</button>`),
+      hidden > 0 ? `<button type="button" class="sc-tag sc-tag-more" id="sc-tags-more">+${hidden} more</button>` : "",
+    ].join("");
+  };
+  /** Every tag with its count; toggling filters the list behind the sheet. */
+  function openTagSheet() {
+    const counts = tagCounts(logbook.scores());
+    const all = suggestTags(logbook.scores());
+    const sheet = openSheet({ title: "tags", cls: "lb-acct-wrap sc-tagsheet", html: "" });
+    const { body } = sheet;
+    let tq = "";
+    const build = () => {
+      const shown = all.filter((t) => !tq || t.toLowerCase().includes(tq.toLowerCase()));
+      body.innerHTML = `
+        ${all.length > 12 ? `<input class="lb-input lb-search sc-tagsheet-q" id="sc-tq" type="search" placeholder="find a tag…" value="${esc(tq)}" autocomplete="off" aria-label="find a tag">` : ""}
+        <div class="lb-chips">${shown.map((t) => `<button type="button" class="sc-tag ${tagFilter.includes(t) ? "on" : ""}" data-tag="${esc(t)}" aria-pressed="${tagFilter.includes(t)}">${esc(t)}<small>${counts.get(t) ?? 0}</small></button>`).join("") || `<p class="lb-empty">no tag matches.</p>`}</div>
+        <div class="sc-tagsheet-acts">
+          <span class="lb-acct-fine" style="margin:0">${tagFilter.length ? `${tagFilter.length} picked · a score must carry every one` : "pick tags to narrow the list"}</span>
+          <button type="button" class="lb-chip" id="sc-tq-clear" ${tagFilter.length ? "" : "disabled"} style="margin-left:auto">clear</button>
+          <button type="button" class="lb-modal-save" id="sc-tq-done">done</button>
+        </div>`;
+      const qi = body.querySelector("#sc-tq");
+      qi?.addEventListener("input", () => { tq = qi.value; const at = qi.selectionStart; build(); const n = body.querySelector("#sc-tq"); n.focus(); try { n.setSelectionRange(at, at); } catch { /* fine */ } });
+      for (const b of body.querySelectorAll("[data-tag]")) b.addEventListener("click", () => { toggleTag(b.dataset.tag); haptic(4); build(); });
+      body.querySelector("#sc-tq-clear").addEventListener("click", () => { tagFilter = []; store.set("tags", tagFilter); render(); build(); });
+      body.querySelector("#sc-tq-done").addEventListener("click", sheet.close);
+    };
+    build();
+    if (all.length > 12 && finePointer()) body.querySelector("#sc-tq")?.focus();
+  }
+  const toggleTag = (t) => { tagFilter = tagFilter.includes(t) ? tagFilter.filter((x) => x !== t) : [...tagFilter, t]; store.set("tags", tagFilter); render(); };
+
   function render() {
     for (const c of cleanups) c(); cleanups = [];
     const total = logbook.scores().length;
@@ -311,11 +358,17 @@ export function mountLibrary(root, { store, setRunning = null }, { open }) {
         ${total && !selecting ? `
         <div class="sc-tools">
           <input class="lb-input lb-search sc-search" id="sc-q" type="search" placeholder="search title, composer, tag…" value="${esc(q)}" autocomplete="off" aria-label="search scores">
-          <div class="sc-sorts" role="radiogroup" aria-label="sort">
-            ${SORT_IDS.map((k) => `<button type="button" class="lb-chip ${sort === k ? "on" : ""}" role="radio" aria-checked="${sort === k}" data-sort="${k}">${k}</button>`).join("")}
-            <button type="button" class="lb-chip sc-group ${group ? "on" : ""}" aria-pressed="${group}" id="sc-group">by composer</button>
+          <div class="sc-sortrow">
+            <div class="sc-seg" role="radiogroup" aria-label="sort by">
+              ${SORT_IDS.map((k) => `<button type="button" class="sc-seg-btn ${sort === k ? "on" : ""}" role="radio" aria-checked="${sort === k}" data-sort="${k}">${SORT_LABELS[k] ?? k}</button>`).join("")}
+            </div>
+            <button type="button" class="sc-group ${group ? "on" : ""}" aria-pressed="${group}" id="sc-group" title="group by composer">${icon("group")}<span>by composer</span></button>
           </div>
-          ${allTags.length ? `<div class="lb-chips lb-filterchips sc-tagchips" aria-label="tags">${allTags.map((t) => `<button type="button" class="lb-chip ${tagFilter.includes(t) ? "on" : ""}" data-tag="${esc(t)}" aria-pressed="${tagFilter.includes(t)}">${esc(t)}</button>`).join("")}</div>` : ""}
+          ${allTags.length ? `<div class="sc-tagrow">
+            <button type="button" class="sc-tagbtn ${tagFilter.length ? "on" : ""}" id="sc-tags-all" aria-label="all tags">${icon("tag")}<span>${tagFilter.length ? `${tagFilter.length} of ${allTags.length}` : allTags.length}</span></button>
+            <div class="sc-tagrail" aria-label="tags">${rail(allTags)}</div>
+          </div>` : ""}
+          ${q || tagFilter.length ? `<p class="sc-count"><span>${list.length === total ? plural(total, "score") : `${list.length} of ${total}`}</span><button type="button" id="sc-clear">clear</button></p>` : ""}
         </div>` : ""}
         ${total === 0
           ? `<p class="lb-empty sc-empty">no scores yet. add a PDF and it lives here — <em>tap the right edge to turn the page, the left to go back</em>.</p>`
@@ -368,7 +421,10 @@ export function mountLibrary(root, { store, setRunning = null }, { open }) {
     }
     for (const b of root.querySelectorAll("[data-sort]")) b.addEventListener("click", () => { sort = b.dataset.sort; store.set("sort", sort); render(); });
     root.querySelector("#sc-group")?.addEventListener("click", () => { group = !group; store.set("group", group); render(); });
-    for (const b of root.querySelectorAll(".sc-tagchips [data-tag]")) b.addEventListener("click", () => { const t = b.dataset.tag; tagFilter = tagFilter.includes(t) ? tagFilter.filter((x) => x !== t) : [...tagFilter, t]; store.set("tags", tagFilter); render(); });
+    for (const b of root.querySelectorAll(".sc-tagrail [data-tag]")) b.addEventListener("click", () => toggleTag(b.dataset.tag));
+    root.querySelector("#sc-tags-more")?.addEventListener("click", openTagSheet);
+    root.querySelector("#sc-tags-all")?.addEventListener("click", openTagSheet);
+    root.querySelector("#sc-clear")?.addEventListener("click", () => { q = ""; tagFilter = []; store.set("tags", tagFilter); render(); });
     for (const li of root.querySelectorAll(".sc-row")) {
       const id = li.dataset.id;
       longPress(li.querySelector(".sc-open"), () => open(id), async () => { haptic(); await openDetails(id); render(); });
