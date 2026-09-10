@@ -293,6 +293,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     doc.notes = doc.notes.filter((n) => n.goalId !== id);
     doc.takes = doc.takes.filter((t) => t.goalId !== id);
     for (const sc of doc.scores) if (sc.goalId === id) { delete sc.goalId; touch("score", sc); } // the score outlives its goal
+    for (const m of doc.marks) if (m.goalId === id) { delete m.goalId; touch("mark", m); } // so does its bookmark (WSHED-108)
     save();
   }
   function ensureBuiltin(id, name, type) {
@@ -424,8 +425,20 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   }
   const score = (id) => doc.scores.find((s) => s.id === id) ?? null;
   const scoreByHash = (sha256) => doc.scores.find((s) => s.sha256 === sha256) ?? null;
-  /** The score linked to a goal (the most recently opened when several are). */
-  const scoreForGoal = (goalId) => sortScores(doc.scores.filter((s) => s.goalId === goalId), "recent")[0] ?? null;
+  /** The score linked to a goal: through a bookmark (WSHED-108) first, else the score's own link (the most recently opened when several are). */
+  const scoreForGoal = (goalId) => placeForGoal(goalId)?.score ?? null;
+  /**
+   * Where a goal lives in the scores (WSHED-108): { score, page, mark } — a
+   * bookmark linked to the goal (the most recently touched one) gives the
+   * page; else the score linked to the goal itself, at no particular page
+   * (the reader opens where it was left). Null when the goal has neither.
+   */
+  function placeForGoal(goalId) {
+    const linked = doc.marks.filter((m) => m.goalId === goalId && score(m.scoreId)).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
+    if (linked) return { score: score(linked.scoreId), page: linked.page, mark: linked };
+    const s = sortScores(doc.scores.filter((x) => x.goalId === goalId), "recent")[0];
+    return s ? { score: s, page: null, mark: null } : null;
+  }
   /** Register a PDF that has already been stored on this device. */
   function addScore({ id = uuid(), title, composer = "", tags = [], pages, size = 0, sha256 = "", goalId = null }) {
     const t = cleanTitle(title);
@@ -497,15 +510,25 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   /** Bookmarks on a score, by page. */
   const marks = (scoreId) => doc.marks.filter((m) => m.scoreId === scoreId).sort((a, b) => a.page - b.page || a.createdAt - b.createdAt);
   const markAt = (scoreId, page) => doc.marks.find((m) => m.scoreId === scoreId && m.page === page) ?? null;
-  function addMark({ id = uuid(), scoreId, page, label = "" }) {
+  function addMark({ id = uuid(), scoreId, page, label = "", goalId = null }) {
     const s = score(scoreId);
     if (!s) throw new Error(`no score ${scoreId}`);
     const p = Math.round(Number(page));
     if (!(p >= 1 && p <= s.pages)) throw new Error("that page isn't in this score");
     const l = String(label ?? "").replace(/\s+/g, " ").trim().slice(0, 80) || `page ${p}`;
-    const m = touch("mark", { id, scoreId, page: p, label: l, createdAt: now() });
+    const m = touch("mark", { id, scoreId, page: p, label: l, createdAt: now(), ...(goalId && goalById(goalId) ? { goalId } : {}) });
     doc.marks.push(m); save(); return m;
   }
+  /** Edit a bookmark's label / goal link (WSHED-108; goalId null unlinks). Unknown keys are ignored. */
+  function updateMark(id, patch = {}) {
+    const m = doc.marks.find((x) => x.id === id);
+    if (!m) throw new Error(`no bookmark ${id}`);
+    if ("label" in patch) m.label = String(patch.label ?? "").replace(/\s+/g, " ").trim().slice(0, 80) || `page ${m.page}`;
+    if ("goalId" in patch) { if (patch.goalId) { mustGoal(patch.goalId); m.goalId = patch.goalId; } else delete m.goalId; }
+    touch("mark", m); save(); return m;
+  }
+  /** Bookmarks linked to a goal, most recently touched first. */
+  const marksForGoal = (goalId) => doc.marks.filter((m) => m.goalId === goalId).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   function removeMark(id) {
     const before = doc.marks.length;
     doc.marks = doc.marks.filter((m) => m.id !== id);
@@ -781,7 +804,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     // takes
     takes, take, addTake, starTake, deleteTake, takeDays,
     // scores + bookmarks
-    scores, score, scoreByHash, scoreForGoal, addScore, updateScore, touchScore, removeScore, marks, markAt, addMark, removeMark,
+    scores, score, scoreByHash, scoreForGoal, placeForGoal, addScore, updateScore, touchScore, removeScore, marks, markAt, marksForGoal, addMark, updateMark, removeMark,
     // ink + brushes
     inkFor, inkPages, setInk, brushes, brush, addBrush, updateBrush, removeBrush, reorderBrushes, resetBrushes,
     // other tools
