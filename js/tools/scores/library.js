@@ -49,7 +49,7 @@ export async function thumbUrl(id) {
   thumbUrls.set(id, url);
   return url;
 }
-async function storeThumb(doc, id) {
+export async function storeThumb(doc, id) {
   if (typeof OffscreenCanvas === "undefined") return;
   const bmp = await doc.render(1, THUMB_W, 2);
   const c = new OffscreenCanvas(bmp.width, bmp.height);
@@ -59,17 +59,41 @@ async function storeThumb(doc, id) {
   await scoreStore.putPage(scoreStore.pageKey(id, 1, 0), blob, { scoreId: id, w: bmp.width, h: bmp.height });
   thumbUrls.delete(id);
 }
-/** Render a missing thumbnail for a row that predates thumbnails (P0 imports). */
+/** Has page 1 been rendered for the row? */
+export const hasThumb = (id) => scoreStore.getPage(scoreStore.pageKey(id, 1, 0)).then((r) => !!r, () => false);
+/**
+ * Render a missing thumbnail (rows that predate thumbnails, or files that
+ * arrived by cloud download). One at a time (WSHED-109): each one opens the
+ * whole PDF, and a library of 30 MB scans doing that all at once was more
+ * memory than an iPad allows a page. Waits while a reader is open — it has
+ * the memory.
+ */
+const thumbQueue = [];
+let thumbRunning = false;
+async function runThumbs() {
+  if (thumbRunning) return;
+  thumbRunning = true;
+  try {
+    while (thumbQueue.length) {
+      if (document.querySelector(".sc-reader")) { await new Promise((r) => setTimeout(r, 1500)); continue; }
+      const { id, resolve } = thumbQueue.shift();
+      try {
+        if (!(await hasThumb(id))) {
+          const blob = await scoreStore.get(id);
+          if (blob) { const doc = await openPdf(blob); try { await storeThumb(doc, id); } finally { doc.close(); } }
+        }
+      } catch { /* no thumbnail, no harm */ }
+      thumbPending.delete(id);
+      resolve();
+      await new Promise((r) => setTimeout(r, 50)); // let the worker's memory go before the next file
+    }
+  } finally { thumbRunning = false; }
+}
 function ensureThumb(id) {
   if (thumbPending.has(id)) return thumbPending.get(id);
-  const p = (async () => {
-    if (await scoreStore.getPage(scoreStore.pageKey(id, 1, 0)).catch(() => null)) return;
-    const blob = await scoreStore.get(id);
-    if (!blob) return;
-    const doc = await openPdf(blob);
-    try { await storeThumb(doc, id); } finally { doc.close(); }
-  })().catch(() => {}).finally(() => thumbPending.delete(id));
+  const p = new Promise((resolve) => { thumbQueue.push({ id, resolve }); });
   thumbPending.set(id, p);
+  runThumbs();
   return p;
 }
 

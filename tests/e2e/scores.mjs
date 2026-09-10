@@ -463,7 +463,7 @@ await step("the persistent page tier: a cache asked to persist stores a page, th
   }, scoreId);
   if (!(r.mid > r.before && r.midBytes > 1000)) throw new Error("page not stored " + JSON.stringify(r));
   if (r.decoded !== 1 || r.w !== 300) throw new Error("second cache should decode from the store " + JSON.stringify(r));
-  if (r.evicted[0] !== scoreId || r.after !== 0) throw new Error("eviction " + JSON.stringify(r));
+  if (r.evicted[0] !== scoreId || r.after !== 1) throw new Error("eviction should spare the thumbnail (WSHED-109) " + JSON.stringify(r));
 });
 
 await step("account sheet: scores on this device", async () => {

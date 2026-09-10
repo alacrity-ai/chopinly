@@ -9,7 +9,12 @@
 // the fit changes.
 import { scoreStore } from "./store.js";
 
-const AHEAD = 2, BEHIND = 2;
+// Two ahead, one behind (WSHED-109): a page bitmap on an iPad is ~24 MB of
+// GPU memory and iOS counts it against the page; turning back re-decodes from
+// the pages store in a few ms, so the ring holds four, not five.
+const AHEAD = 2, BEHIND = 1;
+/** Rendered device pixels are capped here (width); an iPad in portrait is 2048. Past it the scan gains nothing and each bitmap costs 40 MB+. */
+export const MAX_RENDER_PX = 2560;
 /** Files over this render into the persistent tier … */
 export const PERSIST_BYTES = 8 * 1024 * 1024;
 /** … and so does any file whose first render takes longer than this. */
@@ -31,13 +36,19 @@ async function pickEncoding() {
   } catch { encodeType = "image/jpeg"; }
   return encodeType;
 }
-async function encode(bmp) {
-  const type = await pickEncoding();
-  const c = new OffscreenCanvas(bmp.width, bmp.height);
-  const cx = c.getContext("2d", { alpha: false });
-  cx.fillStyle = "#fff"; cx.fillRect(0, 0, bmp.width, bmp.height);
-  cx.drawImage(bmp, 0, 0);
-  return c.convertToBlob({ type, quality: 0.86 });
+let encoding = Promise.resolve();
+/** Encode one bitmap at a time (WSHED-109): each encode is a full-size canvas copy, and five queued at once was a 120 MB spike on every turn. */
+function encode(bmp) {
+  const run = encoding.then(async () => {
+    const type = await pickEncoding();
+    const c = new OffscreenCanvas(bmp.width, bmp.height);
+    const cx = c.getContext("2d", { alpha: false });
+    cx.fillStyle = "#fff"; cx.fillRect(0, 0, bmp.width, bmp.height);
+    cx.drawImage(bmp, 0, 0);
+    return c.convertToBlob({ type, quality: 0.86 });
+  });
+  encoding = run.catch(() => {});
+  return run;
 }
 const canPersist = () => typeof OffscreenCanvas !== "undefined" && typeof createImageBitmap === "function";
 
@@ -70,7 +81,7 @@ export function createPageCache(doc, { width, dpr = 1, scoreId = null, persist =
     if (persist === "auto" && !persisting && ms > PERSIST_SLOW_MS) persisting = true;
     if (usePages()) {
       // store in the background; the reader never waits for the encoder
-      idle(() => { if (closed) return; encode(bmp).then((blob) => scoreStore.putPage(scoreStore.pageKey(scoreId, n, bucket), blob, { scoreId, w: bmp.width, h: bmp.height })).then(() => { stats.stored++; }).catch(() => {}); });
+      idle(() => { if (closed || !ring.get(n)?.bmp) return; encode(bmp).then((blob) => scoreStore.putPage(scoreStore.pageKey(scoreId, n, bucket), blob, { scoreId, w: bmp.width, h: bmp.height })).then(() => { stats.stored++; }).catch(() => {}); });
     }
     return bmp;
   }

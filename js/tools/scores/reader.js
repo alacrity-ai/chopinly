@@ -10,9 +10,9 @@ import { haptic } from "../logbook/motion.js";
 import { scoreStore } from "../../lib/scores/store.js";
 import { cloud } from "../../lib/scores/cloud.js";
 import { open as openPdf } from "../../lib/scores/pdf.js";
-import { createPageCache, trimPages } from "../../lib/scores/pagecache.js";
+import { createPageCache, trimPages, MAX_RENDER_PX } from "../../lib/scores/pagecache.js";
 import { openMarks, paintMarkButton } from "./marks.js";
-import { openDetails, practiceScore, saveScoreFile } from "./library.js";
+import { openDetails, practiceScore, saveScoreFile, storeThumb, hasThumb } from "./library.js";
 import { createInkLayer } from "./inkbar.js";
 
 const TAP_MS = 300, TAP_PX = 10, SWIPE_PX = 60, CHROME_MS = 2000, SPIN_MS = 250;
@@ -101,12 +101,14 @@ export async function openReader({ id, page = null, ctx, onClose }) {
     cssW = fit() === "page" ? Math.min(W, H * ratio) : W;
     cssH = cssW / ratio;
     canvas.style.width = `${cssW}px`; canvas.style.height = `${cssH}px`;
-    ink.size(cssW, cssH, Math.min(devicePixelRatio || 1, 3));
+    ink.size(cssW, cssH, renderDpr());
     el.dataset.fit = fit();
   }
+  /** Device pixels per CSS pixel for page renders: the screen's, capped so a bitmap stays under MAX_RENDER_PX wide (WSHED-109). */
+  const renderDpr = () => Math.min(devicePixelRatio || 1, 3, Math.max(1, MAX_RENDER_PX / Math.max(1, cssW)));
   function rebuildCache() {
     cache?.close();
-    cache = createPageCache(doc, { width: cssW, dpr: Math.min(devicePixelRatio || 1, 3), scoreId: id, persist: "auto", size: s.size });
+    cache = createPageCache(doc, { width: cssW, dpr: renderDpr(), scoreId: id, persist: "auto", size: s.size });
   }
   async function draw(n) {
     const seq = ++drawSeq;
@@ -216,6 +218,8 @@ export async function openReader({ id, page = null, ctx, onClose }) {
     doc = await openPdf(blob);
     if (closed) { doc.close(); return null; }
     pageSize = await doc.size(1);
+    // a file that arrived by download has no thumbnail yet: make it from this document rather than opening the PDF again in the library (WSHED-109)
+    hasThumb(id).then((have) => { if (!have && !closed) storeThumb(doc, id).catch(() => {}); });
     layout(); rebuildCache();
     const start = page ?? positions[id] ?? 1;
     goTo(start, { bump: false });
