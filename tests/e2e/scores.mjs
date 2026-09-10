@@ -77,9 +77,9 @@ await step("thumbnail renders for the row; search, sort, group by composer and t
   if (JSON.stringify(groups) !== JSON.stringify(["Bach", "Chopin", "Fixtura Testovna"])) throw new Error("groups " + JSON.stringify(groups));
   await page.screenshot({ path: `${S}/sc-08-library-grouped.png` });
   await page.click("#sc-group");
-  await page.click('.sc-tagchips [data-tag="baroque"]');
+  await page.click('.sc-tagrail [data-tag="baroque"]');
   await page.waitForFunction(() => document.querySelectorAll(".sc-row").length === 1);
-  await page.click('.sc-tagchips [data-tag="baroque"]');
+  await page.click('.sc-tagrail [data-tag="baroque"]');
   await page.waitForFunction(() => document.querySelectorAll(".sc-row").length === 3);
   await page.click('[data-sort="recent"]');
   await noWiden();
@@ -346,9 +346,8 @@ await step("ink: pen draws, a pen tap on the edge still turns, a finger does not
   await page.screenshot({ path: `${S}/sc-14-ink.png` });
 });
 
-await step("ink: highlighter in brass, eraser removes a stroke, undo brings it back, ink survives a reload and is synced under the ink cap", async () => {
-  await page.click('.sc-inkbar [data-tool="hi"]');
-  await page.click('.sc-inkbar [data-color="1"]');
+await step("ink: the yellow highlighter brush, eraser removes a stroke, undo brings it back, ink survives a reload and is synced under the ink cap", async () => {
+  await page.click('.sc-inkbar [data-brush="b-yellow"]');
   await penStroke([[0.2, 0.45], [0.7, 0.45]]);
   await inkNearFn(0.45, 0.45, (d) => d[3] > 20 && d[0] > d[2]);
   await page.waitForTimeout(600); // the debounced save
@@ -364,6 +363,27 @@ await step("ink: highlighter in brass, eraser removes a stroke, undo brings it b
   await page.waitForTimeout(600);
   if ((await lb((m, a) => m.logbook.inkFor(a[0], 3).s.length, scoreId)) !== 3) throw new Error("undo did not restore");
   await page.screenshot({ path: `${S}/sc-15-ink-tools.png` });
+  // brushes (WSHED-106): the sheet adds one, it lands in the bar in hand, a delete falls back to the first brush
+  await page.click('.sc-inkbar [data-act="brushes"]');
+  await page.waitForSelector("#sc-br-add");
+  await page.screenshot({ path: `${S}/sc-15b-brushes.png` });
+  await page.click("#sc-br-add");
+  await page.fill("#sc-br-name", "fat blue");
+  await page.click('[data-color="#2f6f9f"]');
+  await page.$eval("#sc-br-width", (r) => { r.value = "6"; r.dispatchEvent(new Event("input", { bubbles: true })); });
+  await page.screenshot({ path: `${S}/sc-15c-brush-editor.png` });
+  await page.click("#sc-br-save");
+  await page.waitForSelector(".sc-br-row");
+  await page.click(".lb-close");
+  await page.waitForFunction(() => !document.querySelector(".lb-sheet-wrap") && document.querySelector(".sc-ink-brush.on")?.getAttribute("aria-label").startsWith("fat blue — 6 px"), null, { timeout: 5000 });
+  await penStroke([[0.2, 0.7], [0.7, 0.7]]);
+  await inkNearFn(0.45, 0.7, (d) => d[3] > 100 && d[2] > d[0]);
+  await page.waitForTimeout(600); // the debounced save
+  const custom = await lb((m, a) => m.logbook.inkFor(a[0], 3).s.at(-1), scoreId);
+  if (custom.k !== "#2f6f9f" || custom.a !== 100) throw new Error("stroke should carry the brush colour: " + JSON.stringify(custom));
+  await lb((m) => { const b = m.logbook.brushes().find((x) => x.name === "fat blue"); m.logbook.reorderBrushes([b.id]); m.logbook.removeBrush(b.id); });
+  await page.waitForFunction(() => document.querySelector(".sc-ink-brush.on")?.dataset.brush === "b-ink");
+  if ((await lb((m) => m.logbook.doc.deleted.filter((t) => t.kind === "brush").length)) !== 1) throw new Error("brush delete should tombstone");
   await page.reload();
   await page.waitForSelector(".sc-reader", { timeout: 15000 });
   await waitPage(3);

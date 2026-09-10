@@ -8,7 +8,8 @@
 // cloud files (P3); a mark is a bookmark on a score's page.
 
 // Ink (WSHED-98 P2) is one entity per (score, page): the strokes drawn on it.
-export const KINDS = ["goal", "segment", "note", "take", "score", "mark", "ink"];
+// A brush (WSHED-106) is a pen the user defined: colour, width, opacity, order.
+export const KINDS = ["goal", "segment", "note", "take", "score", "mark", "ink", "brush"];
 /** Sync body caps in bytes of JSON, per kind. Shared with functions/lib/sync.js so both sides refuse the same thing. */
 export const BODY_CAPS = { default: 8192, ink: 131072 };
 export const bodyCap = (kind) => BODY_CAPS[kind] ?? BODY_CAPS.default;

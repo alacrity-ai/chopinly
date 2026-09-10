@@ -1,13 +1,17 @@
 // The ink model (docs/SCORES_DESIGN.md §7). Pure and DOM-free.
 //
-// In memory a stroke is { t: "pen"|"hi", c: 0|1|2, w, pts: [{ x, y, p }…] }
+// In memory a stroke is { t: "pen"|"hi", c: 0|1|2, w, k?, a?, pts: [{ x, y, p }…] }
 // with x, y in 0..1 of the page box, p (pressure) in 0..1, and w the base
 // width in page units (1/10 000 of the page width — ink scales with the page).
+// `k` is the colour (#rrggbb) and `a` the opacity (0..1) the brush had
+// (WSHED-106); a stroke without them is v52 ink and takes the palette colour
+// `c` and the tool's flat opacity, so old ink renders exactly as it did.
 //
 // On the wire (and in the logbook) a page's ink is { v: 1, s: [ { t, c, w,
-// p: [x0, y0, p0, dx, dy, dp, …] } ] }: coordinates quantised to 1/10 000,
-// pressure to 1/255, points delta-encoded, all integers. A page of fingerings
-// is a few hundred bytes; the sync cap for the kind is 128 KB.
+// k?, a?, p: [x0, y0, p0, dx, dy, dp, …] } ] }: coordinates quantised to
+// 1/10 000, pressure to 1/255, opacity to 1/100, points delta-encoded, all
+// integers. A page of fingerings is a few hundred bytes; the sync cap for the
+// kind is 128 KB.
 export const SCALE = 10000, PSCALE = 255;
 export const TOOLS = { pen: "pen", hi: "hi" };
 /** Colours by index: ink, brass, felt red (design §7). */
@@ -16,6 +20,41 @@ export const COLORS = ["#1a1410", "#c9a35c", "#b0463c"];
 export const PEN_W = Math.round((2.4 / 420) * SCALE), HI_W = Math.round((18 / 420) * SCALE);
 /** A stroke needs this much travel (page units) or it is a tap, not ink. */
 export const MIN_TRAVEL = Math.round((4 / 420) * SCALE);
+/** Flat opacity of the two v52 tools, for strokes that carry none. */
+export const TOOL_ALPHA = { pen: 1, hi: 0.35 };
+
+// --- brushes (WSHED-106) -----------------------------------------------------------
+// A brush is { id, name, color: "#rrggbb", width: px on a 420 px page,
+// opacity: 0.05..1, hi: bool (highlighter: flat width, multiply blend), pos }.
+// Widths in px here so the editor reads naturally; strokes carry page units.
+export const REF_W = 420, MIN_WIDTH = 0.5, MAX_WIDTH = 40;
+/** The starter set. Fixed ids so two devices that seed apart converge after a sync. */
+export const DEFAULT_BRUSHES = [
+  { id: "b-ink", name: "ink", color: "#1a1410", width: 2.4, opacity: 1, hi: false },
+  { id: "b-red", name: "red pen", color: "#b0463c", width: 2.4, opacity: 1, hi: false },
+  { id: "b-pencil", name: "pencil", color: "#4a4038", width: 3.2, opacity: 0.55, hi: false },
+  { id: "b-brass", name: "brass", color: "#c9a35c", width: 3, opacity: 1, hi: false },
+  { id: "b-yellow", name: "highlighter", color: "#f4d03f", width: 18, opacity: 0.35, hi: true },
+  { id: "b-blue", name: "blue highlighter", color: "#5aa9f5", width: 18, opacity: 0.35, hi: true },
+].map((b, i) => ({ ...b, pos: (i + 1) * 1000 }));
+/** Colours the editor offers as one-tap swatches. */
+export const SWATCHES = ["#1a1410", "#b0463c", "#c9a35c", "#2f6f9f", "#3f8f5f", "#7a4fa8", "#e07a2f", "#4a4038", "#f4d03f", "#5aa9f5", "#f28ab2", "#7fdc9a"];
+const clampN = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+export const isHex = (c) => /^#[0-9a-f]{6}$/i.test(String(c ?? ""));
+/** Normalise a brush's fields (throws on a missing name). Unknown keys are dropped. */
+export function cleanBrush(b = {}) {
+  const name = String(b.name ?? "").replace(/\s+/g, " ").trim().slice(0, 24);
+  if (!name) throw new Error("a brush needs a name");
+  return {
+    name,
+    color: isHex(b.color) ? String(b.color).toLowerCase() : COLORS[0],
+    width: Math.round(clampN(b.width, MIN_WIDTH, MAX_WIDTH, 2.4) * 10) / 10,
+    opacity: Math.round(clampN(b.opacity, 0.05, 1, 1) * 100) / 100,
+    hi: !!b.hi,
+  };
+}
+/** A fresh stroke drawn with a brush (points empty). */
+export const strokeFor = (b) => ({ t: b.hi ? "hi" : "pen", c: 0, w: Math.max(1, Math.round((b.width / REF_W) * SCALE)), k: b.color, a: b.opacity, pts: [] });
 
 const q = (v, s) => Math.max(0, Math.min(s, Math.round(v * s)));
 
@@ -31,7 +70,10 @@ export function encode(strokes) {
       p.push(x - lx, y - ly, pr - lp);
       lx = x; ly = y; lp = pr;
     }
-    s.push({ t: st.t === "hi" ? "hi" : "pen", c: Math.max(0, Math.min(COLORS.length - 1, st.c | 0)), w: Math.max(1, Math.round(st.w)), p });
+    const out = { t: st.t === "hi" ? "hi" : "pen", c: Math.max(0, Math.min(COLORS.length - 1, st.c | 0)), w: Math.max(1, Math.round(st.w)), p };
+    if (isHex(st.k)) out.k = String(st.k).toLowerCase();
+    if (st.a !== undefined && st.a !== null && Number.isFinite(Number(st.a))) out.a = q(Number(st.a), 100);
+    s.push(out);
   }
   return { v: 1, s };
 }
@@ -47,7 +89,10 @@ export function decode(body) {
       x += st.p[i]; y += st.p[i + 1]; p += st.p[i + 2];
       pts.push({ x: x / SCALE, y: y / SCALE, p: p / PSCALE });
     }
-    out.push({ t: st.t === "hi" ? "hi" : "pen", c: st.c | 0, w: st.w || PEN_W, pts });
+    const o = { t: st.t === "hi" ? "hi" : "pen", c: st.c | 0, w: st.w || PEN_W, pts };
+    if (isHex(st.k)) o.k = String(st.k).toLowerCase();
+    if (Number.isFinite(Number(st.a))) o.a = Math.max(0, Math.min(1, Number(st.a) / 100));
+    out.push(o);
   }
   return out;
 }
@@ -112,8 +157,8 @@ export function draw(ctx, strokes, w, h, { from = 0, only = null } = {}) {
     const pts = st.pts;
     if (!pts.length) continue;
     const base = (st.w / SCALE) * w;
-    ctx.strokeStyle = COLORS[st.c] ?? COLORS[0];
-    ctx.globalAlpha = st.t === "hi" ? 0.35 : 1;
+    ctx.strokeStyle = st.k ?? COLORS[st.c] ?? COLORS[0];
+    ctx.globalAlpha = st.a ?? TOOL_ALPHA[st.t] ?? 1;
     ctx.globalCompositeOperation = st.t === "hi" ? "multiply" : "source-over";
     if (pts.length === 1 || (from === 0 && pts.length === 1)) {
       ctx.beginPath(); ctx.arc(pts[0].x * w, pts[0].y * h, base * 0.5, 0, Math.PI * 2); ctx.fillStyle = ctx.strokeStyle; ctx.fill();
