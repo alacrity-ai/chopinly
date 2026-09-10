@@ -11,6 +11,8 @@ import { openAppearance } from "./appearance.js";
 import { SKINS, currentSkin } from "../lib/skins.js";
 import { takeStore } from "../lib/takes/store.js";
 import { scoreStore } from "../lib/scores/store.js";
+import { cloud } from "../lib/scores/cloud.js";
+import { fmtQuota } from "../lib/scores/plans.js";
 import { VERSION } from "../version.js";
 import { logbook } from "../lib/logbook.js";
 import { fmtBytes } from "../lib/takes/peaks.js";
@@ -50,28 +52,48 @@ function openTakesStorage() {
 }
 const scoresRow = () => `<li><button type="button" class="lb-acct-row" id="acct-scores">${icon("score")}<span><b>scores on this device</b><small id="acct-scores-sub">…</small></span></button></li>`;
 const scoresSub = async (el) => {
-  const f = await scoreStore.usage(), p = await scoreStore.pagesUsage();
-  if (el) el.textContent = f.count ? `${f.count} score${f.count === 1 ? "" : "s"} · ${fmtBytes(f.bytes)}${p.bytes ? ` + ${fmtBytes(p.bytes)} of rendered pages` : ""}` : "none yet";
+  const f = await scoreStore.usage(), p = await scoreStore.pagesUsage(), c = cloud.snapshot();
+  // one line on a phone: the rendered-pages figure and the quota's label live in the sheet behind it
+  const tail = c.signedIn && c.known ? ` · ${fmtQuota(c.used)} of ${fmtQuota(c.quota)} in the cloud` : p.bytes ? ` + ${fmtBytes(p.bytes)} of rendered pages` : "";
+  if (el) el.textContent = f.count ? `${f.count} score${f.count === 1 ? "" : "s"} · ${fmtBytes(f.bytes)}${tail}` : "none yet";
 };
+const STALE_DAYS = 90;
 function openScoresStorage() {
+  const c0 = cloud.snapshot();
   const sheet = openSheet({
     title: "scores on this device",
     cls: "lb-acct-wrap",
     html: `
       <p class="lb-acct-copy" id="sc-copy">…</p>
+      ${c0.signedIn ? `<p class="lb-acct-status" id="sc-cloud-line" aria-live="polite">…</p><p class="lb-err" id="sc-cloud-err" role="alert"></p>` : ""}
       <ul class="lb-acct-list">
+        ${c0.signedIn ? `<li><button type="button" class="lb-acct-row" data-act="stale">${icon("eraser")}<span><b>remove downloaded scores not opened in ${STALE_DAYS} days</b><small>only scores that are in the cloud; they download again when opened</small></span></button></li>` : ""}
         <li><button type="button" class="lb-acct-row" data-act="pages">${icon("eraser")}<span><b>clear rendered pages</b><small>big scans render again the next time they open</small></span></button></li>
       </ul>
       <ul class="lb-acct-list">
         <li><button type="button" class="lb-acct-row lb-danger" data-act="files">${icon("trash")}<span><b>remove all scores from this device</b><small>the list stays; rows go grey</small></span></button></li>
       </ul>
-      <p class="lb-acct-fine">A score's PDF lives on the device that imported it. With an account, the list (title, composer, tags, bookmarks) is backed up — the file itself is not, yet.</p>`,
+      <p class="lb-acct-fine">A score's PDF lives on the device that imported it. With an account, the list (title, composer, tags, bookmarks, ink) is backed up; the file itself goes up only when you choose <em>upload</em> in Scores, into your account's private cloud space.</p>`,
   });
   const { body } = sheet;
-  const copy = body.querySelector("#sc-copy");
-  const refresh = async () => { const f = await scoreStore.usage(), p = await scoreStore.pagesUsage(); copy.textContent = f.count ? `${f.count} score${f.count === 1 ? "" : "s"} here, ${fmtBytes(f.bytes)} of PDFs${p.count ? ` and ${fmtBytes(p.bytes)} of rendered pages` : ""}.` : "No scores stored on this device."; };
+  const copy = body.querySelector("#sc-copy"), cloudLine = body.querySelector("#sc-cloud-line"), cloudErr = body.querySelector("#sc-cloud-err");
+  const paintCloud = (c) => {
+    if (!cloudLine) return;
+    cloudLine.textContent = c.known ? `${fmtQuota(c.used)} of ${fmtQuota(c.quota)} of cloud space used${c.label ? ` (${c.label})` : ""} · ${c.files.size} score${c.files.size === 1 ? "" : "s"} in the cloud` : "checking your cloud space…";
+    cloudErr.textContent = c.error ?? "";
+  };
+  const refresh = async () => { const f = await scoreStore.usage(), p = await scoreStore.pagesUsage(); copy.textContent = f.count ? `${f.count} score${f.count === 1 ? "" : "s"} here, ${fmtBytes(f.bytes)} of PDFs${p.count ? ` and ${fmtBytes(p.bytes)} of rendered pages` : ""}.` : "No scores stored on this device."; paintCloud(cloud.snapshot()); };
   refresh();
+  if (c0.signedIn) { const off = cloud.on(paintCloud); sheet.closed.then(off); cloud.refresh(); }
   body.querySelector('[data-act="pages"]').addEventListener("click", async () => { await scoreStore.clearPages(); haptic(10); toast("rendered pages cleared"); refresh(); });
+  body.querySelector('[data-act="stale"]')?.addEventListener("click", async () => {
+    const cutoff = Date.now() - STALE_DAYS * 86400000;
+    const victims = logbook.scores().filter((s) => scoreStore.has(s.id) && cloud.uploaded(s.id) && (s.openedAt ?? s.addedAt ?? 0) < cutoff);
+    if (!victims.length) { toast("nothing to remove"); return; }
+    if (!confirm(`Remove ${victims.length} score${victims.length === 1 ? "" : "s"} from this device? They stay in the cloud and download again when opened.`)) return;
+    for (const s of victims) await scoreStore.del(s.id);
+    haptic(10); toast(`${victims.length} removed`); refresh();
+  });
   body.querySelector('[data-act="files"]').addEventListener("click", async () => {
     const f = await scoreStore.usage();
     if (!f.count) { toast("nothing to remove"); return; }

@@ -8,6 +8,7 @@ Chopinly (https://chopinly.com) is a free, ad-free, local-first practice assista
 - Tuner: https://chopinly.com/tuner — A chromatic tuner on the mic: cents dial, note name, hertz, A4 calibration.
 - Pitch pipe: https://chopinly.com/pitch-pipe — A sustained reference tone on any note in any octave; A4 calibration.
 - Recorder: https://chopinly.com/recorder — Record takes from the clock; they stay on your device, attached to the goal; compare A and B.
+- Scores: https://chopinly.com/scores — PDF scores with tap-to-turn pages, bookmarks and Pencil ink on a separate layer; big scans cached.
 - Sight singing: https://chopinly.com/sight-singing — A melody on the staff, a count-in, then every note you sing is judged on pitch and rhythm.
 - Ear training: https://chopinly.com/ear-training — Hear a note or a chord, play it back — on the screen or on your real piano through the mic.
 - Practice log: https://chopinly.com/practice-log — Press play, name the goal; minutes, notes, history and analytics follow — no forms.

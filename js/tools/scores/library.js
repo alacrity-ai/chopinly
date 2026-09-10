@@ -1,8 +1,10 @@
 // The library (docs/SCORES_DESIGN.md §8): import PDFs, find them, open one.
 // Search over title / composer / tags, sort by recent / title / composer,
 // group by composer, narrow by tag chips, page-1 thumbnails. Tap a row to
-// open it, hold it for the details sheet (title, composer, tags, goal, save,
-// delete). The details sheet and "practice this" are exported for the reader.
+// open it, hold it for the details sheet (title, composer, tags, goal, cloud,
+// save, delete). The details sheet and "practice this" are exported for the
+// reader. "upload scores" (P3) turns the list into a checklist: pick the ones
+// to back up, select all, upload — one at a time, with progress.
 import { logbook, displayName, TYPES } from "../../lib/logbook.js";
 import { icon } from "../../lib/icons.js";
 import { esc, toast, longPress, plural, openSheet, finePointer } from "../logbook/util.js";
@@ -12,9 +14,11 @@ import { scoreStore } from "../../lib/scores/store.js";
 import { open as openPdf } from "../../lib/scores/pdf.js";
 import { groupByComposer, suggestComposers, suggestTags, parseTags, SORT_IDS } from "../../lib/scores/library.js";
 import { warmPages, PERSIST_BYTES } from "../../lib/scores/pagecache.js";
+import { cloud } from "../../lib/scores/cloud.js";
+import { MAX_FILE_BYTES, fmtQuota } from "../../lib/scores/plans.js";
+import { fmtBytes } from "../../lib/takes/peaks.js";
 
-/** Import limits (design §12). */
-export const MAX_FILE_BYTES = 60 * 1024 * 1024;
+export { MAX_FILE_BYTES };
 const THUMB_W = 120;
 
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -72,7 +76,7 @@ export async function importFile(file) {
   const hash = await sha256(file);
   const dup = hash ? logbook.scoreByHash(hash) : null;
   if (dup) {
-    if (!scoreStore.has(dup.id)) { await scoreStore.put(dup.id, file, { sha256: hash }); ensureThumb(dup.id); } // the row was here, the file was not (another device's score)
+    if (!scoreStore.has(dup.id)) { await scoreStore.put(dup.id, file, { sha256: hash }); ensureThumb(dup.id); } // the row was here, the file was not (another device's score, or one in the cloud)
     return { score: dup, existing: true };
   }
   const doc = await openPdf(file);
@@ -112,7 +116,17 @@ export function practiceScore(scoreId) {
 export async function deleteScore(id) {
   await scoreStore.del(id);
   thumbUrls.delete(id);
-  logbook.removeScore(id);
+  logbook.removeScore(id); // the tombstone takes the cloud file with it (functions/lib/sync.js)
+  cloud.forget(id);
+}
+
+/** One sentence on where a score's file is: here, in the cloud, both, or another device. */
+export function whereIs(id) {
+  const here = scoreStore.has(id), up = cloud.has(id);
+  if (here && up) return cloud.uploaded(id) ? "on this device and in the cloud" : "on this device; the cloud copy is older";
+  if (here) return "on this device only";
+  if (up) return "in the cloud — opens after a download";
+  return "on another device";
 }
 
 /** Save the untouched PDF to a file. */
@@ -133,6 +147,14 @@ export function openDetails(id, { onPractice = null } = {}) {
   const composers = suggestComposers(logbook.goals({ status: "all" }), logbook.scores());
   const tags = suggestTags(logbook.scores());
   const here = scoreStore.has(id);
+  const cl = cloud.snapshot();
+  const cloudRow = !cl.signedIn ? "" : cloud.uploaded(id)
+    ? `<li><button type="button" class="lb-acct-row" id="sc-d-cloud" data-cloud="remove">${icon("cloud")}<span><b>remove from the cloud</b><small>frees ${fmtBytes(cl.files.get(id)?.size ?? s.size ?? 0)} of your cloud space; this device keeps its copy</small></span></button></li>`
+    : here
+      ? `<li><button type="button" class="lb-acct-row" id="sc-d-cloud" data-cloud="upload">${icon("cloud")}<span><b>upload to the cloud</b><small>${cloud.has(id) ? "replace the older cloud copy" : `so your other devices can open it · ${fmtBytes(s.size ?? 0)}`}</small></span></button></li>`
+      : cloud.has(id)
+        ? `<li><button type="button" class="lb-acct-row" id="sc-d-cloud" data-cloud="download">${icon("download")}<span><b>download to this device</b><small>${fmtBytes(cl.files.get(id)?.size ?? s.size ?? 0)} from your cloud space</small></span></button></li>`
+        : "";
   const sheet = openSheet({
     title: "score",
     cls: "lb-acct-wrap sc-details-wrap",
@@ -152,12 +174,13 @@ export function openDetails(id, { onPractice = null } = {}) {
       <ul class="lb-acct-list">
         <li><button type="button" class="lb-acct-row" id="sc-d-goal">${goal ? `<i class="lb-type ${(TYPES[goal.type] ?? TYPES.other).cls}" aria-hidden="true">${(TYPES[goal.type] ?? TYPES.other).glyph}</i>` : icon("log")}<span><b>${goal ? esc(displayName(goal)) : "link to a goal"}</b><small>${goal ? "the goal this score belongs to — tap to change" : "so practicing it and opening it are one gesture"}</small></span></button></li>
         <li><button type="button" class="lb-acct-row" id="sc-d-practice">${icon("play")}<span><b>practice this</b><small>${goal ? `start the clock on ${esc(displayName(goal))}` : "starts the clock on a new piece with this title"}</small></span></button></li>
-        <li><button type="button" class="lb-acct-row" id="sc-d-save-file" ${here ? "" : "disabled"}>${icon("download")}<span><b>save this score to a file</b><small>${here ? "the PDF exactly as it was imported" : "the file is on another device"}</small></span></button></li>
+        ${cloudRow}
+        <li><button type="button" class="lb-acct-row" id="sc-d-save-file" ${here ? "" : "disabled"}>${icon("download")}<span><b>save this score to a file</b><small>${here ? "the PDF exactly as it was imported" : "the file isn't on this device"}</small></span></button></li>
       </ul>
       <ul class="lb-acct-list">
         <li><button type="button" class="lb-acct-row lb-danger" id="sc-d-delete">${icon("trash")}<span><b>delete this score</b><small>its bookmarks and ink go with it</small></span></button></li>
       </ul>
-      <p class="lb-acct-fine">${plural(s.pages, "page")}${s.size ? ` · ${(s.size / 1048576).toFixed(1)} MB` : ""} · added ${esc(new Date(s.addedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }))}</p>`,
+      <p class="lb-acct-fine">${plural(s.pages, "page")}${s.size ? ` · ${(s.size / 1048576).toFixed(1)} MB` : ""} · added ${esc(new Date(s.addedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }))} · ${whereIs(id)}</p>`,
   });
   const { body, close, closed } = sheet;
   let result = {};
@@ -187,6 +210,18 @@ export function openDetails(id, { onPractice = null } = {}) {
     try { const g = practiceScore(id); close(); onPractice?.(g); } catch (e) { err.textContent = e.message; }
   });
   body.querySelector("#sc-d-save-file").addEventListener("click", () => { if (save()) saveScoreFile(id); });
+  body.querySelector("#sc-d-cloud")?.addEventListener("click", async (e) => {
+    if (!save()) return;
+    const btn = e.currentTarget, act = btn.dataset.cloud;
+    btn.disabled = true;
+    try {
+      if (act === "remove") { await cloud.remove(id); toast("removed from the cloud"); }
+      else if (act === "upload") { const r = await cloud.upload([id]); if (r.done.length) toast("backed up"); else if (r.failed[0]) toast(r.failed[0].message); }
+      else if (act === "download") { await cloud.download(id); toast("downloaded"); }
+      haptic(10); close();
+      result = await openDetails(id, { onPractice });
+    } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
+  });
   body.querySelector("#sc-d-delete").addEventListener("click", async () => {
     if (!confirm(`Delete “${s.title}” and its bookmarks?`)) return;
     haptic(20);
@@ -198,18 +233,36 @@ export function openDetails(id, { onPractice = null } = {}) {
   return closed.then(() => result);
 }
 
-export function mountLibrary(root, { store }, { open }) {
+export function mountLibrary(root, { store, setRunning = null }, { open }) {
   let cleanups = [], busy = false, highlightId = null;
+  let selecting = false, selected = new Set(), uploading = null; // "upload scores" mode (P3)
   let q = "", sort = store.get("sort", "recent"), group = store.get("group", false), tagFilter = store.get("tags", []);
   if (!SORT_IDS.includes(sort)) sort = "recent";
   root.classList.add("top-anchored");
 
-  const sub = (s) => {
-    const here = scoreStore.has(s.id);
-    const goal = s.goalId ? logbook.goal(s.goalId) : null;
-    return `${s.composer && !group ? `${esc(s.composer)} · ` : ""}${plural(s.pages, "page")}${s.tags.length ? ` · ${s.tags.map(esc).join(", ")}` : ""}${goal ? ` · <span class="sc-goal">${esc(goal.name)}</span>` : ""}${here ? "" : ` · <span class="sc-remote">on another device</span>`}`;
+  const where = (s) => {
+    const here = scoreStore.has(s.id), up = cloud.has(s.id), dl = cloud.snapshot().downloads.get(s.id);
+    if (dl) return ` · <span class="sc-cloud">downloading ${dl.total ? Math.round((dl.got / dl.total) * 100) : 0}%</span>`;
+    if (here && up && cloud.uploaded(s.id)) return ` · <span class="sc-cloud" title="in the cloud">${icon("cloud")}</span>`;
+    if (here) return "";
+    if (up) return ` · <span class="sc-remote sc-remote-cloud">${icon("download")} in the cloud</span>`;
+    return ` · <span class="sc-remote">on another device</span>`;
   };
-  const row = (s) => `
+  const sub = (s) => {
+    const goal = s.goalId ? logbook.goal(s.goalId) : null;
+    if (selecting) return `${s.composer && !group ? `${esc(s.composer)} · ` : ""}${fmtBytes(s.size ?? 0)}${!scoreStore.has(s.id) ? ` · <span class="sc-remote">not on this device</span>` : cloud.uploaded(s.id) ? ` · <span class="sc-cloud">already in the cloud</span>` : (s.size ?? 0) > MAX_FILE_BYTES ? ` · <span class="sc-remote">over ${fmtQuota(MAX_FILE_BYTES)}</span>` : ""}`;
+    if (!scoreStore.has(s.id) && cloud.has(s.id)) return `${s.composer && !group ? `${esc(s.composer)}` : plural(s.pages, "page")}${where(s)}`; // the state is the point of the row; keep it in view on a phone
+    return `${s.composer && !group ? `${esc(s.composer)} · ` : ""}${plural(s.pages, "page")}${s.tags.length ? ` · ${s.tags.map(esc).join(", ")}` : ""}${goal ? ` · <span class="sc-goal">${esc(goal.name)}</span>` : ""}${where(s)}`;
+  };
+  const pickable = (s) => scoreStore.has(s.id) && !cloud.uploaded(s.id) && (s.size ?? 0) <= MAX_FILE_BYTES;
+  const row = (s) => selecting ? `
+    <li class="sc-row sc-pick ${pickable(s) ? "" : "sc-nopick"} ${selected.has(s.id) ? "sc-on" : ""}" data-id="${s.id}">
+      <button type="button" class="sc-open" role="checkbox" aria-checked="${selected.has(s.id)}" ${pickable(s) ? "" : "disabled"} aria-label="${esc(s.title)}">
+        <span class="sc-check" aria-hidden="true">${icon("check")}</span>
+        <span class="sc-text"><b class="sc-title">${esc(s.title)}</b><small class="sc-sub">${sub(s)}</small></span>
+        <span class="sc-thumb sc-thumb-sm" data-thumb="${s.id}" aria-hidden="true">${icon("score")}</span>
+      </button>
+    </li>` : `
     <li class="sc-row ${scoreStore.has(s.id) ? "" : "remote"} ${s.id === highlightId ? "sc-hl" : ""}" data-id="${s.id}">
       <button type="button" class="sc-open" aria-label="open ${esc(s.title)} — hold for details">
         <span class="sc-thumb" data-thumb="${s.id}" aria-hidden="true">${icon("score")}</span>
@@ -217,6 +270,26 @@ export function mountLibrary(root, { store }, { open }) {
         <span class="sc-chev" aria-hidden="true">${icon("next")}</span>
       </button>
     </li>`;
+  const selBytes = () => [...selected].reduce((n, id) => n + (logbook.score(id)?.size ?? 0), 0);
+  const selbar = () => {
+    if (uploading) {
+      const u = uploading, pct = u.total ? Math.round((u.sent / u.total) * 100) : 0;
+      return `<div class="sc-selbar sc-uploading" id="sc-selbar" aria-live="polite">
+        <span class="sc-sel-text"><b>uploading ${u.index + 1} of ${u.count}</b><small>${esc(logbook.score(u.id)?.title ?? "")} · ${pct}%</small></span>
+        <span class="sc-sel-meter" aria-hidden="true"><i style="width:${pct}%"></i></span>
+        <button type="button" class="lb-chip" id="sc-sel-cancel">stop</button>
+      </div>`;
+    }
+    const all = logbook.scores().filter(pickable), allOn = all.length > 0 && all.every((s) => selected.has(s.id));
+    const cl = cloud.snapshot();
+    return `<div class="sc-selbar" id="sc-selbar">
+      <button type="button" class="lb-chip ${allOn ? "on" : ""}" id="sc-sel-all" ${all.length ? "" : "disabled"}>${allOn ? "none" : "select all"}</button>
+      <span class="sc-sel-text"><b>${selected.size ? `${selected.size} of ${all.length} picked · ${fmtBytes(selBytes())}` : all.length ? `${plural(all.length, "score")} to back up` : "everything here is in the cloud"}</b><small>tap a score to pick it${all.length && !selected.size ? ", or select all" : ""}</small></span>
+      <span class="sc-sel-quota">${fmtQuota(cl.used)} of ${fmtQuota(cl.quota)} used${cl.label ? ` (${cl.label})` : ""}${selected.size && cl.used + selBytes() > cl.quota ? " — <em>that won't fit</em>" : ""}</span>
+      <button type="button" class="sc-add" id="sc-sel-go" ${selected.size ? "" : "disabled"}>${icon("cloud")}<span>upload${selected.size ? ` ${selected.size}` : ""}</span></button>
+      <button type="button" class="lb-chip" id="sc-sel-cancel">cancel</button>
+    </div>`;
+  };
 
   function render() {
     for (const c of cleanups) c(); cleanups = [];
@@ -225,14 +298,17 @@ export function mountLibrary(root, { store }, { open }) {
     tagFilter = tagFilter.filter((t) => allTags.includes(t));
     const list = logbook.scores({ q, tags: tagFilter, sort });
     const groups = group ? groupByComposer(list) : [{ composer: null, scores: list }];
+    const canUpload = cloud.snapshot().signedIn && logbook.scores().some((s) => scoreStore.has(s.id));
     root.innerHTML = `
-      <section class="scores" aria-label="scores">
+      <section class="scores ${selecting ? "selecting" : ""}" aria-label="scores">
         <div class="sc-head">
-          <div class="lb-sect sc-sect">scores${total ? `<span class="lb-sect-sub">${total}</span>` : ""}</div>
-          <button type="button" class="sc-add ${busy ? "busy" : ""}" id="sc-add" ${busy ? "disabled" : ""}>${icon("plus")}<span>${busy ? "adding…" : "score"}</span></button>
+          <div class="lb-sect sc-sect">${selecting ? "upload scores" : "scores"}${total && !selecting ? `<span class="lb-sect-sub">${total}</span>` : ""}</div>
+          ${selecting ? "" : `${canUpload ? `<button type="button" class="sc-add sc-add-quiet" id="sc-upload" aria-label="upload scores to your account">${icon("cloud")}<span>upload</span></button>` : ""}
+          <button type="button" class="sc-add ${busy ? "busy" : ""}" id="sc-add" ${busy ? "disabled" : ""}>${icon("plus")}<span>${busy ? "adding…" : "score"}</span></button>`}
           <input type="file" id="sc-file" accept="application/pdf,.pdf" multiple hidden aria-label="choose PDF files">
         </div>
-        ${total ? `
+        ${selecting ? selbar() : ""}
+        ${total && !selecting ? `
         <div class="sc-tools">
           <input class="lb-input lb-search sc-search" id="sc-q" type="search" placeholder="search title, composer, tag…" value="${esc(q)}" autocomplete="off" aria-label="search scores">
           <div class="sc-sorts" role="radiogroup" aria-label="sort">
@@ -249,7 +325,25 @@ export function mountLibrary(root, { store }, { open }) {
       </section>`;
     highlightId = null;
     const input = root.querySelector("#sc-file");
-    root.querySelector("#sc-add").addEventListener("click", () => input.click());
+    root.querySelector("#sc-add")?.addEventListener("click", () => input.click());
+    root.querySelector("#sc-upload")?.addEventListener("click", () => { selecting = true; selected = new Set(); cloud.refresh().then(() => { if (selecting && !uploading) render(); }); render(); });
+    if (selecting) {
+      root.querySelector("#sc-sel-cancel")?.addEventListener("click", () => { if (uploading) { cloud.cancelUpload(); return; } selecting = false; selected = new Set(); render(); });
+      root.querySelector("#sc-sel-all")?.addEventListener("click", () => {
+        const all = logbook.scores().filter(pickable).map((s) => s.id);
+        selected = all.every((id) => selected.has(id)) ? new Set() : new Set(all);
+        render();
+      });
+      root.querySelector("#sc-sel-go")?.addEventListener("click", () => runUpload([...selected]));
+      for (const li of root.querySelectorAll(".sc-pick")) {
+        const id = li.dataset.id, btn = li.querySelector(".sc-open");
+        if (btn.disabled) continue;
+        btn.addEventListener("click", () => { if (selected.has(id)) selected.delete(id); else selected.add(id); haptic(6); render(); });
+        const th = li.querySelector("[data-thumb]");
+        thumbUrl(id).then((url) => { if (url && th.isConnected) th.innerHTML = `<img src="${url}" alt="">`; });
+      }
+      return;
+    }
     input.addEventListener("change", async () => {
       const files = [...input.files]; input.value = "";
       if (!files.length) return;
@@ -285,11 +379,31 @@ export function mountLibrary(root, { store }, { open }) {
       });
     }
   }
-  const offLb = logbook.on(() => { if (!busy && !document.querySelector(".lb-sheet-wrap:not(.closing)")) render(); });
-  const offStore = scoreStore.on(() => { if (!busy) render(); });
-  const onLib = () => { if (!busy) render(); };
+  /** Upload the picked scores in library order, keeping the screen awake; the bar shows progress. */
+  async function runUpload(ids) {
+    if (!ids.length || uploading) return;
+    const order = logbook.scores({ sort }).map((s) => s.id).filter((id) => ids.includes(id));
+    setRunning?.(true);
+    busy = true;
+    let r;
+    try {
+      r = await cloud.upload(order, { onProgress: (u) => { uploading = u; const bar = root.querySelector("#sc-selbar"); if (bar) bar.outerHTML = selbar(); root.querySelector("#sc-sel-cancel")?.addEventListener("click", () => cloud.cancelUpload()); } });
+    } catch (e) { r = { done: [], skipped: [], failed: [{ id: ids[0], message: e.message }], stopped: true }; }
+    finally { setRunning?.(false); busy = false; uploading = null; }
+    const err = cloud.snapshot().error ?? r.failed[0]?.message ?? null;
+    if (r.done.length) haptic(12);
+    if (r.done.length && !err) { selecting = false; selected = new Set(); toast(r.done.length === 1 ? "1 score backed up" : `${r.done.length} scores backed up`); }
+    else if (err) { selected = new Set(r.failed.map((f) => f.id)); toast(err); }
+    else { selecting = false; toast("nothing to upload"); }
+    render();
+  }
+  const quiet = () => busy || uploading || document.querySelector(".lb-sheet-wrap:not(.closing)");
+  const offLb = logbook.on(() => { if (!quiet()) render(); });
+  const offStore = scoreStore.on(() => { if (!busy && !uploading) render(); });
+  const offCloud = cloud.on(() => { if (!busy && !uploading && !selecting) render(); });
+  const onLib = () => { if (!busy && !uploading) render(); };
   libListeners.add(onLib);
   scoreStore.ready().then(render);
   render();
-  return { refresh: render, destroy() { for (const c of cleanups) c(); offLb(); offStore(); libListeners.delete(onLib); root.classList.remove("top-anchored"); } };
+  return { refresh: render, destroy() { for (const c of cleanups) c(); offLb(); offStore(); offCloud(); libListeners.delete(onLib); root.classList.remove("top-anchored"); } };
 }

@@ -2,6 +2,7 @@
 // HttpOnly/Secure/SameSite=Lax, 180 days, re-issued when older than 30 days.
 import { sha256Hex, randomToken, newId } from "./crypto.js";
 import { HttpError } from "./http.js";
+import { normPlan, quotaBytes, planLabel } from "../../js/lib/scores/plans.js";
 
 export const COOKIE = "chopinly_session";
 const TTL_MS = 180 * 86400000;
@@ -36,7 +37,7 @@ export async function requireUser(ctx) {
   const id = await sha256Hex(token);
   const now = Date.now();
   const row = await ctx.env.DB.prepare(
-    "SELECT s.id AS sid, s.renewed_at, s.expires_at, u.id, u.email, u.created_at, u.last_seen_at, u.rev FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ?",
+    "SELECT s.id AS sid, s.renewed_at, s.expires_at, u.id, u.email, u.created_at, u.last_seen_at, u.rev, u.plan, u.storage_bytes FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ?",
   ).bind(id).first();
   if (!row || row.expires_at < now) {
     if (row) await ctx.env.DB.prepare("DELETE FROM sessions WHERE id = ?").bind(id).run();
@@ -50,7 +51,7 @@ export async function requireUser(ctx) {
   }
   if (now - row.last_seen_at > 86400000) writes.push(ctx.env.DB.prepare("UPDATE users SET last_seen_at = ? WHERE id = ?").bind(now, row.id));
   if (writes.length) await ctx.env.DB.batch(writes);
-  return { user: { id: row.id, email: row.email, createdAt: row.created_at, rev: row.rev }, sessionId: id, cookie };
+  return { user: { id: row.id, email: row.email, createdAt: row.created_at, rev: row.rev, plan: normPlan(row.plan), storageBytes: row.storage_bytes ?? 0 }, sessionId: id, cookie };
 }
 
 export async function findOrCreateUser(env, email) {
@@ -62,4 +63,5 @@ export async function findOrCreateUser(env, email) {
   return { id, email, createdAt: now, rev: 0, created: true };
 }
 
-export const publicUser = (u) => ({ id: u.id, email: u.email, createdAt: u.createdAt });
+/** What the app may know: identity plus the plan and cloud usage (WSHED-102). */
+export const publicUser = (u) => ({ id: u.id, email: u.email, createdAt: u.createdAt, plan: normPlan(u.plan), storage: { used: u.storageBytes ?? 0, quota: quotaBytes(u.plan), label: planLabel(u.plan) } });

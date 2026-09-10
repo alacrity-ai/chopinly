@@ -51,23 +51,24 @@
 
     <h2>2. Two ways to use Chopinly</h2>
     <h3>Without an account</h3>
-    <p>Everything — your goals, practice segments, notes, preferences — is stored in your browser on your device (localStorage and the browser's cache). It is never sent to us. The only thing that reaches our servers is what any website receives when you open it: your browser asks for the app's files (HTML, scripts, styles, fonts, icons). Those requests pass through Cloudflare, which processes your IP address and request headers to deliver and protect the site (see §6 and §7). We run no analytics of any kind.</p>
+    <p>Everything — your goals, practice segments, notes, preferences, the sheet music you import — is stored in your browser on your device (localStorage, IndexedDB and the browser's cache). It is never sent to us. The only thing that reaches our servers is what any website receives when you open it: your browser asks for the app's files (HTML, scripts, styles, fonts, icons). Those requests pass through Cloudflare, which processes your IP address and request headers to deliver and protect the site (see §6 and §7). We run no analytics of any kind.</p>
     <h3>With an account</h3>
-    <p>If you sign in, we store the items in §3 so that your practice is backed up and available on your other devices. Signing in is optional and reversible: sign out keeps your data on the device, <em>delete account</em> removes it from our servers.</p>
+    <p>If you sign in, we store the items in §3 so that your practice is backed up and available on your other devices. Signing in is optional and reversible: sign out keeps your data on the device, <em>delete account</em> removes it from our servers. Score files are the one thing that is not uploaded by signing in alone: they go up only when you choose <em>upload</em> in Scores.</p>
 
     <h2>3. What we hold when you have an account</h2>
     <div class="l-table-wrap"><table>
       <thead><tr><th>Data</th><th>What exactly</th><th>Why</th><th>Kept</th></tr></thead>
       <tbody>
         <tr><td><b>Email address</b></td><td>The address you sign in with.</td><td>To identify your account and send you sign-in codes.</td><td>Until you delete your account.</td></tr>
-        <tr><td><b>Practice data</b></td><td>Goals (name, optional composer, type, status), practice segments (start and end times, optional tempo), notes you write, the <em>list</em> of takes you record (which goal, when, how long, a 48-number loudness outline, whether you starred it), and deletion markers so devices agree.</td><td>Backup and sync — the service you asked for.</td><td>Until you delete the item or your account.</td></tr>
+        <tr><td><b>Practice data</b></td><td>Goals (name, optional composer, type, status), practice segments (start and end times, optional tempo), notes you write, the <em>list</em> of takes you record (which goal, when, how long, a 48-number loudness outline, whether you starred it), the <em>list</em> of your scores (title, composer, tags, page count, size, a hash of the file, when you last opened it), your bookmarks and the ink you draw on pages (as vector strokes), and deletion markers so devices agree.</td><td>Backup and sync — the service you asked for.</td><td>Until you delete the item or your account.</td></tr>
         <tr><td><b>Take audio</b></td><td><b>Never sent.</b> The recordings themselves are stored only in the browser storage of the device that made them (IndexedDB). We cannot hear them; no server ever receives them. Removing them is a device setting in the account sheet, and clearing the device removes them all.</td><td>—</td><td>Until you remove them on that device.</td></tr>
+        <tr><td><b>Score files you upload</b></td><td>The PDF of a score, exactly as you imported it, when — and only when — you choose <em>upload</em> in Scores. Stored in a private object store (Cloudflare R2) under your account, never shared, listed or published. Each account has a storage allowance shown in the account sheet (100 MB while the feature is promotional; the limit is a setting on your account, not a promise).</td><td>To open the same score on your other devices.</td><td>Until you remove it from the cloud, delete the score, or delete your account.</td></tr>
         <tr><td><b>Session records</b></td><td>One per signed-in device: a random token stored only as a SHA-256 hash, created / renewed / expiry timestamps, and the browser's user-agent string (cut to 200 characters).</td><td>To keep you signed in and let you see and end sessions.</td><td>180 days from last use, or until you sign out.</td></tr>
         <tr><td><b>Sign-in codes</b></td><td>A salted hash of the six-digit code, the email it was sent to, an attempt counter.</td><td>To verify it is you.</td><td>10 minutes, or until used.</td></tr>
         <tr><td><b>Rate-limit counters</b></td><td>A count of recent requests keyed by your email address and by the IP address of the request.</td><td>To stop abuse — someone hammering the sign-in or sync endpoints.</td><td>One hour.</td></tr>
       </tbody>
     </table></div>
-    <p>There are no passwords: Chopinly signs you in with a one-time code sent to your email. We hold no payment details because there is nothing to pay for. We do not ask for your name, age, location, or anything about you beyond the email address.</p>
+    <p>There are no passwords: Chopinly signs you in with a one-time code sent to your email. We hold no payment details because there is nothing to pay for; an account's plan (which sets its storage allowance) is a single word on the account record. We do not ask for your name, age, location, or anything about you beyond the email address.</p>
 
     <h2>4. What we never do</h2>
     <ul>
@@ -90,7 +91,7 @@
     <h2>6. Who else sees your data</h2>
     <p>Two service providers ("processors") handle data on our behalf, under contracts that limit them to providing their service to us:</p>
     <ul>
-      <li><b>Cloudflare, Inc.</b> (USA) — hosts the app, runs the database that stores account data, and sits in front of the site as a content-delivery and security network. Cloudflare processes request metadata (IP address, headers, URL, timestamp) to serve and protect the site and keeps standard, short-lived server logs. <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener">Cloudflare's privacy policy</a>.</li>
+      <li><b>Cloudflare, Inc.</b> (USA) — hosts the app, runs the database that stores account data and the object store that holds score files you upload, and sits in front of the site as a content-delivery and security network. Cloudflare processes request metadata (IP address, headers, URL, timestamp) to serve and protect the site and keeps standard, short-lived server logs. <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener">Cloudflare's privacy policy</a>.</li>
       <li><b>Mailgun</b> (Sinch, USA) — delivers the sign-in email. It receives your email address and the message containing your code. <a href="https://www.mailgun.com/legal/privacy-policy/" rel="noopener">Mailgun's privacy policy</a>.</li>
     </ul>
     <p>We disclose personal data to no one else, except if compelled by a valid legal process — and then only what is required, and we will tell you unless the law forbids it. If LaLa Solutions LLC were ever acquired, this policy would still bind the data, and you would be told before anything changed.</p>
@@ -99,14 +100,14 @@
     <p>We are a US company and our processors are US companies. Account data is stored on Cloudflare's infrastructure, primarily in the United States; Cloudflare's global network may handle your requests at the data center nearest you. If you are in the EEA, the UK or Switzerland, transfers to the US rely on the EU–US Data Privacy Framework (and its UK and Swiss extensions) where the recipient is certified, and otherwise on Standard Contractual Clauses in our processors' data-processing terms. By using an account you understand that your data is processed in the United States.</p>
 
     <h2>8. How long we keep it</h2>
-    <p>Each item's retention is in the table in §3. In addition: our database keeps a rolling 30-day history for disaster recovery, so deleted data leaves that history within 30 days. Cloudflare's server logs are kept for its own short operational window. When you delete your account we delete your practice data, sessions, codes and the account record immediately in one operation.</p>
+    <p>Each item's retention is in the table in §3. In addition: our database keeps a rolling 30-day history for disaster recovery, so deleted data leaves that history within 30 days. Cloudflare's server logs are kept for its own short operational window. When you delete your account we delete your uploaded score files, your practice data, sessions, codes and the account record immediately in one operation.</p>
 
     <h2>9. Your rights, and where the buttons are</h2>
     <p>Whether or not GDPR applies to you, you have these rights over your data, and most of them are a tap away in the app (the account button in the header):</p>
     <ul>
       <li><b>Access and portability</b> — <em>download my data</em> gives you everything we hold, as a file you can keep or import elsewhere.</li>
       <li><b>Rectification</b> — edit any goal, note or segment in the app; the correction syncs.</li>
-      <li><b>Erasure</b> — <em>delete account</em> removes everything from our servers at once. <em>Sign out &amp; clear this device</em> removes the local copy too.</li>
+      <li><b>Erasure</b> — <em>delete account</em> removes everything from our servers at once, uploaded score files included; <em>remove from the cloud</em> on a score removes just that file. <em>Sign out &amp; clear this device</em> removes the local copy too.</li>
       <li><b>Restriction and objection</b> — sign out to stop all processing while keeping your account, or email us.</li>
       <li><b>Withdrawal of consent</b> — not applicable today, since nothing rests on consent; if that changes, withdrawing will be as easy as giving it.</li>
       <li><b>Complaint</b> — you may complain to your local data-protection authority (in the EU, see the <a href="https://www.edpb.europa.eu/about-edpb/about-edpb/members_en" rel="noopener">list of supervisory authorities</a>; in the UK, the ICO). We would appreciate the chance to help first.</li>

@@ -11,6 +11,10 @@ database_name = "chopinly"
 database_id = "ce1482b5-42fa-45e2-a9c5-fa99f2a9b7a9"
 migrations_dir = "migrations"
 
+[[r2_buckets]]
+binding = "SCORES"
+bucket_name = "chopinly-scores"
+
 [vars]
 MAILGUN_DOMAIN = "mg.chopinly.com"
 MAIL_FROM = "Chopinly <hello@mg.chopinly.com>"

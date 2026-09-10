@@ -8,6 +8,7 @@ import { icon } from "../../lib/icons.js";
 import { esc, toast, openSheet } from "../logbook/util.js";
 import { haptic } from "../logbook/motion.js";
 import { scoreStore } from "../../lib/scores/store.js";
+import { cloud } from "../../lib/scores/cloud.js";
 import { open as openPdf } from "../../lib/scores/pdf.js";
 import { createPageCache, trimPages } from "../../lib/scores/pagecache.js";
 import { openMarks, paintMarkButton } from "./marks.js";
@@ -26,8 +27,15 @@ const BACK = new Set(["ArrowLeft", "ArrowUp", "PageUp"]);
 export async function openReader({ id, page = null, ctx, onClose }) {
   const s = logbook.score(id);
   if (!s) { toast("that score is gone"); onClose?.(); return null; }
-  const blob = await scoreStore.get(id);
-  if (!blob) { toast("this score is on another device"); onClose?.(); return null; }
+  let blob = await scoreStore.get(id);
+  if (!blob && cloud.has(id)) {
+    // the file is in the account's cloud space: fetch it into this device's store first (P3)
+    toast(`downloading ${s.title}…`);
+    let lastPct = -1;
+    try { blob = await cloud.download(id, { onProgress: (got, total) => { const pct = total ? Math.round((got / total) * 100) : 0; if (pct !== lastPct && pct % 10 === 0) { lastPct = pct; toast(`downloading ${s.title}… ${pct}%`); } } }); }
+    catch (e) { toast(e.message); onClose?.(); return null; }
+  }
+  if (!blob) { toast(cloud.snapshot().signedIn ? "this score is on another device — upload it there to open it here" : "this score is on another device"); onClose?.(); return null; }
   const { store, setRunning } = ctx;
   const positions = store.get("pos", {});
   let fitPref = store.get("fit", "auto"); // "auto" | "width" | "page"

@@ -102,6 +102,13 @@ reward the wrong thing.
   notes (in a row or together), play them back on the keyboard and get a verdict
   per press. A setup card of plain chips, from beginner to the whole piano;
   runs land in the logbook like sight-singing lessons.
+- **Scores** — your sheet music as PDFs: import from Files, title and composer
+  read from the document, search, sort, group by composer, tag. A full-screen
+  reader that turns pages when you tap the right or left edge (or press a pedal
+  key), bookmarks, and Apple Pencil ink on a separate layer — the PDF is never
+  altered. Big scans are rendered once and cached. With an account, the list,
+  bookmarks and ink sync; the PDF itself goes up only when you choose *upload*,
+  into a private space per account (100 MB while it is promotional).
 - **Logbook** — goals, the clock, notes, today, history, analytics.
 
 ## Your data is yours
