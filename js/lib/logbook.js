@@ -12,7 +12,7 @@
 // on a goal. Days are never stored: every number is derived from segments.
 
 import { makeStore } from "./store.js";
-import { KINDS, key as entityKey, pick, same, toEnvelope, tombEnvelope, fromEnvelope } from "./merge.js";
+import { KINDS, key as entityKey, pick, same, toEnvelope, tombEnvelope, fromEnvelope, bodyCap } from "./merge.js";
 import { filterScores, sortScores } from "./scores/library.js";
 
 export const SCHEMA_VERSION = 2;
@@ -93,7 +93,7 @@ const uuid = () =>
 export const norm = (s) => String(s ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
 
 function emptyDoc() {
-  return { schemaVersion: SCHEMA_VERSION, goals: [], segments: [], notes: [], takes: [], scores: [], marks: [], deleted: [], pending: [] };
+  return { schemaVersion: SCHEMA_VERSION, goals: [], segments: [], notes: [], takes: [], scores: [], marks: [], ink: [], deleted: [], pending: [] };
 }
 
 // --- migration ---------------------------------------------------------------
@@ -459,7 +459,39 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     tomb(id, "score");
     for (const m of doc.marks) if (m.scoreId === id) tomb(m.id, "mark");
     doc.marks = doc.marks.filter((m) => m.scoreId !== id);
+    for (const k of doc.ink) if (k.scoreId === id) tomb(k.id, "ink");
+    doc.ink = doc.ink.filter((k) => k.scoreId !== id);
     save();
+  }
+  // --- ink (WSHED-98 P2): one entity per (score, page), strokes encoded by js/lib/scores/ink.js ---
+  const inkId = (scoreId, page) => `${scoreId}:${page}`;
+  /** The ink entity on a page: { id, scoreId, page, v, s: [...] } or null. */
+  const inkFor = (scoreId, page) => doc.ink.find((k) => k.scoreId === scoreId && k.page === page) ?? null;
+  /** Pages of a score that carry ink. */
+  const inkPages = (scoreId) => doc.ink.filter((k) => k.scoreId === scoreId).map((k) => k.page).sort((a, b) => a - b);
+  /**
+   * Replace a page's ink with an encoded body ({ v, s }). An empty body removes
+   * the entity (tombstone). Throws when the body is over the sync cap — the
+   * caller keeps the last good version.
+   */
+  function setInk(scoreId, page, body) {
+    const s = score(scoreId);
+    if (!s) throw new Error(`no score ${scoreId}`);
+    const p = Math.round(Number(page));
+    if (!(p >= 1 && p <= s.pages)) throw new Error("that page isn't in this score");
+    const id = inkId(scoreId, p);
+    const cur = inkFor(scoreId, p);
+    if (!body || !Array.isArray(body.s) || body.s.length === 0) {
+      if (cur) { doc.ink = doc.ink.filter((k) => k.id !== id); tomb(id, "ink"); save(); }
+      return null;
+    }
+    const next = { id, scoreId, page: p, v: body.v ?? 1, s: body.s };
+    const { id: _, updatedAt: __, ...probe } = { ...next, updatedAt: 0 };
+    if (JSON.stringify(probe).length > bodyCap("ink")) throw new Error("too much ink on this page to back up — erase something first");
+    touch("ink", next);
+    if (cur) doc.ink[doc.ink.indexOf(cur)] = next; else doc.ink.push(next);
+    doc.deleted = doc.deleted.filter((t) => !(t.kind === "ink" && t.id === id));
+    save(); return next;
   }
   /** Bookmarks on a score, by page. */
   const marks = (scoreId) => doc.marks.filter((m) => m.scoreId === scoreId).sort((a, b) => a.page - b.page || a.createdAt - b.createdAt);
@@ -621,7 +653,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   const on = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
 
   // --- sync (docs/ACCOUNTS_DESIGN.md §4) --------------------------------------
-  const listOf = { goal: () => doc.goals, segment: () => doc.segments, note: () => doc.notes, take: () => doc.takes, score: () => doc.scores, mark: () => doc.marks };
+  const listOf = { goal: () => doc.goals, segment: () => doc.segments, note: () => doc.notes, take: () => doc.takes, score: () => doc.scores, mark: () => doc.marks, ink: () => doc.ink };
   const findEntity = (kind, id) => listOf[kind]().find((x) => x.id === id) ?? null;
   const findTomb = (kind, id) => doc.deleted.find((t) => t.kind === kind && t.id === id) ?? null;
   const localEnvelope = (kind, id) => {
@@ -659,7 +691,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   }
   /** Merge remote envelopes in. Returns how many changed the document. */
   function applyRemote(envelopes) {
-    const order = { goal: 0, segment: 1, note: 2, take: 3, score: 4, mark: 5 };
+    const order = { goal: 0, segment: 1, note: 2, take: 3, score: 4, mark: 5, ink: 6 };
     const sorted = [...envelopes].filter((e) => listOf[e.kind]).sort((a, b) => order[a.kind] - order[b.kind]);
     let applied = 0;
     for (const env of sorted) {
@@ -703,6 +735,8 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     takes, take, addTake, starTake, deleteTake, takeDays,
     // scores + bookmarks
     scores, score, scoreByHash, scoreForGoal, addScore, updateScore, touchScore, removeScore, marks, markAt, addMark, removeMark,
+    // ink
+    inkFor, inkPages, setInk,
     // other tools
     addAuto,
     // sync

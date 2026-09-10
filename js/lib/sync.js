@@ -16,7 +16,7 @@ const RUNNING_INTERVAL_MS = 60_000;
 const state = { user: null, cursor: 0, status: "signed-out", lastSyncAt: null, error: null, ...store.get("state", {}) };
 if (state.user) state.status = "idle"; else state.status = "signed-out";
 const listeners = new Set();
-let timer = 0, interval = 0, inflight = null, queued = false, applying = false, started = false;
+let timer = 0, interval = 0, inflight = null, queued = null, applying = false, started = false;
 
 const persist = () => store.set("state", { user: state.user, cursor: state.cursor, lastSyncAt: state.lastSyncAt });
 const emit = () => { for (const fn of listeners) { try { fn(snapshot()); } catch (e) { console.error(e); } } };
@@ -38,10 +38,18 @@ function schedule(ms = DEBOUNCE_MS) {
   timer = setTimeout(() => now(), ms);
 }
 
-/** Push pending, pull since cursor, apply. Coalesces concurrent calls. */
+/**
+ * Push pending, pull since cursor, apply. A call that lands while a sync is in
+ * flight resolves after one more sync that follows it (shared by every such
+ * caller), so "await sync.now()" always means "my changes are up" — the
+ * in-flight one took its cursor and its pending set before this call.
+ */
 export async function now() {
   if (!state.user) return null;
-  if (inflight) { queued = true; return inflight; }
+  if (inflight) {
+    if (!queued) queued = inflight.catch(() => {}).then(() => { queued = null; return now(); });
+    return queued;
+  }
   clearTimeout(timer);
   inflight = (async () => {
     set({ status: "syncing", error: null });
@@ -62,7 +70,6 @@ export async function now() {
       else set({ status: "error", error: e.message });
     } finally {
       inflight = null;
-      if (queued) { queued = false; schedule(300); }
     }
   })();
   return inflight;
