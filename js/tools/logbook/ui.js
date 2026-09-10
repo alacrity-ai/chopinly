@@ -98,6 +98,7 @@ export function buildUI(root) {
     const rec = recording.current();
     const takesToday = logbook.takes({ day: t });
     const canRec = recording.supported();
+    const runScore = run ? logbook.scoreForGoal(run.goal.id) : null; // WSHED-98: the score of the running goal
 
     root.innerHTML = `
       <section class="logbook lb-today">
@@ -109,7 +110,7 @@ export function buildUI(root) {
           <div class="lb-hero-elapsed" id="lb-elapsed" aria-live="off">${fmtClock(run.elapsedMs)}</div>
           <div class="lb-hero-sub">today on this goal <b id="lb-goal-today">${fmtMin(goalToday)}</b></div>
           <div class="lb-hero-note">
-            <div class="lb-hero-note-head"><span class="lb-dim">${lastNote ? `last note · ${esc(relDay(lastNote.createdAt))}` : "no notes yet"}</span><span class="lb-hero-note-acts">${canRec && !rec ? `<button class="lb-link lb-rec-link" id="lb-hero-rec" aria-label="record a take of this goal"><i class="lb-rec-glyph" aria-hidden="true"></i>take</button>` : ""}<button class="lb-link" id="lb-hero-addnote">+ note</button></span></div>
+            <div class="lb-hero-note-head"><span class="lb-dim">${lastNote ? `last note · ${esc(relDay(lastNote.createdAt))}` : "no notes yet"}</span><span class="lb-hero-note-acts">${runScore ? `<a class="lb-link lb-score-link" id="lb-hero-score" href="#/scores/${encodeURIComponent(runScore.id)}" aria-label="open the score of this goal">${icon("score")}score</a>` : ""}${canRec && !rec ? `<button class="lb-link lb-rec-link" id="lb-hero-rec" aria-label="record a take of this goal"><i class="lb-rec-glyph" aria-hidden="true"></i>take</button>` : ""}<button class="lb-link" id="lb-hero-addnote">+ note</button></span></div>
             ${lastNote ? `<button class="lb-hero-note-body" data-open="${run.goal.id}">${esc(lastNote.body)}</button>` : ""}
           </div>
           ${recordingStrip()}

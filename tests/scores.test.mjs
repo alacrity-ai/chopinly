@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createLogbook } from "../js/lib/logbook.js";
-import { KINDS } from "../js/lib/merge.js";
+import { KINDS, toEnvelope, fromEnvelope } from "../js/lib/merge.js";
 
 function memStore() { const m = new Map(); return { get: (k, f) => (m.has(k) ? JSON.parse(m.get(k)) : f), set: (k, v) => m.set(k, JSON.stringify(v)) }; }
 const NOON = new Date(2026, 8, 9, 12).getTime();
@@ -46,12 +46,72 @@ test("scores: add / list / search / sort / edit / remove", () => {
   assert.equal(lb.scores().length, 2);
 });
 
-test("scores P0 stay off the sync stream until the kind ships (P1)", () => {
-  const { lb } = fresh();
-  lb.addScore({ title: "Waltz", pages: 3 });
-  assert.ok(!KINDS.includes("score"), "P1 adds the kind; this test flips then");
-  assert.equal(lb.pendingEnvelopes().filter((e) => e.kind === "score").length, 0);
-  assert.equal(lb.doc.pending.filter((k) => k.startsWith("score:")).length, 0, "nothing pends for an unknown kind");
+test("scores + marks sync: kinds, envelopes, pending, tombstones, cascade, and a second device converging", () => {
+  assert.ok(KINDS.includes("score") && KINDS.includes("mark"));
+  const { lb, tick } = fresh();
+  const g = lb.addGoal({ name: "Waltz", composer: "Chopin" });
+  const a = lb.addScore({ title: "Waltz", composer: "Chopin", pages: 3, sha256: "h1", goalId: g.id });
+  assert.equal(a.goalId, g.id);
+  assert.equal(lb.scoreForGoal(g.id), a);
+  const m1 = lb.addMark({ scoreId: a.id, page: 2, label: "  coda  " });
+  assert.equal(m1.label, "coda");
+  const m2 = lb.addMark({ scoreId: a.id, page: 1 });
+  assert.equal(m2.label, "page 1", "label defaults to the page");
+  assert.throws(() => lb.addMark({ scoreId: a.id, page: 9 }), /isn't in this score/);
+  assert.throws(() => lb.addMark({ scoreId: "nope", page: 1 }), /no score/);
+  assert.deepEqual(lb.marks(a.id).map((m) => m.page), [1, 2], "by page");
+  assert.equal(lb.markAt(a.id, 2), m1);
+  assert.equal(lb.markAt(a.id, 3), null);
+  assert.ok(lb.doc.pending.includes(`score:${a.id}`) && lb.doc.pending.includes(`mark:${m1.id}`));
+  const envs = lb.pendingEnvelopes();
+  const se = envs.find((e) => e.kind === "score");
+  assert.deepEqual(Object.keys(se.body).sort(), ["addedAt", "composer", "goalId", "openedAt", "pages", "sha256", "size", "tags", "title"]);
+  assert.ok(JSON.stringify(se.body).length < 8192, "well under the sync body cap");
+  assert.deepEqual(fromEnvelope(toEnvelope("score", a)), a);
+  assert.deepEqual(fromEnvelope(toEnvelope("mark", m1)), m1);
+
+  // a second device receives everything, edits the title and removes a mark; we apply its changes
+  const other = createLogbook({ store: memStore(), now: () => NOON + 5000 });
+  other.applyRemote(lb.allEnvelopes());
+  assert.equal(other.scores().length, 1, "arrived");
+  assert.equal(other.marks(a.id).length, 2);
+  assert.equal(other.score(a.id).goalId, g.id);
+  other.updateScore(a.id, { title: "Waltz in A minor" });
+  other.removeMark(m2.id);
+  tick(1);
+  lb.applyRemote(other.pendingEnvelopes());
+  assert.equal(lb.score(a.id).title, "Waltz in A minor", "the title came back");
+  assert.deepEqual(lb.marks(a.id).map((m) => m.id), [m1.id], "the removed mark is gone here too");
+
+  // deleting the goal keeps the score, unlinked
+  lb.deleteGoal(g.id);
+  assert.equal(lb.score(a.id).goalId, undefined);
+  assert.equal(lb.scoreForGoal(g.id), null);
+  // removing the score tombstones it and its marks (later than the other device's edit, so the tombstone wins)
+  tick(10_000);
+  lb.removeScore(a.id);
+  assert.equal(lb.score(a.id), null);
+  assert.equal(lb.marks(a.id).length, 0);
+  assert.ok(lb.doc.deleted.some((t) => t.kind === "score" && t.id === a.id));
+  assert.ok(lb.doc.deleted.some((t) => t.kind === "mark" && t.id === m1.id));
+  tick(1);
+  other.applyRemote(lb.pendingEnvelopes());
+  assert.equal(other.score(a.id), null, "gone on the other device");
+  assert.equal(other.marks(a.id).length, 0);
+});
+
+test("touchScore syncs openedAt (recent on every device); updateScore validates the goal", () => {
+  const { lb, tick } = fresh();
+  const a = lb.addScore({ title: "A", pages: 1 });
+  lb.clearPending(lb.pendingEnvelopes());
+  tick(1000); lb.touchScore(a.id);
+  assert.ok(lb.doc.pending.includes(`score:${a.id}`));
+  assert.throws(() => lb.updateScore(a.id, { goalId: "nope" }), /no goal/);
+  const g = lb.addGoal({ name: "G" });
+  lb.updateScore(a.id, { goalId: g.id });
+  assert.equal(lb.score(a.id).goalId, g.id);
+  lb.updateScore(a.id, { goalId: null });
+  assert.equal(lb.score(a.id).goalId, undefined);
 });
 
 test("scores survive a reload of the doc and a v2 doc without the array", () => {
@@ -64,4 +124,5 @@ test("scores survive a reload of the doc and a v2 doc without the array", () => 
   legacy.set("data", { schemaVersion: 2, goals: [], segments: [], notes: [], deleted: [], pending: [] });
   const lb2 = createLogbook({ store: legacy, now: () => NOON });
   assert.deepEqual(lb2.scores(), [], "migrate fills scores: []");
+  assert.deepEqual(lb2.marks("x"), [], "and marks: []");
 });

@@ -42,6 +42,7 @@ export function renderGoalPage(root, id, ctx) {
   const takeDays = logbook.takeDays(id);
   const takeGroups = [];
   for (const tk of takesAll.slice(0, tShown)) { const k = relDay(tk.recordedAt); const last = takeGroups[takeGroups.length - 1]; if (last && last.day === k) last.takes.push(tk); else takeGroups.push({ day: k, takes: [tk] }); }
+  const scoresOf = logbook.scores({ sort: "recent" }).filter((sc) => sc.goalId === id); // WSHED-98
   if (cleanup) { cleanup(); cleanup = null; }
 
   root.innerHTML = `
@@ -70,6 +71,8 @@ export function renderGoalPage(root, id, ctx) {
           ? `<button class="tap" id="lb-gp-finish">finish</button><button class="tap" id="lb-gp-shelve">shelve</button>`
           : `<button class="tap" id="lb-gp-reactivate">make active</button>`}
       </div>
+      ${scoresOf.length ? `<div class="lb-sect">score${scoresOf.length === 1 ? "" : "s"}</div>
+      <ul class="lb-gp-scores">${scoresOf.map((sc) => `<li><a class="lb-gp-score" href="#/scores/${encodeURIComponent(sc.id)}">${icon("score")}<span><b>${esc(sc.title)}</b><small>${plural(sc.pages, "page")}${sc.composer ? ` · ${esc(sc.composer)}` : ""}</small></span>${icon("next")}</a></li>`).join("")}</ul>` : ""}
       <div class="lb-sect">notes</div>
       <div id="lb-gp-notes"></div>
       ${takesAll.length ? `<div class="lb-sect" id="lb-gp-takes-h">takes<span class="lb-sect-sub">${takesAll.length}</span></div>

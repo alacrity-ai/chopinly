@@ -10,6 +10,7 @@ import { sync } from "../lib/sync.js";
 import { openAppearance } from "./appearance.js";
 import { SKINS, currentSkin } from "../lib/skins.js";
 import { takeStore } from "../lib/takes/store.js";
+import { scoreStore } from "../lib/scores/store.js";
 import { VERSION } from "../version.js";
 import { logbook } from "../lib/logbook.js";
 import { fmtBytes } from "../lib/takes/peaks.js";
@@ -44,6 +45,38 @@ function openTakesStorage() {
     if (!confirm(`Remove the audio of ${victims.length} take${victims.length === 1 ? "" : "s"} from this device? The rows stay in your list.`)) return;
     for (const t of victims) await takeStore.del(t.id);
     haptic(10); toast(`${victims.length} removed`); refresh();
+  });
+  return sheet.closed;
+}
+const scoresRow = () => `<li><button type="button" class="lb-acct-row" id="acct-scores">${icon("score")}<span><b>scores on this device</b><small id="acct-scores-sub">…</small></span></button></li>`;
+const scoresSub = async (el) => {
+  const f = await scoreStore.usage(), p = await scoreStore.pagesUsage();
+  if (el) el.textContent = f.count ? `${f.count} score${f.count === 1 ? "" : "s"} · ${fmtBytes(f.bytes)}${p.bytes ? ` + ${fmtBytes(p.bytes)} of rendered pages` : ""}` : "none yet";
+};
+function openScoresStorage() {
+  const sheet = openSheet({
+    title: "scores on this device",
+    cls: "lb-acct-wrap",
+    html: `
+      <p class="lb-acct-copy" id="sc-copy">…</p>
+      <ul class="lb-acct-list">
+        <li><button type="button" class="lb-acct-row" data-act="pages">${icon("eraser")}<span><b>clear rendered pages</b><small>big scans render again the next time they open</small></span></button></li>
+      </ul>
+      <ul class="lb-acct-list">
+        <li><button type="button" class="lb-acct-row lb-danger" data-act="files">${icon("trash")}<span><b>remove all scores from this device</b><small>the list stays; rows go grey</small></span></button></li>
+      </ul>
+      <p class="lb-acct-fine">A score's PDF lives on the device that imported it. With an account, the list (title, composer, tags, bookmarks) is backed up — the file itself is not, yet.</p>`,
+  });
+  const { body } = sheet;
+  const copy = body.querySelector("#sc-copy");
+  const refresh = async () => { const f = await scoreStore.usage(), p = await scoreStore.pagesUsage(); copy.textContent = f.count ? `${f.count} score${f.count === 1 ? "" : "s"} here, ${fmtBytes(f.bytes)} of PDFs${p.count ? ` and ${fmtBytes(p.bytes)} of rendered pages` : ""}.` : "No scores stored on this device."; };
+  refresh();
+  body.querySelector('[data-act="pages"]').addEventListener("click", async () => { await scoreStore.clearPages(); haptic(10); toast("rendered pages cleared"); refresh(); });
+  body.querySelector('[data-act="files"]').addEventListener("click", async () => {
+    const f = await scoreStore.usage();
+    if (!f.count) { toast("nothing to remove"); return; }
+    if (!confirm(`Remove ${f.count} score${f.count === 1 ? "" : "s"} (${fmtBytes(f.bytes)}) from this device? The list stays.`)) return;
+    await scoreStore.clear(); haptic(10); toast("removed"); refresh();
   });
   return sheet.closed;
 }
@@ -114,7 +147,7 @@ function openSignIn() {
           <button type="submit" class="lb-modal-save" id="acct-verify">sign in</button>
         </div>
       </form>
-      <ul class="lb-acct-list lb-acct-list-out">${appearanceRow()}${takesRow()}</ul>
+      <ul class="lb-acct-list lb-acct-list-out">${appearanceRow()}${takesRow()}${scoresRow()}</ul>
       <p class="lb-acct-fine lb-acct-fine-center">By signing in you agree to the <a class="lb-link" href="/terms">terms</a> and <a class="lb-link" href="/privacy">privacy policy</a> — no tracking, no sharing, delete any time.<br><a class="lb-link" id="acct-home-out" href="/?home">see the homepage</a></p>
       <p class="lb-acct-version" id="acct-version">Chopinly ${VERSION}</p>`,
   });
@@ -162,6 +195,8 @@ function openSignIn() {
   body.querySelector("#acct-appearance").addEventListener("click", () => { close(); openAppearance(); });
   body.querySelector("#acct-takes").addEventListener("click", () => { close(); openTakesStorage(); });
   takesSub(body.querySelector("#acct-takes-sub"));
+  body.querySelector("#acct-scores").addEventListener("click", () => { close(); openScoresStorage(); });
+  scoresSub(body.querySelector("#acct-scores-sub"));
   emailForm.addEventListener("submit", send);
   codeForm.addEventListener("submit", verify);
   body.querySelector("#acct-again").addEventListener("click", async () => {
@@ -189,6 +224,7 @@ function openSignedIn() {
         <li><a class="lb-acct-row" id="acct-export" href="${account.exportUrl}" download>${icon("download")}<span><b>download my data</b><small>everything in your account, as a file</small></span></a></li>
         ${appearanceRow()}
         ${takesRow()}
+        ${scoresRow()}
         <li><a class="lb-acct-row" id="acct-home" href="/?home">${icon("home")}<span><b>show homepage</b><small>the page new visitors see</small></span></a></li>
       </ul>
       <ul class="lb-acct-list">
@@ -207,6 +243,8 @@ function openSignedIn() {
   closed.then(off);
   body.querySelector("#acct-appearance").addEventListener("click", () => { close(); openAppearance(); });
   body.querySelector("#acct-takes").addEventListener("click", () => { close(); openTakesStorage(); });
+  body.querySelector("#acct-scores").addEventListener("click", () => { close(); openScoresStorage(); });
+  scoresSub(body.querySelector("#acct-scores-sub"));
   takesSub(body.querySelector("#acct-takes-sub"));
   body.querySelector("#acct-sync").addEventListener("click", async () => { err.textContent = ""; await sync.now(); const s = sync.snapshot(); if (s.status === "synced") { haptic(10); toast("synced"); } });
   body.querySelector("#acct-signout").addEventListener("click", async () => { await sync.signOut(); toast("signed out — your practice is still here"); close(); });

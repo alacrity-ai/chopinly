@@ -13,6 +13,7 @@
 
 import { makeStore } from "./store.js";
 import { KINDS, key as entityKey, pick, same, toEnvelope, tombEnvelope, fromEnvelope } from "./merge.js";
+import { filterScores, sortScores } from "./scores/library.js";
 
 export const SCHEMA_VERSION = 2;
 export const TYPES = {
@@ -92,7 +93,7 @@ const uuid = () =>
 export const norm = (s) => String(s ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
 
 function emptyDoc() {
-  return { schemaVersion: SCHEMA_VERSION, goals: [], segments: [], notes: [], takes: [], scores: [], deleted: [], pending: [] };
+  return { schemaVersion: SCHEMA_VERSION, goals: [], segments: [], notes: [], takes: [], scores: [], marks: [], deleted: [], pending: [] };
 }
 
 // --- migration ---------------------------------------------------------------
@@ -290,6 +291,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     doc.segments = doc.segments.filter((s) => s.goalId !== id);
     doc.notes = doc.notes.filter((n) => n.goalId !== id);
     doc.takes = doc.takes.filter((t) => t.goalId !== id);
+    for (const sc of doc.scores) if (sc.goalId === id) { delete sc.goalId; touch("score", sc); } // the score outlives its goal
     save();
   }
   function ensureBuiltin(id, name, type) {
@@ -411,51 +413,70 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   const takeDays = (goalId = null) => new Set(doc.takes.filter((t) => !goalId || t.goalId === goalId).map((t) => dayKey(t.recordedAt)));
 
   // --- scores (WSHED-98): sheet music; the PDF lives on the device (js/lib/scores/store.js) ---
-  // P0 keeps scores off the sync stream (not in KINDS yet): updatedAt is set,
-  // nothing pends. P1 turns these into `touch("score", …)` when the kind ships.
+  // Metadata (title, composer, tags, goal link) and marks (bookmarks) sync
+  // like notes; the file itself does not until cloud files (P3).
   const cleanTitle = (t) => String(t ?? "").replace(/\s+/g, " ").trim().slice(0, 160);
   const cleanTags = (tags) => [...new Set((Array.isArray(tags) ? tags : []).map((t) => String(t ?? "").trim().slice(0, 40)).filter(Boolean))].slice(0, 20);
-  /** Filters: q (title / composer / tags, accent-insensitive). Sort: "recent" (last opened, then added) | "title" | "composer". */
-  function scores({ q = "", sort = "recent" } = {}) {
-    const needle = norm(q);
-    const cmp = {
-      recent: (a, b) => (b.openedAt ?? b.addedAt) - (a.openedAt ?? a.addedAt) || b.addedAt - a.addedAt,
-      title: (a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }),
-      composer: (a, b) => (a.composer || "\uffff").localeCompare(b.composer || "\uffff", undefined, { sensitivity: "base" }) || a.title.localeCompare(b.title, undefined, { sensitivity: "base" }),
-    }[sort] ?? ((a, b) => 0);
-    return doc.scores.filter((s) => !needle || norm(`${s.title} ${s.composer ?? ""} ${(s.tags ?? []).join(" ")}`).includes(needle)).sort(cmp);
+  /** Filters: q (title / composer / tags), tags (every one must match). Sort: "recent" | "title" | "composer". */
+  function scores({ q = "", tags = [], sort = "recent" } = {}) {
+    return sortScores(filterScores(doc.scores, { q, tags }), sort);
   }
   const score = (id) => doc.scores.find((s) => s.id === id) ?? null;
   const scoreByHash = (sha256) => doc.scores.find((s) => s.sha256 === sha256) ?? null;
+  /** The score linked to a goal (the most recently opened when several are). */
+  const scoreForGoal = (goalId) => sortScores(doc.scores.filter((s) => s.goalId === goalId), "recent")[0] ?? null;
   /** Register a PDF that has already been stored on this device. */
-  function addScore({ id = uuid(), title, composer = "", tags = [], pages, size = 0, sha256 = "" }) {
+  function addScore({ id = uuid(), title, composer = "", tags = [], pages, size = 0, sha256 = "", goalId = null }) {
     const t = cleanTitle(title);
     if (!t) throw new Error("a score needs a title");
     const n = Math.round(Number(pages));
     if (!(n > 0)) throw new Error("a score needs at least one page");
     const c = cleanComposer(composer);
-    const s = { id, title: t, ...(c ? { composer: c } : {}), tags: cleanTags(tags), pages: n, size: Math.max(0, Math.round(Number(size)) || 0), sha256: String(sha256 ?? "").slice(0, 64), addedAt: now(), openedAt: null, updatedAt: now() };
+    const s = touch("score", { id, title: t, ...(c ? { composer: c } : {}), tags: cleanTags(tags), pages: n, size: Math.max(0, Math.round(Number(size)) || 0), sha256: String(sha256 ?? "").slice(0, 64), ...(goalId && goalById(goalId) ? { goalId } : {}), addedAt: now(), openedAt: null });
     doc.scores.push(s); save(); return s;
   }
-  /** Edit title / composer / tags. Unknown keys are ignored. */
+  /** Edit title / composer / tags / goalId (null unlinks). Unknown keys are ignored. */
   function updateScore(id, patch = {}) {
     const s = score(id);
     if (!s) throw new Error(`no score ${id}`);
     if ("title" in patch) { const t = cleanTitle(patch.title); if (!t) throw new Error("a score needs a title"); s.title = t; }
     if ("composer" in patch) { const c = cleanComposer(patch.composer); if (c) s.composer = c; else delete s.composer; }
     if ("tags" in patch) s.tags = cleanTags(patch.tags);
-    s.updatedAt = now(); save(); return s;
+    if ("goalId" in patch) { if (patch.goalId) { mustGoal(patch.goalId); s.goalId = patch.goalId; } else delete s.goalId; }
+    touch("score", s); save(); return s;
   }
-  /** Opened just now (drives the "recent" sort). Not a sync-worthy edit. */
+  /** Opened just now (drives the "recent" sort on every device). */
   function touchScore(id) {
     const s = score(id);
     if (!s) return null;
-    s.openedAt = now(); save(); return s;
+    s.openedAt = now(); touch("score", s); save(); return s;
   }
+  /** Remove the score and its marks (the caller removes the file + cached pages). */
   function removeScore(id) {
     const before = doc.scores.length;
     doc.scores = doc.scores.filter((s) => s.id !== id);
-    if (doc.scores.length !== before) save();
+    if (doc.scores.length === before) return;
+    tomb(id, "score");
+    for (const m of doc.marks) if (m.scoreId === id) tomb(m.id, "mark");
+    doc.marks = doc.marks.filter((m) => m.scoreId !== id);
+    save();
+  }
+  /** Bookmarks on a score, by page. */
+  const marks = (scoreId) => doc.marks.filter((m) => m.scoreId === scoreId).sort((a, b) => a.page - b.page || a.createdAt - b.createdAt);
+  const markAt = (scoreId, page) => doc.marks.find((m) => m.scoreId === scoreId && m.page === page) ?? null;
+  function addMark({ id = uuid(), scoreId, page, label = "" }) {
+    const s = score(scoreId);
+    if (!s) throw new Error(`no score ${scoreId}`);
+    const p = Math.round(Number(page));
+    if (!(p >= 1 && p <= s.pages)) throw new Error("that page isn't in this score");
+    const l = String(label ?? "").replace(/\s+/g, " ").trim().slice(0, 80) || `page ${p}`;
+    const m = touch("mark", { id, scoreId, page: p, label: l, createdAt: now() });
+    doc.marks.push(m); save(); return m;
+  }
+  function removeMark(id) {
+    const before = doc.marks.length;
+    doc.marks = doc.marks.filter((m) => m.id !== id);
+    if (doc.marks.length !== before) { tomb(id, "mark"); save(); }
   }
 
   // --- other tools writing in -----------------------------------------------
@@ -600,7 +621,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   const on = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
 
   // --- sync (docs/ACCOUNTS_DESIGN.md §4) --------------------------------------
-  const listOf = { goal: () => doc.goals, segment: () => doc.segments, note: () => doc.notes, take: () => doc.takes };
+  const listOf = { goal: () => doc.goals, segment: () => doc.segments, note: () => doc.notes, take: () => doc.takes, score: () => doc.scores, mark: () => doc.marks };
   const findEntity = (kind, id) => listOf[kind]().find((x) => x.id === id) ?? null;
   const findTomb = (kind, id) => doc.deleted.find((t) => t.kind === kind && t.id === id) ?? null;
   const localEnvelope = (kind, id) => {
@@ -638,7 +659,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   }
   /** Merge remote envelopes in. Returns how many changed the document. */
   function applyRemote(envelopes) {
-    const order = { goal: 0, segment: 1, note: 2, take: 3 };
+    const order = { goal: 0, segment: 1, note: 2, take: 3, score: 4, mark: 5 };
     const sorted = [...envelopes].filter((e) => listOf[e.kind]).sort((a, b) => order[a.kind] - order[b.kind]);
     let applied = 0;
     for (const env of sorted) {
@@ -680,8 +701,8 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     notes, addNote, deleteNote,
     // takes
     takes, take, addTake, starTake, deleteTake, takeDays,
-    // scores
-    scores, score, scoreByHash, addScore, updateScore, touchScore, removeScore,
+    // scores + bookmarks
+    scores, score, scoreByHash, scoreForGoal, addScore, updateScore, touchScore, removeScore, marks, markAt, addMark, removeMark,
     // other tools
     addAuto,
     // sync

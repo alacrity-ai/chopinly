@@ -57,10 +57,65 @@ await step("importing the same file again does not duplicate", async () => {
   if ((await page.locator(".sc-row").count()) !== 1) throw new Error("duplicated");
 });
 
+await step("thumbnail renders for the row; search, sort, group by composer and tag chips narrow the list", async () => {
+  await page.waitForSelector(".sc-thumb img", { timeout: 15000 });
+  await lb((m) => { m.logbook.addScore({ title: "Invention 8", composer: "Bach", pages: 2, sha256: "x1", tags: ["baroque", "two-part"] }); m.logbook.addScore({ title: "Étude Op. 10 No. 3", composer: "Chopin", pages: 4, sha256: "x2", tags: ["romantic"] }); });
+  await page.waitForFunction(() => document.querySelectorAll(".sc-row").length === 3);
+  if ((await page.locator(".sc-row.remote").count()) !== 2) throw new Error("rows without a file should read remote");
+  await page.fill("#sc-q", "bach");
+  await page.waitForFunction(() => document.querySelectorAll(".sc-row").length === 1);
+  if (!(await text(".sc-title")).includes("Invention")) throw new Error("search by composer");
+  await page.fill("#sc-q", "etude");
+  await page.waitForFunction(() => document.querySelectorAll(".sc-row").length === 1 && document.querySelector(".sc-title").textContent.includes("Étude"));
+  await page.fill("#sc-q", "");
+  await page.waitForFunction(() => document.querySelectorAll(".sc-row").length === 3);
+  await page.click('[data-sort="title"]');
+  await page.waitForFunction(() => document.querySelector(".sc-title").textContent.startsWith("Étude"));
+  await page.click("#sc-group");
+  await page.waitForSelector(".sc-groupname");
+  const groups = await page.$$eval(".sc-groupname", (els) => els.map((e) => e.firstChild.textContent.trim()));
+  if (JSON.stringify(groups) !== JSON.stringify(["Bach", "Chopin", "Fixtura Testovna"])) throw new Error("groups " + JSON.stringify(groups));
+  await page.screenshot({ path: `${S}/sc-08-library-grouped.png` });
+  await page.click("#sc-group");
+  await page.click('.sc-tagchips [data-tag="baroque"]');
+  await page.waitForFunction(() => document.querySelectorAll(".sc-row").length === 1);
+  await page.click('.sc-tagchips [data-tag="baroque"]');
+  await page.waitForFunction(() => document.querySelectorAll(".sc-row").length === 3);
+  await page.click('[data-sort="recent"]');
+  await noWiden();
+});
+
+await step("details sheet: edit title, composer, tags; link a goal through the picker", async () => {
+  await lb((m) => m.logbook.addGoal({ name: "Fixture Sonata", composer: "Fixtura Testovna" }));
+  const box = await page.locator('.sc-row:has-text("Fixture Sonata") .sc-open').boundingBox();
+  await page.mouse.move(box.x + 60, box.y + box.height / 2); await page.mouse.down(); await page.waitForTimeout(650); await page.mouse.up();
+  await page.waitForSelector(".sc-details-wrap.open #sc-d-title");
+  await page.screenshot({ path: `${S}/sc-09-details.png` });
+  await page.fill("#sc-d-title", "Fixture Sonata No. 1");
+  await page.fill("#sc-d-tags", "exam, baroque");
+  await page.click("#sc-d-save");
+  await page.waitForFunction(() => !document.querySelector(".lb-sheet-wrap:not(.closing)"));
+  await page.waitForFunction(() => document.querySelector(".sc-row:not(.remote) .sc-title")?.textContent === "Fixture Sonata No. 1");
+  if (!(await page.locator(".sc-row:not(.remote) .sc-sub").textContent()).includes("exam")) throw new Error("tags not shown");
+  const box2 = await page.locator('.sc-row:has-text("Fixture Sonata No. 1") .sc-open').boundingBox();
+  await page.mouse.move(box2.x + 60, box2.y + box2.height / 2); await page.mouse.down(); await page.waitForTimeout(650); await page.mouse.up();
+  await page.waitForSelector(".sc-details-wrap.open #sc-d-goal");
+  await page.click("#sc-d-goal");
+  await page.waitForSelector(".lb-picker-wrap.open");
+  await page.click('.lb-pick-row:has-text("Fixture Sonata")');
+  await page.waitForSelector(".sc-details-wrap.open #sc-d-goal");
+  if (!(await text("#sc-d-goal b")).includes("Fixture Sonata")) throw new Error("goal not linked in the sheet");
+  await page.click(".sc-details-wrap .lb-close");
+  await page.waitForFunction(() => !document.querySelector(".lb-sheet-wrap:not(.closing)"));
+  const linked = await lb((m) => { const s = m.logbook.scores().find((x) => x.title === "Fixture Sonata No. 1"); return { goal: m.logbook.goal(s.goalId)?.name, tags: s.tags }; });
+  if (linked.goal !== "Fixture Sonata" || linked.tags.join() !== "exam,baroque") throw new Error(JSON.stringify(linked));
+  if (!(await page.locator(".sc-row:not(.remote) .sc-goal").textContent()).includes("Fixture Sonata")) throw new Error("goal chip on the row");
+});
+
 let scoreId;
 await step("open → page 1 renders (dark pixels on the canvas), bar shows 1 / 12", async () => {
-  scoreId = await lb((m) => m.logbook.scores()[0].id);
-  await page.click(".sc-open");
+  scoreId = await lb((m) => m.logbook.scores().find((x) => x.title === "Fixture Sonata No. 1").id);
+  await page.click('.sc-row:has-text("Fixture Sonata No. 1") .sc-open');
   await page.waitForSelector(".sc-reader");
   await waitPage(1);
   await page.waitForFunction(() => document.querySelector("#sc-spin")?.hidden, null, { timeout: 15000 });
@@ -124,7 +179,7 @@ await step("reload reopens on the same page (per-device position); back returns 
 });
 
 await step("the more sheet offers fit + save; `save this score to a file` yields the original bytes", async () => {
-  await page.click(".sc-open");
+  await page.click('.sc-row:has-text("Fixture Sonata No. 1") .sc-open');
   await page.waitForSelector(".sc-reader");
   await waitPage(2);
   await ensureChrome();
@@ -141,6 +196,101 @@ await step("the more sheet offers fit + save; `save this score to a file` yields
   await page.waitForFunction(() => !document.querySelector(".sc-reader"));
 });
 
+await step("bookmarks: add on page 3 with a label, button fills, jump back from page 5", async () => {
+  await page.click('.sc-row:has-text("Fixture Sonata No. 1") .sc-open');
+  await page.waitForSelector(".sc-reader");
+  await waitPage(2);
+  await page.keyboard.press("ArrowRight"); await waitPage(3);
+  await ensureChrome();
+  if (await page.evaluate(() => document.querySelector("#sc-mark").classList.contains("on"))) throw new Error("page 3 should not be marked yet");
+  await page.click("#sc-mark");
+  await page.waitForSelector(".sc-marks-wrap.open #sc-m-label");
+  await page.fill("#sc-m-label", "coda");
+  await page.click("#sc-m-go");
+  await page.waitForSelector(".sc-marks-wrap.open #sc-m-remove");
+  await page.screenshot({ path: `${S}/sc-10-bookmarks.png` });
+  await page.click(".sc-marks-wrap .lb-close");
+  await page.waitForFunction(() => !document.querySelector(".lb-sheet-wrap:not(.closing)"));
+  await page.waitForFunction(() => document.querySelector("#sc-mark").classList.contains("on"));
+  await page.keyboard.press("ArrowRight"); await waitPage(4);
+  await page.keyboard.press("ArrowRight"); await waitPage(5);
+  await page.waitForFunction(() => !document.querySelector("#sc-mark").classList.contains("on"));
+  await ensureChrome();
+  await page.click("#sc-mark");
+  await page.waitForSelector(".sc-marks-wrap.open #sc-m-list");
+  await page.click('#sc-m-list [data-page="3"]');
+  await waitPage(3);
+  await page.waitForFunction(() => !document.querySelector(".lb-sheet-wrap:not(.closing)"));
+  const marks = await lb((m, a) => m.logbook.marks(a[0]).map((x) => [x.page, x.label]), scoreId);
+  if (JSON.stringify(marks) !== JSON.stringify([[3, "coda"]])) throw new Error("marks " + JSON.stringify(marks));
+});
+
+await step("⋯ → practice this: the clock starts on the linked goal, the bar says practicing; Today shows a score link; the goal page lists the score", async () => {
+  await ensureChrome();
+  await page.click("#sc-more");
+  await page.waitForSelector(".sc-more-wrap.open [data-practice]");
+  await page.click(".sc-more-wrap [data-practice]");
+  await page.waitForFunction(() => document.querySelector(".sc-reader")?.classList.contains("live"), null, { timeout: 5000 });
+  const running = await lb((m) => m.logbook.running()?.goal.name);
+  if (running !== "Fixture Sonata") throw new Error("running " + running);
+  await page.screenshot({ path: `${S}/sc-11-practicing.png` });
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !document.querySelector(".sc-reader"));
+  await page.goto(`${BASE}/?app=1#/logbook`);
+  await page.waitForSelector("#lb-hero-score", { timeout: 8000 });
+  await page.screenshot({ path: `${S}/sc-12-hero-score-link.png` });
+  await page.click("#lb-hero-score");
+  await page.waitForSelector(".sc-reader", { timeout: 10000 });
+  await waitPage(3);
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !document.querySelector(".sc-reader"));
+  const gid = await lb((m) => m.logbook.running().goal.id);
+  await page.goto(`${BASE}/?app=1#/logbook/goals/${gid}`);
+  await page.waitForSelector(".lb-gp-score", { timeout: 8000 });
+  if (!(await text(".lb-gp-score b")).includes("Fixture Sonata No. 1")) throw new Error("goal page score row");
+  await lb((m) => m.logbook.stop());
+  await page.goto(`${BASE}/?app=1#/scores`);
+  await page.waitForSelector(".sc-row");
+});
+
+await step("the persistent page tier: a cache asked to persist stores a page, the next cache decodes it, eviction clears it", async () => {
+  const r = await page.evaluate(async (id) => {
+    const { scoreStore } = await import("/js/lib/scores/store.js");
+    const { open } = await import("/js/lib/scores/pdf.js");
+    const { createPageCache } = await import("/js/lib/scores/pagecache.js");
+    const before = await scoreStore.pagesUsage();
+    const doc = await open(await scoreStore.get(id));
+    const c1 = createPageCache(doc, { width: 300, dpr: 1, scoreId: id, persist: true, size: 0 });
+    await c1.get(1);
+    for (let i = 0; i < 40 && c1.stats.stored < 1; i++) await new Promise((r) => setTimeout(r, 100));
+    const mid = await scoreStore.pagesUsage();
+    c1.close();
+    const c2 = createPageCache(doc, { width: 300, dpr: 1, scoreId: id, persist: true, size: 0 });
+    const bmp = await c2.get(1);
+    const decoded = c2.stats.decoded, w = bmp.width;
+    c2.close();
+    const evicted = await scoreStore.evictPages(0, [id]);
+    const after = await scoreStore.pagesUsage();
+    doc.close();
+    return { before: before.count, mid: mid.count, midBytes: mid.bytes, decoded, w, evicted, after: after.count };
+  }, scoreId);
+  if (!(r.mid > r.before && r.midBytes > 1000)) throw new Error("page not stored " + JSON.stringify(r));
+  if (r.decoded !== 1 || r.w !== 300) throw new Error("second cache should decode from the store " + JSON.stringify(r));
+  if (r.evicted[0] !== scoreId || r.after !== 0) throw new Error("eviction " + JSON.stringify(r));
+});
+
+await step("account sheet: scores on this device", async () => {
+  await page.click("#account-btn");
+  await page.waitForSelector("#acct-scores-sub");
+  await page.waitForFunction(() => /1 score/.test(document.querySelector("#acct-scores-sub").textContent));
+  await page.click("#acct-scores");
+  await page.waitForSelector("#sc-copy");
+  await page.waitForFunction(() => /1 score here/.test(document.querySelector("#sc-copy").textContent));
+  await page.screenshot({ path: `${S}/sc-13-storage.png` });
+  await page.click(".lb-sheet-wrap .lb-close");
+  await page.waitForFunction(() => !document.querySelector(".lb-sheet-wrap:not(.closing)"));
+});
+
 await step("offline: the score still opens from the device store", async () => {
   await page.waitForFunction(() => navigator.serviceWorker?.controller, null, { timeout: 20000 }).catch(() => {});
   await page.waitForTimeout(1500);
@@ -148,24 +298,27 @@ await step("offline: the score still opens from the device store", async () => {
   try {
     await page.reload().catch(() => {});
     await page.waitForSelector(".sc-row", { timeout: 15000 });
-    await page.click(".sc-open");
+    await page.click('.sc-row:has-text("Fixture Sonata No. 1") .sc-open');
     await page.waitForSelector(".sc-reader", { timeout: 15000 });
-    await waitPage(2);
+    await waitPage(3);
     await page.waitForFunction(() => document.querySelector("#sc-spin")?.hidden, null, { timeout: 15000 });
     if (!((await darkness()) > 0.005)) throw new Error("blank offline");
     await page.screenshot({ path: `${S}/sc-07-offline.png` });
   } finally { await ctx.setOffline(false); }
 });
 
-await step("hold a row → delete → empty state again", async () => {
+await step("hold a row → details → delete: file, thumbnail, bookmarks all go; remote rows stay", async () => {
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => !document.querySelector(".sc-reader"));
-  const box = await page.locator(".sc-open").boundingBox();
-  await page.mouse.move(box.x + 40, box.y + box.height / 2);
-  await page.mouse.down(); await page.waitForTimeout(700); await page.mouse.up();
-  await page.waitForSelector(".sc-empty", { timeout: 5000 });
-  const left = await page.evaluate(async () => { const { scoreStore } = await import("/js/lib/scores/store.js"); return (await scoreStore.usage()).count; });
-  if (left !== 0) throw new Error("blob left behind");
+  const box = await page.locator('.sc-row:has-text("Fixture Sonata No. 1") .sc-open').boundingBox();
+  await page.mouse.move(box.x + 60, box.y + box.height / 2); await page.mouse.down(); await page.waitForTimeout(650); await page.mouse.up();
+  await page.waitForSelector(".sc-details-wrap.open #sc-d-delete");
+  await page.click("#sc-d-delete");
+  await page.waitForFunction(() => document.querySelectorAll(".sc-row").length === 2, null, { timeout: 5000 });
+  const left = await page.evaluate(async () => { const { scoreStore } = await import("/js/lib/scores/store.js"); return { files: (await scoreStore.usage()).count, pages: (await scoreStore.pagesUsage()).count }; });
+  if (left.files !== 0 || left.pages !== 0) throw new Error("blob or pages left behind " + JSON.stringify(left));
+  const gone = await lb((m, a) => ({ score: m.logbook.score(a[0]), marks: m.logbook.marks(a[0]).length, tomb: m.logbook.doc.deleted.filter((t) => t.kind === "mark").length }), scoreId);
+  if (gone.score || gone.marks || gone.tomb !== 1) throw new Error(JSON.stringify(gone));
 });
 
 await noWiden();
