@@ -1,7 +1,7 @@
 // Metronome DOM + renderer. The pendulum is not a CSS loop: its angle is
 // computed every frame from the engine's audio-clock pointer, so what you see
 // can never drift from what you hear.
-import { MetronomeEngine } from "./engine.js";
+import { clock, MIN_BPM, MAX_BPM } from "../../lib/clock.js";
 import { VOICES } from "./voices.js";
 import { icon } from "../../lib/icons.js";
 import { logbook, TYPES } from "../../lib/logbook.js";
@@ -26,16 +26,9 @@ const SUBDIVISIONS = [
 
 const SWING_DEG = 30;
 
-export function buildUI(root, { getAudio, store, setRunning }) {
-  const settings = {
-    bpm: store.get("bpm", 96),
-    beats: store.get("beats", 4),
-    beatStates: store.get("beatStates", [2, 1, 1, 1]),
-    subdivision: store.get("subdivision", 1),
-    voice: store.get("voice", "wood"),
-  };
-  const engine = new MetronomeEngine(getAudio, settings);
-  engine.setVolume(store.get("volume", 0.8));
+export function buildUI(root) {
+  // The engine and settings live in js/lib/clock.js (WSHED-110): they outlive this tool.
+  const { settings, engine } = clock;
 
   root.innerHTML = `
     <section class="metronome">
@@ -55,7 +48,7 @@ export function buildUI(root, { getAudio, store, setRunning }) {
         <div class="tempo-adjust">
           <button class="nudge" data-d="-5" aria-label="slower by five">&minus;5</button>
           <button class="nudge" data-d="-1" aria-label="slower by one">&minus;1</button>
-          <input type="range" id="bpm-slider" min="20" max="300" step="1"
+          <input type="range" id="bpm-slider" min="${MIN_BPM}" max="${MAX_BPM}" step="1"
                  value="${settings.bpm}" aria-label="tempo in beats per minute">
           <button class="nudge" data-d="1" aria-label="faster by one">+1</button>
           <button class="nudge" data-d="5" aria-label="faster by five">+5</button>
@@ -69,7 +62,7 @@ export function buildUI(root, { getAudio, store, setRunning }) {
         <div class="param">voice<div class="segmented" id="voice" role="group"></div></div>
         <label class="param">volume
           <input type="range" id="volume" min="0" max="1" step="0.01"
-                 value="${store.get("volume", 0.8)}" aria-label="volume">
+                 value="${clock.volume()}" aria-label="volume">
         </label>
       </div>
       <div class="transport">
@@ -85,21 +78,10 @@ export function buildUI(root, { getAudio, store, setRunning }) {
   const startBtn = el("start");
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
-  const save = () => {
-    store.set("bpm", settings.bpm);
-    store.set("beats", settings.beats);
-    store.set("beatStates", settings.beatStates);
-    store.set("subdivision", settings.subdivision);
-    store.set("voice", settings.voice);
-  };
+  const save = clock.save;
+  const paintBpm = () => { bpmEl.textContent = settings.bpm; slider.value = settings.bpm; markingEl.textContent = markingFor(settings.bpm); };
+  function setBpm(v) { clock.setBpm(v); }
 
-  function setBpm(v) {
-    settings.bpm = Math.min(300, Math.max(20, Math.round(v)));
-    bpmEl.textContent = settings.bpm;
-    slider.value = settings.bpm;
-    markingEl.textContent = markingFor(settings.bpm);
-    save();
-  }
 
   // --- beat dots ---------------------------------------------------------
   const DOT_STATES = ["muted", "normal", "accent"];
@@ -139,6 +121,7 @@ export function buildUI(root, { getAudio, store, setRunning }) {
   };
   syncLogBtn();
   const offLog = logbook.on(syncLogBtn);
+  const offTempo = clock.onTempo(() => { paintBpm(); syncLogBtn(); });
   logBtn.addEventListener("click", async () => {
     const r = logbook.running();
     if (r) { logbook.stampTempo(settings.bpm); toast(`♩ ${settings.bpm} → ${r.goal?.name ?? ""}`); return; }
@@ -207,20 +190,16 @@ export function buildUI(root, { getAudio, store, setRunning }) {
       save();
       if (!engine.running) engine.preview("beat"); // let the choice be heard
     });
-  el("volume").addEventListener("input", (e) => {
-    engine.setVolume(Number(e.target.value));
-    store.set("volume", Number(e.target.value));
-  });
+  el("volume").addEventListener("input", (e) => clock.setVolume(Number(e.target.value)));
 
   // --- transport ----------------------------------------------------------
-  // The engine reports state (lock-screen play/pause can flip it too, WSHED-85).
-  engine.onchange = (running) => {
+  // The clock reports state (lock-screen play/pause, the shell pill and the score reader can flip it too).
+  const offRun = clock.on((running) => {
     startBtn.innerHTML = icon(running ? "stop" : "play");
     startBtn.setAttribute("aria-label", running ? "stop" : "start");
     startBtn.classList.toggle("running", running);
-    setRunning(running);
-  };
-  function toggle() { if (engine.running) engine.stop(); else engine.start(); }
+  });
+  const toggle = () => clock.toggle();
   startBtn.addEventListener("click", toggle);
 
   let taps = [];
@@ -270,11 +249,10 @@ export function buildUI(root, { getAudio, store, setRunning }) {
 
   return {
     destroy() {
-      engine.stop();
-      setRunning(false);
+      // the clock keeps running (WSHED-110): leaving the tool is not stopping the metronome
       window.removeEventListener("keydown", onKey);
       cancelAnimationFrame(raf);
-      offLog();
+      offLog(); offRun(); offTempo();
     },
   };
 }

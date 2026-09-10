@@ -8,6 +8,7 @@ import { sync } from "./lib/sync.js";
 import { openAccount, renderAccountButton } from "./ui/account.js";
 import { icon } from "./lib/icons.js";
 import { initSkin } from "./lib/skins.js";
+import { clock } from "./lib/clock.js";
 
 initSkin(); // WSHED-71: the inline head script already set data-skin; this syncs theme-color
 
@@ -23,6 +24,7 @@ shellStore.set("seen", true);
 let active = null;
 let wakeLock = null;
 let running = false;
+const runningKeys = new Set(); // who wants the screen awake: the mounted tool, the metronome clock (WSHED-110)
 
 async function acquireWakeLock() {
   if (!("wakeLock" in navigator)) return;
@@ -33,11 +35,13 @@ async function acquireWakeLock() {
   }
 }
 
-function setRunning(isRunning) {
-  running = isRunning;
-  if (running) acquireWakeLock();
+function setRunning(isRunning, key = "tool") {
+  if (isRunning) runningKeys.add(key); else runningKeys.delete(key);
+  running = runningKeys.size > 0;
+  if (running) { if (!wakeLock) acquireWakeLock(); }
   else if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
 }
+clock.on((r) => setRunning(r, "metronome"));
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && running) acquireWakeLock();
@@ -95,6 +99,7 @@ function mount(tool) {
     item.setAttribute("aria-checked", String(item.dataset.tool === tool.id));
   }
   tool.mount(root, { getAudio, store: makeStore(tool.id), setRunning });
+  syncMetroChip();
 }
 
 function syncHash(tool) {
@@ -102,6 +107,31 @@ function syncHash(tool) {
   // when it isn't already somewhere inside this tool.
   if (!hashPath().startsWith(`#/${tool.id}`)) history.replaceState(null, "", `#/${tool.id}`);
 }
+
+// --- metronome pill: the click keeps going across tools; this says so (WSHED-110) ---
+const metroChip = document.createElement("span");
+metroChip.className = "metro-chip";
+metroChip.hidden = true;
+metroChip.innerHTML = `<a class="metro-chip-go" href="#/metronome" aria-label="metronome playing — open it"><span class="metro-chip-beat" aria-hidden="true">♩</span><span class="metro-chip-bpm"></span></a><button type="button" class="metro-chip-stop" aria-label="stop the metronome">${icon("stop")}</button>`;
+picker.before(metroChip);
+metroChip.querySelector(".metro-chip-stop").addEventListener("click", () => clock.stop());
+let metroRaf = 0, metroBeat = -1;
+function metroFrame() {
+  const p = clock.pointer();
+  const beat = p.running ? p.beat : -1;
+  if (beat !== metroBeat) { metroBeat = beat; metroChip.classList.toggle("on-beat", beat >= 0 && p.phase < 0.25); metroChip.classList.toggle("downbeat", beat === 0); }
+  else metroChip.classList.toggle("on-beat", p.running && p.phase < 0.25);
+  metroRaf = requestAnimationFrame(metroFrame);
+}
+function syncMetroChip() {
+  const show = clock.running && active?.id !== "metronome";
+  metroChip.hidden = !show;
+  metroChip.querySelector(".metro-chip-bpm").textContent = String(clock.settings.bpm);
+  cancelAnimationFrame(metroRaf);
+  if (show) metroRaf = requestAnimationFrame(metroFrame);
+}
+clock.on(syncMetroChip);
+clock.onTempo(syncMetroChip);
 
 // --- session chip: the Logbook's clock, visible on every tool ---------------
 const chip = document.createElement("a");

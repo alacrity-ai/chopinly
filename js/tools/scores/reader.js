@@ -14,6 +14,7 @@ import { createPageCache, MAX_RENDER_PX, IOS, releaseCanvas } from "../../lib/sc
 import { openMarks, paintMarkButton } from "./marks.js";
 import { openDetails, practiceScore, saveScoreFile, storeThumb, hasThumb } from "./library.js";
 import { createInkLayer } from "./inkbar.js";
+import { clock } from "../../lib/clock.js";
 
 const TAP_MS = 300, TAP_PX = 10, SWIPE_PX = 60, CHROME_MS = 2000, SPIN_MS = 250;
 const ZONE = 0.35; // each edge
@@ -49,6 +50,12 @@ export async function openReader({ id, page = null, ctx, onClose }) {
     <div class="sc-bar">
       <button type="button" class="sc-bar-btn" id="sc-back" aria-label="back to scores">${icon("back")}</button>
       <div class="sc-bar-title"><b>${esc(s.title)}</b><small id="sc-bar-sub">${esc(s.composer ?? "")}</small></div>
+      <span class="sc-metro" id="sc-metro" role="group" aria-label="metronome">
+        <button type="button" class="sc-metro-nudge" data-d="-5" aria-label="slower by five">&minus;</button>
+        <button type="button" class="sc-metro-bpm" id="sc-metro-bpm" aria-label="tempo — tap to type a new one"><span class="sc-metro-beat" aria-hidden="true">♩</span><span id="sc-metro-n">${clock.settings.bpm}</span></button>
+        <button type="button" class="sc-metro-nudge" data-d="5" aria-label="faster by five">+</button>
+        <button type="button" class="sc-bar-btn sc-metro-play" id="sc-metro-play" aria-label="start the metronome" aria-pressed="false">${icon("play")}</button>
+      </span>
       <span class="sc-bar-page" id="sc-pageno" aria-live="polite">… / ${s.pages}</span>
       <button type="button" class="sc-bar-btn sc-mark-btn" id="sc-mark" aria-label="bookmarks">${icon("bookmark")}</button>
       <button type="button" class="sc-bar-btn sc-ink-toggle" id="sc-ink" aria-label="ink" aria-pressed="false">${icon("pencil")}</button>
@@ -71,6 +78,15 @@ export async function openReader({ id, page = null, ctx, onClose }) {
   };
   const offLb = logbook.on(() => { if (!closed) paintLive(); });
   paintLive();
+  // Metronome in the bar (WSHED-110): the shared clock, so it keeps going when this closes.
+  const metro = el.querySelector("#sc-metro"), metroPlay = el.querySelector("#sc-metro-play"), metroN = el.querySelector("#sc-metro-n");
+  let metroRaf = 0;
+  const metroFrame = () => { const p = clock.pointer(); metro.classList.toggle("on-beat", p.running && p.phase < 0.25); metro.classList.toggle("downbeat", p.running && p.beat === 0); metroRaf = requestAnimationFrame(metroFrame); };
+  const offClock = clock.on((r) => { metroPlay.innerHTML = icon(r ? "stop" : "play"); metroPlay.setAttribute("aria-label", r ? "stop the metronome" : "start the metronome"); metroPlay.setAttribute("aria-pressed", String(r)); metro.classList.toggle("running", r); cancelAnimationFrame(metroRaf); if (r) metroRaf = requestAnimationFrame(metroFrame); else metro.classList.remove("on-beat", "downbeat"); });
+  const offTempo = clock.onTempo((bpm) => { metroN.textContent = String(bpm); });
+  metroPlay.addEventListener("click", () => { showChrome(); clock.toggle(); });
+  for (const b of metro.querySelectorAll("[data-d]")) b.addEventListener("click", () => { showChrome(); clock.nudge(Number(b.dataset.d)); });
+  el.querySelector("#sc-metro-bpm").addEventListener("click", () => { showChrome(); const v = prompt("tempo (beats per minute)", String(clock.settings.bpm)); if (v !== null && v.trim()) clock.setBpm(Number(v)); });
   const cx = canvas.getContext("2d", { alpha: false });
   setRunning?.(true);
   logbook.touchScore(id);
@@ -206,7 +222,7 @@ export async function openReader({ id, page = null, ctx, onClose }) {
     clearTimeout(chromeTimer); clearTimeout(spinTimer); clearTimeout(resizeTimer);
     window.removeEventListener("keydown", onKey);
     window.removeEventListener("resize", onResize);
-    offLb();
+    offLb(); offClock(); offTempo(); cancelAnimationFrame(metroRaf);
     ink.destroy();
     cache?.close(); doc?.close();
     releaseCanvas(canvas); // WSHED-109: WebKit keeps a detached canvas's backing store until GC — give the 24 MB back now
