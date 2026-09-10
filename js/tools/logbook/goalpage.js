@@ -8,6 +8,7 @@ import { icon } from "../../lib/icons.js";
 import { engage } from "./ceremony.js";
 import { takeRow, wireTakeRows, mountCompare } from "./takes.js";
 import { dayKey } from "../../lib/logbook.js";
+import { offerScore } from "./scoreprompt.js";
 
 const PAGE = 10;
 /** How many day rows each goal page has been expanded to this session (WSHED-61). */
@@ -98,9 +99,10 @@ export function renderGoalPage(root, id, ctx) {
     for (const a of root.querySelectorAll(".lb-take-chip")) a.addEventListener("click", (e) => { e.preventDefault(); root.querySelector("#lb-gp-takes-h")?.scrollIntoView({ behavior: "smooth", block: "start" }); });
   }
   root.querySelector("#lb-gp-today")?.addEventListener("click", () => ctx.nav(""));
-  const startClock = () => {
+  const startClock = async () => {
     logbook.start(id); ctx.nav("");
-    engage({ goal: g, type: t, landOn: () => document.querySelector("#lb-hero-goal") });
+    await engage({ goal: g, type: t, landOn: () => document.querySelector("#lb-hero-goal") });
+    await offerScore(id); // WSHED-103
   };
   // The lesson goals (sight singing, ear training) are usually practiced in
   // the app, where a finished run credits itself — so ask first (WSHED-81).
