@@ -1220,7 +1220,7 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .lb-backdrop { position: absolute; inset: 0; background: var(--scrim); opacity: 0; transition: opacity 200ms; }
 .lb-sheet-wrap.open .lb-backdrop { opacity: 1; }
 .lb-sheet {
-  position: relative; width: 100%; max-height: 88vh; display: flex; flex-direction: column;
+  position: relative; width: 100%; max-height: 88vh; max-height: min(88vh, 88dvh); display: flex; flex-direction: column;
   background: var(--bg-panel); border: 1px solid var(--bg-edge); border-bottom: none;
   border-radius: 1.1rem 1.1rem 0 0; box-shadow: 0 -12px 40px var(--shadow-sheet);
   transform: translateY(100%); animation: sheet-up 260ms cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
@@ -1230,11 +1230,12 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .lb-sheet-wrap.closing .lb-backdrop { opacity: 0; }
 @keyframes sheet-up { to { transform: translateY(0); } }
 @keyframes sheet-down { from { transform: translateY(0); } to { transform: translateY(100%); } }
-.lb-sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; padding: 0.9rem 1rem 0.4rem 1.1rem; }
+.lb-sheet-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; padding: 0.9rem 1rem 0.4rem 1.1rem; }
 .lb-sheet-title { font-family: var(--serif); font-weight: 500; font-size: 1.35rem; margin: 0; }
 .lb-close { background: none; border: none; color: var(--fg-dim); font-size: 1.6rem; line-height: 1; cursor: pointer; padding: 0.2rem 0.5rem; min-width: 2.75rem; min-height: 2.75rem; }
 .lb-close:hover { color: var(--fg); }
-.lb-sheet-body { padding: 0.2rem 1rem 1rem; overflow-y: auto; display: flex; flex-direction: column; gap: 0.7rem; }
+/* WSHED-113: a flex child only scrolls if it may shrink — min-height: 0 is what lets a tall sheet scroll instead of being clipped */
+.lb-sheet-body { flex: 1 1 auto; min-height: 0; padding: 0.2rem 1rem 1rem; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 0.7rem; }
 @media (min-width: 40rem) {
   .lb-sheet-wrap { align-items: center; }
   .lb-sheet { width: min(92vw, 30rem); max-height: 80vh; border-radius: 1rem; border-bottom: 1px solid var(--bg-edge); transform: translateY(0) scale(0.96); opacity: 0; animation: card-in 200ms ease-out forwards; }
@@ -1981,7 +1982,7 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 @media (max-width: 400px) { .sc-seg-btn { padding: 0.35rem 0.55rem; } .sc-group span { display: none; } }
 .sc-groupname { margin-top: 0.6rem; }
 .sc-goal { color: var(--accent); }
-.sc-d-tagchips { margin-top: 0.1rem; }
+.sc-d-tagchips { margin-top: 0.1rem; max-height: 8.5rem; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 0.2rem; } /* WSHED-113: a big tag cloud scrolls in place; the fields below stay near */
 .sc-details { margin-bottom: 0.9rem; }
 .lb-score-link { display: inline-flex; align-items: center; gap: 0.3rem; }
 .lb-score-link .ic { width: 1rem; height: 1rem; }
