@@ -1,6 +1,6 @@
 // Network-first, cache-fallback. Installable + fully offline, but never serves
 // a stale shell when the network is up (see docs/DESIGN.md §5).
-const CACHE = "chopinly-v49";
+const CACHE = "chopinly-v50";
 const SHELL = [
   "/app",
   "/css/app.css",
@@ -41,6 +41,29 @@ const SHELL = [
   "/js/tools/logbook/takes.js",
   "/js/tools/recorder/index.js",
   "/js/tools/recorder/ui.js",
+  "/js/lib/scores/pdf.js",
+  "/js/lib/scores/store.js",
+  "/js/lib/scores/pagecache.js",
+  "/js/tools/scores/index.js",
+  "/js/tools/scores/ui.js",
+  "/js/tools/scores/library.js",
+  "/js/tools/scores/reader.js",
+  "/vendor/pdfjs/pdf.mjs",
+  "/vendor/pdfjs/pdf.worker.mjs",
+  "/vendor/pdfjs/standard_fonts/FoxitDingbats.pfb",
+  "/vendor/pdfjs/standard_fonts/FoxitFixed.pfb",
+  "/vendor/pdfjs/standard_fonts/FoxitFixedBold.pfb",
+  "/vendor/pdfjs/standard_fonts/FoxitFixedBoldItalic.pfb",
+  "/vendor/pdfjs/standard_fonts/FoxitFixedItalic.pfb",
+  "/vendor/pdfjs/standard_fonts/FoxitSerif.pfb",
+  "/vendor/pdfjs/standard_fonts/FoxitSerifBold.pfb",
+  "/vendor/pdfjs/standard_fonts/FoxitSerifBoldItalic.pfb",
+  "/vendor/pdfjs/standard_fonts/FoxitSerifItalic.pfb",
+  "/vendor/pdfjs/standard_fonts/FoxitSymbol.pfb",
+  "/vendor/pdfjs/standard_fonts/LiberationSans-Bold.ttf",
+  "/vendor/pdfjs/standard_fonts/LiberationSans-BoldItalic.ttf",
+  "/vendor/pdfjs/standard_fonts/LiberationSans-Italic.ttf",
+  "/vendor/pdfjs/standard_fonts/LiberationSans-Regular.ttf",
   "/js/lib/keyboard/layout.js",
   "/js/lib/keyboard/keyboard.js",
   "/js/lib/keyboard/piano.js",
@@ -92,7 +115,7 @@ const SHELL = [
 // Every shell fetch carries ?v=<CACHE> and bypasses the HTTP cache, so a new
 // worker version can never precache a stale module from the browser or edge
 // cache (WSHED-58). Responses are stored under the clean URL.
-const BUSTABLE = (path) => path === "/app" || path === "/manifest.webmanifest" || /^\/(js|css)\//.test(path);
+const BUSTABLE = (path) => path === "/app" || path === "/manifest.webmanifest" || /^\/(js|css|vendor)\//.test(path);
 function netRequest(url) {
   const u = new URL(url, self.location.origin);
   if (BUSTABLE(u.pathname)) u.searchParams.set("v", CACHE);
