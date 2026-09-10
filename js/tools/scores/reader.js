@@ -10,7 +10,7 @@ import { haptic } from "../logbook/motion.js";
 import { scoreStore } from "../../lib/scores/store.js";
 import { cloud } from "../../lib/scores/cloud.js";
 import { open as openPdf } from "../../lib/scores/pdf.js";
-import { createPageCache, trimPages, MAX_RENDER_PX, IOS, releaseCanvas } from "../../lib/scores/pagecache.js";
+import { createPageCache, MAX_RENDER_PX, IOS, releaseCanvas } from "../../lib/scores/pagecache.js";
 import { openMarks, paintMarkButton } from "./marks.js";
 import { openDetails, practiceScore, saveScoreFile, storeThumb, hasThumb } from "./library.js";
 import { createInkLayer } from "./inkbar.js";
@@ -108,7 +108,7 @@ export async function openReader({ id, page = null, ctx, onClose }) {
   const renderDpr = () => Math.min(devicePixelRatio || 1, IOS ? 2 : 3, Math.max(1, MAX_RENDER_PX / Math.max(1, cssW)));
   function rebuildCache() {
     cache?.close();
-    cache = createPageCache(doc, { width: cssW, dpr: renderDpr(), scoreId: id, persist: "auto", size: s.size });
+    cache = createPageCache(doc, { width: cssW, dpr: renderDpr() });
   }
   async function draw(n) {
     const seq = ++drawSeq;
@@ -116,9 +116,10 @@ export async function openReader({ id, page = null, ctx, onClose }) {
     spinTimer = setTimeout(() => { if (seq === drawSeq) spin.hidden = false; }, SPIN_MS);
     try {
       const bmp = await cache.get(n);
-      if (closed || seq !== drawSeq) return;
+      if (closed || seq !== drawSeq) { bmp.close?.(); return; }
       if (canvas.width !== bmp.width || canvas.height !== bmp.height) { canvas.width = bmp.width; canvas.height = bmp.height; }
       cx.drawImage(bmp, 0, 0);
+      bmp.close?.(); // the canvas has it now; nothing else keeps page bitmaps (WSHED-109)
       if (inkPage !== n) { inkPage = n; ink.load(n); } // ink and page on the same frame
     } catch (e) {
       if (!closed && seq === drawSeq && e?.message !== "evicted" && e?.message !== "closed") toast(`couldn't draw page ${n}`);
@@ -224,8 +225,6 @@ export async function openReader({ id, page = null, ctx, onClose }) {
     layout(); rebuildCache();
     const start = page ?? positions[id] ?? 1;
     goTo(start, { bump: false });
-    // keep the rendered-page store under budget: least recently opened scores go first, never this one
-    setTimeout(() => { if (closed) return; const order = logbook.scores({ sort: "recent" }).map((x) => x.id).filter((x) => x !== id).reverse(); trimPages(order).catch(() => {}); }, 4000);
   } catch (e) {
     spin.hidden = true;
     toast(e.message);

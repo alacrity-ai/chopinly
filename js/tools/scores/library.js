@@ -13,7 +13,6 @@ import { openPicker } from "../logbook/picker.js";
 import { scoreStore } from "../../lib/scores/store.js";
 import { open as openPdf } from "../../lib/scores/pdf.js";
 import { groupByComposer, suggestComposers, suggestTags, parseTags, SORT_IDS } from "../../lib/scores/library.js";
-import { warmPages, PERSIST_BYTES } from "../../lib/scores/pagecache.js";
 import { cloud } from "../../lib/scores/cloud.js";
 import { MAX_FILE_BYTES, fmtQuota } from "../../lib/scores/plans.js";
 import { fmtBytes } from "../../lib/takes/peaks.js";
@@ -120,7 +119,6 @@ export async function importFile(file) {
   const score = logbook.addScore({ id, title: info.title || stripExt(file.name) || "untitled score", composer: looksLikeName(info.author) ? info.author : "", pages, size: file.size, sha256: hash });
   (async () => {
     try { await storeThumb(doc, id); } catch { /* no thumbnail, no harm */ }
-    try { if (file.size >= PERSIST_BYTES) await warmPages(doc, { scoreId: id, width: Math.min(innerWidth, innerHeight), dpr: Math.min(devicePixelRatio || 1, 3) }); } catch { /* the reader renders on demand */ }
     doc.close();
     listenersEmit();
   })();
