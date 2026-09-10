@@ -100,7 +100,8 @@ export function openSheet({ title = "", html = "", cls = "" } = {}) {
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) done();
     else { panel.addEventListener("animationend", done, { once: true }); setTimeout(done, 320); }
   };
-  const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); close(); } };
+  const topmost = () => [...document.querySelectorAll(".lb-sheet-wrap:not(.closing)")].at(-1) === wrap;
+  const onKey = (e) => { if (e.key === "Escape" && topmost()) { e.preventDefault(); close(); } }; // stacked sheets: Escape peels one
   document.addEventListener("keydown", onKey);
   wrap.querySelector(".lb-backdrop").addEventListener("click", close);
   wrap.querySelector(".lb-close").addEventListener("click", close);
