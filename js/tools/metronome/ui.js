@@ -7,6 +7,7 @@ import { icon } from "../../lib/icons.js";
 import { logbook, TYPES } from "../../lib/logbook.js";
 import { openPicker } from "../logbook/picker.js";
 import { toast } from "../logbook/util.js";
+import { offerScore } from "../logbook/scoreprompt.js";
 import { engage } from "../logbook/ceremony.js";
 
 const MARKINGS = [
@@ -144,7 +145,8 @@ export function buildUI(root, { getAudio, store, setRunning }) {
     const pick = await openPicker({ mode: "start" });
     if (!pick) return;
     logbook.start(pick.goal.id);
-    engage({ goal: pick.goal, type: TYPES[pick.goal.type] ?? TYPES.other });
+    await engage({ goal: pick.goal, type: TYPES[pick.goal.type] ?? TYPES.other });
+    offerScore(pick.goal.id); // WSHED-103
   });
 
   // --- tempo controls ----------------------------------------------------

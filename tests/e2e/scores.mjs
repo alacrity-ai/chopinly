@@ -253,6 +253,47 @@ await step("⋯ → practice this: the clock starts on the linked goal, the bar 
   await page.waitForSelector(".sc-row");
 });
 
+await step("starting practice on a goal with a score asks to open it: stay here from play; open from the goal page (WSHED-103)", async () => {
+  await page.goto(`${BASE}/?app=1#/logbook`);
+  await page.waitForSelector("#lb-play");
+  await page.click("#lb-play");
+  await page.waitForSelector(".lb-picker-wrap.open");
+  await page.click('.lb-pick-row:has-text("Fixture Sonata")');
+  await page.waitForSelector(".lb-ceremony.engage.in");
+  await page.waitForFunction(() => !document.querySelector(".lb-ceremony"), null, { timeout: 8000 });
+  await page.waitForSelector(".lb-score-prompt.open #lb-score-open", { timeout: 8000 });
+  await page.screenshot({ path: `${S}/sc-16-open-score-prompt.png` });
+  await page.click("#lb-score-stay");
+  await page.waitForFunction(() => !document.querySelector(".lb-sheet-wrap:not(.closing)"));
+  await page.waitForSelector(".lb-hero.running");
+  if (await page.locator(".sc-reader").count()) throw new Error("stay here opened the reader");
+  const gid = await lb((m) => { const g = m.logbook.running().goal.id; m.logbook.stop(); return g; });
+  await page.goto(`${BASE}/?app=1#/logbook/goals/${gid}`);
+  await page.waitForSelector("#lb-gp-practice");
+  await page.click("#lb-gp-practice");
+  await page.waitForSelector(".lb-ceremony.engage.in");
+  await page.waitForFunction(() => !document.querySelector(".lb-ceremony"), null, { timeout: 8000 });
+  await page.waitForSelector(".lb-score-prompt.open #lb-score-open", { timeout: 8000 });
+  await page.click("#lb-score-open");
+  await page.waitForSelector(".sc-reader", { timeout: 10000 });
+  await page.waitForFunction(() => document.querySelector(".sc-reader")?.classList.contains("live"), null, { timeout: 5000 });
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !document.querySelector(".sc-reader"));
+  // a goal without a score never asks
+  await lb((m) => { m.logbook.stop(); const g = m.logbook.addGoal({ name: "Scales", type: "technique" }); m.logbook.start(g.id); m.logbook.stop(); });
+  await page.goto(`${BASE}/?app=1#/logbook`);
+  await page.waitForSelector("#lb-play");
+  await page.click("#lb-play");
+  await page.waitForSelector(".lb-picker-wrap.open");
+  await page.click('.lb-pick-row:has-text("Scales")');
+  await page.waitForFunction(() => !document.querySelector(".lb-ceremony"), null, { timeout: 8000 });
+  await page.waitForTimeout(400);
+  if (await page.locator(".lb-score-prompt").count()) throw new Error("asked for a goal without a score");
+  await lb((m) => m.logbook.stop());
+  await page.goto(`${BASE}/?app=1#/scores`);
+  await page.waitForSelector(".sc-row");
+});
+
 /** Draw a stroke on the ink overlay with synthetic pen pointer events (fractions of the page). */
 const penStroke = (pts, { type = "pen", pressure = 0.6 } = {}) => page.evaluate(([pts, type, pressure]) => {
   const c = document.querySelector(".sc-ink"); const r = c.getBoundingClientRect();

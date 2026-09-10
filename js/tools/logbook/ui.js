@@ -16,6 +16,7 @@ import { whoosh, tickRow, stamp, glow, haptic } from "./motion.js";
 import { engage, bow } from "./ceremony.js";
 import { recording, recordingStrip, wireRecording, takeRow, wireTakeRows } from "./takes.js";
 import { takeStore } from "../../lib/takes/store.js";
+import { offerScore } from "./scoreprompt.js";
 
 export function buildUI(root) {
   let ticker = 0;
@@ -184,6 +185,7 @@ export function buildUI(root) {
     render();
     await engage({ goal: r.goal, type: TYPES[r.goal.type] ?? TYPES.other, landOn: () => root.querySelector("#lb-hero-goal") });
     if (r.created) stamp(root.querySelector(`.lb-trow[data-id="${r.goal.id}"]`));
+    await offerScore(r.goal.id); // WSHED-103: a goal with a score on this device asks to open it
   }
   async function switchGoal() {
     const cur = logbook.running();
@@ -195,6 +197,7 @@ export function buildUI(root) {
     render();
     await whoosh(r.rowEl, root.querySelector("#lb-hero-goal"));
     stamp(root.querySelector(`.lb-trow[data-id="${r.goal.id}"]`));
+    await offerScore(r.goal.id);
   }
   async function stop() {
     const run = logbook.running();
