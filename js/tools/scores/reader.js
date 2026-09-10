@@ -121,8 +121,9 @@ export async function openReader({ id, page = null, ctx, onClose }) {
       cx.drawImage(bmp, 0, 0);
       bmp.close?.(); // the canvas has it now; nothing else keeps page bitmaps (WSHED-109)
       if (inkPage !== n) { inkPage = n; ink.load(n); } // ink and page on the same frame
+      doc.oversized(n).then((over) => { if (over && !closed && seq === drawSeq) toast(`page ${n} is a scan too fine for this device to decode — it shows on a computer; a lighter copy of this score would fix it`); }).catch(() => {});
     } catch (e) {
-      if (!closed && seq === drawSeq && e?.message !== "evicted" && e?.message !== "closed") toast(`couldn't draw page ${n}`);
+      if (!closed && seq === drawSeq && e?.message !== "evicted" && e?.message !== "closed") toast(e?.message?.includes("took too long") ? e.message : `couldn't draw page ${n}`);
     } finally {
       if (seq === drawSeq) { clearTimeout(spinTimer); spin.hidden = true; }
     }
