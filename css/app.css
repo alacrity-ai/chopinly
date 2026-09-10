@@ -1869,6 +1869,39 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .sc-chev .ic { width: 1.1rem; height: 1.1rem; }
 .sc-row.sc-hl .sc-open { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .sc-empty em { font-style: italic; }
+.sc-cloud { color: var(--fg-dim); white-space: nowrap; }
+.sc-sub .ic { width: 0.95rem; height: 0.95rem; display: inline-block; vertical-align: -0.18rem; }
+.sc-remote-cloud { color: var(--accent); white-space: nowrap; }
+
+/* --- Scores P3: "upload scores" — the list becomes a checklist --------------- */
+.sc-add-quiet { background: transparent; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); }
+.sc-add-quiet:active { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.sc-selbar { display: grid; grid-template-columns: auto 1fr auto auto; grid-template-areas: "all text text text" "quota quota cancel go"; align-items: center; gap: 0.55rem 0.6rem; margin: 0 0 0.6rem; padding: 0.6rem 0.7rem; border: 1px solid var(--bg-edge); border-radius: 0.85rem; background: var(--bg-raised); }
+.sc-selbar .sc-add, .sc-selbar .lb-chip { white-space: nowrap; justify-self: start; }
+#sc-sel-all { grid-area: all; }
+.sc-selbar .sc-sel-text { grid-area: text; }
+.sc-selbar .sc-sel-quota { grid-area: quota; color: var(--fg-dim); font-size: 0.75rem; line-height: 1.25; min-width: 0; }
+.sc-selbar .sc-sel-quota em { color: var(--rough); font-style: normal; }
+#sc-sel-go { grid-area: go; justify-self: end; }
+.sc-selbar > #sc-sel-cancel { grid-area: cancel; }
+.sc-selbar .lb-chip { padding: 0.3rem 0.7rem; font-size: 0.8rem; min-height: 2rem; }
+.sc-sel-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.sc-sel-text b { font-weight: 500; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-sel-text small { color: var(--fg-dim); font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-sel-text em { color: var(--rough); font-style: normal; }
+.sc-selbar .sc-add:disabled { opacity: 0.45; }
+.sc-selbar.sc-uploading { grid-template-columns: 1fr auto; grid-template-areas: "text cancel" "meter meter"; }
+.sc-selbar.sc-uploading .sc-sel-text { grid-area: text; }
+.sc-sel-meter { grid-area: meter; }
+.sc-sel-meter { height: 0.3rem; border-radius: 999px; background: var(--bg-edge); overflow: hidden; }
+.sc-sel-meter i { display: block; height: 100%; background: var(--accent); transition: width 160ms linear; }
+.sc-pick .sc-open { grid-template-columns: 1.6rem 1fr 2rem; }
+.sc-check { width: 1.45rem; height: 1.45rem; border-radius: 0.4rem; border: 1.5px solid var(--fg-dim); display: inline-flex; align-items: center; justify-content: center; color: transparent; transition: background 120ms, border-color 120ms; }
+.sc-check .ic { width: 1rem; height: 1rem; }
+.sc-pick.sc-on .sc-check { background: var(--accent); border-color: var(--accent); color: var(--fg-on-accent); }
+.sc-pick.sc-nopick .sc-open { cursor: default; opacity: 0.55; }
+.sc-pick.sc-nopick .sc-check { border-style: dashed; }
+.sc-thumb-sm { width: 2rem; height: 2.5rem; }
 
 /* --- Scores: the reader ----------------------------------------------------- */
 .sc-reader { position: fixed; inset: 0; z-index: 45; background: #000; color: #eee5d3; overscroll-behavior: contain; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }

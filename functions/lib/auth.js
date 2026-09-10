@@ -3,6 +3,7 @@ import { json, HttpError, readJson, requireSameOrigin, clientIp } from "./http.j
 import { sha256Hex, randomToken, randomCode, safeEqual, newId } from "./crypto.js";
 import { sendMail, codeMail } from "./mail.js";
 import { createSession, requireUser, findOrCreateUser, publicUser, setCookie, clearCookie, readToken } from "./session.js";
+import { wipeUserFiles } from "./r2.js";
 
 const CODE_TTL_MS = 10 * 60000;
 const MAX_ATTEMPTS = 5;
@@ -78,6 +79,7 @@ async function signOut(ctx) {
 async function deleteMe(ctx) {
   requireSameOrigin(ctx.request);
   const { user } = await requireUser(ctx);
+  await wipeUserFiles(ctx.env, user.id); // cloud score files go first; the device keeps its copies
   await ctx.env.DB.batch([
     ctx.env.DB.prepare("DELETE FROM entities WHERE user_id = ?").bind(user.id),
     ctx.env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(user.id),

@@ -215,10 +215,11 @@ and turning a page with ink shows both on one frame.
 ## Phase 3 — cloud files, quota, legal, the public story
 
 **Goal:** with an account, the PDF itself follows the musician. MVP complete.
-**Gate:** P3 is the first feature where a user costs money; it starts only after
-Leif reviews P0 to P2 in production (his instruction 2026-09-09).
+**Gate:** P3 is the first feature where a user costs money; it started only after
+Leif lifted the gate (2026-09-09, "land it") so his iPad library can be uploaded and
+catalogued (WSHED-104/105).
 
-1. **Plans.** `functions/lib/plans.js`: `quotaBytes(plan)` → 100 MB for `free` (promotional, per Leif 2026-09-09; premium is a later epic). Migration adds `users.plan TEXT NOT NULL DEFAULT 'free'` beside `storage_bytes`.
+1. **Plans.** `js/lib/scores/plans.js` (shared with the Functions): `quotaBytes(plan)` → 100 MB for `free` (promotional), 5 GB for `premium` (a flag an operator sets; no billing). Migration `0002_plan_storage.sql` adds `users.plan TEXT NOT NULL DEFAULT 'free'` and `users.storage_bytes`.
 1. **R2.** `wrangler r2 bucket create chopinly-scores` (token
    `cloudflare_api_token`); `wrangler.toml` `[[r2_buckets]] binding = "SCORES"
    bucket_name = "chopinly-scores"`; local dev uses the Miniflare R2 shim
@@ -231,14 +232,15 @@ Leif reviews P0 to P2 in production (his instruction 2026-09-09).
    prefix; sync tombstone hook; `DELETE /api/me` prefix wipe; rate limit
    `scores:<uid>` 60/min. Errors are sentences.
 3. **Client.** `js/lib/scores/cloud.js` per design §10.2: reconcile after every
-   sync, upload queue (one at a time, newest first, online + visible only,
-   backoff), download on open with progress, *keep every score on this device*
-   background downloads, sign-in marks all for upload, `uploaded` flag in the
-   `files` store. The library row's cloud glyph and the *on another device*
-   state become *in the cloud — tap to download*.
-4. **Account sheet.** Quota line *42 MB of 100 MB (promotional)*; *remove downloaded scores
-   not opened in 90 days* (only for scores confirmed in the cloud); upload / quota
-   errors surface here as sentences.
+   sync, **deliberate uploads** from the library's checklist (*upload* button →
+   checkboxes, *select all*, one at a time with progress and *stop*), download on
+   open with progress, details-sheet row (upload / remove / download). The library
+   row's cloud glyph and the *on another device* state become *in the cloud — tap
+   to download*. (*Keep every score on this device* and automatic sign-in uploads
+   were dropped: bytes cost money, so nothing goes up unasked.)
+4. **Account sheet.** Row tail *42 MB of 100 MB in the cloud*; the scores sheet names the
+   plan label, counts cloud scores, offers *remove downloaded scores not opened in 90
+   days* (only for scores confirmed in the cloud) and shows the last cloud error.
 5. **Legal.** Privacy §2 and §3 rows, the terms' personal-copy and takedown
    clause, regenerate, `npm test`.
 6. **Public story.** README *In the case* gains **Scores**; `content/tools/scores.md`
@@ -259,7 +261,9 @@ Leif reviews P0 to P2 in production (his instruction 2026-09-09).
 **Done when:** a score imported on the iPad opens on the phone after sign-in, ink
 and bookmarks match on both, the quota shows in the account sheet, deleting the
 account empties the bucket prefix, and the legal pages describe exactly what the
-code does.
+code does. **Landed 2026-09-09 (v54).** Found on the way: the sync pull read
+`users.rev` and the rows in two queries, so a concurrent push could move a device's
+cursor past a row it never got — now one D1 batch (`functions/lib/sync.js`).
 
 ## 4. Order, risk, and what could send a phase back
 

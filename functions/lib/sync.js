@@ -5,6 +5,7 @@ import { json, HttpError, readJson, requireSameOrigin } from "./http.js";
 import { requireUser } from "./session.js";
 import { limit } from "./auth.js";
 import { KINDS, key, pick, same, bodyCap } from "../../js/lib/merge.js";
+import { deleteScoreFile } from "./r2.js";
 
 const MAX_CHANGES = 5000;
 const READ_CHUNK = 90;   // D1 caps binds at 100 per statement
@@ -74,12 +75,21 @@ async function sync(ctx) {
   const existing = await readExisting(db, user.id, incoming);
   const winners = incoming.filter((e) => { const cur = existing.get(key(e)) ?? null; return !(cur && same(cur, e)) && pick(cur, e) === e; });
   await writeWinners(db, user.id, winners);
+  // "delete everywhere" needs no second request: a score tombstone takes its cloud file with it (WSHED-102)
+  for (const e of winners) if (e.kind === "score" && e.deleted) await deleteScoreFile(ctx.env, user.id, e.id).catch((err) => console.error("score file delete", e.id, err));
 
-  const { results } = await db.prepare("SELECT kind, id, body, updated_at, deleted, rev FROM entities WHERE user_id = ? AND rev > ? ORDER BY rev LIMIT ?")
-    .bind(user.id, cursor, PULL_LIMIT + 1).all();
+  // The account's rev and the rows above the cursor are read in ONE batch (one
+  // transaction). Read apart, another device's push could land between them and
+  // the cursor would jump past a row this device never received (WSHED-102 found
+  // it: a note tombstone lost when B booted while A was pushing).
+  const [revRes, rowsRes] = await db.batch([
+    db.prepare("SELECT rev FROM users WHERE id = ?").bind(user.id),
+    db.prepare("SELECT kind, id, body, updated_at, deleted, rev FROM entities WHERE user_id = ? AND rev > ? ORDER BY rev LIMIT ?").bind(user.id, cursor, PULL_LIMIT + 1),
+  ]);
+  const results = rowsRes.results;
   const more = results.length > PULL_LIMIT;
   const rows = more ? results.slice(0, PULL_LIMIT) : results;
-  const newCursor = rows.length ? rows[rows.length - 1].rev : Math.max(cursor, (await db.prepare("SELECT rev FROM users WHERE id = ?").bind(user.id).first("rev")) ?? cursor);
+  const newCursor = rows.length ? rows[rows.length - 1].rev : Math.max(cursor, revRes.results[0]?.rev ?? cursor);
   return json(200, { cursor: newCursor, changes: rows.map(rowToEnv), more, pushed: winners.length });
 }
 

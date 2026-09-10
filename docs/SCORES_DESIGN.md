@@ -55,7 +55,8 @@ a **rendered-page cache** is wanted because real scores run 30 MB and more.
 | Bookmarks | **Their own kind, `mark`** `{ scoreId, page, label }`. | Two devices adding bookmarks to the same score is plausible (iPad at the piano, phone on the train). Separate rows merge without loss; an array inside the score row would lose one side. |
 | Reading position | **Per device**, `ws.scores.pos` in localStorage. Not synced. | Syncing "where I was" churns the change stream on every page turn and surprises the musician when the phone jumps the iPad. forScore does not sync it either. |
 | Cloud file storage | **Cloudflare R2**, bucket `chopinly-scores`, binding `SCORES` in the Pages project, keys `u/<userId>/<scoreId>.pdf`. Uploaded and downloaded **through Pages Functions** (`PUT` / `GET /api/scores/:id/file`), streamed, never a public URL. | D1 is the wrong store for 30 MB binaries and the sync body cap is 8 KB. R2 has no egress charge and a 10 GB free tier. Proxying through the Function keeps auth on the session cookie, keeps the bucket private, and avoids minting S3 credentials for presigned URLs. Workers stream request bodies to R2 without buffering. |
-| Quota | **Promotional 100 MB per free account** (Leif, 2026-09-09), per-score cap **60 MB**. Tracked in `users.storage_bytes`, enforced on upload with a sentence, shown in the account sheet as *promotional*. `users.plan` (`free` today) decides the quota in one place (`functions/lib/plans.js`) so a paid plan is a row change, not a code change. | Cloud files are the first feature where a user costs money. Leif's direction: local storage only for non-premium members; cross-device **scores** and cross-device **audio (takes)** become the premium proposition when premium exists. 100 MB keeps the demo honest (a few dozen engraved scores) without inviting a scan library. |
+| Quota | **Promotional 100 MB per free account**, **5 GB per premium account** (Leif, 2026-09-09), per-score cap **60 MB**. Tracked in `users.storage_bytes`, enforced on upload with a sentence, shown in the account sheet as *promotional* / *premium*. `users.plan` (`free` \| `premium`) decides the quota in one place (`js/lib/scores/plans.js`, shared by the browser and the Functions like `merge.js`) so a paid plan is a row change, not a code change. Premium is an operator-set flag today — no sign-up, marketing or billing (Leif, 2026-09-09: "we just need the capability to flag an account as premium now"). |
+| Uploads are deliberate | The PDF goes up only when the musician chooses **upload** in the library: the list becomes a checklist (tap rows, *select all*), and the picked scores upload one at a time with progress and a *stop*. Never automatic on sign-in. Downloads of your own files are automatic on open. | Cloud bytes cost money and the free allowance is promotional; an automatic upload of a 40-score library on first sign-in would spend it without asking. Leif's refinement 2026-09-09: "an upload scores button which creates select boxes next to all the scores in the list … select all should be easy". | Cloud files are the first feature where a user costs money. Leif's direction: local storage only for non-premium members; cross-device **scores** and cross-device **audio (takes)** become the premium proposition when premium exists. 100 MB keeps the demo honest (a few dozen engraved scores) without inviting a scan library. |
 | Upload policy | **Automatic when signed in and online**, in the background, newest first; download **on open**, with a setting *keep every score on this device* for people who want the whole library offline. | The brief says "accessible across devices"; making the musician press *upload* per score would break that. Auto-download of the whole library on a phone would eat storage they did not ask to spend. |
 | Rendered-page cache | **Two tiers** (§5): an in-memory ring of `ImageBitmap`s around the current page, and a persistent `pages` store of encoded bitmaps for scores over a size threshold, with a byte budget and least-recently-opened eviction. | Confirmed by Leif. Engraved PDFs render in tens of milliseconds and need only the memory tier; 30 MB scans are JPEG-decode bound and the second open should be instant. |
 | Pen versus finger | **Pen draws, finger turns and scrolls** by default (`pointerType === "pen"`). A toggle in the ink bar lets a finger draw on devices without a stylus. | Native palm rejection for free on iPad. Finger-drawing devices (Android phones, a desktop mouse) still get ink. |
@@ -86,6 +87,8 @@ chopinly.com (Pages project "woodshed")
 ├── js/lib/logbook.js         + kinds score · mark · ink (doc arrays, stamp, tombstones, cascade)
 ├── js/lib/merge.js           + KINDS, per-kind body caps (shared with functions/)
 ├── functions/lib/scores.js   PUT/GET/DELETE /api/scores/:id/file · GET /api/scores/files · quota
+├── functions/lib/r2.js       key layout u/<uid>/<id>.pdf · list / delete / wipe a prefix (no imports: auth, sync and scores share it)
+├── js/lib/scores/plans.js    PLANS (free 100 MB promotional · premium 5 GB) · MAX_FILE_BYTES · fits() — shared with the Functions
 └── R2 "chopinly-scores"      u/<userId>/<scoreId>.pdf
 ```
 
@@ -278,25 +281,36 @@ row) and opens it. Offline, such a row says *on another device* like a take does
 | `PUT /api/scores/:id/file` | Streams the body to R2 `u/<uid>/<id>.pdf`. Headers `content-length`, `x-chopinly-sha256`. Refuses over 60 MB per file or when `storage_bytes + size > quota(plan)` (413 with a sentence naming the promotional limit). Updates `users.storage_bytes` in the same request. Idempotent: same id + same hash returns 200 without re-storing. |
 | `GET /api/scores/:id/file` | Streams from R2 with `content-type: application/pdf`, `etag` = sha256, `cache-control: private, no-store`. 404 when the object is not the caller's. |
 | `DELETE /api/scores/:id/file` | Removes the object and credits the quota. Also called by the sync handler when it writes a `score` tombstone, so *delete everywhere* needs no second request. |
-| `GET /api/scores/files` | `{ files: [{ id, size, sha256 }], used, quota }` — what the bucket holds for this user; the client reconciles local state against it after every sync. |
+| `GET /api/scores/files` | `{ files: [{ id, size, sha256, uploaded }], used, quota, plan, label }` — what the bucket holds for this user; the client reconciles local state against it after every sync (throttled to once per 10 s). Recomputes `storage_bytes` from the prefix when it disagrees. |
+| `GET /api/me` | Now also returns `plan` and `storage: { used, quota, label }`. |
 | `DELETE /api/me` | Now also lists and deletes the `u/<uid>/` prefix, then zeroes the quota. |
 
 Rate limit: 60 file requests per user per minute, on the existing `rate_limits`.
+A refused upload (413, 415, 400) **drains the body first**: a response that closes
+the socket mid-upload reaches the browser as a network error, not our sentence.
+E2E accounts may shrink their quota with `x-chopinly-e2e-quota` + `x-chopinly-e2e-secret`
+so the refusal path is testable without a 100 MB fixture.
 
 ### 10.2 Client engine (`js/lib/scores/cloud.js`)
 
-- After each successful sync (`sync.on`), fetch `/api/scores/files` and compute:
-  **to upload** = local files whose id is not in the cloud list (or whose hash
-  differs); **in cloud only** = cloud ids with no local blob.
-- Uploads run one at a time, newest score first, only when `navigator.onLine`
-  and the tab is visible; 413 and 429 pause the queue with a sentence in the
-  account sheet; a failed upload retries with backoff and never blocks sync.
+- After each successful sync (`sync.on`, throttled), fetch `/api/scores/files`:
+  a row is **uploaded** when the cloud copy's hash equals the row's; **in cloud
+  only** = cloud ids with no local blob (*in the cloud — tap to download*).
+- **Uploads are deliberate** (decision table): the library's *upload* button
+  turns the list into a checklist; *select all* picks every local score not yet
+  in the cloud; the picked scores upload one at a time in list order with a
+  progress bar, the screen kept awake, and a *stop* that aborts after the file in
+  flight. A quota refusal is caught client-side before a byte goes up when the
+  list is known, else the server's 413 sentence stops the batch; 429 and offline
+  stop it too, and what failed stays selected so one tap retries. A network
+  error at zero bytes sent is retried once (stale pooled connection).
+- The details sheet carries one context row: *upload to the cloud* / *remove
+  from the cloud* / *download to this device*.
 - Downloads happen on open (or in the background for every score when *keep
   every score on this device* is on). Progress shows in the row; a download that
   loses the network resumes from zero (files are small enough that ranges are
   not worth the code).
-- **Sign in** marks every local file for upload (like `markAllPending`). **Sign
-  out** keeps files on the device. **Sign out & clear this device** clears the
+- **Sign in** uploads nothing by itself. **Sign out** keeps files on the device. **Sign out & clear this device** clears the
   `files` and `pages` stores. **Delete account** removes cloud files and keeps
   the device's copies, as it does for the rest of the logbook.
 
@@ -305,7 +319,9 @@ Rate limit: 60 file requests per user per minute, on the existing `rate_limits`.
 A **scores on this device** row (count · MB downloaded · MB of rendered pages)
 opening a sheet with *remove downloaded scores not opened in 90 days* (signed in
 and backed up only), *clear rendered pages*, *keep every score on this device*.
-Signed in, the sync line gains *· 42 MB of 100 MB (promotional)* when scores exist.
+Signed in, the scores row gains *· 42 MB of 100 MB in the cloud*; the sheet behind
+it says *(promotional)* / *(premium)*, counts the scores in the cloud, and shows
+the last cloud error as a sentence.
 
 ## 11. Legal and privacy
 
@@ -341,8 +357,9 @@ What that means for this design:
 - **Cloud files** (P3) are the paid surface. Until premium exists, free accounts
   get **100 MB, labelled promotional** in the account sheet and in the 413
   sentence, so nobody reads it as a permanent entitlement.
-- `users.plan` and `functions/lib/plans.js` (`quotaBytes(plan)`) land with P3 so
-  the quota is data. Premium itself (billing, plan switch, the audio-across-devices
+- `users.plan` and `js/lib/scores/plans.js` (`quotaBytes(plan)`) landed with P3 so
+  the quota is data, and **`premium` exists as a flag** (5 GB) that an operator sets
+  by hand. Premium itself (billing, plan switch, the audio-across-devices
   counterpart for takes) is its own epic and is **not** in WSHED-98.
 
 ## 12. Performance and limits
@@ -353,7 +370,7 @@ What that means for this design:
 | Engraved 10-page PDF | 0.3 to 2 MB; first render ~30 ms per page on an iPad |
 | Scanned 60-page score | 20 to 50 MB; first render 200 to 600 ms per page; cached WebP ~300 KB per page |
 | Per-score cap | 60 MB (import and upload) |
-| Per-account cloud quota | 100 MB promotional on free accounts; premium (not yet a feature) lifts it |
+| Per-account cloud quota | 100 MB promotional on free accounts; 5 GB on premium (operator-set flag) |
 | Rendered-page budget on device | 300 MB, evict least-recently-opened score |
 | Ink body cap | 128 KB per page (a dense page is ~3 KB) |
 | Sync change cap | unchanged (5 000 changes per call); a 60-page fully inked score is 60 rows |
