@@ -440,30 +440,25 @@ await step("ink: the yellow highlighter brush, eraser removes a stroke, undo bri
   await page.waitForFunction(() => !document.querySelector(".sc-reader"));
 });
 
-await step("the persistent page tier: a cache asked to persist stores a page, the next cache decodes it, eviction clears it", async () => {
+await step("the page cache holds the page and the next one only; nothing is stored (WSHED-109)", async () => {
   const r = await page.evaluate(async (id) => {
     const { scoreStore } = await import("/js/lib/scores/store.js");
     const { open } = await import("/js/lib/scores/pdf.js");
     const { createPageCache } = await import("/js/lib/scores/pagecache.js");
     const before = await scoreStore.pagesUsage();
     const doc = await open(await scoreStore.get(id));
-    const c1 = createPageCache(doc, { width: 300, dpr: 1, scoreId: id, persist: true, size: 0 });
-    await c1.get(1);
-    for (let i = 0; i < 40 && c1.stats.stored < 1; i++) await new Promise((r) => setTimeout(r, 100));
-    const mid = await scoreStore.pagesUsage();
-    c1.close();
-    const c2 = createPageCache(doc, { width: 300, dpr: 1, scoreId: id, persist: true, size: 0 });
-    const bmp = await c2.get(1);
-    const decoded = c2.stats.decoded, w = bmp.width;
-    c2.close();
-    const evicted = await scoreStore.evictPages(0, [id]);
+    const c = createPageCache(doc, { width: 300, dpr: 1 });
+    const b1 = await c.get(1); const w = b1.width; b1.close();
+    await new Promise((r) => setTimeout(r, 400)); // the look-ahead renders page 2
+    const b2 = await c.get(2); b2.close();
+    const rendered = c.stats.rendered;
+    c.close(); doc.close();
     const after = await scoreStore.pagesUsage();
-    doc.close();
-    return { before: before.count, mid: mid.count, midBytes: mid.bytes, decoded, w, evicted, after: after.count };
+    return { w, rendered, before: before.count, after: after.count };
   }, scoreId);
-  if (!(r.mid > r.before && r.midBytes > 1000)) throw new Error("page not stored " + JSON.stringify(r));
-  if (r.decoded !== 1 || r.w !== 300) throw new Error("second cache should decode from the store " + JSON.stringify(r));
-  if (r.evicted[0] !== scoreId || r.after !== 1) throw new Error("eviction should spare the thumbnail (WSHED-109) " + JSON.stringify(r));
+  if (r.w !== 300) throw new Error("width " + JSON.stringify(r));
+  if (r.rendered < 2 || r.rendered > 3) throw new Error("page 1 + the look-ahead (+ the next look-ahead if it got in before close) — nothing more: " + JSON.stringify(r));
+  if (r.after !== r.before) throw new Error("reading must not write to the pages store: " + JSON.stringify(r));
 });
 
 await step("account sheet: scores on this device", async () => {
