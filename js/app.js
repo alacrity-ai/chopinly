@@ -10,6 +10,10 @@ import { icon } from "./lib/icons.js";
 import { initSkin } from "./lib/skins.js";
 import { clock } from "./lib/clock.js";
 
+// WSHED-111: lock zoom. iOS ignores user-scalable in Safari proper but honours it in the home-screen app;
+// the gesture events cover pinch in both, and touch-action: manipulation (app.css) covers double-tap.
+for (const ev of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
+document.addEventListener("touchmove", (e) => { if (e.touches.length > 1 || (e.scale !== undefined && e.scale !== 1)) e.preventDefault(); }, { passive: false });
 initSkin(); // WSHED-71: the inline head script already set data-skin; this syncs theme-color
 
 const root = document.getElementById("tool-root");
