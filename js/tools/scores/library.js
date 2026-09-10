@@ -56,6 +56,7 @@ export async function storeThumb(doc, id) {
   const cx = c.getContext("2d", { alpha: false });
   cx.drawImage(bmp, 0, 0); bmp.close?.();
   const blob = await c.convertToBlob({ type: "image/jpeg", quality: 0.8 });
+  c.width = 0; c.height = 0;
   await scoreStore.putPage(scoreStore.pageKey(id, 1, 0), blob, { scoreId: id, w: bmp.width, h: bmp.height });
   thumbUrls.delete(id);
 }

@@ -10,7 +10,7 @@ import { haptic } from "../logbook/motion.js";
 import { scoreStore } from "../../lib/scores/store.js";
 import { cloud } from "../../lib/scores/cloud.js";
 import { open as openPdf } from "../../lib/scores/pdf.js";
-import { createPageCache, trimPages, MAX_RENDER_PX } from "../../lib/scores/pagecache.js";
+import { createPageCache, trimPages, MAX_RENDER_PX, IOS, releaseCanvas } from "../../lib/scores/pagecache.js";
 import { openMarks, paintMarkButton } from "./marks.js";
 import { openDetails, practiceScore, saveScoreFile, storeThumb, hasThumb } from "./library.js";
 import { createInkLayer } from "./inkbar.js";
@@ -105,7 +105,7 @@ export async function openReader({ id, page = null, ctx, onClose }) {
     el.dataset.fit = fit();
   }
   /** Device pixels per CSS pixel for page renders: the screen's, capped so a bitmap stays under MAX_RENDER_PX wide (WSHED-109). */
-  const renderDpr = () => Math.min(devicePixelRatio || 1, 3, Math.max(1, MAX_RENDER_PX / Math.max(1, cssW)));
+  const renderDpr = () => Math.min(devicePixelRatio || 1, IOS ? 2 : 3, Math.max(1, MAX_RENDER_PX / Math.max(1, cssW)));
   function rebuildCache() {
     cache?.close();
     cache = createPageCache(doc, { width: cssW, dpr: renderDpr(), scoreId: id, persist: "auto", size: s.size });
@@ -207,6 +207,7 @@ export async function openReader({ id, page = null, ctx, onClose }) {
     offLb();
     ink.destroy();
     cache?.close(); doc?.close();
+    releaseCanvas(canvas); // WSHED-109: WebKit keeps a detached canvas's backing store until GC — give the 24 MB back now
     el.remove();
     setRunning?.(false);
     if (!silent) onClose?.();

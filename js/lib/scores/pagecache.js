@@ -9,12 +9,18 @@
 // the fit changes.
 import { scoreStore } from "./store.js";
 
-// Two ahead, one behind (WSHED-109): a page bitmap on an iPad is ~24 MB of
-// GPU memory and iOS counts it against the page; turning back re-decodes from
-// the pages store in a few ms, so the ring holds four, not five.
-const AHEAD = 2, BEHIND = 1;
+// The page and the next one, nothing else (WSHED-109): a page bitmap on an
+// iPad is ~24 MB of canvas memory and Safari caps a page's total canvas
+// memory hard (renders start failing past it — "couldn't draw page"). A
+// turn back re-decodes from the pages store or re-renders, both well under
+// a page turn's budget.
+const AHEAD = 1, BEHIND = 0;
+/** iOS / iPadOS: the tightest canvas budget of any browser we run on. */
+export const IOS = typeof navigator !== "undefined" && /iP(hone|ad|od)/.test(navigator.userAgent ?? "") || (typeof navigator !== "undefined" && navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 /** Rendered device pixels are capped here (width); an iPad in portrait is 2048. Past it the scan gains nothing and each bitmap costs 40 MB+. */
-export const MAX_RENDER_PX = 2560;
+export const MAX_RENDER_PX = IOS ? 2048 : 2560;
+/** Release a canvas's backing store now instead of at the next GC (WebKit keeps it until then). */
+export const releaseCanvas = (c) => { try { c.width = 0; c.height = 0; } catch { /* already gone */ } };
 /** Files over this render into the persistent tier … */
 export const PERSIST_BYTES = 8 * 1024 * 1024;
 /** … and so does any file whose first render takes longer than this. */
@@ -36,16 +42,23 @@ async function pickEncoding() {
   } catch { encodeType = "image/jpeg"; }
   return encodeType;
 }
-let encoding = Promise.resolve();
-/** Encode one bitmap at a time (WSHED-109): each encode is a full-size canvas copy, and five queued at once was a 120 MB spike on every turn. */
+let encoding = Promise.resolve(), encoder = null;
+/**
+ * Encode one bitmap at a time on one reused canvas that is emptied after each
+ * blob (WSHED-109): a fresh full-size canvas per page left a 24 MB backing
+ * store behind until GC, and a reading session's worth of those is what ran
+ * Safari out of canvas memory.
+ */
 function encode(bmp) {
   const run = encoding.then(async () => {
     const type = await pickEncoding();
-    const c = new OffscreenCanvas(bmp.width, bmp.height);
-    const cx = c.getContext("2d", { alpha: false });
+    encoder ??= new OffscreenCanvas(1, 1);
+    encoder.width = bmp.width; encoder.height = bmp.height;
+    const cx = encoder.getContext("2d", { alpha: false });
     cx.fillStyle = "#fff"; cx.fillRect(0, 0, bmp.width, bmp.height);
     cx.drawImage(bmp, 0, 0);
-    return c.convertToBlob({ type, quality: 0.86 });
+    try { return await encoder.convertToBlob({ type, quality: 0.86 }); }
+    finally { releaseCanvas(encoder); }
   });
   encoding = run.catch(() => {});
   return run;
@@ -75,7 +88,7 @@ export function createPageCache(doc, { width, dpr = 1, scoreId = null, persist =
       if (row?.blob) { try { const bmp = await createImageBitmap(row.blob); stats.decoded++; return bmp; } catch { /* re-render */ } }
     }
     const t0 = performance.now();
-    const bmp = await doc.render(n, width, dpr);
+    const bmp = await doc.render(n, width, dpr); // a failure here is a failure — no lower-resolution retry that would hide a leak
     const ms = performance.now() - t0;
     stats.rendered++;
     if (persist === "auto" && !persisting && ms > PERSIST_SLOW_MS) persisting = true;
@@ -106,7 +119,7 @@ export function createPageCache(doc, { width, dpr = 1, scoreId = null, persist =
       warming = false;
       if (closed) return;
       const order = [current + 1, current - 1, current + 2, current - 2].filter((n) => n >= 1 && n <= doc.pages && !ring.has(n));
-      if (order.length && inflight < 2) renderInto(order[0]).catch(() => {}).finally(warm);
+      if (order.length && inflight < 1) renderInto(order[0]).catch(() => {}).finally(warm); // one render at a time: each is a decoded scan plus a page canvas in flight
     });
   }
   return {
@@ -144,7 +157,8 @@ export async function warmPages(doc, { scoreId, width, dpr = 1, count = 10 }) {
     const key = scoreStore.pageKey(scoreId, p, bucket);
     if (await scoreStore.getPage(key).catch(() => null)) continue;
     await new Promise((r) => idle(r));
-    const bmp = await doc.render(p, width, dpr);
+    let bmp;
+    try { bmp = await doc.render(p, width, dpr); } catch { break; } // out of memory now: the reader renders on demand
     const blob = await encode(bmp);
     bmp.close?.();
     await scoreStore.putPage(key, blob, { scoreId, w: 0, h: 0 });
