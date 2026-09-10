@@ -187,6 +187,6 @@ export function createInkLayer({ sheet, bar, scoreId, store, onTap, onModeChange
     },
     size, load, flush, repaint,
     hasInk: () => strokes.length > 0,
-    destroy() { flush(); offLb(); canvas.remove(); bar.hidden = true; bar.innerHTML = ""; },
+    destroy() { flush(); offLb(); canvas.width = 0; canvas.height = 0; canvas.remove(); bar.hidden = true; bar.innerHTML = ""; },
   };
 }

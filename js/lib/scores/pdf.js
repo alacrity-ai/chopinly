@@ -77,8 +77,11 @@ export async function open(blob) {
       // the page proxy after rendering; 30 turns of a 300-dpi scan held ~1 GB
       // and iOS killed the page. We keep the bitmap we made — pdf.js can let go.
       try { p.cleanup(); } catch { /* a render still in flight keeps it a little longer */ }
-      if (closed) throw new Error("closed");
-      return off ? canvas.transferToImageBitmap() : createImageBitmap(canvas);
+      if (closed) { if (!off) { canvas.width = 0; canvas.height = 0; } throw new Error("closed"); }
+      if (off) return canvas.transferToImageBitmap(); // the backing store moves into the bitmap; the canvas is empty
+      const bmp = await createImageBitmap(canvas);
+      canvas.width = 0; canvas.height = 0; // release the copy now, not at the next GC
+      return bmp;
     },
     close() { closed = true; try { doc.destroy(); } catch { /* already gone */ } },
   };
