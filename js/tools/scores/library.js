@@ -29,6 +29,53 @@ function tagCounts(scores) {
   return count;
 }
 
+/** One-line tag rail (WSHED-107/113): picked tags first (with an ×), then the most-used others, then "+N more". */
+function tagRail(all, picked) {
+  const others = all.filter((t) => !picked.includes(t));
+  const rest = others.slice(0, Math.max(0, RAIL_MAX - picked.length));
+  const hidden = others.length - rest.length;
+  return [
+    ...picked.map((t) => `<button type="button" class="sc-tag on" data-tag="${esc(t)}" aria-pressed="true">${esc(t)}<span class="sc-tag-x" aria-hidden="true">×</span></button>`),
+    ...rest.map((t) => `<button type="button" class="sc-tag" data-tag="${esc(t)}" aria-pressed="false">${esc(t)}</button>`),
+    hidden > 0 ? `<button type="button" class="sc-tag sc-tag-more" data-more>+${hidden} more</button>` : "",
+  ].join("");
+}
+/** The badge at the head of a rail: how many are picked out of how many exist. */
+const tagBadge = (all, picked) => picked.length ? `${picked.length} of ${all.length}` : String(all.length);
+/**
+ * The all-tags sheet: every tag with its count, tap to toggle. `picked()` reads the
+ * current set, `toggle(t)` / `clear()` change it (the sheet rebuilds after each);
+ * `hint(n)` is the line under the chips. Used for the library filter and for a
+ * score's own tags in the details sheet.
+ */
+function openTagSheet({ picked, toggle, clear, hint }) {
+  const counts = tagCounts(logbook.scores());
+  const all = suggestTags(logbook.scores());
+  const sheet = openSheet({ title: "tags", cls: "lb-acct-wrap sc-tagsheet", html: "" });
+  const { body } = sheet;
+  let tq = "";
+  const build = () => {
+    const have = picked();
+    const shown = all.filter((t) => !tq || t.toLowerCase().includes(tq.toLowerCase()));
+    body.innerHTML = `
+      ${all.length > 12 ? `<input class="lb-input lb-search sc-tagsheet-q" id="sc-tq" type="search" placeholder="find a tag…" value="${esc(tq)}" autocomplete="off" aria-label="find a tag">` : ""}
+      <div class="lb-chips">${shown.map((t) => `<button type="button" class="sc-tag ${have.includes(t) ? "on" : ""}" data-tag="${esc(t)}" aria-pressed="${have.includes(t)}">${esc(t)}<small>${counts.get(t) ?? 0}</small></button>`).join("") || `<p class="lb-empty">no tag matches.</p>`}</div>
+      <div class="sc-tagsheet-acts">
+        <span class="lb-acct-fine" style="margin:0">${hint(have.length)}</span>
+        <button type="button" class="lb-chip" id="sc-tq-clear" ${have.length ? "" : "disabled"} style="margin-left:auto">clear</button>
+        <button type="button" class="lb-modal-save" id="sc-tq-done">done</button>
+      </div>`;
+    const qi = body.querySelector("#sc-tq");
+    qi?.addEventListener("input", () => { tq = qi.value; const at = qi.selectionStart; build(); const n = body.querySelector("#sc-tq"); n.focus(); try { n.setSelectionRange(at, at); } catch { /* fine */ } });
+    for (const b of body.querySelectorAll("[data-tag]")) b.addEventListener("click", () => { toggle(b.dataset.tag); haptic(4); build(); });
+    body.querySelector("#sc-tq-clear").addEventListener("click", () => { clear(); build(); });
+    body.querySelector("#sc-tq-done").addEventListener("click", sheet.close);
+  };
+  build();
+  if (all.length > 12 && finePointer()) body.querySelector("#sc-tq")?.focus();
+  return sheet;
+}
+
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 async function sha256(blob) {
   try { return hex(await crypto.subtle.digest("SHA-256", await blob.arrayBuffer())); } catch { return ""; }
@@ -199,7 +246,7 @@ export function openDetails(id, { onPractice = null } = {}) {
         <datalist id="sc-d-composers">${composers.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
         <label class="lb-acct-label" for="sc-d-tags">tags</label>
         <input class="lb-input" id="sc-d-tags" value="${esc(s.tags.join(", "))}" placeholder="baroque, exam, duet…" autocomplete="off" autocapitalize="off">
-        ${tags.length ? `<div class="lb-chips lb-filterchips sc-d-tagchips" id="sc-d-tagchips">${tags.map((t) => `<button type="button" class="lb-chip ${s.tags.includes(t) ? "on" : ""}" data-tag="${esc(t)}">${esc(t)}</button>`).join("")}</div>` : ""}
+        ${tags.length ? `<div class="sc-tagrow sc-d-tagrow" id="sc-d-tagrow"></div>` : ""}
         <p class="lb-err" id="sc-d-err" role="alert"></p>
         <div class="lb-modal-acts"><button type="submit" class="lb-modal-save" id="sc-d-save">save</button></div>
       </form>
@@ -218,13 +265,26 @@ export function openDetails(id, { onPractice = null } = {}) {
   let result = {};
   const title = body.querySelector("#sc-d-title"), composer = body.querySelector("#sc-d-composer"), tagsEl = body.querySelector("#sc-d-tags"), err = body.querySelector("#sc-d-err");
   if (finePointer()) title.focus();
-  const syncChips = () => { const have = new Set(parseTags(tagsEl.value)); for (const c of body.querySelectorAll("[data-tag]")) c.classList.toggle("on", have.has(c.dataset.tag)); };
-  tagsEl.addEventListener("input", syncChips);
-  for (const c of body.querySelectorAll("[data-tag]")) c.addEventListener("click", () => {
-    const have = parseTags(tagsEl.value), t = c.dataset.tag;
-    tagsEl.value = (have.includes(t) ? have.filter((x) => x !== t) : [...have, t]).join(", ");
-    syncChips();
-  });
+  // The tag rail under the field (WSHED-113): the same one-line rail as the library —
+  // this score's tags first, the most-used others, "+N more"; the badge or "+N" opens
+  // the all-tags sheet on top of this one, so unsaved title/composer edits survive.
+  const tagrow = body.querySelector("#sc-d-tagrow");
+  const picked = () => parseTags(tagsEl.value);
+  const setTags = (list) => { tagsEl.value = list.join(", "); paintRail(); };
+  const toggleTag = (t) => { const have = picked(); setTags(have.includes(t) ? have.filter((x) => x !== t) : [...have, t]); };
+  const pickTags = () => openTagSheet({ picked, toggle: toggleTag, clear: () => setTags([]), hint: (n) => n ? `${n} on this score` : "tap the tags this score carries" });
+  function paintRail() {
+    if (!tagrow) return;
+    const have = picked();
+    tagrow.innerHTML = `
+      <button type="button" class="sc-tagbtn ${have.length ? "on" : ""}" id="sc-d-tags-all" aria-label="all tags">${icon("tag")}<span>${tagBadge(tags, have)}</span></button>
+      <div class="sc-tagrail" aria-label="tags">${tagRail(tags, have)}</div>`;
+    tagrow.querySelector("#sc-d-tags-all").addEventListener("click", pickTags);
+    tagrow.querySelector("[data-more]")?.addEventListener("click", pickTags);
+    for (const c of tagrow.querySelectorAll("[data-tag]")) c.addEventListener("click", () => { toggleTag(c.dataset.tag); haptic(4); });
+  }
+  tagsEl.addEventListener("input", paintRail);
+  paintRail();
   const save = () => {
     try { logbook.updateScore(id, { title: title.value, composer: composer.value, tags: parseTags(tagsEl.value) }); err.textContent = ""; return true; }
     catch (e) { err.textContent = e.message; return false; }
@@ -323,42 +383,11 @@ export function mountLibrary(root, { store, setRunning = null }, { open }) {
     </div>`;
   };
 
-  /** The tag rail: active filters first (with an ×), then the most-used tags, then "+N more". */
-  const rail = (allTags) => {
-    const rest = allTags.filter((t) => !tagFilter.includes(t)).slice(0, Math.max(0, RAIL_MAX - tagFilter.length));
-    const hidden = allTags.length - tagFilter.length - rest.length;
-    return [
-      ...tagFilter.map((t) => `<button type="button" class="sc-tag on" data-tag="${esc(t)}" aria-pressed="true">${esc(t)}<span class="sc-tag-x" aria-hidden="true">×</span></button>`),
-      ...rest.map((t) => `<button type="button" class="sc-tag" data-tag="${esc(t)}" aria-pressed="false">${esc(t)}</button>`),
-      hidden > 0 ? `<button type="button" class="sc-tag sc-tag-more" id="sc-tags-more">+${hidden} more</button>` : "",
-    ].join("");
-  };
-  /** Every tag with its count; toggling filters the list behind the sheet. */
-  function openTagSheet() {
-    const counts = tagCounts(logbook.scores());
-    const all = suggestTags(logbook.scores());
-    const sheet = openSheet({ title: "tags", cls: "lb-acct-wrap sc-tagsheet", html: "" });
-    const { body } = sheet;
-    let tq = "";
-    const build = () => {
-      const shown = all.filter((t) => !tq || t.toLowerCase().includes(tq.toLowerCase()));
-      body.innerHTML = `
-        ${all.length > 12 ? `<input class="lb-input lb-search sc-tagsheet-q" id="sc-tq" type="search" placeholder="find a tag…" value="${esc(tq)}" autocomplete="off" aria-label="find a tag">` : ""}
-        <div class="lb-chips">${shown.map((t) => `<button type="button" class="sc-tag ${tagFilter.includes(t) ? "on" : ""}" data-tag="${esc(t)}" aria-pressed="${tagFilter.includes(t)}">${esc(t)}<small>${counts.get(t) ?? 0}</small></button>`).join("") || `<p class="lb-empty">no tag matches.</p>`}</div>
-        <div class="sc-tagsheet-acts">
-          <span class="lb-acct-fine" style="margin:0">${tagFilter.length ? `${tagFilter.length} picked · a score must carry every one` : "pick tags to narrow the list"}</span>
-          <button type="button" class="lb-chip" id="sc-tq-clear" ${tagFilter.length ? "" : "disabled"} style="margin-left:auto">clear</button>
-          <button type="button" class="lb-modal-save" id="sc-tq-done">done</button>
-        </div>`;
-      const qi = body.querySelector("#sc-tq");
-      qi?.addEventListener("input", () => { tq = qi.value; const at = qi.selectionStart; build(); const n = body.querySelector("#sc-tq"); n.focus(); try { n.setSelectionRange(at, at); } catch { /* fine */ } });
-      for (const b of body.querySelectorAll("[data-tag]")) b.addEventListener("click", () => { toggleTag(b.dataset.tag); haptic(4); build(); });
-      body.querySelector("#sc-tq-clear").addEventListener("click", () => { tagFilter = []; store.set("tags", tagFilter); render(); build(); });
-      body.querySelector("#sc-tq-done").addEventListener("click", sheet.close);
-    };
-    build();
-    if (all.length > 12 && finePointer()) body.querySelector("#sc-tq")?.focus();
-  }
+  /** The library's all-tags sheet: toggling filters the list behind it. */
+  const openFilterSheet = () => openTagSheet({
+    picked: () => tagFilter, toggle: toggleTag, clear: () => { tagFilter = []; store.set("tags", tagFilter); render(); },
+    hint: (n) => n ? `${n} picked · a score must carry every one` : "pick tags to narrow the list",
+  });
   const toggleTag = (t) => { tagFilter = tagFilter.includes(t) ? tagFilter.filter((x) => x !== t) : [...tagFilter, t]; store.set("tags", tagFilter); render(); };
 
   function render() {
@@ -388,8 +417,8 @@ export function mountLibrary(root, { store, setRunning = null }, { open }) {
             <button type="button" class="sc-group ${group ? "on" : ""}" aria-pressed="${group}" id="sc-group" title="group by composer">${icon("group")}<span>by composer</span></button>
           </div>
           ${allTags.length ? `<div class="sc-tagrow">
-            <button type="button" class="sc-tagbtn ${tagFilter.length ? "on" : ""}" id="sc-tags-all" aria-label="all tags">${icon("tag")}<span>${tagFilter.length ? `${tagFilter.length} of ${allTags.length}` : allTags.length}</span></button>
-            <div class="sc-tagrail" aria-label="tags">${rail(allTags)}</div>
+            <button type="button" class="sc-tagbtn ${tagFilter.length ? "on" : ""}" id="sc-tags-all" aria-label="all tags">${icon("tag")}<span>${tagBadge(allTags, tagFilter)}</span></button>
+            <div class="sc-tagrail" aria-label="tags">${tagRail(allTags, tagFilter)}</div>
           </div>` : ""}
           ${q || tagFilter.length ? `<p class="sc-count"><span>${list.length === total ? plural(total, "score") : `${list.length} of ${total}`}</span><button type="button" id="sc-clear">clear</button></p>` : ""}
         </div>` : ""}
@@ -445,8 +474,8 @@ export function mountLibrary(root, { store, setRunning = null }, { open }) {
     for (const b of root.querySelectorAll("[data-sort]")) b.addEventListener("click", () => { sort = b.dataset.sort; store.set("sort", sort); render(); });
     root.querySelector("#sc-group")?.addEventListener("click", () => { group = !group; store.set("group", group); render(); });
     for (const b of root.querySelectorAll(".sc-tagrail [data-tag]")) b.addEventListener("click", () => toggleTag(b.dataset.tag));
-    root.querySelector("#sc-tags-more")?.addEventListener("click", openTagSheet);
-    root.querySelector("#sc-tags-all")?.addEventListener("click", openTagSheet);
+    root.querySelector(".sc-tagrail [data-more]")?.addEventListener("click", openFilterSheet);
+    root.querySelector("#sc-tags-all")?.addEventListener("click", openFilterSheet);
     root.querySelector("#sc-clear")?.addEventListener("click", () => { q = ""; tagFilter = []; store.set("tags", tagFilter); render(); });
     for (const li of root.querySelectorAll(".sc-row")) {
       const id = li.dataset.id;

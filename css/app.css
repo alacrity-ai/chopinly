@@ -1982,7 +1982,7 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 @media (max-width: 400px) { .sc-seg-btn { padding: 0.35rem 0.55rem; } .sc-group span { display: none; } }
 .sc-groupname { margin-top: 0.6rem; }
 .sc-goal { color: var(--accent); }
-.sc-d-tagchips { margin-top: 0.1rem; max-height: 8.5rem; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 0.2rem; } /* WSHED-113: a big tag cloud scrolls in place; the fields below stay near */
+.sc-d-tagrow { margin-top: 0.1rem; } /* WSHED-113: the library's one-line rail, not a chip cloud — the sheet keeps its room */
 .sc-details { margin-bottom: 0.9rem; }
 .lb-score-link { display: inline-flex; align-items: center; gap: 0.3rem; }
 .lb-score-link .ic { width: 1rem; height: 1rem; }
