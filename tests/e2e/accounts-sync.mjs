@@ -58,6 +58,21 @@ await step("A renames + B adds a note offline → both converge after reconnect"
   if (a2 !== 2) throw new Error("A notes " + a2);
 });
 
+await step("A adds a score row + a bookmark → B sees both; the file is on another device (WSHED-98 P1)", async () => {
+  const ids = await run(A.page, `const sc = lb.addScore({ title: "Nocturne Op. 9 No. 2", composer: "Chopin", pages: 6, sha256: "e2e-hash", tags: ["romantic"] }); const m = lb.addMark({ scoreId: sc.id, page: 4, label: "coda" }); await sync.now(); return { sc: sc.id, m: m.id };`);
+  const got = await run(B.page, `await sync.now(); const sc = lb.score(a[0]); return { title: sc?.title, tags: sc?.tags, marks: lb.marks(a[0]).map((m) => m.label) };`, ids.sc);
+  if (got.title !== "Nocturne Op. 9 No. 2" || got.tags?.[0] !== "romantic" || got.marks?.[0] !== "coda") throw new Error(JSON.stringify(got));
+  await B.page.goto(`${BASE}/?app=1#/scores`);
+  await B.page.waitForSelector(".sc-row.remote", { timeout: 8000 });
+  if (!(await B.page.locator(".sc-row.remote .sc-remote").first().textContent()).includes("on another device")) throw new Error("remote row copy");
+  await B.page.screenshot({ path: `${S}/acc-05-B-score-remote.png` });
+  await run(B.page, `lb.updateScore(a[0], { title: "Nocturne in E-flat" }); lb.removeMark(a[1]); await sync.now();`, ids.sc, ids.m);
+  const back = await run(A.page, `await sync.now(); return { title: lb.score(a[0])?.title, marks: lb.marks(a[0]).length };`, ids.sc);
+  if (back.title !== "Nocturne in E-flat" || back.marks !== 0) throw new Error("B's edit did not come back " + JSON.stringify(back));
+  await B.page.goto(`${BASE}/?app=1#/logbook`);
+  await B.page.waitForSelector("#lb-play, .lb-hero");
+});
+
 await step("delete on A tombstones on B; both press play apart → one clock survives", async () => {
   await run(A.page, `const g = lb.goals({ status: "all" })[0]; const n = lb.notes(g.id).find((x) => x.body === "offline note"); lb.deleteNote(n.id); await sync.now();`);
   const b = await run(B.page, `await sync.now(); const g = lb.goals({ status: "all" })[0]; return lb.notes(g.id).length;`);

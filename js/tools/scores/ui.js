@@ -19,7 +19,13 @@ export function buildUI(root, ctx) {
     if (r.id) {
       if (reader?.id === r.id) { if (r.page) reader.goTo(r.page); return; }
       reader?.close({ silent: true });
-      reader = await openReader({ id: r.id, page: r.page, ctx, onClose: () => { reader = null; if (route().id) history.replaceState(null, "", "#/scores"); library?.refresh(); } });
+      try {
+        reader = await openReader({ id: r.id, page: r.page, ctx, onClose: () => { reader = null; if (route().id) history.replaceState(null, "", "#/scores"); library?.refresh(); } });
+      } catch (e) {
+        console.error(e);
+        document.querySelector(".sc-reader")?.remove();
+        history.replaceState(null, "", "#/scores"); reader = null; library.refresh();
+      }
     } else if (reader) { reader.close({ silent: true }); reader = null; library.refresh(); }
   };
   const onHash = () => { if (location.hash.startsWith("#/scores")) show(); };

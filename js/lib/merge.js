@@ -2,10 +2,12 @@
 // browser (js/lib/logbook.js) and the API (functions/lib/sync.js) so the two
 // sides can never disagree. Pure, dependency-free.
 //
-// An envelope: { kind: "goal"|"segment"|"note"|"take", id, updatedAt, deleted: 0|1, body|null }
+// An envelope: { kind: "goal"|"segment"|"note"|"take"|"score"|"mark", id, updatedAt, deleted: 0|1, body|null }
 // A take (WSHED-75) is metadata only — the audio never leaves the device.
+// A score (WSHED-98) is metadata only too — the PDF stays on the device until
+// cloud files (P3); a mark is a bookmark on a score's page.
 
-export const KINDS = ["goal", "segment", "note", "take"];
+export const KINDS = ["goal", "segment", "note", "take", "score", "mark"];
 export const key = (e) => `${e.kind}:${e.id}`;
 
 /** JSON with sorted keys, so equal bodies stringify equally on every side. */
@@ -41,7 +43,7 @@ export function pick(a, b) {
 /** True when two envelopes describe the same version (nothing to apply). */
 export const same = (a, b) => !!a && !!b && !!a.deleted === !!b.deleted && a.updatedAt === b.updatedAt && stable(a.body ?? null) === stable(b.body ?? null);
 
-const fallbackUpdatedAt = (kind, o) => o.updatedAt ?? (kind === "segment" ? (o.endedAt ?? o.startedAt) : kind === "take" ? o.recordedAt : o.createdAt) ?? 0;
+const fallbackUpdatedAt = (kind, o) => o.updatedAt ?? (kind === "segment" ? (o.endedAt ?? o.startedAt) : kind === "take" ? o.recordedAt : kind === "score" ? o.addedAt : o.createdAt) ?? 0;
 
 /** Entity object → envelope. `updatedAt` falls back to the entity's own clock for pre-sync data. */
 export function toEnvelope(kind, obj) {

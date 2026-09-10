@@ -9,7 +9,9 @@ import { esc, toast, openSheet } from "../logbook/util.js";
 import { haptic } from "../logbook/motion.js";
 import { scoreStore } from "../../lib/scores/store.js";
 import { open as openPdf } from "../../lib/scores/pdf.js";
-import { createPageCache } from "../../lib/scores/pagecache.js";
+import { createPageCache, trimPages } from "../../lib/scores/pagecache.js";
+import { openMarks, paintMarkButton } from "./marks.js";
+import { openDetails, practiceScore, saveScoreFile } from "./library.js";
 
 const TAP_MS = 300, TAP_PX = 10, SWIPE_PX = 60, CHROME_MS = 2000, SPIN_MS = 250;
 const ZONE = 0.35; // each edge
@@ -37,18 +39,30 @@ export async function openReader({ id, page = null, ctx, onClose }) {
     <div class="sc-stage" id="sc-stage"><div class="sc-sheet"><canvas class="sc-page" id="sc-page" width="1" height="1"></canvas></div></div>
     <div class="sc-bar">
       <button type="button" class="sc-bar-btn" id="sc-back" aria-label="back to scores">${icon("back")}</button>
-      <div class="sc-bar-title"><b>${esc(s.title)}</b>${s.composer ? `<small>${esc(s.composer)}</small>` : ""}</div>
+      <div class="sc-bar-title"><b>${esc(s.title)}</b><small id="sc-bar-sub">${esc(s.composer ?? "")}</small></div>
       <span class="sc-bar-page" id="sc-pageno" aria-live="polite">… / ${s.pages}</span>
+      <button type="button" class="sc-bar-btn sc-mark-btn" id="sc-mark" aria-label="bookmarks">${icon("bookmark")}</button>
       <button type="button" class="sc-bar-btn" id="sc-more" aria-label="more">${icon("more")}</button>
     </div>
     <div class="sc-spin" id="sc-spin" hidden aria-hidden="true"></div>`;
   document.body.append(el);
   const stage = el.querySelector("#sc-stage"), canvas = el.querySelector("#sc-page"), pageNo = el.querySelector("#sc-pageno"), spin = el.querySelector("#sc-spin");
+  const markBtn = el.querySelector("#sc-mark"), barSub = el.querySelector("#sc-bar-sub");
+  let doc = null, cache = null, cssW = 0, cssH = 0, current = 0, closed = false, chromeTimer = 0, spinTimer = 0, drawSeq = 0, pageSize = { w: 1, h: 1.414 };
+  // "● practicing" on the bar when the clock runs on this score's goal
+  const paintLive = () => {
+    const cur = logbook.score(id), run = logbook.running();
+    const live = !!(cur?.goalId && run?.goal.id === cur.goalId);
+    el.classList.toggle("live", live);
+    barSub.innerHTML = live ? `<i class="sc-live-dot" aria-hidden="true"></i>practicing` : esc(cur?.composer ?? "");
+    const t = el.querySelector(".sc-bar-title b"); if (t && cur) t.textContent = cur.title;
+    if (current) paintMarkButton(markBtn, id, current);
+  };
+  const offLb = logbook.on(() => { if (!closed) paintLive(); });
+  paintLive();
   const cx = canvas.getContext("2d", { alpha: false });
   setRunning?.(true);
   logbook.touchScore(id);
-
-  let doc = null, cache = null, cssW = 0, cssH = 0, current = 0, closed = false, chromeTimer = 0, spinTimer = 0, drawSeq = 0, pageSize = { w: 1, h: 1.414 };
 
   const showChrome = () => { el.classList.add("chrome"); clearTimeout(chromeTimer); chromeTimer = setTimeout(() => el.classList.remove("chrome"), CHROME_MS); };
   const toggleChrome = () => { if (el.classList.contains("chrome")) { clearTimeout(chromeTimer); el.classList.remove("chrome"); } else showChrome(); };
@@ -67,7 +81,7 @@ export async function openReader({ id, page = null, ctx, onClose }) {
   }
   function rebuildCache() {
     cache?.close();
-    cache = createPageCache(doc, { width: cssW, dpr: Math.min(devicePixelRatio || 1, 3) });
+    cache = createPageCache(doc, { width: cssW, dpr: Math.min(devicePixelRatio || 1, 3), scoreId: id, persist: "auto", size: s.size });
   }
   async function draw(n) {
     const seq = ++drawSeq;
@@ -91,6 +105,7 @@ export async function openReader({ id, page = null, ctx, onClose }) {
     current = target;
     pageNo.textContent = `${current} / ${doc.pages}`;
     positions[id] = current; store.set("pos", positions);
+    paintMarkButton(markBtn, id, current);
     stage.scrollTop = 0;
     draw(current);
   }
@@ -127,29 +142,32 @@ export async function openReader({ id, page = null, ctx, onClose }) {
   window.addEventListener("resize", onResize);
 
   el.querySelector("#sc-back").addEventListener("click", () => close());
+  markBtn.addEventListener("click", () => { showChrome(); openMarks({ scoreId: id, page: current, goTo: (n) => goTo(n, { bump: false }) }).then(() => { if (!closed) paintMarkButton(markBtn, id, current); }); });
   el.querySelector("#sc-more").addEventListener("click", () => {
     showChrome();
+    const cur = logbook.score(id) ?? s;
+    const goal = cur.goalId ? logbook.goal(cur.goalId) : null;
     const sheet = openSheet({
-      title: s.title,
+      title: cur.title,
       cls: "lb-acct-wrap sc-more-wrap",
       html: `
+        <ul class="lb-acct-list">
+          <li><button type="button" class="lb-acct-row" data-practice="1">${icon("play")}<span><b>practice this</b><small>${goal ? `start the clock on ${esc(goal.name)}` : "starts the clock on a new piece with this title"}</small></span></button></li>
+          <li><button type="button" class="lb-acct-row" data-details="1">${icon("log")}<span><b>details</b><small>title, composer, tags, goal</small></span></button></li>
+        </ul>
         <ul class="lb-acct-list">
           <li><button type="button" class="lb-acct-row" data-fit="${fit() === "width" ? "page" : "width"}">${icon("flip")}<span><b>${fit() === "width" ? "fit the whole page" : "fit the width"}</b><small>${fitPref === "auto" ? "automatic: width in portrait, page in landscape" : `now: fit ${fit()}`}</small></span></button></li>
           <li><button type="button" class="lb-acct-row" data-save="1">${icon("download")}<span><b>save this score to a file</b><small>the PDF exactly as it was imported</small></span></button></li>
         </ul>
         <p class="lb-acct-copy lb-dim">tap the right edge to turn forward, the left to go back; the middle shows the bar. Page-turn pedals and arrow keys work too.</p>`,
     });
+    sheet.body.querySelector("[data-practice]").addEventListener("click", () => { try { practiceScore(id); sheet.close(); } catch (e) { toast(e.message); } });
+    sheet.body.querySelector("[data-details]").addEventListener("click", async () => { sheet.close(); const r = await openDetails(id); if (r?.deleted) close(); });
     sheet.body.querySelector("[data-fit]").addEventListener("click", (e) => {
       fitPref = e.currentTarget.dataset.fit; store.set("fit", fitPref);
       sheet.close(); layout(); rebuildCache(); draw(current);
     });
-    sheet.body.querySelector("[data-save]").addEventListener("click", () => {
-      const url = URL.createObjectURL(blob);
-      const a = Object.assign(document.createElement("a"), { href: url, download: `${s.title}.pdf` });
-      document.body.append(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 30_000);
-      sheet.close();
-    });
+    sheet.body.querySelector("[data-save]").addEventListener("click", () => { saveScoreFile(id); sheet.close(); });
   });
 
   function close({ silent = false } = {}) {
@@ -158,6 +176,7 @@ export async function openReader({ id, page = null, ctx, onClose }) {
     clearTimeout(chromeTimer); clearTimeout(spinTimer); clearTimeout(resizeTimer);
     window.removeEventListener("keydown", onKey);
     window.removeEventListener("resize", onResize);
+    offLb();
     cache?.close(); doc?.close();
     el.remove();
     setRunning?.(false);
@@ -173,6 +192,8 @@ export async function openReader({ id, page = null, ctx, onClose }) {
     layout(); rebuildCache();
     const start = page ?? positions[id] ?? 1;
     goTo(start, { bump: false });
+    // keep the rendered-page store under budget: least recently opened scores go first, never this one
+    setTimeout(() => { if (closed) return; const order = logbook.scores({ sort: "recent" }).map((x) => x.id).filter((x) => x !== id).reverse(); trimPages(order).catch(() => {}); }, 4000);
   } catch (e) {
     spin.hidden = true;
     toast(e.message);

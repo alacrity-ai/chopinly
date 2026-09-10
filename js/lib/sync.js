@@ -7,6 +7,7 @@ import { logbook } from "./logbook.js";
 import { makeStore } from "./store.js";
 import { account } from "./account.js";
 import { takeStore } from "./takes/store.js";
+import { scoreStore } from "./scores/store.js";
 
 const store = makeStore("sync"); // ws.sync.state
 const DEBOUNCE_MS = 1500;
@@ -84,6 +85,7 @@ export async function signOut({ clearDevice = false } = {}) {
   if (clearDevice) {
     try { localStorage.removeItem("ws.logbook.data"); localStorage.removeItem("ws.sync.state"); } catch { /* storage unavailable */ }
     try { await takeStore.clear(); } catch { /* nothing stored */ }
+    try { await scoreStore.clear(); } catch { /* nothing stored */ }
     location.reload();
   }
 }
