@@ -7,7 +7,11 @@
 // A score (WSHED-98) is metadata only too — the PDF stays on the device until
 // cloud files (P3); a mark is a bookmark on a score's page.
 
-export const KINDS = ["goal", "segment", "note", "take", "score", "mark"];
+// Ink (WSHED-98 P2) is one entity per (score, page): the strokes drawn on it.
+export const KINDS = ["goal", "segment", "note", "take", "score", "mark", "ink"];
+/** Sync body caps in bytes of JSON, per kind. Shared with functions/lib/sync.js so both sides refuse the same thing. */
+export const BODY_CAPS = { default: 8192, ink: 131072 };
+export const bodyCap = (kind) => BODY_CAPS[kind] ?? BODY_CAPS.default;
 export const key = (e) => `${e.kind}:${e.id}`;
 
 /** JSON with sorted keys, so equal bodies stringify equally on every side. */

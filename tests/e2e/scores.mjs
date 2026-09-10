@@ -253,6 +253,86 @@ await step("⋯ → practice this: the clock starts on the linked goal, the bar 
   await page.waitForSelector(".sc-row");
 });
 
+/** Draw a stroke on the ink overlay with synthetic pen pointer events (fractions of the page). */
+const penStroke = (pts, { type = "pen", pressure = 0.6 } = {}) => page.evaluate(([pts, type, pressure]) => {
+  const c = document.querySelector(".sc-ink"); const r = c.getBoundingClientRect();
+  const ev = (name, fx, fy, extra = {}) => c.dispatchEvent(new PointerEvent(name, { bubbles: true, cancelable: true, pointerId: 7, pointerType: type, isPrimary: true, clientX: r.left + fx * r.width, clientY: r.top + fy * r.height, pressure, button: 0, buttons: 1, ...extra }));
+  ev("pointerdown", pts[0][0], pts[0][1]);
+  for (const [x, y] of pts.slice(1)) ev("pointermove", x, y);
+  ev("pointerup", pts[pts.length - 1][0], pts[pts.length - 1][1], { buttons: 0 });
+}, [pts, type, pressure]);
+/** Count of non-transparent pixels on the ink overlay. */
+const inkPixels = () => page.evaluate(() => { const c = document.querySelector(".sc-ink"); const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 40) n++; return n; });
+/** The most opaque pixel within a few px of a page fraction on the overlay ([r,g,b,a]). */
+const NEAR = `(fx, fy) => { const c = document.querySelector(".sc-ink"); const r = 5, x0 = Math.round(fx * c.width) - r, y0 = Math.round(fy * c.height) - r; const d = c.getContext("2d").getImageData(x0, y0, 2 * r + 1, 2 * r + 1).data; let best = [0, 0, 0, 0]; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > best[3]) best = [d[i], d[i + 1], d[i + 2], d[i + 3]]; return best; }`;
+const inkAt = (fx, fy) => page.evaluate(([fx, fy, src]) => (new Function("return " + src)())(fx, fy), [fx, fy, NEAR]);
+const inkNearFn = (fx, fy, pred) => page.waitForFunction(([fx, fy, src, p]) => (new Function("return " + p)())((new Function("return " + src)())(fx, fy)), [fx, fy, NEAR, pred.toString()], { timeout: 8000 });
+
+await step("ink: pen draws, a pen tap on the edge still turns, a finger does not draw unless toggled", async () => {
+  await page.click('.sc-row:has-text("Fixture Sonata No. 1") .sc-open');
+  await page.waitForSelector(".sc-reader");
+  await waitPage(3);
+  await page.waitForFunction(() => document.querySelector("#sc-spin")?.hidden, null, { timeout: 15000 });
+  await ensureChrome();
+  await page.click("#sc-ink");
+  await page.waitForSelector(".sc-inkbar:not([hidden])");
+  if ((await inkPixels()) !== 0) throw new Error("overlay should start clean");
+  await penStroke([[0.2, 0.3], [0.3, 0.32], [0.4, 0.3], [0.5, 0.33], [0.6, 0.3]]);
+  await page.waitForFunction(() => document.querySelector('.sc-inkbar [data-act="undo"]')?.disabled === false);
+  const px1 = await inkPixels();
+  if (!(px1 > 200)) throw new Error("pen stroke did not draw: " + px1);
+  const col = await inkAt(0.4, 0.3);
+  if (!(col[3] > 100 && col[0] < 60)) throw new Error("ink colour " + col);
+  // a pen tap on the right edge is a tap, not a stroke: the page turns
+  await penStroke([[0.92, 0.5]]);
+  await waitPage(4);
+  await page.waitForFunction(() => document.querySelector("#sc-spin")?.hidden, null, { timeout: 15000 });
+  await page.waitForFunction(() => { const c = document.querySelector(".sc-ink"); const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < d.length; i += 4) if (d[i] > 40) return false; return true; });
+  await penStroke([[0.08, 0.5]]);
+  await waitPage(3);
+  await page.waitForFunction(() => { const c = document.querySelector(".sc-ink"); const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 40) n++; return n > 200; });
+  // a finger with the toggle off draws nothing — it falls through to the stage, where a drag is a swipe (this one turns back a page)
+  await penStroke([[0.2, 0.6], [0.3, 0.62], [0.4, 0.6], [0.5, 0.63], [0.6, 0.6]], { type: "touch" });
+  await waitPage(2);
+  await page.keyboard.press("ArrowRight"); await waitPage(3);
+  await page.waitForFunction(() => document.querySelector("#sc-spin")?.hidden, null, { timeout: 15000 });
+  await inkNearFn(0.3, 0.32, (d) => d[3] > 100);
+  if ((await inkAt(0.4, 0.6))[3] > 40) throw new Error("a finger drew with the toggle off");
+  await page.click('.sc-inkbar [data-act="finger"]');
+  await penStroke([[0.2, 0.6], [0.3, 0.62], [0.4, 0.6], [0.5, 0.63], [0.6, 0.6]], { type: "touch" });
+  await inkNearFn(0.4, 0.6, (d) => d[3] > 40);
+  await page.click('.sc-inkbar [data-act="finger"]');
+  await page.screenshot({ path: `${S}/sc-14-ink.png` });
+});
+
+await step("ink: highlighter in brass, eraser removes a stroke, undo brings it back, ink survives a reload and is synced under the ink cap", async () => {
+  await page.click('.sc-inkbar [data-tool="hi"]');
+  await page.click('.sc-inkbar [data-color="1"]');
+  await penStroke([[0.2, 0.45], [0.7, 0.45]]);
+  await inkNearFn(0.45, 0.45, (d) => d[3] > 20 && d[0] > d[2]);
+  await page.waitForTimeout(600); // the debounced save
+  const saved = await lb((m, a) => { const k = m.logbook.inkFor(a[0], 3); return { n: k?.s.length, hi: k?.s.filter((x) => x.t === "hi").length, bytes: JSON.stringify(k).length, pending: m.logbook.doc.pending.filter((p) => p.startsWith("ink:")).length }; }, scoreId);
+  if (saved.n !== 3 || saved.hi !== 1 || saved.pending !== 1) throw new Error("saved " + JSON.stringify(saved));
+  await page.click('.sc-inkbar [data-tool="eraser"]');
+  await penStroke([[0.4, 0.25], [0.4, 0.36]]); // crosses the first pen stroke
+  await inkNearFn(0.3, 0.32, (d) => d[3] <= 40);
+  await page.waitForTimeout(600);
+  if ((await lb((m, a) => m.logbook.inkFor(a[0], 3).s.length, scoreId)) !== 2) throw new Error("eraser did not remove the stroke");
+  await page.click('.sc-inkbar [data-act="undo"]');
+  await inkNearFn(0.3, 0.32, (d) => d[3] > 100);
+  await page.waitForTimeout(600);
+  if ((await lb((m, a) => m.logbook.inkFor(a[0], 3).s.length, scoreId)) !== 3) throw new Error("undo did not restore");
+  await page.screenshot({ path: `${S}/sc-15-ink-tools.png` });
+  await page.reload();
+  await page.waitForSelector(".sc-reader", { timeout: 15000 });
+  await waitPage(3);
+  await page.waitForFunction(() => document.querySelector("#sc-spin")?.hidden, null, { timeout: 15000 });
+  await inkNearFn(0.3, 0.32, (d) => d[3] > 100);
+  if (await page.evaluate(() => document.querySelector(".sc-inkbar").hidden === false)) throw new Error("ink mode should start off");
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !document.querySelector(".sc-reader"));
+});
+
 await step("the persistent page tier: a cache asked to persist stores a page, the next cache decodes it, eviction clears it", async () => {
   const r = await page.evaluate(async (id) => {
     const { scoreStore } = await import("/js/lib/scores/store.js");
@@ -317,8 +397,8 @@ await step("hold a row → details → delete: file, thumbnail, bookmarks all go
   await page.waitForFunction(() => document.querySelectorAll(".sc-row").length === 2, null, { timeout: 5000 });
   const left = await page.evaluate(async () => { const { scoreStore } = await import("/js/lib/scores/store.js"); return { files: (await scoreStore.usage()).count, pages: (await scoreStore.pagesUsage()).count }; });
   if (left.files !== 0 || left.pages !== 0) throw new Error("blob or pages left behind " + JSON.stringify(left));
-  const gone = await lb((m, a) => ({ score: m.logbook.score(a[0]), marks: m.logbook.marks(a[0]).length, tomb: m.logbook.doc.deleted.filter((t) => t.kind === "mark").length }), scoreId);
-  if (gone.score || gone.marks || gone.tomb !== 1) throw new Error(JSON.stringify(gone));
+  const gone = await lb((m, a) => ({ score: m.logbook.score(a[0]), marks: m.logbook.marks(a[0]).length, ink: m.logbook.inkPages(a[0]).length, tomb: m.logbook.doc.deleted.filter((t) => t.kind === "mark").length, inkTomb: m.logbook.doc.deleted.filter((t) => t.kind === "ink").length }), scoreId);
+  if (gone.score || gone.marks || gone.ink || gone.tomb !== 1 || gone.inkTomb !== 1) throw new Error(JSON.stringify(gone));
 });
 
 await noWiden();

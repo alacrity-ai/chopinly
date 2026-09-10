@@ -67,8 +67,20 @@ await step("A adds a score row + a bookmark → B sees both; the file is on anot
   if (!(await B.page.locator(".sc-row.remote .sc-remote").first().textContent()).includes("on another device")) throw new Error("remote row copy");
   await B.page.screenshot({ path: `${S}/acc-05-B-score-remote.png` });
   await run(B.page, `lb.updateScore(a[0], { title: "Nocturne in E-flat" }); lb.removeMark(a[1]); await sync.now();`, ids.sc, ids.m);
-  const back = await run(A.page, `await sync.now(); return { title: lb.score(a[0])?.title, marks: lb.marks(a[0]).length };`, ids.sc);
+  // sync.now() coalesces onto a sync already in flight, so poll like a device does (it syncs on a timer)
+  let back = null;
+  for (let i = 0; i < 8; i++) {
+    back = await run(A.page, `await sync.now(); return { title: lb.score(a[0])?.title, marks: lb.marks(a[0]).length };`, ids.sc);
+    if (back.title === "Nocturne in E-flat" && back.marks === 0) break;
+    await A.page.waitForTimeout(800);
+  }
   if (back.title !== "Nocturne in E-flat" || back.marks !== 0) throw new Error("B's edit did not come back " + JSON.stringify(back));
+  // ink (P2): a page over the 8 KB default cap rides the ink cap through the real Function
+  const inkN = await run(A.page, `const { encode } = await import("/js/lib/scores/ink.js"); const strokes = Array.from({ length: 40 }, (_, i) => ({ t: "pen", c: i % 3, w: 57, pts: Array.from({ length: 60 }, (_, j) => ({ x: 0.05 + j * 0.014, y: 0.1 + i * 0.02 + (j % 3) * 0.002, p: 0.5 })) })); const body = encode(strokes); const k = lb.setInk(a[0], 2, body); await sync.now(); return { n: k.s.length, bytes: JSON.stringify(body).length };`, ids.sc);
+  if (!(inkN.bytes > 8192)) throw new Error("the ink fixture should exceed the default cap: " + inkN.bytes);
+  let inkB = null;
+  for (let i = 0; i < 8; i++) { inkB = await run(B.page, `await sync.now(); return lb.inkFor(a[0], 2)?.s.length ?? 0;`, ids.sc); if (inkB === inkN.n) break; await B.page.waitForTimeout(800); }
+  if (inkB !== inkN.n) throw new Error(`ink did not arrive on B: ${inkB} of ${inkN.n}`);
   await B.page.goto(`${BASE}/?app=1#/logbook`);
   await B.page.waitForSelector("#lb-play, .lb-hero");
 });

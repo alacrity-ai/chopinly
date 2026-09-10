@@ -4,10 +4,9 @@
 import { json, HttpError, readJson, requireSameOrigin } from "./http.js";
 import { requireUser } from "./session.js";
 import { limit } from "./auth.js";
-import { KINDS, key, pick, same } from "../../js/lib/merge.js";
+import { KINDS, key, pick, same, bodyCap } from "../../js/lib/merge.js";
 
 const MAX_CHANGES = 5000;
-const MAX_BODY_BYTES = 8192;
 const READ_CHUNK = 90;   // D1 caps binds at 100 per statement
 const WRITE_CHUNK = 40;  // statements per batch (one rev bump + upserts)
 const PULL_LIMIT = 2000;
@@ -23,7 +22,7 @@ function validate(raw) {
     const body = deleted ? null : c.body;
     if (!deleted && (!body || typeof body !== "object" || Array.isArray(body))) throw new HttpError(400, "a change has no body");
     const bodyJson = deleted ? null : JSON.stringify(body);
-    if (bodyJson && bodyJson.length > MAX_BODY_BYTES) throw new HttpError(413, "a change is too large");
+    if (bodyJson && bodyJson.length > bodyCap(c.kind)) throw new HttpError(413, "a change is too large");
     const env = { kind: c.kind, id: c.id, updatedAt: Math.round(c.updatedAt), deleted, body, bodyJson };
     const k = key(env);
     byKey.set(k, pick(byKey.get(k) ?? null, env));

@@ -12,6 +12,7 @@ import { open as openPdf } from "../../lib/scores/pdf.js";
 import { createPageCache, trimPages } from "../../lib/scores/pagecache.js";
 import { openMarks, paintMarkButton } from "./marks.js";
 import { openDetails, practiceScore, saveScoreFile } from "./library.js";
+import { createInkLayer } from "./inkbar.js";
 
 const TAP_MS = 300, TAP_PX = 10, SWIPE_PX = 60, CHROME_MS = 2000, SPIN_MS = 250;
 const ZONE = 0.35; // each edge
@@ -42,8 +43,10 @@ export async function openReader({ id, page = null, ctx, onClose }) {
       <div class="sc-bar-title"><b>${esc(s.title)}</b><small id="sc-bar-sub">${esc(s.composer ?? "")}</small></div>
       <span class="sc-bar-page" id="sc-pageno" aria-live="polite">… / ${s.pages}</span>
       <button type="button" class="sc-bar-btn sc-mark-btn" id="sc-mark" aria-label="bookmarks">${icon("bookmark")}</button>
+      <button type="button" class="sc-bar-btn sc-ink-toggle" id="sc-ink" aria-label="ink" aria-pressed="false">${icon("pencil")}</button>
       <button type="button" class="sc-bar-btn" id="sc-more" aria-label="more">${icon("more")}</button>
     </div>
+    <div id="sc-inkbar" hidden></div>
     <div class="sc-spin" id="sc-spin" hidden aria-hidden="true"></div>`;
   document.body.append(el);
   const stage = el.querySelector("#sc-stage"), canvas = el.querySelector("#sc-page"), pageNo = el.querySelector("#sc-pageno"), spin = el.querySelector("#sc-spin");
@@ -64,9 +67,22 @@ export async function openReader({ id, page = null, ctx, onClose }) {
   setRunning?.(true);
   logbook.touchScore(id);
 
-  const showChrome = () => { el.classList.add("chrome"); clearTimeout(chromeTimer); chromeTimer = setTimeout(() => el.classList.remove("chrome"), CHROME_MS); };
-  const toggleChrome = () => { if (el.classList.contains("chrome")) { clearTimeout(chromeTimer); el.classList.remove("chrome"); } else showChrome(); };
+  // Ink (P2): the overlay + tool bar. While ink is on the bars stay put (no auto-hide).
+  const inkBtn = el.querySelector("#sc-ink");
+  let inkPage = 0;
+  const ink = createInkLayer({
+    sheet: el.querySelector(".sc-sheet"), bar: el.querySelector("#sc-inkbar"), scoreId: id, store,
+    onTap: (x, y) => tapAt(x, y),
+    onModeChange: (on) => { el.classList.toggle("inking", on); inkBtn.classList.toggle("on", on); inkBtn.setAttribute("aria-pressed", String(on)); if (on) { clearTimeout(chromeTimer); el.classList.add("chrome"); } else showChrome(); },
+  });
+  const showChrome = () => { el.classList.add("chrome"); clearTimeout(chromeTimer); if (!ink.on) chromeTimer = setTimeout(() => el.classList.remove("chrome"), CHROME_MS); };
+  const toggleChrome = () => { if (ink.on) return; if (el.classList.contains("chrome")) { clearTimeout(chromeTimer); el.classList.remove("chrome"); } else showChrome(); };
   showChrome();
+  /** A tap at a viewport point: the edges turn, the middle shows the bar. Shared with the ink layer. */
+  function tapAt(clientX) {
+    const r = stage.getBoundingClientRect(), x = (clientX - r.left) / r.width;
+    if (x >= 1 - ZONE) next(); else if (x <= ZONE) prev(); else toggleChrome();
+  }
 
   const fit = () => (fitPref !== "auto" ? fitPref : (innerWidth > innerHeight ? "page" : "width"));
   el.dataset.fit = fit();
@@ -77,6 +93,7 @@ export async function openReader({ id, page = null, ctx, onClose }) {
     cssW = fit() === "page" ? Math.min(W, H * ratio) : W;
     cssH = cssW / ratio;
     canvas.style.width = `${cssW}px`; canvas.style.height = `${cssH}px`;
+    ink.size(cssW, cssH, Math.min(devicePixelRatio || 1, 3));
     el.dataset.fit = fit();
   }
   function rebuildCache() {
@@ -92,6 +109,7 @@ export async function openReader({ id, page = null, ctx, onClose }) {
       if (closed || seq !== drawSeq) return;
       if (canvas.width !== bmp.width || canvas.height !== bmp.height) { canvas.width = bmp.width; canvas.height = bmp.height; }
       cx.drawImage(bmp, 0, 0);
+      if (inkPage !== n) { inkPage = n; ink.load(n); } // ink and page on the same frame
     } catch (e) {
       if (!closed && seq === drawSeq && e?.message !== "evicted" && e?.message !== "closed") toast(`couldn't draw page ${n}`);
     } finally {
@@ -120,8 +138,7 @@ export async function openReader({ id, page = null, ctx, onClose }) {
     down = null;
     if (Math.abs(dx) >= SWIPE_PX && Math.abs(dx) > Math.abs(dy) * 1.5) { dx < 0 ? next() : prev(); return; }
     if (dt > TAP_MS || Math.hypot(dx, dy) > TAP_PX) return;
-    const r = stage.getBoundingClientRect(), x = (e.clientX - r.left) / r.width;
-    if (x >= 1 - ZONE) next(); else if (x <= ZONE) prev(); else toggleChrome();
+    tapAt(e.clientX);
   });
   stage.addEventListener("pointercancel", () => { down = null; });
   stage.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -142,6 +159,7 @@ export async function openReader({ id, page = null, ctx, onClose }) {
   window.addEventListener("resize", onResize);
 
   el.querySelector("#sc-back").addEventListener("click", () => close());
+  inkBtn.addEventListener("click", () => ink.toggle());
   markBtn.addEventListener("click", () => { showChrome(); openMarks({ scoreId: id, page: current, goTo: (n) => goTo(n, { bump: false }) }).then(() => { if (!closed) paintMarkButton(markBtn, id, current); }); });
   el.querySelector("#sc-more").addEventListener("click", () => {
     showChrome();
@@ -177,6 +195,7 @@ export async function openReader({ id, page = null, ctx, onClose }) {
     window.removeEventListener("keydown", onKey);
     window.removeEventListener("resize", onResize);
     offLb();
+    ink.destroy();
     cache?.close(); doc?.close();
     el.remove();
     setRunning?.(false);
