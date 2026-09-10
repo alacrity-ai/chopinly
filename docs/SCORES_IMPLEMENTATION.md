@@ -215,7 +215,10 @@ and turning a page with ink shows both on one frame.
 ## Phase 3 — cloud files, quota, legal, the public story
 
 **Goal:** with an account, the PDF itself follows the musician. MVP complete.
+**Gate:** P3 is the first feature where a user costs money; it starts only after
+Leif reviews P0 to P2 in production (his instruction 2026-09-09).
 
+1. **Plans.** `functions/lib/plans.js`: `quotaBytes(plan)` → 100 MB for `free` (promotional, per Leif 2026-09-09; premium is a later epic). Migration adds `users.plan TEXT NOT NULL DEFAULT 'free'` beside `storage_bytes`.
 1. **R2.** `wrangler r2 bucket create chopinly-scores` (token
    `cloudflare_api_token`); `wrangler.toml` `[[r2_buckets]] binding = "SCORES"
    bucket_name = "chopinly-scores"`; local dev uses the Miniflare R2 shim
@@ -233,7 +236,7 @@ and turning a page with ink shows both on one frame.
    background downloads, sign-in marks all for upload, `uploaded` flag in the
    `files` store. The library row's cloud glyph and the *on another device*
    state become *in the cloud — tap to download*.
-4. **Account sheet.** Quota line *212 MB of 500 MB*; *remove downloaded scores
+4. **Account sheet.** Quota line *42 MB of 100 MB (promotional)*; *remove downloaded scores
    not opened in 90 days* (only for scores confirmed in the cloud); upload / quota
    errors surface here as sentences.
 5. **Legal.** Privacy §2 and §3 rows, the terms' personal-copy and takedown

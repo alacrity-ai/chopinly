@@ -55,7 +55,7 @@ a **rendered-page cache** is wanted because real scores run 30 MB and more.
 | Bookmarks | **Their own kind, `mark`** `{ scoreId, page, label }`. | Two devices adding bookmarks to the same score is plausible (iPad at the piano, phone on the train). Separate rows merge without loss; an array inside the score row would lose one side. |
 | Reading position | **Per device**, `ws.scores.pos` in localStorage. Not synced. | Syncing "where I was" churns the change stream on every page turn and surprises the musician when the phone jumps the iPad. forScore does not sync it either. |
 | Cloud file storage | **Cloudflare R2**, bucket `chopinly-scores`, binding `SCORES` in the Pages project, keys `u/<userId>/<scoreId>.pdf`. Uploaded and downloaded **through Pages Functions** (`PUT` / `GET /api/scores/:id/file`), streamed, never a public URL. | D1 is the wrong store for 30 MB binaries and the sync body cap is 8 KB. R2 has no egress charge and a 10 GB free tier. Proxying through the Function keeps auth on the session cookie, keeps the bucket private, and avoids minting S3 credentials for presigned URLs. Workers stream request bodies to R2 without buffering. |
-| Quota | **500 MB per account**, per-score cap **60 MB**. Tracked in `users.storage_bytes`, enforced on upload with a sentence, shown in the account sheet. | Hundreds of engraved scores or a few dozen scans. Revisit with real usage. |
+| Quota | **Promotional 100 MB per free account** (Leif, 2026-09-09), per-score cap **60 MB**. Tracked in `users.storage_bytes`, enforced on upload with a sentence, shown in the account sheet as *promotional*. `users.plan` (`free` today) decides the quota in one place (`functions/lib/plans.js`) so a paid plan is a row change, not a code change. | Cloud files are the first feature where a user costs money. Leif's direction: local storage only for non-premium members; cross-device **scores** and cross-device **audio (takes)** become the premium proposition when premium exists. 100 MB keeps the demo honest (a few dozen engraved scores) without inviting a scan library. |
 | Upload policy | **Automatic when signed in and online**, in the background, newest first; download **on open**, with a setting *keep every score on this device* for people who want the whole library offline. | The brief says "accessible across devices"; making the musician press *upload* per score would break that. Auto-download of the whole library on a phone would eat storage they did not ask to spend. |
 | Rendered-page cache | **Two tiers** (§5): an in-memory ring of `ImageBitmap`s around the current page, and a persistent `pages` store of encoded bitmaps for scores over a size threshold, with a byte budget and least-recently-opened eviction. | Confirmed by Leif. Engraved PDFs render in tens of milliseconds and need only the memory tier; 30 MB scans are JPEG-decode bound and the second open should be instant. |
 | Pen versus finger | **Pen draws, finger turns and scrolls** by default (`pointerType === "pen"`). A toggle in the ink bar lets a finger draw on devices without a stylus. | Native palm rejection for free on iPad. Finger-drawing devices (Android phones, a desktop mouse) still get ink. |
@@ -275,7 +275,7 @@ row) and opens it. Offline, such a row says *on another device* like a take does
 
 | route | does |
 |---|---|
-| `PUT /api/scores/:id/file` | Streams the body to R2 `u/<uid>/<id>.pdf`. Headers `content-length`, `x-chopinly-sha256`. Refuses over 60 MB per file or when `storage_bytes + size > 500 MB` (413 with a sentence). Updates `users.storage_bytes` in the same request. Idempotent: same id + same hash returns 200 without re-storing. |
+| `PUT /api/scores/:id/file` | Streams the body to R2 `u/<uid>/<id>.pdf`. Headers `content-length`, `x-chopinly-sha256`. Refuses over 60 MB per file or when `storage_bytes + size > quota(plan)` (413 with a sentence naming the promotional limit). Updates `users.storage_bytes` in the same request. Idempotent: same id + same hash returns 200 without re-storing. |
 | `GET /api/scores/:id/file` | Streams from R2 with `content-type: application/pdf`, `etag` = sha256, `cache-control: private, no-store`. 404 when the object is not the caller's. |
 | `DELETE /api/scores/:id/file` | Removes the object and credits the quota. Also called by the sync handler when it writes a `score` tombstone, so *delete everywhere* needs no second request. |
 | `GET /api/scores/files` | `{ files: [{ id, size, sha256 }], used, quota }` — what the bucket holds for this user; the client reconciles local state against it after every sync. |
@@ -305,7 +305,7 @@ Rate limit: 60 file requests per user per minute, on the existing `rate_limits`.
 A **scores on this device** row (count · MB downloaded · MB of rendered pages)
 opening a sheet with *remove downloaded scores not opened in 90 days* (signed in
 and backed up only), *clear rendered pages*, *keep every score on this device*.
-Signed in, the sync line gains *· 212 MB of 500 MB* when scores exist.
+Signed in, the sync line gains *· 42 MB of 100 MB (promotional)* when scores exist.
 
 ## 11. Legal and privacy
 
@@ -326,6 +326,25 @@ All through `dev/build-legal.mjs`; the generated pages are committed.
   to store" line already covers the basics; this makes the procedure explicit.
 - **Cookies**: unchanged (no new cookies).
 
+## 11.5 Premium (direction, not yet a feature)
+
+Leif, 2026-09-09: *"we are getting into the territory of having users cost us
+money … only support local storage for non-premium members … premium would allow
+for audio cross device and scores cross device. In the immediate term, a
+promotional 100 MB on free accounts, until we roll out premium as a first-class
+feature."*
+
+What that means for this design:
+
+- Everything local (P0 to P2) is free forever: import, read, turn, bookmark,
+  ink, and metadata / bookmark / ink **sync** (rows are tiny; they cost nothing).
+- **Cloud files** (P3) are the paid surface. Until premium exists, free accounts
+  get **100 MB, labelled promotional** in the account sheet and in the 413
+  sentence, so nobody reads it as a permanent entitlement.
+- `users.plan` and `functions/lib/plans.js` (`quotaBytes(plan)`) land with P3 so
+  the quota is data. Premium itself (billing, plan switch, the audio-across-devices
+  counterpart for takes) is its own epic and is **not** in WSHED-98.
+
 ## 12. Performance and limits
 
 | item | number |
@@ -334,7 +353,7 @@ All through `dev/build-legal.mjs`; the generated pages are committed.
 | Engraved 10-page PDF | 0.3 to 2 MB; first render ~30 ms per page on an iPad |
 | Scanned 60-page score | 20 to 50 MB; first render 200 to 600 ms per page; cached WebP ~300 KB per page |
 | Per-score cap | 60 MB (import and upload) |
-| Per-account cloud quota | 500 MB |
+| Per-account cloud quota | 100 MB promotional on free accounts; premium (not yet a feature) lifts it |
 | Rendered-page budget on device | 300 MB, evict least-recently-opened score |
 | Ink body cap | 128 KB per page (a dense page is ~3 KB) |
 | Sync change cap | unchanged (5 000 changes per call); a 60-page fully inked score is 60 rows |
