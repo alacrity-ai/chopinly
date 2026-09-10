@@ -14,6 +14,10 @@ import { clock } from "./lib/clock.js";
 // the gesture events cover pinch in both, and touch-action: manipulation (app.css) covers double-tap.
 for (const ev of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
 document.addEventListener("touchmove", (e) => { if (e.touches.length > 1 || (e.scale !== undefined && e.scale !== 1)) e.preventDefault(); }, { passive: false });
+// WSHED-112: no context menus outside text fields — a long press is a gesture in this app.
+const editable = (t) => !!t?.closest?.("input, textarea, [contenteditable]");
+document.addEventListener("contextmenu", (e) => { if (!editable(e.target)) e.preventDefault(); });
+document.addEventListener("selectstart", (e) => { if (!editable(e.target)) e.preventDefault(); });
 initSkin(); // WSHED-71: the inline head script already set data-skin; this syncs theme-color
 
 const root = document.getElementById("tool-root");
