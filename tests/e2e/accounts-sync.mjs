@@ -67,7 +67,13 @@ await step("A adds a score row + a bookmark → B sees both; the file is on anot
   if (!(await B.page.locator(".sc-row.remote .sc-remote").first().textContent()).includes("on another device")) throw new Error("remote row copy");
   await B.page.screenshot({ path: `${S}/acc-05-B-score-remote.png` });
   await run(B.page, `lb.updateScore(a[0], { title: "Nocturne in E-flat" }); lb.removeMark(a[1]); await sync.now();`, ids.sc, ids.m);
-  const back = await run(A.page, `await sync.now(); return { title: lb.score(a[0])?.title, marks: lb.marks(a[0]).length };`, ids.sc);
+  // sync.now() coalesces onto a sync already in flight, so poll like a device does (it syncs on a timer)
+  let back = null;
+  for (let i = 0; i < 8; i++) {
+    back = await run(A.page, `await sync.now(); return { title: lb.score(a[0])?.title, marks: lb.marks(a[0]).length };`, ids.sc);
+    if (back.title === "Nocturne in E-flat" && back.marks === 0) break;
+    await A.page.waitForTimeout(800);
+  }
   if (back.title !== "Nocturne in E-flat" || back.marks !== 0) throw new Error("B's edit did not come back " + JSON.stringify(back));
   await B.page.goto(`${BASE}/?app=1#/logbook`);
   await B.page.waitForSelector("#lb-play, .lb-hero");
