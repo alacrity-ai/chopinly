@@ -78,7 +78,7 @@ const about = `
       <li><b>Free, and no ads.</b> Chopinly costs nothing, shows nothing, and sells nothing to anyone.</li>
       <li><b>Local first.</b> The app works fully on your device with no account. Your practice data lives in your browser until you choose to back it up.</li>
       <li><b>Your data is yours.</b> An account exists only to back up and sync your practice. You can download everything or delete everything with one tap, any time. We never sell, share, or train models on it.</li>
-      <li><b>No tracking.</b> No analytics scripts, no advertising cookies, no fingerprinting, no third-party code on the page. See the <a href="/privacy">Privacy Policy</a> and <a href="/cookies">Cookie Policy</a>.</li>
+      <li><b>No tracking.</b> No analytics scripts, no advertising cookies, no fingerprinting, no third-party scripts from other domains. See the <a href="/privacy">Privacy Policy</a> and <a href="/cookies">Cookie Policy</a>.</li>
       <li><b>Honest numbers.</b> Every figure you see is derived from the segments you logged. Nothing is inflated, gamified against you, or hidden behind a paywall.</li>
     </ul>
 
@@ -153,7 +153,7 @@ const privacy = `
     <h2>4. What we never do</h2>
     <ul>
       <li>No analytics, advertising, or tracking of any kind — no Google Analytics, no pixels, no fingerprinting, no session recording.</li>
-      <li>No third-party scripts on our pages. Everything the browser runs is ours and served from chopinly.com.</li>
+      <li>No third-party scripts from other domains. Everything the browser runs is served from chopinly.com — our own code plus one open-source library we ship ourselves, pdf.js (Mozilla, Apache-2.0), which draws the sheet music you import. It runs on your device and makes no requests of its own.</li>
       <li>No selling, renting, or sharing of personal data with anyone for their own purposes. No data brokers, no "partners".</li>
       <li>No use of your practice data to train machine-learning or AI models.</li>
       <li>No marketing email. The only messages we send are the sign-in code you requested and, rarely, a notice that materially affects your account (for example a change to these terms or a shutdown, see the <a href="/terms">Terms</a>).</li>
@@ -303,7 +303,7 @@ const cookies = `
     <p>Both are first-party, stay on your device, and are never read by us. They are what makes the app work; they are not used to track you.</p>
 
     <h2>3. What we don't use</h2>
-    <p>No analytics cookies or scripts, no advertising or remarketing cookies, no social-media buttons or embeds, no A/B-testing tools, no cross-site tracking of any kind. Chopinly's pages load no third-party code.</p>
+    <p>No analytics cookies or scripts, no advertising or remarketing cookies, no social-media buttons or embeds, no A/B-testing tools, no cross-site tracking of any kind. Chopinly's pages load no scripts from other domains.</p>
 
     <h2>4. Why there is no cookie banner</h2>
     <p>European ePrivacy rules and the guidance of data-protection authorities exempt storage that is strictly necessary to provide a service the user asked for — a session cookie that keeps you signed in, and the local storage an app needs to work — from the consent requirement. Everything Chopinly stores falls in that category. Showing a banner would add friction without adding a choice. If we ever wanted to add a non-essential cookie, we would ask you first, before it is set, and update this page.</p>

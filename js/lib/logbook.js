@@ -92,7 +92,7 @@ const uuid = () =>
 export const norm = (s) => String(s ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
 
 function emptyDoc() {
-  return { schemaVersion: SCHEMA_VERSION, goals: [], segments: [], notes: [], takes: [], deleted: [], pending: [] };
+  return { schemaVersion: SCHEMA_VERSION, goals: [], segments: [], notes: [], takes: [], scores: [], deleted: [], pending: [] };
 }
 
 // --- migration ---------------------------------------------------------------
@@ -410,6 +410,54 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   /** Day keys with at least one take on a goal (any goal when null). */
   const takeDays = (goalId = null) => new Set(doc.takes.filter((t) => !goalId || t.goalId === goalId).map((t) => dayKey(t.recordedAt)));
 
+  // --- scores (WSHED-98): sheet music; the PDF lives on the device (js/lib/scores/store.js) ---
+  // P0 keeps scores off the sync stream (not in KINDS yet): updatedAt is set,
+  // nothing pends. P1 turns these into `touch("score", …)` when the kind ships.
+  const cleanTitle = (t) => String(t ?? "").replace(/\s+/g, " ").trim().slice(0, 160);
+  const cleanTags = (tags) => [...new Set((Array.isArray(tags) ? tags : []).map((t) => String(t ?? "").trim().slice(0, 40)).filter(Boolean))].slice(0, 20);
+  /** Filters: q (title / composer / tags, accent-insensitive). Sort: "recent" (last opened, then added) | "title" | "composer". */
+  function scores({ q = "", sort = "recent" } = {}) {
+    const needle = norm(q);
+    const cmp = {
+      recent: (a, b) => (b.openedAt ?? b.addedAt) - (a.openedAt ?? a.addedAt) || b.addedAt - a.addedAt,
+      title: (a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }),
+      composer: (a, b) => (a.composer || "\uffff").localeCompare(b.composer || "\uffff", undefined, { sensitivity: "base" }) || a.title.localeCompare(b.title, undefined, { sensitivity: "base" }),
+    }[sort] ?? ((a, b) => 0);
+    return doc.scores.filter((s) => !needle || norm(`${s.title} ${s.composer ?? ""} ${(s.tags ?? []).join(" ")}`).includes(needle)).sort(cmp);
+  }
+  const score = (id) => doc.scores.find((s) => s.id === id) ?? null;
+  const scoreByHash = (sha256) => doc.scores.find((s) => s.sha256 === sha256) ?? null;
+  /** Register a PDF that has already been stored on this device. */
+  function addScore({ id = uuid(), title, composer = "", tags = [], pages, size = 0, sha256 = "" }) {
+    const t = cleanTitle(title);
+    if (!t) throw new Error("a score needs a title");
+    const n = Math.round(Number(pages));
+    if (!(n > 0)) throw new Error("a score needs at least one page");
+    const c = cleanComposer(composer);
+    const s = { id, title: t, ...(c ? { composer: c } : {}), tags: cleanTags(tags), pages: n, size: Math.max(0, Math.round(Number(size)) || 0), sha256: String(sha256 ?? "").slice(0, 64), addedAt: now(), openedAt: null, updatedAt: now() };
+    doc.scores.push(s); save(); return s;
+  }
+  /** Edit title / composer / tags. Unknown keys are ignored. */
+  function updateScore(id, patch = {}) {
+    const s = score(id);
+    if (!s) throw new Error(`no score ${id}`);
+    if ("title" in patch) { const t = cleanTitle(patch.title); if (!t) throw new Error("a score needs a title"); s.title = t; }
+    if ("composer" in patch) { const c = cleanComposer(patch.composer); if (c) s.composer = c; else delete s.composer; }
+    if ("tags" in patch) s.tags = cleanTags(patch.tags);
+    s.updatedAt = now(); save(); return s;
+  }
+  /** Opened just now (drives the "recent" sort). Not a sync-worthy edit. */
+  function touchScore(id) {
+    const s = score(id);
+    if (!s) return null;
+    s.openedAt = now(); save(); return s;
+  }
+  function removeScore(id) {
+    const before = doc.scores.length;
+    doc.scores = doc.scores.filter((s) => s.id !== id);
+    if (doc.scores.length !== before) save();
+  }
+
   // --- other tools writing in -----------------------------------------------
   /**
    * A finished lesson run (sight singing, ear training). With a goal running
@@ -632,6 +680,8 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     notes, addNote, deleteNote,
     // takes
     takes, take, addTake, starTake, deleteTake, takeDays,
+    // scores
+    scores, score, scoreByHash, addScore, updateScore, touchScore, removeScore,
     // other tools
     addAuto,
     // sync

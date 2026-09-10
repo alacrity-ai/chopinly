@@ -9,6 +9,12 @@
 /sw.js
   Cache-Control: no-cache
 
+# pdf.js, vendored (Scores). Revalidated like our own modules — the service
+# worker is the real cache, and the edge must never pin an old renderer to a
+# URL the way it pinned the old icons (WSHED-97).
+/vendor/*
+  Cache-Control: no-cache
+
 /manifest.webmanifest
   Cache-Control: no-cache
 

@@ -32,6 +32,10 @@ const P = {
   flip: `<path d="M4.5 8.5h13l-3-3"/><path d="M19.5 15.5h-13l3 3"/>`,
   ear: `<path d="M7.5 9.5a4.5 4.5 0 0 1 9 0c0 2.2-1.4 3-2.2 4.2-.6.9-.5 2-1 2.9a2.2 2.2 0 0 1-4 .1"/><path d="M10.2 9.6a1.8 1.8 0 0 1 3.6 0c0 1-.9 1.3-1.3 2"/>`,
   chart: `<path d="M4.5 19.5h15"/><path d="M7 16v-5M12 16V6.5M17 16v-8"/>`,
+  score: `<path d="M6.5 4.5h8.5l3.5 3.5v11.5h-12V4.5Z"/><path d="M9 10h7M9 12.5h7M9 15h7M9 17.5h4"/>`,
+  bookmark: `<path d="M7 4.5h10v15l-5-3.6-5 3.6v-15Z"/>`,
+  more: `<circle cx="6" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.4" fill="currentColor" stroke="none"/>`,
+  plus: `<path d="M12 5.5v13M5.5 12h13"/>`,
   log: `<path d="M6 4.5h9.5l3 3V19.5H6V4.5Z"/><path d="M9 10h6M9 13.5h6M9 17h3.5"/>`,
 };
 
