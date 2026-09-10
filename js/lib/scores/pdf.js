@@ -73,6 +73,10 @@ export async function open(blob) {
       const ctx = canvas.getContext("2d", { alpha: false });
       ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);
       await p.render({ canvasContext: ctx, viewport: vp, background: "#ffffff" }).promise;
+      // WSHED-109: a scanned page is one big decoded image that pdf.js keeps on
+      // the page proxy after rendering; 30 turns of a 300-dpi scan held ~1 GB
+      // and iOS killed the page. We keep the bitmap we made — pdf.js can let go.
+      try { p.cleanup(); } catch { /* a render still in flight keeps it a little longer */ }
       if (closed) throw new Error("closed");
       return off ? canvas.transferToImageBitmap() : createImageBitmap(canvas);
     },

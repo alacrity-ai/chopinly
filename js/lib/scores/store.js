@@ -134,17 +134,25 @@ export const scoreStore = {
     const db = await open();
     return (db ? await done(tx(db, PAGES, "readonly").get(key)) : memPages.get(key)) ?? null;
   },
-  /** Drop every rendered page of one score. */
-  async delPages(scoreId) {
+  /**
+   * Drop the rendered pages of one score. `keepThumb` spares the library
+   * thumbnail (page 1, bucket 0 — a few KB): eviction used to take it too,
+   * and a library full of scores without thumbnails re-opened every one of
+   * those PDFs at once to draw them, which is what was killing the page on
+   * an iPad (WSHED-109).
+   */
+  async delPages(scoreId, { keepThumb = false } = {}) {
     const db = await open();
     const meta = await loadPagesMeta(db);
+    const thumbKey = this.pageKey(scoreId, 1, 0);
+    const spare = (r) => keepThumb && r.key === thumbKey;
     if (db) {
-      const rows = await done(tx(db, PAGES, "readonly").index("scoreId").getAll(scoreId));
+      const rows = (await done(tx(db, PAGES, "readonly").index("scoreId").getAll(scoreId))).filter((r) => !spare(r));
       if (!rows.length) return;
       const st = tx(db, PAGES, "readwrite");
       for (const r of rows) { st.delete(r.key); meta.bytes -= r.size; meta.count--; }
       await new Promise((res, rej) => { st.transaction.oncomplete = res; st.transaction.onerror = () => rej(st.transaction.error); });
-    } else for (const [k, r] of memPages) if (r.scoreId === scoreId) { memPages.delete(k); meta.bytes -= r.size; meta.count--; }
+    } else for (const [k, r] of memPages) if (r.scoreId === scoreId && !spare(r)) { memPages.delete(k); meta.bytes -= r.size; meta.count--; }
     meta.bytes = Math.max(0, meta.bytes); meta.count = Math.max(0, meta.count);
     await savePagesMeta(db);
   },
@@ -170,7 +178,7 @@ export const scoreStore = {
     let { bytes } = await this.pagesUsage();
     for (const id of order) {
       if (bytes <= budget) break;
-      await this.delPages(id);
+      await this.delPages(id, { keepThumb: true });
       const after = await this.pagesUsage();
       if (after.bytes < bytes) evicted.push(id);
       bytes = after.bytes;
