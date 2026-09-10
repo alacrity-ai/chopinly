@@ -207,7 +207,7 @@ await step("bookmarks: add on page 3 with a label, button fills, jump back from 
   await page.waitForSelector(".sc-marks-wrap.open #sc-m-label");
   await page.fill("#sc-m-label", "coda");
   await page.click("#sc-m-go");
-  await page.waitForSelector(".sc-marks-wrap.open #sc-m-remove");
+  await page.waitForSelector(".sc-marks-wrap.open #sc-m-acts-here");
   await page.screenshot({ path: `${S}/sc-10-bookmarks.png` });
   await page.click(".sc-marks-wrap .lb-close");
   await page.waitForFunction(() => !document.querySelector(".lb-sheet-wrap:not(.closing)"));
@@ -277,6 +277,52 @@ await step("starting practice on a goal with a score asks to open it: stay here 
   await page.click("#lb-score-open");
   await page.waitForSelector(".sc-reader", { timeout: 10000 });
   await page.waitForFunction(() => document.querySelector(".sc-reader")?.classList.contains("live"), null, { timeout: 5000 });
+  // WSHED-108: a bookmark added while the goal runs is where the goal starts; the next practice opens on that page
+  await waitPage(3);
+  await page.waitForFunction(() => document.querySelector("#sc-spin")?.hidden, null, { timeout: 15000 });
+  await page.keyboard.press("End"); await waitPage(12);
+  await page.keyboard.press("ArrowLeft"); await waitPage(11);
+  await ensureChrome();
+  await page.click("#sc-mark");
+  await page.waitForSelector(".sc-marks-wrap.open #sc-m-goal");
+  if (!(await page.isChecked("#sc-m-goal"))) throw new Error("the running goal's first bookmark should offer the link checked");
+  await page.fill("#sc-m-label", "Pathétique");
+  await page.screenshot({ path: `${S}/sc-16b-bookmark-goal.png` });
+  await page.click("#sc-m-go");
+  await page.waitForSelector(".sc-marks-wrap.open #sc-m-acts-here");
+  await page.click(".sc-marks-wrap .lb-close");
+  await page.waitForFunction(() => !document.querySelector(".lb-sheet-wrap:not(.closing)"));
+  const place = await lb((m) => { const g = m.logbook.running().goal.id; const p = m.logbook.placeForGoal(g); return { page: p?.page, label: p?.mark?.label, goal: p?.mark?.goalId === g }; });
+  if (place.page !== 11 || place.label !== "Pathétique" || !place.goal) throw new Error("place " + JSON.stringify(place));
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !document.querySelector(".sc-reader"));
+  await lb((m) => m.logbook.stop());
+  await page.goto(`${BASE}/?app=1#/logbook/goals/${gid}`);
+  await page.waitForSelector(".lb-gp-score");
+  if (!(await text(".lb-gp-score small")).includes("Pathétique · page 11")) throw new Error("goal page should show the bookmark: " + (await text(".lb-gp-score small")));
+  await page.click("#lb-gp-practice");
+  await page.waitForFunction(() => !document.querySelector(".lb-ceremony"), null, { timeout: 8000 });
+  await page.waitForSelector(".lb-score-prompt.open #lb-score-open", { timeout: 8000 });
+  if (!(await text("#lb-score-open small")).includes("at Pathétique · page 11")) throw new Error("prompt copy: " + (await text("#lb-score-open small")));
+  await page.click("#lb-score-open");
+  await page.waitForSelector(".sc-reader", { timeout: 10000 });
+  await waitPage(11);
+  await page.screenshot({ path: `${S}/sc-16c-opened-at-bookmark.png` });
+  // hold the bookmark → unlink → the goal falls back to the whole score
+  await ensureChrome();
+  await page.click("#sc-mark");
+  await page.waitForSelector(".sc-marks-wrap.open #sc-m-acts-here");
+  await page.click("#sc-m-acts-here");
+  await page.waitForSelector("#sc-ma-unlink");
+  await page.screenshot({ path: `${S}/sc-16d-bookmark-actions.png` });
+  await page.click("#sc-ma-unlink");
+  await page.waitForFunction(() => !document.querySelector("#sc-ma-unlink"));
+  if ((await lb((m) => m.logbook.placeForGoal(m.logbook.running().goal.id).page)) !== null) throw new Error("unlink should drop the page");
+  await page.click(".sc-marks-wrap .lb-close");
+  await page.waitForFunction(() => !document.querySelector(".lb-sheet-wrap:not(.closing)"));
+  await page.keyboard.press("Home"); await waitPage(1);
+  await page.keyboard.press("ArrowRight"); await waitPage(2);
+  await page.keyboard.press("ArrowRight"); await waitPage(3); // leave the reader where the ink steps expect it
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => !document.querySelector(".sc-reader"));
   // a goal without a score never asks
@@ -459,7 +505,7 @@ await step("hold a row → details → delete: file, thumbnail, bookmarks all go
   const left = await page.evaluate(async () => { const { scoreStore } = await import("/js/lib/scores/store.js"); return { files: (await scoreStore.usage()).count, pages: (await scoreStore.pagesUsage()).count }; });
   if (left.files !== 0 || left.pages !== 0) throw new Error("blob or pages left behind " + JSON.stringify(left));
   const gone = await lb((m, a) => ({ score: m.logbook.score(a[0]), marks: m.logbook.marks(a[0]).length, ink: m.logbook.inkPages(a[0]).length, tomb: m.logbook.doc.deleted.filter((t) => t.kind === "mark").length, inkTomb: m.logbook.doc.deleted.filter((t) => t.kind === "ink").length }), scoreId);
-  if (gone.score || gone.marks || gone.ink || gone.tomb !== 1 || gone.inkTomb !== 1) throw new Error(JSON.stringify(gone));
+  if (gone.score || gone.marks || gone.ink || gone.tomb !== 2 || gone.inkTomb !== 1) throw new Error(JSON.stringify(gone)); // two bookmarks: coda + Pathétique (WSHED-108)
 });
 
 await noWiden();
