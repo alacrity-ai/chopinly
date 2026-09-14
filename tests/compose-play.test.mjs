@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition } from "../js/lib/compose/model.js";
-import { place } from "../js/lib/compose/engine.js";
+import { place, arpeggio } from "../js/lib/compose/engine.js";
 import { timeline } from "../js/lib/compose/play.js";
 import { PPQ } from "../js/lib/compose/ticks.js";
 
@@ -35,4 +35,24 @@ test("timeline: a tie with no matching next note is ignored; an empty score has 
   d = place(d, { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
   d.measures[0].staves[0].voices[0][0].pitches[0].tie = "start";
   assert.deepEqual(timeline(d).notes.map((n) => [n.at, n.len]), [[0, PPQ]]);
+});
+
+test("a rolled chord plays its notes one after another — up from the bottom, down from the top — all ending together", () => {
+  let d = newComposition({ id: "r" });
+  d = place(d, { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;   // B4
+  d = place(d, { bar: 0, staff: 0, ticks: 0, step: 6 }, Q).doc;   // D5
+  d = place(d, { bar: 0, staff: 0, ticks: 0, step: 8 }, Q).doc;   // F5
+  const ev = d.measures[0].staves[0].voices[0][0];
+  const flat = timeline(d).notes.filter((n) => n.at < PPQ);
+  assert.ok(flat.every((n) => n.at === 0 && n.len === PPQ));
+  const up = timeline(arpeggio(d, [ev.id], "up")).notes.slice(0, 3);
+  assert.deepEqual(up.map((n) => n.midi), [71, 74, 77]);
+  const lag = up[1].at - up[0].at;
+  assert.ok(lag > 0 && lag <= PPQ / 8, `lag ${lag}`);
+  assert.deepEqual(up.map((n) => n.at), [0, lag, 2 * lag]);
+  assert.ok(up.every((n) => n.at + n.len === PPQ), "they end together");
+  const down = timeline(arpeggio(d, [ev.id], "down")).notes.slice(0, 3).sort((a, b) => a.at - b.at);
+  assert.deepEqual(down.map((n) => n.midi), [77, 74, 71]);
+  const plain = timeline(arpeggio(d, [ev.id], "plain")).notes.slice(0, 3).sort((a, b) => a.at - b.at);
+  assert.deepEqual(plain.map((n) => n.midi), [71, 74, 77], "a plain roll goes up");
 });

@@ -67,10 +67,11 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     const keyAlt = keyAlterations(b.key.fifths);
     const memory = Array.from({ length: nStaves }, () => new Map());
     for (const c of b.cols) {
-      let acc = 0, dot = 0;
+      let acc = 0, dot = 0, arp = 0;
       for (const x of c.evs) {
         if (x.ev.dur.dots) dot = 1;
         if (x.ev.kind !== "note") continue;
+        if (x.ev.arp) arp = 1;
         x.accs = x.ev.pitches.map((p) => {
           const k = p.step + p.octave, mem = memory[x.staff];
           const eff = mem.has(k) ? mem.get(k) : (keyAlt.get(p.step) ?? 0);
@@ -91,7 +92,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
         }
         acc = Math.max(acc, cols.length);
       }
-      c.accPad = acc ? 1.4 + (acc - 1) * 1.15 : 0; c.dotPad = dot ? 0.9 : 0;
+      c.accPad = acc ? 1.4 + (acc - 1) * 1.15 : 0; c.dotPad = dot ? 0.9 : 0; c.arpPad = arp ? 1.4 : 0; // the roll sign stands left of the accidentals
     }
   }
 
@@ -110,7 +111,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     const ts = b.showTime ? 3.0 : 0;
     return clef + ks + ts + (clef || ks || ts ? 0.6 : 0);
   };
-  const bodyW = (b) => Math.max(MIN_BAR, 1.0 + b.cols.reduce((n, c) => n + c.w + c.clefPad + c.accPad + c.dotPad, 0) + b.tailPad + 1.0);
+  const bodyW = (b) => Math.max(MIN_BAR, 1.0 + b.cols.reduce((n, c) => n + c.w + c.clefPad + c.accPad + c.arpPad + c.dotPad, 0) + b.tailPad + 1.0);
 
   // -- pack bars into systems --
   const systems = [];
@@ -170,7 +171,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
       let off = 1.0;
       for (const c of b.cols) {
         for (const ch of c.clefs) clefs.push({ x: bodyStart + off * sys.scale + 0.15, y: clefY(staffTop(ch.staff), ch.clef), glyph: CLEFS[ch.clef].glyph, staff: ch.staff, bar: b.index, at: ch.at, system: si });
-        const x = bodyStart + (off + c.clefPad + c.accPad) * sys.scale;
+        const x = bodyStart + (off + c.clefPad + c.arpPad + c.accPad) * sys.scale;
         c.x = x;
         hbar.cols.push({ ticks: c.ticks, x });
         for (const ev of c.evs) {
@@ -186,7 +187,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
           const steps = ev.ev.pitches.map((p) => staffStep({ letter: p.step, acc: 0, octave: p.octave, diatonic: p.octave * 7 + "CDEFGAB".indexOf(p.step) }, clef));
           const far = steps.reduce((m, s2) => (Math.abs(s2 - 4) > Math.abs(m - 4) ? s2 : m), steps[0]);
           const stem = hasStem(base) ? (far >= 4 ? "down" : "up") : null;
-          const d = { id: ev.ev.id, bar: b.index, staff: st, system: si, rest: false, base, dots: ev.ev.dur.dots, kind, headW, x, stem, ticks: c.ticks, group: Math.floor(c.ticks / groupSize(b.time)), heads: [], ledgers: [], tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index, pitches: ev.ev.pitches, art: ev.ev.art ?? null, gliss: ev.ev.gliss ?? null };
+          const d = { id: ev.ev.id, bar: b.index, staff: st, system: si, rest: false, base, dots: ev.ev.dur.dots, kind, headW, x, stem, ticks: c.ticks, group: Math.floor(c.ticks / groupSize(b.time)), heads: [], ledgers: [], tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index, pitches: ev.ev.pitches, art: ev.ev.art ?? null, gliss: ev.ev.gliss ?? null, arp: ev.ev.arp ?? null, accLeft: x - c.accPad * sys.scale };
           // heads: sorted by step; seconds flip to the other side of the stem
           const order = steps.map((s2, pi) => ({ step: s2, pi })).sort((a, b2) => a.step - b2.step);
           const walk = stem === "down" ? [...order].reverse() : order;
@@ -210,7 +211,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
           d.beams = beamCount(base);
           drawn.push(d);
         }
-        off += c.w + c.clefPad + c.accPad + c.dotPad;
+        off += c.w + c.clefPad + c.arpPad + c.accPad + c.dotPad;
       }
       for (const ch of b.tailClefs) clefs.push({ x: hbar.x1 - b.tailPad * sys.scale + 0.15, y: clefY(staffTop(ch.staff), ch.clef), glyph: CLEFS[ch.clef].glyph, staff: ch.staff, bar: b.index, at: ch.at, system: si });
       cursor = hbar.x1;
@@ -289,6 +290,13 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
       else { marks.push({ x: d.x + d.headW / 2, y: near, mark: m, above: !stemUp, system: d.system }); near += stemUp ? 1.1 : -1.1; if (!stemUp) high = Math.min(high, near - 0.4); }
     }
   }
+  // -- rolled chords: a vertical wiggle left of everything the chord owns (flipped heads, accidentals), a space past the outer heads --
+  const arps = [];
+  for (const d of drawn) {
+    if (d.rest || !d.arp) continue;
+    const left = Math.min(d.accLeft, ...d.heads.map((h) => h.x));
+    arps.push({ x: left - 0.75, y1: d.botY + 1.0, y2: d.topY - 1.0, kind: d.arp, system: d.system });
+  }
   // -- glissandi: a line from the note to the next note of the staff (in one system) --
   const glisses = [];
   for (const d of drawn) {
@@ -320,7 +328,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     tuplets.push({ x1, x2, y, above, n: first.tupletN, bracket, system: first.system });
   }
   const height = (TOP_PAD + systems.length * SYS_H - SYS_GAP + BOTTOM_PAD) * S;
-  return { S, unit: S, width, height, systems, drawn, beams, ties, tuplets, marks, glisses, clefs, hit, nStaves };
+  return { S, unit: S, width, height, systems, drawn, beams, ties, tuplets, marks, glisses, arps, clefs, hit, nStaves };
 }
 
 function restBetween(drawn, a, b) {

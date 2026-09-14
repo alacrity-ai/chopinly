@@ -128,6 +128,16 @@ export function renderComposition(container, L) {
     if (c === null) t.setAttribute("text-anchor", "middle");
     svg.append(t);
   }
+  // a roll: wiggle segments (each 1.02 S long, ink 0.48 S wide beside the baseline) rotated to run along the chord, an arrowhead segment (2.06 S) for up / down.
+  // rotate(−90) runs the text upward from the bottom point with its ink to the left of the anchor; rotate(+90) runs it downward with the ink to the right.
+  for (const a of L.arps) {
+    const arrow = a.kind !== "plain", span = a.y1 - a.y2;
+    const n = Math.max(2, Math.ceil((span - (arrow ? 2.06 : 0)) / 1.02));
+    const down = a.kind === "down";
+    const text = (down ? G.wiggleArpDown : G.wiggleArpUp).repeat(n) + (a.kind === "up" ? G.wiggleArpUpArrow : down ? G.wiggleArpDownArrow : "");
+    const ax = a.x + (down ? -0.24 : 0.24), ay = down ? a.y2 : a.y1;
+    svg.append(el("text", { x: px(ax), y: px(ay), class: "glyph cp-arp", transform: `rotate(${down ? 90 : -90} ${px(ax)} ${px(ay)})` }, text));
+  }
   for (const gl of L.glisses) {
     const g = el("g", { class: "cp-gliss" });
     g.append(el("line", { x1: px(gl.x1), y1: px(gl.y1), x2: px(gl.x2), y2: px(gl.y2), class: "cp-gliss-line" }));

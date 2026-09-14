@@ -762,6 +762,18 @@ export function articulate(doc, evIds, mark) {
   }
   return d;
 }
+/** The rolled-chord signs: a plain wiggle, or one with an arrowhead saying which way the roll goes. */
+export const ARPS = ["plain", "up", "down"];
+/** Set the roll on the selected notes (`ev.arp`); every note already has that roll → off. One roll per note. */
+export function arpeggio(doc, evIds, kind) {
+  if (!ARPS.includes(kind)) throw new Nudge("no such roll");
+  const d = clone(doc);
+  const notes = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "note").map((f) => f.ev);
+  if (!notes.length) throw new Nudge("pick the chord to roll");
+  const all = notes.every((e) => e.arp === kind);
+  for (const e of notes) { if (all) delete e.arp; else e.arp = kind; }
+  return d;
+}
 /** Toggle a glissando from each selected note to the next note of its staff; nothing after it → Nudge. */
 export function gliss(doc, evIds) {
   const d = clone(doc);

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition, validate, timeAt, isEmptyBar, evTicks } from "../js/lib/compose/model.js";
-import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar, setPitch, stepOf, retype, dot, tie, tuplet, accidental, clipFrom, paste, toRests, setKey, setTime, setClef, articulate, gliss, decompose } from "../js/lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar, setPitch, stepOf, retype, dot, tie, tuplet, accidental, clipFrom, paste, toRests, setKey, setTime, setClef, articulate, gliss, arpeggio, decompose } from "../js/lib/compose/engine.js";
 import { capacity, PPQ, groupSize } from "../js/lib/compose/ticks.js";
 const Qt = PPQ;
 import { createHistory } from "../js/lib/compose/history.js";
@@ -508,6 +508,24 @@ test("setTime: 4/4 → 3/4 at bar 3 of a full eight bars re-cuts into 3/4 bars, 
   const back = setTime(v, 3, { beats: 4, unit: 4 });
   assert.equal(back.doc.measures[3].time, undefined);
   validate(back.doc);
+});
+
+test("arpeggio: one roll per note, set / switch / clear on the selection, notes only", () => {
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
+  d = place(d, { bar: 0, staff: 0, ticks: 0, step: 8 }, Q).doc;   // a chord
+  d = place(d, { bar: 0, staff: 0, ticks: Qt, step: 6 }, Q).doc;
+  const [a, b] = bar1(d);
+  d = arpeggio(d, [a.id, b.id], "up");
+  assert.deepEqual([find(d, a.id).ev.arp, find(d, b.id).ev.arp], ["up", "up"]);
+  d = arpeggio(d, [a.id], "down");                                // a different roll replaces
+  assert.equal(find(d, a.id).ev.arp, "down");
+  d = arpeggio(d, [a.id, b.id], "plain");                         // not all plain → all plain
+  assert.deepEqual([find(d, a.id).ev.arp, find(d, b.id).ev.arp], ["plain", "plain"]);
+  d = arpeggio(d, [a.id, b.id], "plain");                         // all have it → off
+  assert.deepEqual([find(d, a.id).ev.arp, find(d, b.id).ev.arp], [undefined, undefined]);
+  assert.throws(() => arpeggio(d, [a.id], "sideways"), Nudge);
+  const rest = bar1(d)[2];
+  assert.throws(() => arpeggio(d, [rest.id], "up"), /pick the chord/);
 });
 
 test("articulate / gliss toggle on the selection; gliss needs a note after it and dies with it", () => {

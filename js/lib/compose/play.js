@@ -5,7 +5,8 @@ import { PPQ } from "./ticks.js";
 import { onsets, midiOf, barStarts } from "./engine.js";
 import { createPiano } from "../keyboard/piano.js";
 
-const LOOKAHEAD_S = 0.18, TICK_MS = 45, GATE = 0.92; // a note sounds for 92% of its length — a hair of air between repeated notes
+const LOOKAHEAD_S = 0.18, TICK_MS = 45, GATE = 0.92;
+const ROLL_MAX = PPQ / 8; // a rolled chord staggers its notes by at most a 32nd each, never past a quarter of the chord // a note sounds for 92% of its length — a hair of air between repeated notes
 
 /**
  * Every note of the document as { at, len, midi, staff } in absolute ticks,
@@ -21,12 +22,15 @@ export function timeline(doc) {
       for (const o of onsets(s.voices[0])) {
         if (o.ev.kind !== "note") continue;
         const at = starts[b] + o.start;
-        for (const p of o.ev.pitches) {
-          const midi = midiOf(p), k = `${staff}:${midi}`;
+        // a rolled chord: its pitches enter one after another (up = low to high, down = high to low) and end together
+        const roll = o.ev.arp && o.ev.pitches.length > 1 ? Math.min(ROLL_MAX, Math.floor(o.len / (4 * o.ev.pitches.length))) : 0;
+        const order = roll ? [...o.ev.pitches].sort((p1, p2) => (o.ev.arp === "down" ? midiOf(p2) - midiOf(p1) : midiOf(p1) - midiOf(p2))) : o.ev.pitches;
+        for (const [pi, p] of order.entries()) {
+          const midi = midiOf(p), k = `${staff}:${midi}`, lag = roll * pi;
           const held = open.get(k);
           const starts = p.tie === "start" || p.tie === "both";
           if (held && held.at + held.len === at) { held.len += o.len; if (!starts) open.delete(k); continue; }
-          const n = { at, len: o.len, midi, staff };
+          const n = { at: at + lag, len: o.len - lag, midi, staff };
           notes.push(n);
           if (starts) open.set(k, n); else open.delete(k);
         }
