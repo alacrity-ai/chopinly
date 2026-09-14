@@ -29,7 +29,7 @@ export function renderComposition(container, L) {
   const glyph = (x, y, ch, cls = "glyph") => el("text", { x: px(x), y: px(y), class: cls }, ch);
 
   for (const sys of L.systems) {
-    const lastBar = sys.barlines[sys.barlines.length - 1].x;
+    const lastBar = sys.endX ?? sys.barlines[sys.barlines.length - 1].x;
     const g = el("g", { class: "cp-sys" });
     // staff lines
     for (const topY of sys.staffTop) for (let i = 0; i < 5; i++) g.append(el("line", { x1: px(1.0), y1: px(topY + i), x2: px(lastBar), y2: px(topY + i), class: "sline" }));

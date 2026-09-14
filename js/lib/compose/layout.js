@@ -129,7 +129,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     const body = sum - lead;
     // a courtesy key / time at the end when the next system opens with a change
     const nb = bars[i];
-    sys.courtesy = nb && (nb.showKey || nb.showTime || nb.showClef) ? { clef: nb.showClef ? nb : null, key: nb.showKey ? nb : null, time: nb.showTime ? nb : null, w: (nb.showClef ? 2.8 : 0) + (nb.showKey ? Math.max(...nb.clefs.map((_, si) => keysigW(nb, si))) * 1.15 + 0.8 : 0) + (nb.showTime ? 3.0 : 0) + 0.4 } : null;
+    sys.courtesy = nb && (nb.showKey || nb.showTime || nb.showClef) ? { clef: nb.showClef ? nb : null, key: nb.showKey ? nb : null, time: nb.showTime ? nb : null, w: (nb.showClef ? 2.8 : 0) + (nb.showKey ? Math.max(...nb.clefs.map((_, si) => keysigW(nb, si))) * 1.15 + 0.8 : 0) + (nb.showTime ? 3.0 : 0) + 1.0 } : null;
     sys.scale = Math.min((avail - lead - (sys.courtesy?.w ?? 0)) / body, i >= bars.length ? 1.25 : 10);
     systems.push(sys);
   }
@@ -146,6 +146,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     sys.leading = [];
     sys.barlines = [];
     sys.courtesyLead = null;
+    sys.endX = null; // where the staff lines stop when it is not the last barline
     const hsys = { top: sysTop - 3, bottom: sysTop + BLOCK_H + 3, staves: sys.staffTop.map((t) => ({ topY: t })), bars: [] };
     let cursor = LEFT;
     sys.bars.forEach((b, k) => {
@@ -224,6 +225,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
       c.timeX = c.keyX + (sys.courtesy.key ? Math.max(...c.staves.map((x) => x.keysig.length)) * 1.15 + 0.8 : 0);
       c.beats = nb.time.beats; c.unit = nb.time.unit;
       sys.courtesyLead = c;
+      sys.endX = cursor + sys.courtesy.w - 0.3; // the staff runs on under the courtesy symbols
     }
     hit.systems.push(hsys);
   });
