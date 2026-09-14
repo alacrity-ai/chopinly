@@ -17,7 +17,7 @@ import { createPlayer } from "../../lib/compose/play.js";
 import { clefAt, timeAt, tempoOf, MIN_TEMPO, MAX_TEMPO } from "../../lib/compose/model.js";
 import { ticks as ticksOf, capacity, groupSize } from "../../lib/compose/ticks.js";
 import { CLEFS } from "../../lib/music.js";
-import { buildRails, MAIN_BASES, MORE_BASES, KEYS, durName, tupletName } from "./rails.js";
+import { buildRails, MAIN_BASES, MORE_BASES, KEYS, RAILS, DEFAULT_RAILS, durName, tupletName } from "./rails.js";
 
 const TAP_MS = 300, TAP_PX = 10, PALM_PX = 40, S_MIN = 8, S_MAX = 22, SAVE_MS = 300, LASSO_PX = 6;
 const KEY_BASE = { 1: 64, 2: 32, 3: 16, 4: 8, 5: 4, 6: 2, 7: 1 };
@@ -40,7 +40,8 @@ export function openEditor({ id, ctx, onClose }) {
   let L = null, R = null, closed = false, saveTimer = 0, dirty = false, pasting = false;
   let tempo = tempoOf(c);              // playback tempo — saved with the piece, outside undo
   let pending = null;                  // an armed key / time / clef change waiting for a tap: { kind, value }
-  let utilityOpen = !!store.get("utility", false);
+  const savedRails = store.get("rails", null);
+  let railsOn = Object.fromEntries(RAILS.map(([k]) => [k, typeof savedRails?.[k] === "boolean" ? savedRails[k] : DEFAULT_RAILS[k]])); // which rails show — remembered per device
   const sound = createSound(getAudio);
   const player = createPlayer({ getAudio, getDoc: () => doc, getTempo: () => tempo, onTick: showPlayhead, onEnd: () => syncTransport() });
 
@@ -65,7 +66,7 @@ export function openEditor({ id, ctx, onClose }) {
     showPlayhead(player.position);
   }
   function sync() {
-    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, utility: { open: utilityOpen } });
+    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn });
     view.dataset.mode = mode; view.classList.toggle("pasting", pasting); view.classList.toggle("arming", !!pending);
     syncTransport();
   }
@@ -466,7 +467,7 @@ export function openEditor({ id, ctx, onClose }) {
       case "tempo-down": setTempo(tempo - 1); return;
       case "tempo-up": setTempo(tempo + 1); return;
       case "tempo": { const v = prompt("tempo (beats per minute)", String(tempo)); if (v !== null) setTempo(v); return; }
-      case "utility": utilityOpen = !utilityOpen; store.set("utility", utilityOpen); sync(); setTimeout(layout, 0); return; // the rails' height changed: the view re-measures
+      case "rail": if (!(arg in railsOn)) return; railsOn = { ...railsOn, [arg]: !railsOn[arg] }; store.set("rails", railsOn); sync(); setTimeout(layout, 0); return; // the rails' height changed: the view re-measures
       case "key": { // arm the key; the next tap on a bar puts the change there (the armed one again → off)
         if (pending?.kind === "key" && pending.value === arg) { setPending(null); return; }
         const k = KEYS.find((x) => x.fifths === arg);
@@ -619,7 +620,7 @@ export function openEditor({ id, ctx, onClose }) {
   const api = {
     id, close,
     /** For tests: the live state. */
-    get state() { return { mode, armed, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, pending, utilityOpen, doc }; },
+    get state() { return { mode, armed, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, pending, rails: railsOn, doc }; },
     /** For tests: the current layout. */
     get layout() { return L; },
     /** For tests: the client point of a musical place. */
