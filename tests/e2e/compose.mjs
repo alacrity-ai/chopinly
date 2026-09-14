@@ -14,7 +14,7 @@ page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resourc
 page.on("dialog", (d) => d.accept(d.type() === "prompt" ? d.defaultValue() : undefined));
 const step = async (name, f) => { try { await f(); console.log("ok  ", name); } catch (e) { console.log("FAIL", name, "—", e.message); await page.screenshot({ path: `${S}/fail-compose.png` }); throw e; } };
 const lb = (fn, ...args) => page.evaluate(async ([src, a]) => { const m = await import("/js/lib/logbook.js"); return (new Function("m", "a", src))(m, a); }, [`return (${fn})(m, a)`, args]);
-const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, S: s.S, selection: s.selection, bars: s.bars }; });
+const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging }; });
 const kinds = (bar, staff = 0) => page.evaluate(([b, st]) => document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[st].voices[0].map((e) => `${e.kind === "rest" ? "r" : "n"}${e.dur.base}${e.dur.dots ? "." : ""}`).join(" "), [bar, staff]);
 const point = (place) => page.evaluate((p) => document.querySelector(".cp-editor").__editor.pointFor(p), place);
 const tapAt = async (place) => { const p = await point(place); await page.touchscreen.tap(Math.round(p.x), Math.round(p.y)); await page.waitForTimeout(80); };
@@ -97,6 +97,46 @@ await step("tap a head → selected; delete → rests come back; undo / redo res
   await page.click("[data-act=redo]");
   if ((await kinds(0)) !== "n4 r4 n4 n4") throw new Error("after redo: " + (await kinds(0)));
   await page.click("[data-act=undo]");
+});
+
+await step("grab + drag: pen down on a head takes it, dragging up two steps re-pitches (B4 → D5), Place mode stays armed and the next tap still places; a finger drags too; a tap on the selected note lets it go", async () => {
+  const S = (await state()).S;
+  const headPt = async (bar, ticks, step) => { const p = await point({ bar, staff: 0, ticks, step }); return { x: p.x + 0.6 * S, y: p.y }; }; // the head's centre sits right of the column x
+  const pitchAt = (bar, i) => page.evaluate(([b, i]) => { const e = document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[0].voices[0][i]; return e.pitches?.map((p) => p.step + p.octave).join("+") ?? e.kind; }, [bar, i]);
+  let h = await headPt(0, 0, 4); // bar 1 beat 1: B4 on the middle line
+  const pen = (type, o) => synth(type, { pointerType: "pen", pointerId: 71, width: 1, height: 1, pressure: 0.5, ...o });
+  await pen("pointerdown", { clientX: h.x, clientY: h.y });
+  if (!(await state()).dragging) throw new Error("pen down did not grab");
+  if ((await state()).selection.length !== 1) throw new Error("grab did not select");
+  await pen("pointermove", { clientX: h.x, clientY: h.y - S / 2 });
+  await pen("pointermove", { clientX: h.x, clientY: h.y - S });
+  if ((await pitchAt(0, 0)) !== "D5") throw new Error("mid-drag pitch " + (await pitchAt(0, 0)));
+  await pen("pointerup", { clientX: h.x, clientY: h.y - S });
+  if ((await pitchAt(0, 0)) !== "D5") throw new Error("after drag " + (await pitchAt(0, 0)));
+  let s = await state();
+  if (s.mode !== "place" || s.armed.base !== 4 || s.selection.length !== 1 || s.dragging) throw new Error("state after drag " + JSON.stringify(s));
+  await page.click("[data-act=undo]");
+  if ((await pitchAt(0, 0)) !== "B4") throw new Error("undo of a drag " + (await pitchAt(0, 0)));
+  await page.click("[data-act=redo]");
+  if ((await pitchAt(0, 0)) !== "D5") throw new Error("redo of a drag " + (await pitchAt(0, 0)));
+  // still placing: a tap elsewhere lands a quarter
+  await tapAt({ bar: 1, staff: 0, ticks: 2 * PPQ + 60, step: 2 });
+  if ((await kinds(1)) !== "n4 r4 n4 r4") throw new Error("placing after a drag: " + (await kinds(1)));
+  // a finger drags too (one contact, narrow)
+  h = await headPt(1, 2 * PPQ, 2);
+  const finger = (type, o) => synth(type, { pointerType: "touch", pointerId: 72, width: 3, height: 3, ...o });
+  await finger("pointerdown", { clientX: h.x, clientY: h.y });
+  await finger("pointermove", { clientX: h.x, clientY: h.y + S });
+  await finger("pointerup", { clientX: h.x, clientY: h.y + S });
+  if ((await pitchAt(1, 2)) !== "E4") throw new Error("finger drag " + (await pitchAt(1, 2)));
+  // a clean tap on the selected note deselects it; the bar is unchanged
+  h = await headPt(1, 2 * PPQ, 0);
+  await pen("pointerdown", { clientX: h.x, clientY: h.y }); await pen("pointerup", { clientX: h.x, clientY: h.y });
+  s = await state();
+  if (s.selection.length !== 0) throw new Error("tap on a selected note should let it go: " + JSON.stringify(s.selection));
+  if ((await kinds(1)) !== "n4 r4 n4 r4") throw new Error("tap changed the bar");
+  await page.click("[data-act=undo]"); await page.click("[data-act=undo]"); await page.click("[data-act=undo]"); // finger drag, placement, pen drag → bar 1 back to n4 r4 r2, bar 0 to B4
+  if ((await kinds(1)) !== "n4 r4 r2" || (await pitchAt(0, 0)) !== "B4") throw new Error("undo chain: " + (await kinds(1)) + " " + (await pitchAt(0, 0)));
 });
 
 await step("Rest toggle: a rest placed into a bar with notes leaves the bar adding up", async () => {

@@ -340,8 +340,8 @@ rows; the utility / expression rails become sheets.
 
 | mode | what a pointer does |
 |---|---|
-| **Place** (default; any duration armed) | tap on staff → `place`; tap on a notehead → select it; a rest (or a chord's stem) is where the next note goes, so a tap there places; drag from a selected notehead → re-pitch; long-press → marquee (Select mode for this gesture) |
-| **Select** (armed duration cleared) | tap → select / toggle; drag → marquee over notes; drag from a selected notehead → re-pitch |
+| **Place** (default; any duration armed) | tap on staff → `place`; **pointer down on a notehead grabs it at once** (selected, and a vertical drag re-pitches by staff step, sounding each; release commits; a clean tap on an already-selected note lets it go) — the mode and the armed duration are untouched, so the next tap elsewhere still places; a rest (or a chord's stem) is where the next note goes, so a tap there places; long-press → marquee (Select mode for this gesture) |
+| **Select** (armed duration cleared) | tap → select / toggle; the same grab-and-drag on a notehead; drag on empty staff → marquee over notes |
 | **Scrub** | one finger / pen → pan; two fingers → zoom; nothing selects or places |
 
 Tapping the armed duration again in the palette clears it (→ Select). Esc → Select.
@@ -356,9 +356,10 @@ carries the accidental, then the button clears.
   pointers.
 - Edit modes accept a **pen** pointer fully; a **touch** pointer only as a
   single tap: `pointerdown` with no other active touch, `pointerup` within 300
-  ms and 10 px, contact `width`/`height` under 40 px when reported. Anything else
-  is dropped and cancels nothing (a palm landing mid-drag does not break a pen
-  drag). A **mouse** behaves as a pen.
+  ms and 10 px, contact `width`/`height` under 40 px when reported — except that
+  a single narrow finger landing **on a notehead** may grab and drag it (a second
+  contact lets go and reverts). Anything else is dropped and cancels nothing (a
+  palm landing mid-drag does not break a pen drag). A **mouse** behaves as a pen.
 - `fingerPlaces` off (a setting) turns finger taps into select-only.
 - Scrub uses the reader's swipe logic with inertia and pinch-to-zoom; zoom is
   applied by re-laying out at the new S (no CSS transform — text stays crisp).

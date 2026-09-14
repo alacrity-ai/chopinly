@@ -10,13 +10,13 @@ import { haptic } from "../logbook/motion.js";
 import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt } from "../../lib/compose/hit.js";
-import { place, remove, snap, trimBars, find, Nudge } from "../../lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, setPitch, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { clefAt, keyAt } from "../../lib/compose/model.js";
 import { buildRails, MAIN_BASES, MORE_BASES, durName } from "./rails.js";
 
-const TAP_MS = 300, TAP_PX = 10, PALM_PX = 40, S_MIN = 8, S_MAX = 22, SAVE_MS = 300;
+const TAP_MS = 300, TAP_PX = 10, PALM_PX = 40, S_MIN = 8, S_MAX = 22, SAVE_MS = 300, DRAG_MS = 700;
 const KEY_BASE = { 1: 64, 2: 32, 3: 16, 4: 8, 5: 4, 6: 2, 7: 1 };
 
 export function openEditor({ id, ctx, onClose }) {
@@ -111,10 +111,54 @@ export function openEditor({ id, ctx, onClose }) {
     const b = bar !== undefined && barAt(L, bar);
     if (b) R.flashBar(b.bar, b.sys);
   }
-  function select(thing) {
-    const key = thing.type === "head" ? `${thing.ev}:${thing.pi}` : thing.ev;
-    if (selection.has(key)) selection.delete(key); else { selection.clear(); selection.add(key); }
+  const keyOf = (thing) => (thing.type === "head" ? `${thing.ev}:${thing.pi}` : thing.ev);
+  function select(thing, { toggle = true } = {}) {
+    const key = keyOf(thing);
+    if (selection.has(key)) { if (toggle) selection.delete(key); }
+    else { selection.clear(); selection.add(key); }
     R.setSelection(selection); sync(); haptic(4);
+  }
+
+  // --- grab + drag: pen / mouse / one finger down on a notehead takes it at once; vertical
+  // movement re-pitches by staff step (sounding each), release commits. The mode is untouched:
+  // in Place mode the armed duration stays armed and the next tap elsewhere still places.
+  let drag = null; // { id, type, thing, wasSelected, y0, delta, base, preview, pi }
+  function grabStart(e, thing) {
+    const wasSelected = selection.has(keyOf(thing));
+    select(thing, { toggle: false });
+    drag = { id: e.pointerId, type: e.pointerType, thing, wasSelected, y0: e.clientY, delta: 0, base: doc, preview: doc, pi: thing.pi, t: performance.now() };
+    R.showGhost(null);
+    try { view.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
+  }
+  function grabMove(e) {
+    if (!drag || drag.id !== e.pointerId) return;
+    const delta = Math.round((drag.y0 - e.clientY) / (S / 2));
+    if (delta === drag.delta) return;
+    try {
+      const r = setPitch(drag.base, [{ ev: drag.thing.ev, pi: drag.thing.pi }], delta);
+      drag.delta = delta; drag.preview = r.doc; drag.pi = r.pi ?? drag.thing.pi;
+      doc = r.doc;
+      selection.clear(); selection.add(`${drag.thing.ev}:${drag.pi}`);
+      layout();
+      const f = find(doc, drag.thing.ev);
+      if (f) sound.play([f.ev.pitches[drag.pi]], 180);
+      haptic(3);
+    } catch (err) { if (!(err instanceof Nudge)) throw err; /* stay on the last good step */ }
+  }
+  function grabEnd(e, { cancel = false } = {}) {
+    if (!drag || drag.id !== e.pointerId) return;
+    const g = drag; drag = null;
+    if (cancel || g.delta === 0) {
+      doc = g.base;
+      if (g.delta !== 0) layout();
+      // a clean tap on an already-selected note deselects it (the toggle a tap always had)
+      if (!cancel && g.wasSelected && performance.now() - g.t <= TAP_MS) { selection.clear(); R.setSelection(selection); sync(); }
+      return;
+    }
+    doc = g.base;                         // commit records base → preview as one step
+    commit(g.preview);
+    selection.clear(); selection.add(`${g.thing.ev}:${g.pi}`); R.setSelection(selection); sync();
+    haptic(8);
   }
   function deleteSelection() {
     if (!selection.size) return;
@@ -130,28 +174,36 @@ export function openEditor({ id, ctx, onClose }) {
   let scrub = null;     // Scrub state: { pointers: Map(id → {x, y}), scrollTop, dist0, S0, last, vy, inertia }
   const wide = (e) => (e.width > PALM_PX || e.height > PALM_PX);
 
+  const headUnder = (e) => { if (!L) return null; const { x, y } = toS(e.clientX, e.clientY); const t = thingAt(L, x, y); return t?.type === "head" ? t : null; };
   view.addEventListener("pointerdown", (e) => {
     if (mode === "scrub") { onScrubDown(e); return; }
     if (e.pointerType === "touch") {
       const valid = touches.size === 0 && !wide(e);
       touches.add(e.pointerId);
+      if (drag?.type === "touch") { grabEnd({ pointerId: drag.id }, { cancel: true }); return; } // a second finger lets go
       if (gesture?.type === "touch") gesture.valid = false; // a second finger spoils the first
       if (!valid) { if (gesture?.type !== "touch") return; gesture = { id: e.pointerId, type: "touch", valid: false }; return; }
+      const head = headUnder(e);
+      if (head) { gesture = null; grabStart(e, head); return; }
       gesture = { id: e.pointerId, type: "touch", x: e.clientX, y: e.clientY, t: performance.now(), valid: true };
       ghostAt(e.clientX, e.clientY);
       return;
     }
     if (e.button && e.button !== 0) return;
+    const head = headUnder(e);
+    if (head) { gesture = null; grabStart(e, head); return; }
     gesture = { id: e.pointerId, type: e.pointerType, x: e.clientX, y: e.clientY, t: performance.now(), valid: true };
   });
   view.addEventListener("pointermove", (e) => {
     if (mode === "scrub") { onScrubMove(e); return; }
+    if (drag) { grabMove(e); return; }
     if (e.pointerType === "touch") { if (gesture?.id === e.pointerId && gesture.valid && Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > TAP_PX) { gesture.valid = false; R?.showGhost(null); } return; }
     if (!gesture || gesture.id !== e.pointerId) ghostAt(e.clientX, e.clientY); // hover
     else if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > TAP_PX) { gesture.valid = false; R?.showGhost(null); }
   });
   const up = (e) => {
     if (mode === "scrub") { onScrubUp(e); return; }
+    if (drag?.id === e.pointerId) { if (e.pointerType === "touch") touches.delete(e.pointerId); grabEnd(e, { cancel: e.type === "pointercancel" }); return; }
     if (e.pointerType === "touch") {
       touches.delete(e.pointerId);
       if (gesture?.id === e.pointerId) {
@@ -237,6 +289,7 @@ export function openEditor({ id, ctx, onClose }) {
   }
   function setMode(next) {
     if (mode === next) return;
+    if (drag) grabEnd({ pointerId: drag.id }, { cancel: true });
     mode = next; R?.showGhost(null);
     if (mode === "scrub") { gesture = null; } else { cancelAnimationFrame(scrub?.inertia); scrub = null; }
     sync();
@@ -281,7 +334,7 @@ export function openEditor({ id, ctx, onClose }) {
   const api = {
     id, close,
     /** For tests: the live state. */
-    get state() { return { mode, armed, S, selection: [...selection], bars: doc.measures.length, doc }; },
+    get state() { return { mode, armed, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, doc }; },
     /** For tests: the client point of a musical place. */
     pointFor({ bar, staff, ticks, step }) {
       const { sys, bar: hb } = barAt(L, bar);

@@ -23,6 +23,40 @@ export const midiOf = (p) => parsePitch(`${p.step}${p.alter === 1 ? "#" : p.alte
 /** Diatonic index of a pitch (for chord ordering). */
 export const diatonicOf = (p) => p.octave * 7 + LETTERS.indexOf(p.step);
 
+/** Staff step of a spelled pitch on a clef. */
+export const stepOf = (p, clef) => diatonicOf(p) - parsePitch(CLEFS[clef].bottom).diatonic;
+export const STEP_MIN = -10, STEP_MAX = 18;
+
+/**
+ * Move pitches by staff steps, spelled from the key (docs/COMPOSE_DESIGN.md §7.1).
+ * items: [{ ev, pi? }] — a pitch, or every pitch of the event. A move that
+ * would land a pitch on another pitch of the same chord, or off the staff's
+ * range, is refused with a Nudge and the document is untouched. Returns
+ * { doc, pi } where `pi` is the moved pitch's index after the chord re-sorts
+ * (single-pitch moves), so a selection can follow it.
+ */
+export function setPitch(doc, items, delta) {
+  if (!delta) return { doc, pi: items[0]?.pi ?? null };
+  const d = clone(doc);
+  let movedPi = null;
+  for (const it of items) {
+    const f = find(d, it.ev);
+    if (!f || f.ev.kind !== "note") continue;
+    const clef = clefAt(d, f.bar, f.staff), key = keyAt(d, f.bar);
+    const targets = it.pi !== undefined && it.pi !== null ? [f.ev.pitches[it.pi]] : [...f.ev.pitches];
+    for (const p of targets) {
+      const step = stepOf(p, clef) + delta;
+      if (step < STEP_MIN || step > STEP_MAX) throw new Nudge("off the staff");
+      const np = pitchFromStep(step, clef, key);
+      if (f.ev.pitches.some((q) => q !== p && q.step === np.step && q.octave === np.octave)) throw new Nudge("that note is already in the chord");
+      p.step = np.step; p.alter = np.alter; p.octave = np.octave;
+    }
+    f.ev.pitches.sort((a, b) => diatonicOf(a) - diatonicOf(b));
+    if (targets.length === 1) movedPi = f.ev.pitches.indexOf(targets[0]);
+  }
+  return { doc: d, pi: movedPi };
+}
+
 /** Onsets of a voice: [{ ev, start, len }]. */
 export function onsets(voice) {
   let t = 0;
