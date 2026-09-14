@@ -2118,7 +2118,7 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-file, .cp-rails-btn { gap: 0.35rem; }
 .cp-rails-btn .ic { width: 1.25rem; height: 1.25rem; }
 .cp-menu { flex-direction: column; align-items: stretch; gap: 0.15rem; min-width: 14rem; padding: 0.4rem; }
-.cp-rails-btn ~ .cp-menu, #cp-rails-more { left: auto; right: 0; }
+#cp-rails-more, #cp-file-more { left: auto; right: 0; }
 .cp-menu-row { justify-content: flex-start; gap: 0.6rem; height: 2.7rem; padding: 0 0.8rem 0 0.6rem; border: none; background: transparent; font-weight: 500; text-align: left; }
 .cp-menu-row:disabled { opacity: 0.4; }
 .cp-menu-row small { margin-left: auto; font-size: 0.7rem; font-weight: 500; color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.05em; }

@@ -46,11 +46,11 @@ export function buildRails(host, { title, onAction }) {
   host.innerHTML = `
     <div class="cp-rail cp-header" role="toolbar" aria-label="composition">
       <button type="button" class="cp-btn" data-act="back" aria-label="back to compositions">${icon("back")}</button>
+      <span class="cp-title" id="cp-title">${esc(title)}</span>
       <span class="cp-more-wrap">
         <button type="button" class="cp-btn cp-pick cp-file" data-pop="cp-file-more" aria-label="file" aria-expanded="false"><span class="cp-pick-label">File</span>&#9662;</button>
         <span class="cp-more cp-menu" id="cp-file-more" hidden>${FILE_ITEMS.map(([act, label]) => `<button type="button" class="cp-btn cp-menu-row" data-act="${act}" disabled><span>${label}</span><small>soon</small></button>`).join("")}</span>
       </span>
-      <span class="cp-title" id="cp-title">${esc(title)}</span>
       <span class="cp-more-wrap">
         <button type="button" class="cp-btn cp-pick cp-rails-btn" data-pop="cp-rails-more" aria-label="show or hide rails" aria-expanded="false">${icon("grip")}<span class="cp-pick-label">Rails</span>&#9662;</button>
         <span class="cp-more cp-menu" id="cp-rails-more" hidden>${RAILS.map(([k, label]) => `<button type="button" class="cp-btn cp-menu-row cp-rail-row" role="menuitemcheckbox" data-act="rail" data-rail="${k}" aria-checked="true"><span class="cp-check">${icon("check")}</span><span>${label}</span></button>`).join("")}</span>
