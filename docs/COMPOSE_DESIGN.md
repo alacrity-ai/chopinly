@@ -415,7 +415,7 @@ A fourth lane, toggled by the **𝄞 …** button on the control rail (remembere
 
 ### 8.5c The header rail (v77)
 
-A topmost lane holds **‹ back · File ▾ · title … Rails ▾**. **Rails ▾** is a checklist of every other lane (Controls, Transport, Notes, Key · time · clef · marks): unticking hides a lane, the choice is remembered per device (`ws.compose.rails`), and a new lane (the expression rail) joins the list when it lands. **File ▾** is the home of *Save to Scores as PDF · Export PDF · Export MusicXML · Export MIDI* — greyed until P4. Note glyphs in buttons anchor their **baseline** (the head's centre) to the button's centre line; rests and accidentals centre their ink.
+A topmost lane holds **‹ back · title … File ▾ · Rails ▾**. **Rails ▾** is a checklist of every other lane (Controls, Transport, Notes, Key · time · clef · marks): unticking hides a lane, the choice is remembered per device (`ws.compose.rails`), and a new lane (the expression rail) joins the list when it lands. **File ▾** is the home of *Save to Scores as PDF · Export PDF · Export MusicXML · Export MIDI* — greyed until P4. Note glyphs in buttons anchor their **baseline** (the head's centre) to the button's centre line; rests and accidentals centre their ink.
 
 ### 8.6 Transport (v70) and the rails' look (v71)
 
