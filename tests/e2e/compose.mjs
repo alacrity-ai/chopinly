@@ -897,13 +897,44 @@ await step("export: File ▾ → Export PDF opens the sheet with a page-1 previe
   await page.waitForFunction(() => !document.querySelector(".cp-export-wrap"), null, { timeout: 3000 });
 });
 
-await step("reload restores the composition, the zoom and the armed duration", async () => {
+await step("reload restores the composition, the zoom and the armed duration; opening is not an edit (updatedAt and the pending count stay)", async () => {
+  const before = await page.evaluate(async () => { const m = await import("/js/lib/logbook.js"); const c = m.logbook.composition(document.querySelector(".cp-editor").__editor.id); return { updatedAt: c.updatedAt, pending: m.logbook.pendingCount() }; });
   await page.reload();
   await page.waitForSelector(".cp-editor .cp-svg");
   const s = await state();
   if (!(s.bars === 9 && s.S === 16 && s.armed.base === 4)) throw new Error(JSON.stringify(s));
   if ((await kinds(0)) !== "n4 n4 n4 n4") throw new Error("lost: " + (await kinds(0)));
   if ((await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.tempo)) !== 101) throw new Error("tempo not restored");
+  const after = await page.evaluate(async () => { const m = await import("/js/lib/logbook.js"); const c = m.logbook.composition(document.querySelector(".cp-editor").__editor.id); return { updatedAt: c.updatedAt, pending: m.logbook.pendingCount() }; });
+  if (after.updatedAt !== before.updatedAt || after.pending !== before.pending) throw new Error("opening touched the piece: " + JSON.stringify({ before, after }));
+});
+
+await step("an older (v2) piece with marks on its notes opens with them as expressions, and opening it neither bumps updatedAt nor persists the upgrade — the first real edit does (v93: a stale copy must never outrank another device's work)", async () => {
+  const orig = await page.evaluate(() => document.querySelector(".cp-editor").__editor.id);
+  const seeded = await page.evaluate(async () => {
+    const [{ logbook }, M, E] = await Promise.all([import("/js/lib/logbook.js"), import("/js/lib/compose/model.js"), import("/js/lib/compose/engine.js")]);
+    let d = M.newComposition({ id: "e2e-v2-" + Date.now().toString(36), title: "Old marks", composer: "E2E", now: Date.now() - 3600e3 });
+    d = E.place(d, { bar: 0, staff: 0, ticks: 0, step: 4 }, { base: 4, dots: 0, rest: false }).doc;
+    d = E.place(d, { bar: 0, staff: 0, ticks: 6720, step: 4 }, { base: 4, dots: 0, rest: false }).doc;
+    const v = d.measures[0].staves[0].voices[0]; v[0].dyn = "f"; v[0].hairpin = "cresc-start"; v[1].hairpin = "cresc-stop"; v[1].text = "dolce"; d.v = 2;
+    logbook.addComposition(d);
+    const c = logbook.composition(d.id); c.updatedAt = Date.now() - 3600e3; // as if edited an hour ago on another device
+    logbook.updateComposition(d.id, { openedAt: c.openedAt }); // save() without touching
+    return { id: d.id, updatedAt: logbook.composition(d.id).updatedAt, v: logbook.composition(d.id).v };
+  });
+  if (seeded.v !== 2) throw new Error("seed is not v2: " + JSON.stringify(seeded));
+  await page.goto(`${BASE}/?app=1&t=1#/compose/${seeded.id}`);
+  await page.waitForSelector(".cp-editor .cp-svg");
+  const opened = await page.evaluate(async () => { const { logbook } = await import("/js/lib/logbook.js"); const ed = document.querySelector(".cp-editor").__editor, c = logbook.composition(ed.id); return { memV: ed.state.doc.v, exprs: (ed.state.doc.measures[0].expressions ?? []).map((x) => x.kind), storedV: c.v, updatedAt: c.updatedAt, drawn: document.querySelectorAll(".cp-svg .cp-expr").length }; });
+  if (opened.memV !== 3 || opened.exprs.join() !== "dyn,hairpin,text" || opened.drawn !== 3) throw new Error("upgrade in memory: " + JSON.stringify(opened));
+  if (opened.storedV !== 2 || opened.updatedAt !== seeded.updatedAt) throw new Error("opening persisted or touched the piece: " + JSON.stringify({ seeded, opened }));
+  await tapAt({ bar: 1, staff: 0, ticks: 300, step: 4 }); // a real edit persists the upgraded piece with a fresh clock
+  await page.waitForTimeout(500);
+  const edited = await page.evaluate(async () => { const { logbook } = await import("/js/lib/logbook.js"); const c = logbook.composition(document.querySelector(".cp-editor").__editor.id); return { storedV: c.v, updatedAt: c.updatedAt, exprs: (c.measures[0].expressions ?? []).length }; });
+  if (edited.storedV !== 3 || !(edited.updatedAt > seeded.updatedAt) || edited.exprs !== 3) throw new Error("the edit did not persist the upgrade: " + JSON.stringify(edited));
+  await page.evaluate(async (id) => { const { logbook } = await import("/js/lib/logbook.js"); document.querySelector(".cp-editor").__editor.close({ silent: true }); logbook.removeComposition(id); }, seeded.id); // the seed leaves with its editor, so the list below holds one piece
+  await page.goto(`${BASE}/?app=1&t=1#/compose/${orig}`);
+  await page.waitForSelector(".cp-editor .cp-svg");
 });
 
 await step("the header title opens the details modal: title, composer and tags save; the header follows the rename", async () => {
