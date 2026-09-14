@@ -53,6 +53,7 @@ the ergonomics can be judged before anything deeper is built.
 | Retype | With a selection, tap a duration: every selected note becomes that duration (and it is the armed duration now, Place mode). All or nothing: if any one cannot fit, that bar flashes and nothing changes anywhere. A selection holding rests (or marks) is refused with a hint — rests are the gaps, not things to retype. **Rest** with a selection turns the selected notes into rests of the same length and leaves the toggle itself alone. |
 | Dot · tie · tuplet | Apply to the whole selection; tap again to remove. Tie needs a same-pitch neighbour (or two selected). Tuplet defaults to a triplet; hold for duplet / quintuplet / sextuplet / septuplet. |
 | Copy · cut · paste | Copy takes the selection as a **phrase**: each note or rest with its duration, pitches, offset from the earliest selected onset and staff relative to the topmost; partial chords copy just the selected pitches; the clipboard lives for the session and travels between compositions. Cut is copy + delete. **Paste arms a cursor**: a ghost of the whole phrase follows the pen, snapped to the grid of its first duration; tap to drop; the tapped staff becomes the phrase's top staff (a two-staff phrase keeps its staves). The drop **replaces** what is under it (overlapping things go whole), appends bars past the end, and refuses a note that would straddle a barline (bar flash; the cursor stays armed). The pasted notes stay selected, so a cluster drag transposes them at once. Cmd/Ctrl C · X · V on a desk. |
+| Hear it | The transport rail plays the piece from the playhead at its tempo (saved with the piece); the slider and a bar back / forward seek; Space plays and pauses, Home stops. |
 | Bars | A new empty bar appears when the last one gets its first note. Trailing empty bars beyond one are trimmed on export. |
 | Key · time · clef | Insert a change at any bar from the utility rail; it holds until the next change. Cautionary accidentals and courtesy signatures follow standard practice. |
 | Scrub | Finger pans, pinch zooms, nothing places. Leave Scrub and the score is pinned again. A mouse wheel always scrolls (a desk has no palm). |
@@ -392,6 +393,12 @@ Every committed edit (place, remove, retype, drop of a drag, rail action) pushes
 a history snapshot and schedules a logbook save (debounced 300 ms; flushed on
 `pagehide`, on leaving the tool, and on undo/redo). Reopening restores the last
 document and the per-device zoom. Undo history is per open editor, not saved.
+
+### 8.6 Transport (v70) and the rails' look (v71)
+
+A third rail sits between the control rail and the palette: **stop · a bar back · play/pause · a bar forward · position slider (bar N of M) · tempo (♩= − / +, hold to repeat, tap the number to type)**. `Space` toggles play, `Home` stops. Playback (`play.js`) turns the document into a timeline of absolute-tick notes (ties merge into one sounding note), sequences them 180 ms ahead on the audio clock through the piano voice, and a playhead line on the overlay follows; the view scrolls only when the playing system leaves it. The tempo is saved with the piece (`tempo`, default 100, 20–300) and is *not* an undoable edit. Editing while playing re-sequences from the current position.
+
+The rails are 3.4 rem tall (2.8 rem under 480 px), buttons and icons scale with them, and Bravura glyphs in buttons are centred on their **ink**, not their typographic box: `rails.js` measures each glyph with canvas `measureText` (font and ink bounding boxes) once Bravura has loaded and slides it by `--dy`, so a whole note, a quarter, a rest and a sharp all sit dead-centre whatever the button size. The tempo group is one pill; the position slider fills with the accent up to the playhead.
 
 ## 9. Rendering (`render.js`)
 
