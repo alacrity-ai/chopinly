@@ -48,6 +48,8 @@ export const DEFAULT_RAILS = { control: true, transport: true, palette: true, ut
 /** Dynamics in rail order and the text suggestions (free typing too). */
 const DYNS = ["pp", "p", "mp", "mf", "f", "ff"];
 const TEXTS = ["rit.", "a tempo", "accel.", "rall.", "cresc.", "dim.", "dolce", "espress.", "legato", "rubato", "cantabile", "marcato"];
+/** The voice menu (hold a voice button, or ▾ at phone width): rows are enabled by what the selection allows. */
+const VOICE_ROWS = [...[0, 1, 2, 3].map((v) => ["voice", `voice ${v + 1}`, { v }]), ["voice-swap", "swap 1 ↔ 2 in these bars", {}], ["cross", "cross to the upper staff", { dir: -1 }], ["cross", "cross to the lower staff", { dir: 1 }], ["hide-rest", "hide rest", {}]];
 /** What the File menu will hold (P4 export); nothing works yet, so every row is disabled. */
 const FILE_ITEMS = [["save-pdf", "Save to Scores as PDF"], ["export-pdf", "Export PDF"], ["export-xml", "Export MusicXML"], ["export-midi", "Export MIDI"]];
 
@@ -97,6 +99,12 @@ export function buildRails(host, { title, onAction }) {
       </span>
     </div>
     <div class="cp-rail cp-palette" role="toolbar" aria-label="palette" data-rail="palette">
+      <span class="cp-more-wrap cp-voices" role="group" aria-label="voice — the one the next tap writes in; with notes selected, the one they move to">
+        ${[0, 1, 2, 3].map((v) => `<button type="button" class="cp-btn cp-sq cp-voice" data-act="voice" data-v="${v}" aria-pressed="false" aria-label="voice ${v + 1} — hold for the voice menu"><b>${v + 1}</b></button>`).join("")}
+        <button type="button" class="cp-btn cp-voice-more" data-pop="cp-voice-more" aria-label="voices 3 and 4, swap, cross-staff, hide rest" aria-expanded="false">&#9662;</button>
+        <span class="cp-more cp-menu" id="cp-voice-more" hidden>${VOICE_ROWS.map(([act, label, d]) => `<button type="button" class="cp-btn cp-menu-row cp-voice-row" data-act="${act}"${d.v !== undefined ? ` data-v="${d.v}"` : ""}${d.dir !== undefined ? ` data-dir="${d.dir}"` : ""}><span>${label}</span><small></small></button>`).join("")}</span>
+      </span>
+      <span class="cp-sep" aria-hidden="true"></span>
       ${MAIN_BASES.map((b) => `<button type="button" class="cp-btn cp-sq cp-dur" data-act="dur" data-base="${b}" aria-pressed="false" aria-label="${NAMES[b]}"><span class="cp-glyph cp-glyph-note">${metGlyph(b)}</span></button>`).join("")}
       <span class="cp-more-wrap">
         <button type="button" class="cp-btn cp-dur-more" data-pop="cp-more" aria-label="more durations" aria-expanded="false"><span class="cp-glyph cp-glyph-sm cp-glyph-note" id="cp-more-glyph">${metGlyph(32)}</span>&#9662;</button>
@@ -187,14 +195,19 @@ export function buildRails(host, { title, onAction }) {
     if (act === "text") { onAction("text", b.dataset.text ?? ""); return; }
     if (act === "text-set") { const inp = host.querySelector("#cp-text-in"); onAction("text", inp.value); inp.value = ""; return; }
     if (act === "acc") { onAction("acc", Number(b.dataset.alter)); return; }
+    if (act === "voice") { onAction("voice", Number(b.dataset.v)); return; }
+    if (act === "cross") { onAction("cross", Number(b.dataset.dir)); return; }
     if (act === "tuplet") { onAction("tuplet", b.dataset.n ? Number(b.dataset.n) : undefined); return; }
     onAction(act);
   });
-  // hold the tuplet button for the other sizes
-  { let timer = 0;
-    tupBtn.addEventListener("pointerdown", (e) => { if (e.button && e.button !== 0) return; clearTimeout(timer); timer = setTimeout(() => { swallow = true; toggle(tupMore, tupBtn); }, 450); });
-    for (const t of ["pointerup", "pointercancel", "pointerleave"]) tupBtn.addEventListener(t, () => clearTimeout(timer));
-  }
+  // hold the tuplet button for the other sizes; hold a voice button for the voice menu
+  const hold = (btn, open) => { let timer = 0;
+    btn.addEventListener("pointerdown", (e) => { if (e.button && e.button !== 0) return; clearTimeout(timer); timer = setTimeout(() => { swallow = true; open(); }, 450); });
+    for (const t of ["pointerup", "pointercancel", "pointerleave"]) btn.addEventListener(t, () => clearTimeout(timer));
+  };
+  hold(tupBtn, () => toggle(tupMore, tupBtn));
+  const voiceMore = host.querySelector("#cp-voice-more"), voiceMoreBtn = host.querySelector(".cp-voice-more");
+  for (const b of host.querySelectorAll(".cp-voice")) hold(b, () => toggle(voiceMore, voiceMoreBtn));
   // typing in the text box: Enter sets; the editor's shortcuts stay out of inputs
   { const inp = host.querySelector("#cp-text-in");
     inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); closeMore(); onAction("text", inp.value); inp.value = ""; } else if (e.key === "Escape") { closeMore(); } });
@@ -228,8 +241,17 @@ export function buildRails(host, { title, onAction }) {
       if (bpm !== undefined) host.querySelector("#cp-bpm").textContent = String(bpm);
     },
     /** Reflect the editor's state: { armed, mode, canUndo, canRedo, hasSelection, title }. */
-    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, rails = DEFAULT_RAILS, pending = null, title }) {
+    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, rails = DEFAULT_RAILS, pending = null, title, voice = 0, used = new Set([0]), sel = {} }) {
       let shown = false;
+      // the switcher: the active voice lit in its colour, voices the piece uses in full ink, the rest dim; the menu's rows follow the selection
+      for (const b of host.querySelectorAll(".cp-voice")) { const v = Number(b.dataset.v); b.setAttribute("aria-pressed", String(v === voice)); b.classList.toggle("cp-unused", v !== voice && !used.has(v)); b.classList.toggle("cp-used", used.has(v)); }
+      for (const r of host.querySelectorAll(".cp-voice-row")) {
+        const act = r.dataset.act, hint = r.querySelector("small");
+        if (act === "voice") { const v = Number(r.dataset.v); r.disabled = false; r.setAttribute("aria-pressed", String(v === voice)); hint.textContent = sel.notes ? (v === voice ? "here" : "move") : v === voice ? "writing" : "write"; }
+        else if (act === "voice-swap") { r.disabled = !sel.any; hint.textContent = ""; }
+        else if (act === "cross") { r.disabled = !(Number(r.dataset.dir) < 0 ? sel.up : sel.down); hint.textContent = Number(r.dataset.dir) < 0 ? "⌘⇧↑" : "⌘⇧↓"; }
+        else if (act === "hide-rest") { r.disabled = !sel.rests; r.querySelector("span").textContent = sel.hidden ? "show rest" : "hide rest"; hint.textContent = ""; }
+      }
       for (const [k] of RAILS) {
         const lane = host.querySelector(`.cp-rail[data-rail="${k}"]`), on = !!rails[k];
         if (lane.hidden === on) { lane.hidden = !on; if (on) shown = true; }

@@ -11,7 +11,7 @@ import { newComposition } from "../../lib/compose/model.js";
 import { detailsFormHtml, wireDetailsForm } from "../shared/catalog.js";
 
 const uuid = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-export const barsOf = (c) => { let last = c.measures.length - 1; while (last > 0 && c.measures[last].staves.every((s) => s.voices[0].every((e) => e.kind === "rest"))) last--; return last + 1; };
+export const barsOf = (c) => { let last = c.measures.length - 1; while (last > 0 && c.measures[last].staves.every((s) => s.voices.every((v) => !v || v.every((e) => e.kind === "rest")))) last--; return last + 1; };
 /** Tags are drawn from scores and compositions alike: one vocabulary across the library. */
 const catalogue = () => [...logbook.scores(), ...logbook.compositions()];
 

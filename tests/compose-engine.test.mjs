@@ -520,12 +520,12 @@ test("slur: first to last selected note (one note: to the next note, over rests)
   d = slur(d, [c.id, a.id]);                                            // order of selection is irrelevant
   assert.deepEqual([at(a), at(b), at(c)], ["start", "", "stop"]);
   const id1 = find(d, a.id).ev.slurs[0].id;
-  assert.equal(slurEnd(d, 0, find(d, a.id).ev, id1), find(d, c.id).ev);
+  assert.equal(slurEnd(d, 0, 0, find(d, a.id).ev, id1), find(d, c.id).ev);
   d = slur(d, [b.id]);                                                  // one note: to the next note, skipping the rest — nested, sharing the end
   assert.deepEqual([at(b), at(c)], ["start", "stop,stop"]);
   const id2 = find(d, b.id).ev.slurs[0].id;
-  assert.equal(slurEnd(d, 0, find(d, b.id).ev, id2), find(d, c.id).ev);
-  assert.equal(slurEnd(d, 0, find(d, a.id).ev, id1), find(d, c.id).ev, "the outer one still has its end");
+  assert.equal(slurEnd(d, 0, 0, find(d, b.id).ev, id2), find(d, c.id).ev);
+  assert.equal(slurEnd(d, 0, 0, find(d, a.id).ev, id1), find(d, c.id).ev, "the outer one still has its end");
   d = slur(d, [b.id, c.id]);                                            // exactly that slur again → off; the outer survives
   assert.deepEqual([at(a), at(b), at(c)], ["start", "", "stop"]);
   assert.throws(() => slur(d, [c.id]), /needs a note after/);
@@ -553,7 +553,7 @@ test("expression: a dynamic per note (toggle), hairpins first→last (one note: 
   assert.throws(() => dynamic(d, [a.id], "fff"), Nudge);
   d = hairpin(d, [c.id, a.id], "cresc");                     // selection order irrelevant
   assert.deepEqual([find(d, a.id).ev.hairpin, find(d, c.id).ev.hairpin], ["cresc-start", "cresc-stop"]);
-  assert.equal(hairpinEnd(d, 0, find(d, a.id).ev), find(d, c.id).ev);
+  assert.equal(hairpinEnd(d, 0, 0, find(d, a.id).ev), find(d, c.id).ev);
   d = hairpin(d, [a.id, c.id], "cresc");                     // same span, same kind → off
   assert.equal(find(d, a.id).ev.hairpin, undefined);
   d = hairpin(d, [b.id], "dim");                             // one note → to the next note
@@ -635,4 +635,267 @@ test("fuzz: 3,000 edits mixing time / key / clef changes with notes keep every i
   validate(d);
   assert.ok(timeChanges > 100 && clefChanges > 100 && nudges >= 0, `${timeChanges} ${clefChanges} ${nudges}`);
   assert.ok(d.measures.some((m) => m.clefChanges?.length), "some clef changes sit inside bars");
+});
+
+// --- P5 (WSHED-120): voices — sparse per bar, the voice follows the pen, move / swap / cross / hide ---------
+import { setVoice, swapVoices, crossStaff, hideRest, seqOf, compactVoices } from "../js/lib/compose/engine.js";
+import { usedVoices, MAX_VOICES, SCHEMA } from "../js/lib/compose/model.js";
+const vKinds = (doc, bar, staff, vi) => (doc.measures[bar].staves[staff].voices[vi] ?? null)?.map((e) => `${e.kind === "rest" ? "r" : "n"}${e.dur.base}${".".repeat(e.dur.dots)}${e.dur.tuplet ? `/${e.dur.tuplet.n}` : ""}`).join(" ") ?? null;
+
+test("voices are sparse per bar: a tap into voice 2 creates it with padding rests, only in that bar; deleting its last note removes it; voice 1 always stays; a v1 document validates as v2", () => {
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
+  assert.equal(SCHEMA, 2); assert.equal(d.v, 2);
+  assert.equal(d.measures[0].staves[0].voices.length, 1);
+  const r = place(d, { bar: 0, staff: 0, ticks: 100, step: 0, voice: 1 }, H);
+  d = r.doc;
+  assert.equal(r.action, "place");
+  assert.equal(vKinds(d, 0, 0, 0), "n4 r4 r2", "voice 1 untouched");
+  assert.equal(vKinds(d, 0, 0, 1), "n2 r2", "voice 2 padded with the metre's rests");
+  assert.equal(d.measures[1].staves[0].voices.length, 1, "no voice 2 in the next bar");
+  assert.equal(d.measures[0].staves[1].voices.length, 1, "no voice 2 on the other staff");
+  validate(d);
+  assert.deepEqual([...usedVoices(d)], [0, 1]);
+  // a note of voice 1 and voice 2 at one onset: both stay (two voices at one onset is the point)
+  d = place(d, { bar: 0, staff: 0, ticks: 2 * PPQ + 100, step: 2, voice: 1 }, Q).doc;
+  assert.equal(vKinds(d, 0, 0, 1), "n2 n4 r4");
+  assert.equal(vKinds(d, 0, 0, 0), "n4 r4 r2");
+  // tapping into voice 2 on a slot where voice 1 rests places into voice 2, not voice 1
+  d = place(d, { bar: 0, staff: 0, ticks: 3 * PPQ + 50, step: 2, voice: 1 }, Q).doc;
+  assert.equal(vKinds(d, 0, 0, 1), "n2 n4 n4"); assert.equal(vKinds(d, 0, 0, 0), "n4 r4 r2");
+  // a rest placed into a voice that is not in the bar changes nothing
+  const none = place(d, { bar: 3, staff: 0, ticks: 0, step: 4, voice: 1 }, { base: 4, dots: 0, rest: true });
+  assert.equal(none.action, "none"); assert.equal(none.doc, d);
+  // removing every note of voice 2 → the voice leaves the bar (compactVoices); voice 1 stays even when all rests
+  const v2 = d.measures[0].staves[0].voices[1].filter((e) => e.kind === "note");
+  let e = remove(d, v2.map((n) => ({ ev: n.id })));
+  assert.equal(e.measures[0].staves[0].voices.length, 1, "voice 2 gone with its last note");
+  validate(e);
+  e = remove(e, [{ ev: e.measures[0].staves[0].voices[0][0].id }]);
+  assert.equal(vKinds(e, 0, 0, 0), "r1");
+  validate(e);
+  // voice 3 without voice 2: a null slot in between, never a trailing one
+  let f = place(fresh(), { bar: 0, staff: 1, ticks: 0, step: 4, voice: 2 }, Q).doc;
+  assert.deepEqual(f.measures[0].staves[1].voices.map((v) => (v ? "v" : "-")), ["v", "-", "v"]);
+  validate(f);
+  f = toRests(f, [f.measures[0].staves[1].voices[2][0].id]);
+  assert.equal(f.measures[0].staves[1].voices.length, 1);
+  assert.throws(() => place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4, voice: MAX_VOICES }, Q), Nudge);
+  // a v1 document (one voice per staff) validates unchanged
+  const old = fresh(); old.v = 1; validate(old);
+});
+
+test("retype / dot / tuplet / accidental / setPitch act on a note in its own voice; the other voice at the same onset is untouched", () => {
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 8 }, Q).doc;
+  d = place(d, { bar: 0, staff: 0, ticks: 0, step: 0, voice: 1 }, Q).doc;
+  const a = d.measures[0].staves[0].voices[0][0], b = d.measures[0].staves[0].voices[1][0];
+  d = retype(d, [b.id], H);
+  assert.equal(vKinds(d, 0, 0, 1), "n2 r2"); assert.equal(vKinds(d, 0, 0, 0), "n4 r4 r2");
+  d = dot(d, [a.id], 1);
+  assert.equal(vKinds(d, 0, 0, 0), "n4. r8 r2"); assert.equal(vKinds(d, 0, 0, 1), "n2 r2");
+  d = setPitch(d, [{ ev: b.id, pi: 0 }], 2).doc;
+  assert.equal(find(d, b.id).ev.pitches[0].step + find(d, b.id).ev.pitches[0].octave, "G4");
+  assert.equal(find(d, a.id).ev.pitches[0].step + find(d, a.id).ev.pitches[0].octave, "F5");
+  d = accidental(d, [{ ev: b.id, pi: 0 }], 1);
+  assert.equal(find(d, b.id).ev.pitches[0].alter, 1); assert.equal(find(d, a.id).ev.pitches[0].alter, 0);
+  // three eighths in voice 2 make a triplet; voice 1 keeps its dotted quarter
+  let e = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 8 }, { base: 4, dots: 1, rest: false }).doc;
+  for (let i = 0; i < 3; i++) e = place(e, { bar: 0, staff: 0, ticks: i * (PPQ / 2), step: i, voice: 1 }, E).doc;
+  e = tuplet(e, e.measures[0].staves[0].voices[1].slice(0, 3).map((x) => x.id), 3);
+  assert.equal(vKinds(e, 0, 0, 1), "n8/3 n8/3 n8/3 r4 r2"); assert.equal(vKinds(e, 0, 0, 0), "n4. r8 r2");
+  validate(e);
+});
+
+test("ties, slurs, hairpins and gliss pair within one voice: a tie needs the voice in the next bar, a one-note slur reaches the voice's next note across a silent bar", () => {
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 3 * PPQ, step: 0, voice: 1 }, Q).doc;   // E4 in voice 2, beat 4
+  d = place(d, { bar: 0, staff: 0, ticks: 3 * PPQ, step: 8 }, Q).doc;                        // F5 in voice 1 at the same onset
+  d = place(d, { bar: 1, staff: 0, ticks: 0, step: 8 }, Q).doc;                              // voice 1 continues in bar 2
+  d = place(d, { bar: 2, staff: 0, ticks: 0, step: 0, voice: 1 }, H).doc;                    // voice 2 is absent from bar 2, present in bar 3
+  const v2a = d.measures[0].staves[0].voices[1].find((e) => e.kind === "note"), v2b = d.measures[2].staves[0].voices[1][0], v1a = d.measures[0].staves[0].voices[0].find((e) => e.kind === "note");
+  assert.equal(seqOf(d, 0, 1).length, 3 + 2, "voice 2's sequence skips the bar it is not in");
+  assert.throws(() => tie(d, [{ ev: v2a.id }]), /same pitch next/, "no voice 2 in the next bar: nothing adjacent to tie to");
+  assert.throws(() => gliss(d, [v2a.id]), /needs a note after/);
+  d = slur(d, [v2a.id]);                                                                       // one note → to the next note of its voice, across the silent bar
+  assert.equal(slurEnd(d, 0, 1, find(d, v2a.id).ev, find(d, v2a.id).ev.slurs[0].id), find(d, v2b.id).ev);
+  d = hairpin(d, [v2a.id], "cresc");
+  assert.equal(hairpinEnd(d, 0, 1, find(d, v2a.id).ev), find(d, v2b.id).ev);
+  validate(d);
+  // with voice 2 in the next bar the tie holds, and only in voice 2
+  d = place(d, { bar: 1, staff: 0, ticks: 0, step: 0, voice: 1 }, Q).doc;                    // E4 voice 2, bar 2 beat 1
+  const v2mid = d.measures[1].staves[0].voices[1][0];
+  d = tie(d, [{ ev: v2a.id }]);
+  assert.equal(find(d, v2a.id).ev.pitches[0].tie, "start"); assert.equal(find(d, v2mid.id).ev.pitches[0].tie, "stop");
+  assert.equal(find(d, v1a.id).ev.pitches[0].tie, undefined, "voice 1 is not tied by a voice-2 tie");
+  d = gliss(d, [v2a.id]);
+  assert.equal(find(d, v2a.id).ev.gliss, "start");
+  validate(d);
+  // voice 1 alone: its own tie only; a tie can never cross voices
+  let e = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
+  e = place(e, { bar: 0, staff: 0, ticks: PPQ, step: 4, voice: 1 }, Q).doc;                  // the same pitch next, but in voice 2
+  assert.throws(() => tie(e, [{ ev: e.measures[0].staves[0].voices[0][0].id }]), /same pitch next/);
+  // moving the voice-2 note away drops the tie (cleanTies per voice)
+  const g = setVoice(d, [v2mid.id], 2);
+  assert.equal(find(g, v2a.id).ev.pitches[0].tie, undefined);
+  validate(g);
+});
+
+test("setVoice moves notes at their own onsets: creates the voice, leaves rests behind, refuses a collision or a split tuplet whole, keeps ids", () => {
+  let d = fresh();
+  for (let q = 0; q < 4; q++) d = place(d, { bar: 0, staff: 0, ticks: q * PPQ, step: 4 + q }, Q).doc;
+  const v1 = d.measures[0].staves[0].voices[0];
+  const moved = setVoice(d, [v1[1].id, v1[2].id], 1);
+  assert.equal(vKinds(moved, 0, 0, 0), "n4 r4 r4 n4", "the time they left is rests (a half rest never starts on beat 2)"); assert.equal(vKinds(moved, 0, 0, 1), "r4 n4 n4 r4");
+  assert.ok(find(moved, v1[1].id) && find(moved, v1[1].id).voice === 1, "the note keeps its id in its new voice");
+  validate(moved);
+  // back to voice 1 → the voice-2 bar goes away again
+  const back = setVoice(moved, [v1[1].id, v1[2].id], 0);
+  assert.equal(vKinds(back, 0, 0, 0), "n4 n4 n4 n4"); assert.equal(back.measures[0].staves[0].voices.length, 1);
+  // a collision: voice 1 already sounds on beat 1 → refused whole, nothing changes
+  const before = JSON.stringify(moved);
+  const v2 = moved.measures[0].staves[0].voices[1];
+  const clash = place(moved, { bar: 0, staff: 0, ticks: PPQ, step: 8 }, Q).doc;            // voice 1 gets a note under voice 2's beat 2 note
+  assert.throws(() => setVoice(clash, [v2[1].id], 0), /already sounds/);
+  assert.equal(JSON.stringify(moved), before);
+  assert.throws(() => setVoice(moved, [v2[1].id], 9), Nudge);
+  assert.equal(setVoice(moved, [v2[1].id], 1), moved, "moving to the voice it is in changes nothing");
+  // a half over two beats where the other voice has a note on the second beat also collides
+  let e = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, H).doc;
+  e = place(e, { bar: 0, staff: 0, ticks: PPQ, step: 0, voice: 1 }, Q).doc;
+  assert.throws(() => setVoice(e, [e.measures[0].staves[0].voices[0][0].id], 1), /already sounds/);
+  // a tuplet moves whole or not at all
+  let t = fresh();
+  for (let i = 0; i < 3; i++) t = place(t, { bar: 0, staff: 0, ticks: i * (PPQ / 2), step: 4 }, E).doc;
+  t = tuplet(t, t.measures[0].staves[0].voices[0].slice(0, 3).map((x) => x.id), 3);
+  const trip = t.measures[0].staves[0].voices[0].slice(0, 3);
+  assert.throws(() => setVoice(t, [trip[0].id], 1), /whole tuplet/);
+  const tm = setVoice(t, trip.map((x) => x.id), 1);
+  assert.equal(vKinds(tm, 0, 0, 1), "n8/3 n8/3 n8/3 r4 r2"); assert.equal(vKinds(tm, 0, 0, 0), "r1");
+  validate(tm);
+  // across two bars and both staves in one go
+  let m = fresh();
+  m = place(m, { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc; m = place(m, { bar: 1, staff: 1, ticks: 2 * PPQ, step: 4 }, Q).doc;
+  const ids = [m.measures[0].staves[0].voices[0][0].id, m.measures[1].staves[1].voices[0][1].id];
+  const mm = setVoice(m, ids, 3);
+  assert.equal(vKinds(mm, 0, 0, 3), "n4 r4 r2"); assert.equal(vKinds(mm, 1, 1, 3), "r2 n4 r4");
+  validate(mm);
+});
+
+test("swapVoices exchanges voices 1 and 2 in whole bars; voice 1 never leaves (rests fill it); a bar without either is untouched", () => {
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 8 }, W).doc;
+  d = place(d, { bar: 0, staff: 0, ticks: 0, step: 0, voice: 1 }, H).doc;
+  d = place(d, { bar: 1, staff: 0, ticks: 0, step: 4 }, Q).doc;                              // bar 2: voice 1 only
+  const s = swapVoices(d, [{ bar: 0, staff: 0 }, { bar: 1, staff: 0 }], 0, 1);
+  assert.equal(vKinds(s, 0, 0, 0), "n2 r2"); assert.equal(vKinds(s, 0, 0, 1), "n1");
+  assert.equal(vKinds(s, 1, 0, 0), "r1", "voice 1 of bar 2 became rests"); assert.equal(vKinds(s, 1, 0, 1), "n4 r4 r2");
+  validate(s);
+  assert.equal(swapVoices(d, [{ bar: 0, staff: 0 }], 1, 1), d);
+  assert.throws(() => swapVoices(fresh(), [{ bar: 3, staff: 0 }], 1, 2), /nothing to swap/);
+  const twice = swapVoices(swapVoices(d, [{ bar: 0, staff: 0 }], 0, 1), [{ bar: 0, staff: 0 }], 0, 1);
+  assert.equal(vKinds(twice, 0, 0, 0), vKinds(d, 0, 0, 0)); assert.equal(vKinds(twice, 0, 0, 1), vKinds(d, 0, 0, 1));
+});
+
+test("crossStaff: a lower-staff note steps up to the upper staff (cross −1) and back; past the outer staff refuses; hideRest toggles rests only", () => {
+  let d = place(fresh(), { bar: 0, staff: 1, ticks: 0, step: 10 }, Q).doc;                 // a high note on the bass staff
+  const id = d.measures[0].staves[1].voices[0][0].id;
+  d = crossStaff(d, [id], -1);
+  assert.equal(find(d, id).ev.cross, -1); assert.equal(find(d, id).staff, 1, "still owned by the lower staff");
+  validate(d);
+  assert.throws(() => crossStaff(d, [id], -1), /no staff above/);
+  d = crossStaff(d, [id], 1);
+  assert.equal(find(d, id).ev.cross, undefined, "back home");
+  assert.throws(() => crossStaff(d, [id], 1), /no staff below/);
+  const u = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: -2 }, Q);                     // an upper-staff note steps down to the lower staff
+  assert.equal(find(crossStaff(u.doc, [u.ev.id], 1), u.ev.id).ev.cross, 1);
+  assert.throws(() => crossStaff(u.doc, [u.ev.id], -1), /no staff above/);
+  const rest = d.measures[0].staves[1].voices[0][1];
+  assert.throws(() => hideRest(d, [id]), /pick the rests/);
+  d = hideRest(d, [rest.id]);
+  assert.equal(find(d, rest.id).ev.hidden, true);
+  validate(d);
+  d = hideRest(d, [rest.id]);
+  assert.equal(find(d, rest.id).ev.hidden, undefined);
+  // a hidden rest still takes a tap: placing into it works and the new padding rests are not hidden
+  d = hideRest(d, [rest.id]);
+  const p = place(d, { bar: 0, staff: 1, ticks: PPQ + 100, step: 4 }, E).doc;
+  assert.equal(vKinds(p, 0, 1, 0), "n4 n8 r8 r2");
+  validate(p);
+});
+
+test("clipboard keeps voice offsets: a two-voice phrase pastes as two voices from the active one, capped at voice 4; a crossed note keeps its cross when the staff exists", () => {
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 8 }, H).doc;
+  d = place(d, { bar: 0, staff: 0, ticks: 0, step: 0, voice: 1 }, Q).doc;
+  d = place(d, { bar: 0, staff: 0, ticks: PPQ, step: 1, voice: 1 }, Q).doc;
+  const all = [...d.measures[0].staves[0].voices[0].filter((e) => e.kind === "note"), ...d.measures[0].staves[0].voices[1].filter((e) => e.kind === "note")];
+  const clip = clipFrom(d, all.map((e) => ({ ev: e.id })));
+  assert.deepEqual(clip.events.map((e) => e.dVoice), [0, 1, 1]);
+  let r = paste(d, clip, { bar: 2, ticks: 0, staff: 1, voice: 0 });
+  assert.equal(vKinds(r.doc, 2, 1, 0), "n2 r2"); assert.equal(vKinds(r.doc, 2, 1, 1), "n4 n4 r2");
+  validate(r.doc);
+  r = paste(d, clip, { bar: 2, ticks: 0, staff: 0, voice: 2 });                                // from voice 3: voices 3 and 4
+  assert.equal(vKinds(r.doc, 2, 0, 2), "n2 r2"); assert.equal(vKinds(r.doc, 2, 0, 3), "n4 n4 r2");
+  assert.equal(vKinds(r.doc, 2, 0, 0), "r1");
+  validate(r.doc);
+  assert.throws(() => paste(d, clip, { bar: 2, ticks: 0, staff: 0, voice: 3 }), /overlap/);      // both would land in voice 4: refused whole
+  // a phrase from voice 2 alone lands in the active voice (no offset)
+  const c2 = clipFrom(d, [{ ev: all[1].id }, { ev: all[2].id }]);
+  assert.deepEqual(c2.events.map((e) => e.dVoice), [0, 0]);
+  const p2 = paste(d, c2, { bar: 3, ticks: 0, staff: 0, voice: 0 });
+  assert.equal(vKinds(p2.doc, 3, 0, 0), "n4 n4 r2"); assert.equal(p2.doc.measures[3].staves[0].voices.length, 1);
+  // a crossed note travels with its cross
+  let x = place(fresh(), { bar: 0, staff: 1, ticks: 0, step: 10 }, Q).doc;
+  const xid = x.measures[0].staves[1].voices[0][0].id;
+  x = crossStaff(x, [xid], -1);
+  const cx = clipFrom(x, [{ ev: xid }]);
+  const px = paste(x, cx, { bar: 1, ticks: 0, staff: 1 });
+  assert.equal(px.doc.measures[1].staves[1].voices[0][0].cross, -1);
+  const px0 = paste(x, cx, { bar: 1, ticks: 0, staff: 0 });
+  assert.equal(px0.doc.measures[1].staves[0].voices[0][0].cross, undefined, "no staff above the upper one: the cross is dropped");
+  validate(px.doc); validate(px0.doc);
+});
+
+test("setTime re-cuts every voice: a voice-2 half across the new barline ties, the voice appears only in bars that hold it", () => {
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 8 }, W).doc;
+  d = place(d, { bar: 0, staff: 0, ticks: 2 * PPQ, step: 0, voice: 1 }, H).doc;              // beats 3–4 in voice 2
+  const r = setTime(d, 0, { beats: 3, unit: 4 });
+  validate(r.doc);
+  assert.equal(vKinds(r.doc, 0, 0, 0), "n2."); assert.equal(vKinds(r.doc, 1, 0, 0), "n4 r4 r4");
+  assert.equal(vKinds(r.doc, 0, 0, 1), "r2 n4"); assert.equal(vKinds(r.doc, 1, 0, 1), "n4 r4 r4");
+  assert.equal(r.doc.measures[0].staves[0].voices[1][1].pitches[0].tie, "start"); assert.equal(r.doc.measures[1].staves[0].voices[1][0].pitches[0].tie, "stop");
+  assert.equal(r.doc.measures[2].staves[0].voices.length, 1, "voice 2 is not in a bar it does not sound in");
+});
+
+test("fuzz: 4,000 random edits across four voices keep every invariant (every present voice adds up, voice 1 exists, no rest-only secondary voice)", () => {
+  let seed = 31;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const pick = (a) => a[Math.floor(rnd() * a.length)];
+  let d = fresh();
+  const durs = [W, H, Q, E, { base: 16, dots: 0, rest: false }, { base: 4, dots: 1, rest: false }, { base: 8, dots: 0, rest: true }, { base: 8, dots: 0, rest: false, tuplet: 3 }, { base: 4, dots: 0, rest: false, tuplet: 3 }];
+  const counts = {};
+  const bump = (k) => { counts[k] = (counts[k] ?? 0) + 1; };
+  const notes = () => d.measures.flatMap((m) => m.staves.flatMap((s) => s.voices.flatMap((v) => (v ? v.filter((e) => e.kind === "note") : []))));
+  const rests = () => d.measures.flatMap((m) => m.staves.flatMap((s) => s.voices.flatMap((v) => (v ? v.filter((e) => e.kind === "rest") : []))));
+  const run = (k, fn) => { try { const n = fn(); if (n !== d) { d = n; bump(k); } else bump("noop"); } catch (e) { if (!(e instanceof Nudge)) throw e; bump("nudge"); } };
+  for (let i = 0; i < 4000; i++) {
+    const x = rnd(), ns = notes();
+    if (x < 0.4 || !ns.length) {
+      const bar = Math.floor(rnd() * d.measures.length), staff = Math.floor(rnd() * 2), cap = capacity(timeAt(d, bar));
+      run("place", () => place(d, { bar, staff, ticks: Math.floor(rnd() * cap), step: Math.floor(rnd() * 17) - 4, voice: Math.floor(rnd() * 4) }, pick(durs)).doc);
+    } else if (x < 0.5) { const n = pick(ns); run("remove", () => remove(d, [{ ev: n.id, ...(n.pitches.length > 1 && rnd() < 0.5 ? { pi: 0 } : {}) }])); }
+    else if (x < 0.62) { const picked = [...new Set([pick(ns), pick(ns), pick(ns)].slice(0, 1 + Math.floor(rnd() * 3)))]; run("setVoice", () => setVoice(d, picked.map((n) => n.id), Math.floor(rnd() * 4))); }
+    else if (x < 0.68) { const n = pick(ns), f = find(d, n.id); run("swap", () => swapVoices(d, [{ bar: f.bar, staff: f.staff }], 0, 1 + Math.floor(rnd() * 3))); }
+    else if (x < 0.74) { const n = pick(ns); run("cross", () => crossStaff(d, [n.id], pick([-1, 1]))); }
+    else if (x < 0.78) { const rs = rests(); if (rs.length) run("hide", () => hideRest(d, [pick(rs).id])); }
+    else if (x < 0.84) { const n = pick(ns); run("tie", () => tie(d, [{ ev: n.id }])); if (rnd() < 0.5) run("slur", () => slur(d, [n.id])); }
+    else if (x < 0.88) { const n = pick(ns); run("retype", () => retype(d, [n.id], pick([W, H, Q, E]))); }
+    else if (x < 0.92) { const n = pick(ns), f = find(d, n.id), voice = d.measures[f.bar].staves[f.staff].voices[f.voice]; run("tuplet", () => tuplet(d, voice.slice(f.index, f.index + pick([2, 3, 3])).map((e) => e.id), pick([2, 3, 5]))); }
+    else if (x < 0.95) { const bar = Math.floor(rnd() * d.measures.length), t = pick([{ beats: 4, unit: 4 }, { beats: 3, unit: 4 }, { beats: 6, unit: 8 }, { beats: 2, unit: 4 }]); run("time", () => setTime(d, bar, t).doc); }
+    else { const n = pick(ns), f = find(d, n.id), near = d.measures[f.bar].staves.flatMap((s) => s.voices.flatMap((v) => (v ? v.filter((e) => e.kind === "note") : []))); const clip = clipFrom(d, [{ ev: n.id }, { ev: pick(near).id }]); const bar = Math.floor(rnd() * d.measures.length); run("paste", () => paste(d, clip, { bar, ticks: pick([0, PPQ, 2 * PPQ]), staff: Math.floor(rnd() * 2), voice: Math.floor(rnd() * 4) }).doc); }
+    if (i % 150 === 0) validate(d);
+    if (d.measures.length > 300) d = trimBars(d);
+  }
+  validate(d);
+  for (const k of ["place", "remove", "setVoice", "swap", "cross", "hide", "retype", "tuplet", "time", "paste"]) assert.ok(counts[k] > 10, `${k}: ${counts[k]}`);
+  assert.ok(counts.tie > 2 && counts.slur > 10, `tie ${counts.tie} slur ${counts.slur}`); // a tie needs the same pitch next in the voice: rare under random steps
+  assert.ok(usedVoices(d).size >= 3, "several voices in use: " + [...usedVoices(d)].join());
+  assert.ok(d.measures.some((m) => m.staves.some((s) => s.voices.length > 2)), "voices 3 or 4 appear");
+  assert.ok(notes().some((n) => n.cross), "crossed notes survive");
 });

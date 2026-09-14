@@ -79,7 +79,7 @@ import, parts, sharing.
 | Tie | One note selected: ties to the **next same-pitch note** in the same staff (across a barline included); two adjacent same-pitch notes selected: ties them. A chord ties every pitch that has a match. Otherwise a hint: *tie needs the same pitch next*. | Unambiguous, and covers the by-far-common case in one tap. Slurs are not ties and are out of scope. |
 | Tuplet | Applies to the selection's events: **n in the time of m** where n defaults to 3 and the total stays in the bar. Default triplet on tap; hold for 2 / 5 / 6 / 7. A tuplet is a property of a run, drawn with a bracket and number. | Matches how musicians think ("make these three a triplet"). Arming a tuplet before placing (Sibelius style) is also supported: with tuplet on and an eighth armed, each tap places a triplet eighth until the group closes. |
 | Chords | A chord is **one event with several pitches**, the MusicXML `<chord/>` shape. Duration, dots, tuplet and articulations live on the event; accidental and tie live on the pitch. | The brief's "dot the whole chord" is one field write. Seconds, stem side and accidental stacking are layout concerns. |
-| Voices | **One voice per staff in the UI; the model has `voices[]`** from day one, index 0 used. | Zero cost now, no migration later. |
+| Voices | **Up to four per staff since v86** ([`COMPOSE_VOICES_DESIGN.md`](COMPOSE_VOICES_DESIGN.md)): sparse per bar, the voice follows the pen, switcher `1 2 3 4` on the Notes rail, cross-staff notes. | The model had `voices[]` from day one, so no migration. |
 | Staves | **Grand staff only** in the UI; the model is `parts[] → staves[]`. | Same reasoning. A single-staff instrument later is `staves.length === 1`. |
 | Bars | Start with **eight empty bars**; a new bar is appended when the last bar receives its first event; trailing empty bars beyond one are trimmed on export and on close. | An empty page with no bars gives the musician nothing to tap; an infinite scroll of empty bars is noise. |
 | Measures per system | Ideal widths from the **union of onsets across both staves** (a bar's columns are shared by the staves), packed 1–6 per system, justified; last system not stretched past ×1.25 (the sight-singing rule). | Both staves must align tick for tick. Computing widths per staff and then reconciling is how engraving bugs are born. |
@@ -513,9 +513,9 @@ per dynamic, no tempo map beyond a default 100 bpm. A follow-up card, not the MV
 
 | later | what it touches |
 |---|---|
-| Voices | `voices[1]`; layout stems voice 1 down / voice 2 up; the UI gains a voice switch |
+| Voices | landed v86 — see the voices design |
 | Instruments / more staves | `parts[]`, `staves`; layout already takes N staves per system |
-| Cross-staff beams | a beam whose events span staff indices |
+| Cross-staff beams | landed v86 — `ev.cross`, `makeCrossBeam` |
 | Lyrics · chord symbols | `event.lyric`, `event.harmony` (MusicXML shapes) |
 | Repeats · endings | `measure.barline`, `measure.ending` |
 | Playback | walk ticks → the piano voice on the shared clock; the metronome pill already exists |

@@ -16,8 +16,9 @@ export function velocities(doc) {
   const { starts } = barStarts(doc);
   const out = new Map();
   doc.parts[0] && Array.from({ length: doc.parts[0].staves }, (_, staff) => {
-    const seq = [];
-    for (let b = 0; b < doc.measures.length; b++) for (const o of onsets(doc.measures[b].staves[staff].voices[0])) if (o.ev.kind === "note") seq.push({ ev: o.ev, at: starts[b] + o.start });
+    const seq = []; // every voice's notes of the staff in time order: a dynamic in any voice applies to the staff
+    for (let b = 0; b < doc.measures.length; b++) doc.measures[b].staves[staff].voices.forEach((v, voice) => { if (v) for (const o of onsets(v)) if (o.ev.kind === "note") seq.push({ ev: o.ev, voice, at: starts[b] + o.start }); });
+    seq.sort((a, b) => a.at - b.at || a.voice - b.voice);
     let cur = VEL.mf, ramp = null; // ramp: { from, to, t0, t1 }
     for (let i = 0; i < seq.length; i++) {
       const { ev, at } = seq[i];
@@ -26,7 +27,7 @@ export function velocities(doc) {
       if (ramp && at <= ramp.t1) v = ramp.from + (ramp.to - ramp.from) * ((at - ramp.t0) / Math.max(1, ramp.t1 - ramp.t0));
       if (ramp && at >= ramp.t1) { cur = ramp.to; v = ramp.to; ramp = null; }
       if (ev.hairpin?.endsWith("-start")) {
-        const end = hairpinEnd(doc, staff, ev), j = end ? seq.findIndex((s) => s.ev === end) : -1;
+        const end = hairpinEnd(doc, staff, seq[i].voice, ev), j = end ? seq.findIndex((s) => s.ev === end) : -1;
         if (j > i) {
           const after = seq.slice(j).find((s) => s.ev.dyn)?.ev.dyn;
           const to = after ? VEL[after] : Math.max(0.2, Math.min(1, cur + (ev.hairpin.startsWith("cresc") ? STEP : -STEP)));
@@ -41,27 +42,30 @@ export function velocities(doc) {
 
 /**
  * Every note of the document as { at, len, midi, staff } in absolute ticks,
- * sorted by onset. A pitch tied to the next note of the same pitch in the
- * same staff sounds once, for the combined length.
+ * sorted by onset. Every voice of every staff is walked; a pitch tied to the
+ * next note of the same pitch in the same voice sounds once, for the combined
+ * length. Two voices on one pitch at one onset re-strike.
  */
 export function timeline(doc) {
   const { starts, total } = barStarts(doc);
   const notes = [];
-  const open = new Map(); // "staff:midi" → the note still sounding through a tie
+  const open = new Map(); // "staff:voice:midi" → the note still sounding through a tie
   const vel = velocities(doc);
-  const depth = []; // open slurs per staff: notes under a slur play legato (no air before the next note); the slur's last note breathes
+  const depth = new Map(); // open slurs per staff + voice: notes under a slur play legato (no air before the next note); the slur's last note breathes
   for (let b = 0; b < doc.measures.length; b++) {
-    doc.measures[b].staves.forEach((s, staff) => {
-      for (const o of onsets(s.voices[0])) {
+    doc.measures[b].staves.forEach((s, staff) => s.voices.forEach((v, voice) => {
+      if (!v) return;
+      const line = `${staff}:${voice}`;
+      for (const o of onsets(v)) {
         if (o.ev.kind !== "note") continue;
-        for (const x of o.ev.slurs ?? []) depth[staff] = Math.max(0, (depth[staff] ?? 0) + (x.at === "start" ? 1 : -1));
-        const legato = (depth[staff] ?? 0) > 0;
+        for (const x of o.ev.slurs ?? []) depth.set(line, Math.max(0, (depth.get(line) ?? 0) + (x.at === "start" ? 1 : -1)));
+        const legato = (depth.get(line) ?? 0) > 0;
         const at = starts[b] + o.start;
         // a rolled chord: its pitches enter one after another (up = low to high, down = high to low) and end together
         const roll = o.ev.arp && o.ev.pitches.length > 1 ? Math.min(ROLL_MAX, Math.floor(o.len / (4 * o.ev.pitches.length))) : 0;
         const order = roll ? [...o.ev.pitches].sort((p1, p2) => (o.ev.arp === "down" ? midiOf(p2) - midiOf(p1) : midiOf(p1) - midiOf(p2))) : o.ev.pitches;
         for (const [pi, p] of order.entries()) {
-          const midi = midiOf(p), k = `${staff}:${midi}`, lag = roll * pi;
+          const midi = midiOf(p), k = `${line}:${midi}`, lag = roll * pi;
           const held = open.get(k);
           const starts = p.tie === "start" || p.tie === "both";
           if (held && held.at + held.len === at) { held.len += o.len; if (!starts) open.delete(k); continue; }
@@ -70,7 +74,7 @@ export function timeline(doc) {
           if (starts) open.set(k, n); else open.delete(k);
         }
       }
-    });
+    }));
   }
   notes.sort((a, b) => a.at - b.at || a.staff - b.staff || a.midi - b.midi);
   return { notes, total };

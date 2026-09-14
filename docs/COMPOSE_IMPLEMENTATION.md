@@ -275,11 +275,21 @@ library in one tap, and round-trips into Sibelius as MusicXML.
 and A4, is readable in Scores, and opens in Sibelius with pitches, rhythms,
 ties, tuplets, key / time / clef changes and dynamics intact.
 
+## Phase 5 — voices (up to four per staff, cross-staff notes) — LANDED v86 (WSHED-120, 2026-09-14)
+
+Designed in [`COMPOSE_VOICES_DESIGN.md`](COMPOSE_VOICES_DESIGN.md) and landed as written in one
+release (its phases V0–V4 together): sparse voices per bar (`null` slots, voice 1 always),
+`place(…, voice)`, `setVoice` / `swapVoices` / `crossStaff` / `hideRest`, per-voice ties / slurs /
+hairpins, stems and rests by voice, collisions and shared unison heads, per-voice and cross-staff
+beams, editor-only tints (`--voice-2..4` per skin), the `1 2 3 4` switcher at the left of the Notes
+rail with auto-follow, hold for the voice menu, `⌘1–4`, `⌘⇧↑/↓`. §12 of the design lists the
+as-built differences. A golden layout fixture proves single-voice pieces are unchanged.
+
 ## Follow-ups (cards after the MVP, not phases)
 
 - MIDI export (design §10.3).
 - Playback on the shared clock with the metronome pill.
-- Voices, more staves, lyrics, repeats — each its own design note.
+- More staves, lyrics, repeats — each its own design note.
 
 ## 4. Order, risk, and what could send a phase back
 
