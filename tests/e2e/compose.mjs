@@ -37,7 +37,10 @@ await step("Compose sits after Scores in the tool menu; the list starts empty", 
 });
 
 await step("new composition → the editor opens on a blank piano score, eight bars, the quarter armed", async () => {
-  await page.click("#cp-new"); // the title prompt is auto-accepted → "Untitled"
+  await page.click("#cp-new"); // the details modal: title · composer · tags, then start composing
+  await page.waitForSelector("#cp-d-title");
+  await page.fill("#cp-d-title", "Untitled");
+  await page.click("#cp-d-save");
   await page.waitForSelector(".cp-editor .cp-svg");
   const s = await state();
   if (!(s.mode === "place" && s.armed.base === 4 && !s.armed.rest && s.bars === 8)) throw new Error(JSON.stringify(s));
@@ -534,11 +537,34 @@ await step("reload restores the composition, the zoom and the armed duration", a
   if ((await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.tempo)) !== 101) throw new Error("tempo not restored");
 });
 
-await step("back → the list shows the composition with its bar count; sight singing still renders", async () => {
+await step("the header title opens the details modal: title, composer and tags save; the header follows the rename", async () => {
+  await page.click("#cp-title");
+  await page.waitForSelector("#cp-d-title");
+  if ((await page.inputValue("#cp-d-title")) !== "Untitled") throw new Error("modal did not load the title");
+  await page.fill("#cp-d-title", "Study in C"); await page.fill("#cp-d-composer", "Leif"); await page.fill("#cp-d-tags", "study, exercise");
+  if ((await page.locator("#cp-d-tagrow .sc-tag.on").count()) !== 2) throw new Error("tag rail should show the two picked tags");
+  await page.click("#cp-d-save");
+  await page.waitForSelector("#cp-d-title", { state: "detached" });
+  if ((await page.locator("#cp-title").textContent()) !== "Study in C") throw new Error("header title " + (await page.locator("#cp-title").textContent()));
+  const meta = await page.evaluate(() => { const c = document.querySelector(".cp-editor").__editor.state.doc; return { title: c.title, composer: c.composer, tags: c.tags }; });
+  if (meta.title !== "Study in C" || meta.composer !== "Leif" || meta.tags.join() !== "study,exercise") throw new Error("saved " + JSON.stringify(meta));
+});
+
+await step("back → the list shows the composition with composer, bars and tags; search, tag chips and sort work like the Scores library; sight singing still renders", async () => {
   await page.click("[data-act=back]");
   await page.waitForSelector(".sc-row");
   const sub = await page.locator(".sc-sub").first().textContent();
-  if (!/8 bars/.test(sub)) throw new Error("sub " + sub);
+  if (!/8 bars/.test(sub) || !sub.includes("Leif") || !sub.includes("study")) throw new Error("sub " + sub);
+  if (!(await page.locator(".sc-tools .sc-tag[data-tag=study]").count())) throw new Error("tag rail missing");
+  await page.click(".sc-tools .sc-tag[data-tag=study]");
+  if ((await page.locator(".sc-row").count()) !== 1 || !(await page.locator(".sc-tools .sc-tag.on[data-tag=study]").count())) throw new Error("tag filter");
+  await page.fill("#cp-q", "nothing here"); await page.waitForTimeout(250);
+  if (!(await page.locator(".sc-empty").textContent()).includes("nothing matches")) throw new Error("search should empty the list");
+  await page.click("#cp-clear");
+  if ((await page.locator(".sc-row").count()) !== 1 || (await page.locator("#cp-q").inputValue()) !== "") throw new Error("clear");
+  await page.click("[data-sort=composer]"); await page.click("#cp-group");
+  if (!(await page.locator(".sc-groupname").textContent()).includes("Leif")) throw new Error("group by composer");
+  await page.click("#cp-group");
   await noWiden();
   await page.goto(`${BASE}/?app=1&t=2#/sightsinging`);
   await page.waitForSelector("#tool-root > *", { timeout: 10000 });

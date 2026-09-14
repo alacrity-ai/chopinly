@@ -582,11 +582,15 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   }
 
   // --- compositions (WSHED-114 P0): Compose documents, local only until P3 puts them in KINDS ---
-  const compositions = () => [...doc.compositions].sort((a, b) => (b.openedAt ?? 0) - (a.openedAt ?? 0));
+  /** Compositions — the same filters and sorts as scores (q over title / composer / tags; every tag must match). */
+  const compositions = ({ q = "", tags = [], sort = "recent" } = {}) => sortScores(filterScores(doc.compositions, { q, tags }), sort);
   const composition = (id) => doc.compositions.find((c) => c.id === id) ?? null;
   /** Register a composition document (built by js/lib/compose/model.js). */
   function addComposition(c) {
     if (!c?.id || composition(c.id)) throw new Error("bad composition");
+    const t = cleanTitle(c.title);
+    if (!t) throw new Error("a composition needs a title");
+    c.title = t; c.composer = cleanComposer(c.composer); c.tags = cleanTags(c.tags);
     c.updatedAt = now(); doc.compositions.push(c); save(); return c;
   }
   /** Replace a composition's content (measures / title / composer / openedAt / tempo). Not synced yet, so no pending mark. */
@@ -595,6 +599,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     if (!c) throw new Error(`no composition ${id}`);
     if ("title" in patch) { const t = cleanTitle(patch.title); if (!t) throw new Error("a composition needs a title"); c.title = t; }
     if ("composer" in patch) c.composer = cleanComposer(patch.composer);
+    if ("tags" in patch) c.tags = cleanTags(patch.tags);
     if ("measures" in patch) c.measures = patch.measures;
     if ("openedAt" in patch) c.openedAt = patch.openedAt;
     if ("tempo" in patch) c.tempo = patch.tempo;

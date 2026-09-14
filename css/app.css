@@ -2113,7 +2113,8 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-rail[hidden] { display: none; }
 .cp-header { min-height: 3rem; }
 .cp-header .cp-btn { height: 3rem; }
-.cp-header .cp-title { text-align: left; font-size: 1.1rem; color: var(--fg); }
+.cp-header .cp-title { flex: 1; min-width: 4rem; height: 3rem; text-align: left; font: 400 1.1rem var(--serif); color: var(--fg); background: transparent; border: 1px solid transparent; border-radius: 0.85rem; padding: 0 0.6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cp-header .cp-title:active { background: var(--bg-raised); border-color: var(--bg-edge); }
 .cp-spring { flex: 1; }
 .cp-file, .cp-rails-btn { gap: 0.35rem; }
 .cp-rails-btn .ic { width: 1.25rem; height: 1.25rem; }

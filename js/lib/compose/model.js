@@ -22,12 +22,12 @@ export function newMeasure(staves = 2, time = { beats: 4, unit: 4 }) {
 }
 
 /** A blank piano score: treble + bass, C major, 4/4, eight empty bars. */
-export function newComposition({ id, title = "Untitled", composer = "", now = Date.now() } = {}) {
+export function newComposition({ id, title = "Untitled", composer = "", tags = [], now = Date.now() } = {}) {
   const measures = Array.from({ length: DEFAULT_BARS }, () => newMeasure(2));
   measures[0].key = { fifths: 0 };
   measures[0].time = { beats: 4, unit: 4 };
   measures[0].clefs = { 0: "treble", 1: "bass" };
-  return { id, v: SCHEMA, title, composer, createdAt: now, updatedAt: now, openedAt: now, tempo: DEFAULT_TEMPO, parts: [{ id: "p1", name: "Piano", staves: 2 }], measures };
+  return { id, v: SCHEMA, title, composer, tags: [...tags], createdAt: now, updatedAt: now, openedAt: now, tempo: DEFAULT_TEMPO, parts: [{ id: "p1", name: "Piano", staves: 2 }], measures };
 }
 
 export const clone = (doc) => structuredClone(doc);

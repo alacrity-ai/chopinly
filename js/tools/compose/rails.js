@@ -46,7 +46,7 @@ export function buildRails(host, { title, onAction }) {
   host.innerHTML = `
     <div class="cp-rail cp-header" role="toolbar" aria-label="composition">
       <button type="button" class="cp-btn" data-act="back" aria-label="back to compositions">${icon("back")}</button>
-      <span class="cp-title" id="cp-title">${esc(title)}</span>
+      <button type="button" class="cp-title" id="cp-title" data-act="details" aria-label="details — title, composer, tags">${esc(title)}</button>
       <span class="cp-more-wrap">
         <button type="button" class="cp-btn cp-pick cp-file" data-pop="cp-file-more" aria-label="file" aria-expanded="false"><span class="cp-pick-label">File</span>&#9662;</button>
         <span class="cp-more cp-menu" id="cp-file-more" hidden>${FILE_ITEMS.map(([act, label]) => `<button type="button" class="cp-btn cp-menu-row" data-act="${act}" disabled><span>${label}</span><small>soon</small></button>`).join("")}</span>
