@@ -18,6 +18,7 @@ import { clefAt, timeAt, tempoOf, MIN_TEMPO, MAX_TEMPO } from "../../lib/compose
 import { ticks as ticksOf, capacity, groupSize } from "../../lib/compose/ticks.js";
 import { CLEFS } from "../../lib/music.js";
 import { buildRails, MAIN_BASES, MORE_BASES, KEYS, RAILS, DEFAULT_RAILS, durName, tupletName } from "./rails.js";
+import { openCompositionDetails } from "./details.js";
 
 const TAP_MS = 300, TAP_PX = 10, PALM_PX = 40, S_MIN = 8, S_MAX = 22, SAVE_MS = 300, LASSO_PX = 6;
 const KEY_BASE = { 1: 64, 2: 32, 3: 16, 4: 8, 5: 4, 6: 2, 7: 1 };
@@ -38,6 +39,7 @@ export function openEditor({ id, ctx, onClose }) {
   let mode = "place";                 // "place" | "select" | "scrub"
   const selection = new Set();        // "ev" | "ev:pi"
   let L = null, R = null, closed = false, saveTimer = 0, dirty = false, pasting = false;
+  let title = c.title;                 // shown on the header; the details modal can change it
   let tempo = tempoOf(c);              // playback tempo — saved with the piece, outside undo
   let pending = null;                  // an armed key / time / clef change waiting for a tap: { kind, value }
   const savedRails = store.get("rails", null);
@@ -66,7 +68,7 @@ export function openEditor({ id, ctx, onClose }) {
     showPlayhead(player.position);
   }
   function sync() {
-    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn });
+    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title });
     view.dataset.mode = mode; view.classList.toggle("pasting", pasting); view.classList.toggle("arming", !!pending);
     syncTransport();
   }
@@ -451,6 +453,11 @@ export function openEditor({ id, ctx, onClose }) {
   function act(name, arg) {
     switch (name) {
       case "back": close(); return;
+      case "details": { // title · composer · tags in the shared modal; the header follows a rename, a delete leaves the editor
+        flush();
+        openCompositionDetails(id).then((r) => { if (closed) return; if (r.deleted) { close(); return; } if (r.saved) { title = r.saved.title; el.setAttribute("aria-label", title); sync(); } });
+        return;
+      }
       case "undo": if (history.canUndo) { doc = history.undo(); dirty = true; pruneSelection(); layout(); flush(); } return;
       case "redo": if (history.canRedo) { doc = history.redo(); dirty = true; pruneSelection(); layout(); flush(); } return;
       case "select": setMode(mode === "select" ? "place" : "select"); return;
@@ -620,7 +627,7 @@ export function openEditor({ id, ctx, onClose }) {
   const api = {
     id, close,
     /** For tests: the live state. */
-    get state() { return { mode, armed, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, pending, rails: railsOn, doc }; },
+    get state() { return { mode, armed, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, pending, rails: railsOn, title, doc }; },
     /** For tests: the current layout. */
     get layout() { return L; },
     /** For tests: the client point of a musical place. */

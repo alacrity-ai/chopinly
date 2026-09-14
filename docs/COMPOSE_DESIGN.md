@@ -55,6 +55,7 @@ the ergonomics can be judged before anything deeper is built.
 | Copy · cut · paste | Copy takes the selection as a **phrase**: each note or rest with its duration, pitches, offset from the earliest selected onset and staff relative to the topmost; partial chords copy just the selected pitches; the clipboard lives for the session and travels between compositions. Cut is copy + delete. **Paste arms a cursor**: a ghost of the whole phrase follows the pen, snapped to the grid of its first duration; tap to drop; the tapped staff becomes the phrase's top staff (a two-staff phrase keeps its staves). The drop **replaces** what is under it (overlapping things go whole), appends bars past the end, and refuses a note that would straddle a barline (bar flash; the cursor stays armed). The pasted notes stay selected, so a cluster drag transposes them at once. Cmd/Ctrl C · X · V on a desk. |
 | Hear it | The transport rail plays the piece from the playhead at its tempo (saved with the piece); the slider and a bar back / forward seek; Space plays and pauses, Home stops. |
 | Bars | A new empty bar appears when the last one gets its first note. Trailing empty bars beyond one are trimmed on export. |
+| Identity | Title, composer and tags, stored like a score's, edited in the same details modal (tap the title on the header; also how a new composition starts), browsed like the Scores library. |
 | Key · time · clef | Pick the change on the utility rail, then tap where it goes (key and time: a bar; clef: a staff and a beat); it holds until the next change. Cautionary accidentals and courtesy signatures follow standard practice. |
 | Scrub | Finger pans, pinch zooms, nothing places. Leave Scrub and the score is pinned again. A mouse wheel always scrolls (a desk has no palm). |
 | Keep | Every edit is saved on this device at once. With an account (P3), compositions sync through the logbook like everything else, and a composition can be *practiced* like a score. |
@@ -416,6 +417,10 @@ A fourth lane, toggled by the **𝄞 …** button on the control rail (remembere
 ### 8.5c The header rail (v77)
 
 A topmost lane holds **‹ back · title … File ▾ · Rails ▾**. **Rails ▾** is a checklist of every other lane (Controls, Transport, Notes, Key · time · clef · marks): unticking hides a lane, the choice is remembered per device (`ws.compose.rails`), and a new lane (the expression rail) joins the list when it lands. **File ▾** is the home of *Save to Scores as PDF · Export PDF · Export MusicXML · Export MIDI* — greyed until P4. Note glyphs in buttons anchor their **baseline** (the head's centre) to the button's centre line; rests and accidentals centre their ink.
+
+### 8.5d Identity — title · composer · tags (v80)
+
+A composition carries the same identity as a score: `title`, `composer`, `tags` (cleaned by the logbook exactly as a score's are), so *Save to Scores* (P4) copies them 1:1. The **details modal** (`js/tools/compose/details.js`) is the Scores details form — title, composer with suggestions, tags with the one-line rail and the all-tags sheet — built from the widgets shared in `js/tools/shared/catalog.js`, plus *delete*. Tapping the **title on the header** opens it (a rename updates the header; a delete leaves the editor); **new composition** opens the same modal empty and creates the piece on *start composing*. The **list** browses like the Scores library — search over title / composer / tag, sort recent / title / composer, group by composer, the tag rail — through the same shared widgets (`logbook.compositions({ q, tags, sort })` uses the scores filter and sort). Tag suggestions draw on scores and compositions together: one vocabulary across the library.
 
 ### 8.6 Transport (v70) and the rails' look (v71)
 

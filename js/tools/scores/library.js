@@ -7,75 +7,19 @@
 // to back up, select all, upload — one at a time, with progress.
 import { logbook, displayName, TYPES } from "../../lib/logbook.js";
 import { icon } from "../../lib/icons.js";
-import { esc, toast, longPress, plural, openSheet, finePointer } from "../logbook/util.js";
+import { esc, toast, longPress, plural, openSheet } from "../logbook/util.js";
 import { haptic, stamp } from "../logbook/motion.js";
 import { openPicker } from "../logbook/picker.js";
 import { scoreStore } from "../../lib/scores/store.js";
 import { open as openPdf } from "../../lib/scores/pdf.js";
-import { groupByComposer, suggestComposers, suggestTags, parseTags, SORT_IDS } from "../../lib/scores/library.js";
+import { groupByComposer, suggestComposers, suggestTags, SORT_IDS } from "../../lib/scores/library.js";
+import { detailsFormHtml, wireDetailsForm, browseToolsHtml, wireBrowseTools } from "../shared/catalog.js";
 import { cloud } from "../../lib/scores/cloud.js";
 import { MAX_FILE_BYTES, fmtQuota } from "../../lib/scores/plans.js";
 import { fmtBytes } from "../../lib/takes/peaks.js";
 
 export { MAX_FILE_BYTES };
 const THUMB_W = 120;
-const RAIL_MAX = 8; // tags shown on the rail before "+N" (WSHED-107)
-const SORT_LABELS = { recent: "recent", title: "title", composer: "composer" };
-
-/** Tag → how many scores carry it, most used first. */
-function tagCounts(scores) {
-  const count = new Map();
-  for (const s of scores) for (const t of s.tags ?? []) count.set(t, (count.get(t) ?? 0) + 1);
-  return count;
-}
-
-/** One-line tag rail (WSHED-107/113): picked tags first (with an ×), then the most-used others, then "+N more". */
-function tagRail(all, picked) {
-  const others = all.filter((t) => !picked.includes(t));
-  const rest = others.slice(0, Math.max(0, RAIL_MAX - picked.length));
-  const hidden = others.length - rest.length;
-  return [
-    ...picked.map((t) => `<button type="button" class="sc-tag on" data-tag="${esc(t)}" aria-pressed="true">${esc(t)}<span class="sc-tag-x" aria-hidden="true">×</span></button>`),
-    ...rest.map((t) => `<button type="button" class="sc-tag" data-tag="${esc(t)}" aria-pressed="false">${esc(t)}</button>`),
-    hidden > 0 ? `<button type="button" class="sc-tag sc-tag-more" data-more>+${hidden} more</button>` : "",
-  ].join("");
-}
-/** The badge at the head of a rail: how many are picked out of how many exist. */
-const tagBadge = (all, picked) => picked.length ? `${picked.length} of ${all.length}` : String(all.length);
-/**
- * The all-tags sheet: every tag with its count, tap to toggle. `picked()` reads the
- * current set, `toggle(t)` / `clear()` change it (the sheet rebuilds after each);
- * `hint(n)` is the line under the chips. Used for the library filter and for a
- * score's own tags in the details sheet.
- */
-function openTagSheet({ picked, toggle, clear, hint }) {
-  const counts = tagCounts(logbook.scores());
-  const all = suggestTags(logbook.scores());
-  const sheet = openSheet({ title: "tags", cls: "lb-acct-wrap sc-tagsheet", html: "" });
-  const { body } = sheet;
-  let tq = "";
-  const build = () => {
-    const have = picked();
-    const shown = all.filter((t) => !tq || t.toLowerCase().includes(tq.toLowerCase()));
-    body.innerHTML = `
-      ${all.length > 12 ? `<input class="lb-input lb-search sc-tagsheet-q" id="sc-tq" type="search" placeholder="find a tag…" value="${esc(tq)}" autocomplete="off" aria-label="find a tag">` : ""}
-      <div class="lb-chips">${shown.map((t) => `<button type="button" class="sc-tag ${have.includes(t) ? "on" : ""}" data-tag="${esc(t)}" aria-pressed="${have.includes(t)}">${esc(t)}<small>${counts.get(t) ?? 0}</small></button>`).join("") || `<p class="lb-empty">no tag matches.</p>`}</div>
-      <div class="sc-tagsheet-acts">
-        <span class="lb-acct-fine" style="margin:0">${hint(have.length)}</span>
-        <button type="button" class="lb-chip" id="sc-tq-clear" ${have.length ? "" : "disabled"} style="margin-left:auto">clear</button>
-        <button type="button" class="lb-modal-save" id="sc-tq-done">done</button>
-      </div>`;
-    const qi = body.querySelector("#sc-tq");
-    qi?.addEventListener("input", () => { tq = qi.value; const at = qi.selectionStart; build(); const n = body.querySelector("#sc-tq"); n.focus(); try { n.setSelectionRange(at, at); } catch { /* fine */ } });
-    for (const b of body.querySelectorAll("[data-tag]")) b.addEventListener("click", () => { toggle(b.dataset.tag); haptic(4); build(); });
-    body.querySelector("#sc-tq-clear").addEventListener("click", () => { clear(); build(); });
-    body.querySelector("#sc-tq-done").addEventListener("click", sheet.close);
-  };
-  build();
-  if (all.length > 12 && finePointer()) body.querySelector("#sc-tq")?.focus();
-  return sheet;
-}
-
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 async function sha256(blob) {
   try { return hex(await crypto.subtle.digest("SHA-256", await blob.arrayBuffer())); } catch { return ""; }
@@ -238,18 +182,7 @@ export function openDetails(id, { onPractice = null } = {}) {
     title: "score",
     cls: "lb-acct-wrap sc-details-wrap",
     html: `
-      <form class="lb-acct-form sc-details" id="sc-details" novalidate>
-        <label class="lb-acct-label" for="sc-d-title">title</label>
-        <input class="lb-input lb-input-lg" id="sc-d-title" value="${esc(s.title)}" maxlength="160" autocomplete="off" autocapitalize="sentences" required>
-        <label class="lb-acct-label" for="sc-d-composer">composer</label>
-        <input class="lb-input" id="sc-d-composer" value="${esc(s.composer ?? "")}" placeholder="composer" maxlength="80" autocomplete="off" autocapitalize="words" list="sc-d-composers">
-        <datalist id="sc-d-composers">${composers.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
-        <label class="lb-acct-label" for="sc-d-tags">tags</label>
-        <input class="lb-input" id="sc-d-tags" value="${esc(s.tags.join(", "))}" placeholder="baroque, exam, duet…" autocomplete="off" autocapitalize="off">
-        ${tags.length ? `<div class="sc-tagrow sc-d-tagrow" id="sc-d-tagrow"></div>` : ""}
-        <p class="lb-err" id="sc-d-err" role="alert"></p>
-        <div class="lb-modal-acts"><button type="submit" class="lb-modal-save" id="sc-d-save">save</button></div>
-      </form>
+      ${detailsFormHtml({ prefix: "sc-d", item: s, composers, allTags: tags })}
       <ul class="lb-acct-list">
         <li><button type="button" class="lb-acct-row" id="sc-d-goal">${goal ? `<i class="lb-type ${(TYPES[goal.type] ?? TYPES.other).cls}" aria-hidden="true">${(TYPES[goal.type] ?? TYPES.other).glyph}</i>` : icon("log")}<span><b>${goal ? esc(displayName(goal)) : "link to a goal"}</b><small>${goal ? "the goal this score belongs to — tap to change" : "so practicing it and opening it are one gesture"}</small></span></button></li>
         <li><button type="button" class="lb-acct-row" id="sc-d-practice">${icon("play")}<span><b>practice this</b><small>${goal ? `start the clock on ${esc(displayName(goal))}` : "starts the clock on a new piece with this title"}</small></span></button></li>
@@ -263,33 +196,13 @@ export function openDetails(id, { onPractice = null } = {}) {
   });
   const { body, close, closed } = sheet;
   let result = {};
-  const title = body.querySelector("#sc-d-title"), composer = body.querySelector("#sc-d-composer"), tagsEl = body.querySelector("#sc-d-tags"), err = body.querySelector("#sc-d-err");
-  if (finePointer()) title.focus();
-  // The tag rail under the field (WSHED-113): the same one-line rail as the library —
-  // this score's tags first, the most-used others, "+N more"; the badge or "+N" opens
-  // the all-tags sheet on top of this one, so unsaved title/composer edits survive.
-  const tagrow = body.querySelector("#sc-d-tagrow");
-  const picked = () => parseTags(tagsEl.value);
-  const setTags = (list) => { tagsEl.value = list.join(", "); paintRail(); };
-  const toggleTag = (t) => { const have = picked(); setTags(have.includes(t) ? have.filter((x) => x !== t) : [...have, t]); };
-  const pickTags = () => openTagSheet({ picked, toggle: toggleTag, clear: () => setTags([]), hint: (n) => n ? `${n} on this score` : "tap the tags this score carries" });
-  function paintRail() {
-    if (!tagrow) return;
-    const have = picked();
-    tagrow.innerHTML = `
-      <button type="button" class="sc-tagbtn ${have.length ? "on" : ""}" id="sc-d-tags-all" aria-label="all tags">${icon("tag")}<span>${tagBadge(tags, have)}</span></button>
-      <div class="sc-tagrail" aria-label="tags">${tagRail(tags, have)}</div>`;
-    tagrow.querySelector("#sc-d-tags-all").addEventListener("click", pickTags);
-    tagrow.querySelector("[data-more]")?.addEventListener("click", pickTags);
-    for (const c of tagrow.querySelectorAll("[data-tag]")) c.addEventListener("click", () => { toggleTag(c.dataset.tag); haptic(4); });
-  }
-  tagsEl.addEventListener("input", paintRail);
-  paintRail();
+  const err = body.querySelector("#sc-d-err");
+  const form = wireDetailsForm(body, { prefix: "sc-d", items: () => logbook.scores(), onSubmit: () => { if (save()) { haptic(); stamp(body.querySelector("#sc-d-save")); toast("saved"); close(); } } });
+  form.focus();
   const save = () => {
-    try { logbook.updateScore(id, { title: title.value, composer: composer.value, tags: parseTags(tagsEl.value) }); err.textContent = ""; return true; }
-    catch (e) { err.textContent = e.message; return false; }
+    try { logbook.updateScore(id, form.values()); form.clearError(); return true; }
+    catch (e) { form.fail(e.message); return false; }
   };
-  body.querySelector("#sc-details").addEventListener("submit", (e) => { e.preventDefault(); if (save()) { haptic(); stamp(body.querySelector("#sc-d-save")); toast("saved"); close(); } });
   body.querySelector("#sc-d-goal").addEventListener("click", async () => {
     if (!save()) return;
     close();
@@ -383,12 +296,6 @@ export function mountLibrary(root, { store, setRunning = null }, { open }) {
     </div>`;
   };
 
-  /** The library's all-tags sheet: toggling filters the list behind it. */
-  const openFilterSheet = () => openTagSheet({
-    picked: () => tagFilter, toggle: toggleTag, clear: () => { tagFilter = []; store.set("tags", tagFilter); render(); },
-    hint: (n) => n ? `${n} picked · a score must carry every one` : "pick tags to narrow the list",
-  });
-  const toggleTag = (t) => { tagFilter = tagFilter.includes(t) ? tagFilter.filter((x) => x !== t) : [...tagFilter, t]; store.set("tags", tagFilter); render(); };
 
   function render() {
     for (const c of cleanups) c(); cleanups = [];
@@ -407,21 +314,7 @@ export function mountLibrary(root, { store, setRunning = null }, { open }) {
           <input type="file" id="sc-file" accept="application/pdf,.pdf" multiple hidden aria-label="choose PDF files">
         </div>
         ${selecting ? selbar() : ""}
-        ${total && !selecting ? `
-        <div class="sc-tools">
-          <input class="lb-input lb-search sc-search" id="sc-q" type="search" placeholder="search title, composer, tag…" value="${esc(q)}" autocomplete="off" aria-label="search scores">
-          <div class="sc-sortrow">
-            <div class="sc-seg" role="radiogroup" aria-label="sort by">
-              ${SORT_IDS.map((k) => `<button type="button" class="sc-seg-btn ${sort === k ? "on" : ""}" role="radio" aria-checked="${sort === k}" data-sort="${k}">${SORT_LABELS[k] ?? k}</button>`).join("")}
-            </div>
-            <button type="button" class="sc-group ${group ? "on" : ""}" aria-pressed="${group}" id="sc-group" title="group by composer">${icon("group")}<span>by composer</span></button>
-          </div>
-          ${allTags.length ? `<div class="sc-tagrow">
-            <button type="button" class="sc-tagbtn ${tagFilter.length ? "on" : ""}" id="sc-tags-all" aria-label="all tags">${icon("tag")}<span>${tagBadge(allTags, tagFilter)}</span></button>
-            <div class="sc-tagrail" aria-label="tags">${tagRail(allTags, tagFilter)}</div>
-          </div>` : ""}
-          ${q || tagFilter.length ? `<p class="sc-count"><span>${list.length === total ? plural(total, "score") : `${list.length} of ${total}`}</span><button type="button" id="sc-clear">clear</button></p>` : ""}
-        </div>` : ""}
+        ${total && !selecting ? browseToolsHtml({ prefix: "sc", q, sort, group, tagFilter, allTags, placeholder: "search title, composer, tag…", total, shown: list.length, noun: "score" }) : ""}
         ${total === 0
           ? `<p class="lb-empty sc-empty">no scores yet. add a PDF and it lives here — <em>tap the right edge to turn the page, the left to go back</em>.</p>`
           : list.length === 0
@@ -466,17 +359,13 @@ export function mountLibrary(root, { store, setRunning = null }, { open }) {
       const el = root.querySelector(`.sc-row[data-id="${lastId}"]`);
       if (el) { el.scrollIntoView({ block: "nearest" }); stamp(el); }
     });
-    const qEl = root.querySelector("#sc-q");
-    if (qEl) {
-      let t = 0;
-      qEl.addEventListener("input", () => { q = qEl.value; clearTimeout(t); t = setTimeout(() => { const at = qEl.selectionStart; render(); const n = root.querySelector("#sc-q"); n.focus(); try { n.setSelectionRange(at, at); } catch { /* not a text control state */ } }, 120); });
-    }
-    for (const b of root.querySelectorAll("[data-sort]")) b.addEventListener("click", () => { sort = b.dataset.sort; store.set("sort", sort); render(); });
-    root.querySelector("#sc-group")?.addEventListener("click", () => { group = !group; store.set("group", group); render(); });
-    for (const b of root.querySelectorAll(".sc-tagrail [data-tag]")) b.addEventListener("click", () => toggleTag(b.dataset.tag));
-    root.querySelector(".sc-tagrail [data-more]")?.addEventListener("click", openFilterSheet);
-    root.querySelector("#sc-tags-all")?.addEventListener("click", openFilterSheet);
-    root.querySelector("#sc-clear")?.addEventListener("click", () => { q = ""; tagFilter = []; store.set("tags", tagFilter); render(); });
+    wireBrowseTools(root, { prefix: "sc", items: () => logbook.scores(), state: { q, sort, group, tagFilter }, onChange: (patch) => {
+      if ("q" in patch) q = patch.q;
+      if ("sort" in patch) { sort = patch.sort; store.set("sort", sort); }
+      if ("group" in patch) { group = patch.group; store.set("group", group); }
+      if ("tagFilter" in patch) { tagFilter = patch.tagFilter; store.set("tags", tagFilter); }
+      render();
+    } });
     for (const li of root.querySelectorAll(".sc-row")) {
       const id = li.dataset.id;
       longPress(li.querySelector(".sc-open"), () => open(id), async () => { haptic(); await openDetails(id); render(); });

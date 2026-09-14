@@ -411,6 +411,21 @@ test("monthByGoal sums to the month total; minutesBetween clips", () => {
   assert.deepEqual(lb.metrics.monthByGoal(2026, 7), []);
 });
 
+test("compositions carry title, composer and tags like scores, cleaned the same way, with the same filters and sorts", () => {
+  const { lb } = fresh();
+  const c = lb.addComposition({ id: "c1", title: "  Study  in C ", composer: "Leif", tags: ["study", "study", " exercise "], measures: [], openedAt: 1 });
+  assert.equal(c.title, "Study in C"); assert.deepEqual(c.tags, ["study", "exercise"]);
+  lb.updateComposition("c1", { tags: ["Bach"], composer: " " });
+  assert.deepEqual(lb.composition("c1").tags, ["Bach"]); assert.equal(lb.composition("c1").composer, "");
+  lb.addComposition({ id: "c2", title: "Air", composer: "Bach", tags: ["baroque"], measures: [], openedAt: 5 });
+  assert.deepEqual(lb.compositions().map((x) => x.id), ["c2", "c1"]);                       // recent first
+  assert.deepEqual(lb.compositions({ q: "bach" }).map((x) => x.id), ["c2", "c1"]);          // composer or tag
+  assert.deepEqual(lb.compositions({ tags: ["baroque"] }).map((x) => x.id), ["c2"]);
+  assert.deepEqual(lb.compositions({ sort: "title" }).map((x) => x.id), ["c2", "c1"]);
+  assert.throws(() => lb.addComposition({ id: "c3", title: "  ", measures: [] }), /needs a title/);
+  assert.throws(() => lb.updateComposition("c1", { title: "" }), /needs a title/);
+});
+
 test("TYPES: three types with glyph + examples", () => {
   assert.deepEqual(Object.keys(TYPES), ["piece", "technique", "other"]);
   for (const t of Object.values(TYPES)) assert.ok(t.glyph && t.examples && t.cls);
