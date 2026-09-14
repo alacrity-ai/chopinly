@@ -2117,7 +2117,8 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-spring { flex: 1; }
 .cp-file, .cp-rails-btn { gap: 0.35rem; }
 .cp-rails-btn .ic { width: 1.25rem; height: 1.25rem; }
-.cp-menu { flex-direction: column; align-items: stretch; gap: 0.15rem; min-width: 14rem; padding: 0.4rem; }
+.cp-menu { flex-direction: column; align-items: stretch; gap: 0.15rem; min-width: 15rem; padding: 0.4rem; }
+.cp-menu-row > span { white-space: nowrap; }
 #cp-rails-more, #cp-file-more { left: auto; right: 0; }
 .cp-menu-row { justify-content: flex-start; gap: 0.6rem; height: 2.7rem; padding: 0 0.8rem 0 0.6rem; border: none; background: transparent; font-weight: 500; text-align: left; }
 .cp-menu-row:disabled { opacity: 0.4; }
