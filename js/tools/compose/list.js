@@ -6,7 +6,19 @@ import { esc, longPress, plural, relDay } from "../logbook/util.js";
 import { haptic, stamp } from "../logbook/motion.js";
 import { groupByComposer, suggestTags, SORT_IDS } from "../../lib/scores/library.js";
 import { browseToolsHtml, wireBrowseTools } from "../shared/catalog.js";
-import { openCompositionDetails, barsOf } from "./details.js";
+import { openCompositionDetails, barsOf, uuid } from "./details.js";
+import { fromMusicXml } from "../../lib/compose/musicxml.js";
+import { readMxl, isZip } from "../../lib/compose/mxl.js";
+import { toast } from "../logbook/util.js";
+
+const XML_ACCEPT = ".musicxml,.xml,.mxl,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml,application/xml,text/xml";
+/** A MusicXML file (plain or .mxl) → a new composition in the logbook (docs/COMPOSE_MUSICXML_DESIGN.md §3). Throws with a sentence. */
+export async function importMusicXmlFile(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const text = isZip(bytes) ? await readMxl(bytes) : new TextDecoder("utf-8").decode(bytes);
+  const { doc, warnings } = fromMusicXml(text, { id: uuid(), fileName: file.name, tags: ["imported"] });
+  return { composition: logbook.addComposition(doc), warnings };
+}
 
 export function mountList(root, { store }, { open }) {
   let highlightId = null;
@@ -34,11 +46,13 @@ export function mountList(root, { store }, { open }) {
       <section class="scores compose" aria-label="compose">
         <div class="sc-head">
           <h2 class="lb-sect sc-sect">compositions${total ? `<span class="lb-sect-sub">${total}</span>` : ""}</h2>
-          <button type="button" class="sc-add" id="cp-new">${icon("plus")}<span>composition</span></button>
+          <button type="button" class="sc-add sc-add-quiet" id="cp-import" aria-label="import MusicXML files">${icon("download")}<span>import</span></button>
+          <button type="button" class="sc-add" id="cp-new" aria-label="new composition">${icon("plus")}<span>new</span></button>
+          <input type="file" id="cp-import-file" accept="${XML_ACCEPT}" multiple hidden aria-label="choose MusicXML files">
         </div>
         ${total ? browseToolsHtml({ prefix: "cp", q, sort, group, tagFilter, allTags, placeholder: "search title, composer, tag…", total, shown: list.length, noun: "composition" }) : ""}
         ${total === 0
-          ? `<p class="lb-empty sc-empty cp-empty">nothing written yet — <em>start a composition</em> and place your first note.</p>`
+          ? `<p class="lb-empty sc-empty cp-empty">nothing written yet — <em>start a composition</em> and place your first note, or <em>import</em> a MusicXML file.</p>`
           : list.length === 0
             ? `<p class="lb-empty sc-empty">nothing matches.</p>`
             : groups.map((gr) => `${gr.composer !== null ? `<div class="lb-sect sc-groupname">${gr.composer ? esc(gr.composer) : "no composer"}<span class="lb-sect-sub">${gr.scores.length}</span></div>` : ""}<ul class="sc-list" id="cp-list">${gr.scores.map(row).join("")}</ul>`).join("")}
@@ -46,6 +60,23 @@ export function mountList(root, { store }, { open }) {
     root.querySelector("#cp-new").addEventListener("click", async () => {
       const r = await openCompositionDetails(null);
       if (r.created) { haptic(8); open(r.created.id); }
+    });
+    const input = root.querySelector("#cp-import-file");
+    root.querySelector("#cp-import").addEventListener("click", () => input.click());
+    input.addEventListener("change", async () => {
+      const files = [...input.files]; input.value = "";
+      if (!files.length) return;
+      const btn = root.querySelector("#cp-import"); btn.disabled = true;
+      let last = null, bars = 0, n = 0;
+      for (const f of files) {
+        try { const { composition, warnings } = await importMusicXmlFile(f); last = composition; n++; bars += barsOf(composition); if (warnings.length) console.info(`${f.name}: ${warnings.join("; ")}`); }
+        catch (e) { console.warn(e); toast(`${f.name}: ${e.message}`); }
+      }
+      btn.disabled = false;
+      if (!last) return;
+      haptic(8);
+      open(last.id);
+      setTimeout(() => toast(n === 1 ? `imported ${plural(bars, "bar")}` : `imported ${plural(n, "piece")}, ${plural(bars, "bar")}`), 80); // after the editor's own greeting
     });
     wireBrowseTools(root, { prefix: "cp", items: () => logbook.compositions(), state: { q, sort, group, tagFilter }, onChange: (patch) => {
       if ("q" in patch) q = patch.q;

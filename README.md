@@ -109,6 +109,14 @@ reward the wrong thing.
   altered. Big scans are rendered once and cached. With an account, the list,
   bookmarks and ink sync; the PDF itself goes up only when you choose *upload*,
   into a private space per account (100 MB while it is promotional).
+- **Compose** — music notation by tapping, made for an iPad and a Pencil: pick a
+  value, tap the grand staff, the note lands there engraved; chords, ties,
+  tuplets, accidentals, articulations, ornaments, slurs, rolled chords, up to
+  four voices per staff with cross-staff notes, key / time / clef changes on any
+  bar or beat, dynamics, hairpins and text on the beats. Playback with tempo and
+  velocities. Export a vector PDF into Scores (or to a file), and MusicXML both
+  ways: *Export MusicXML* for Sibelius / MuseScore / Finale / Dorico, *import* a
+  `.musicxml` / `.xml` / `.mxl` as a new composition. Synced with an account.
 - **Logbook** — goals, the clock, notes, today, history, analytics.
 
 ## Your data is yours

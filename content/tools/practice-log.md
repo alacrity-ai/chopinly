@@ -1,6 +1,6 @@
 ---
 name: Practice log
-order: 8
+order: 9
 route: logbook
 title: "Piano practice log app — every minute on a piece, with analytics | Chopinly"
 description: "A piano practice log that fills itself in: press play, say what you're working on, and the minutes land on that piece or technique. Notes per goal, a calendar of practiced days, and analytics by composer, work, type, time of day and session length. Free, no ads, works offline, optional backup."

@@ -20,6 +20,8 @@ import { CLEFS } from "../../lib/music.js";
 import { buildRails, MAIN_BASES, MORE_BASES, KEYS, RAILS, DEFAULT_RAILS, durName, tupletName } from "./rails.js";
 import { openCompositionDetails } from "./details.js";
 import { openExportSheet } from "./exportsheet.js";
+import { saveFile } from "./savefile.js";
+import { toMusicXml, musicXmlFileName, MUSICXML_TYPE } from "../../lib/compose/musicxml.js";
 
 const TAP_MS = 300, TAP_PX = 10, PALM_PX = 40, S_MIN = 8, S_MAX = 22, SAVE_MS = 300, LASSO_PX = 6;
 const KEY_BASE = { 1: 64, 2: 32, 3: 16, 4: 8, 5: 4, 6: 2, 7: 1 };
@@ -586,6 +588,13 @@ export function openEditor({ id, ctx, onClose }) {
       case "export-pdf": case "save-pdf": { // the export sheet: size, page, margins, header, preview → Save PDF / Add to Scores (WSHED-121)
         flush();
         openExportSheet({ id, doc, primary: name });
+        return;
+      }
+      case "export-xml": { // MusicXML 4.0 of the piece as it stands (WSHED-119): save to the device or share it, like the PDF
+        flush();
+        const c = logbook.composition(id) ?? { title, composer };
+        const file = new File([toMusicXml(doc, { title: c.title, composer: c.composer ?? "" })], musicXmlFileName(c), { type: MUSICXML_TYPE });
+        saveFile(file, { title: "save MusicXML", shareTitle: c.title }).then((way) => { if (way === "device") toast(`saved as ${file.name}`); else if (way === "share") toast("shared"); }).catch((e) => { console.error(e); toast(e.message || "the export failed"); });
         return;
       }
       case "undo": if (history.canUndo) { doc = history.undo(); dirty = true; pruneSelection(); layout(); flush(); } return;
