@@ -1,7 +1,7 @@
 // The control rail and the palette rail (docs/COMPOSE_DESIGN.md §8.1). Pure
 // markup + click wiring; the editor owns the state and calls `update`.
 import { icon } from "../../lib/icons.js";
-import { metGlyph, restGlyph, artGlyph, G } from "../../lib/staff/glyphs.js";
+import { metGlyph, restGlyph, artGlyph, dynGlyph, G } from "../../lib/staff/glyphs.js";
 import { CLEFS } from "../../lib/music.js";
 import { esc } from "../logbook/util.js";
 
@@ -43,8 +43,11 @@ const ARP_ROWS = [["plain", G.arpeggio, "rolled"], ["up", G.arpeggioUp, "rolled 
 /** What the mark buttons say; a mark not listed reads as its id. */
 const MARK_NAMES = { lowerMordent: "lower mordent — the one with the line through it" };
 /** The rails a reader can show or hide, in order — the header that holds the menu is not one of them. */
-export const RAILS = [["control", "Controls"], ["transport", "Transport"], ["palette", "Notes"], ["utility", "Key · time · clef · marks"]];
-export const DEFAULT_RAILS = { control: true, transport: true, palette: true, utility: false };
+export const RAILS = [["control", "Controls"], ["transport", "Transport"], ["palette", "Notes"], ["utility", "Key · time · clef · marks"], ["expression", "Dynamics · hairpins · text"]];
+export const DEFAULT_RAILS = { control: true, transport: true, palette: true, utility: false, expression: false };
+/** Dynamics in rail order and the text suggestions (free typing too). */
+const DYNS = ["pp", "p", "mp", "mf", "f", "ff"];
+const TEXTS = ["rit.", "a tempo", "accel.", "rall.", "cresc.", "dim.", "dolce", "espress.", "legato", "rubato", "cantabile", "marcato"];
 /** What the File menu will hold (P4 export); nothing works yet, so every row is disabled. */
 const FILE_ITEMS = [["save-pdf", "Save to Scores as PDF"], ["export-pdf", "Export PDF"], ["export-xml", "Export MusicXML"], ["export-midi", "Export MIDI"]];
 
@@ -139,6 +142,21 @@ export function buildRails(host, { title, onAction }) {
         <button type="button" class="cp-btn cp-arp-btn" data-pop="cp-arp-more" aria-label="rolled chord — pick the roll" aria-expanded="false" disabled><span class="cp-glyph cp-glyph-xs">${G.arpeggio}</span>&#9662;</button>
         <span class="cp-more cp-menu" id="cp-arp-more" hidden>${ARP_ROWS.map(([kind, glyph, label]) => `<button type="button" class="cp-btn cp-menu-row cp-arp-row" data-act="arp" data-kind="${kind}"><span class="cp-glyph cp-glyph-xs">${glyph}</span><span>${label}</span></button>`).join("")}</span>
       </span>
+    </div>
+    <div class="cp-rail cp-expression" id="cp-expression" role="toolbar" aria-label="dynamics, hairpins and text" data-rail="expression" hidden>
+      ${DYNS.map((d) => `<button type="button" class="cp-btn cp-sq cp-expr-btn cp-dyn-btn" data-act="dyn" data-dyn="${d}" aria-label="${d}" disabled><span class="cp-glyph cp-glyph-dyn">${dynGlyph(d)}</span></button>`).join("")}
+      <span class="cp-sep" aria-hidden="true"></span>
+      <button type="button" class="cp-btn cp-sq cp-expr-btn" data-act="hairpin" data-kind="cresc" aria-label="crescendo — from the first selected note to the last (one note: to the next)" disabled><span class="cp-glyph cp-glyph-sm">${G.hairpinCresc}</span></button>
+      <button type="button" class="cp-btn cp-sq cp-expr-btn" data-act="hairpin" data-kind="dim" aria-label="diminuendo — from the first selected note to the last (one note: to the next)" disabled><span class="cp-glyph cp-glyph-sm">${G.hairpinDim}</span></button>
+      <span class="cp-sep" aria-hidden="true"></span>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-expr-btn cp-text-btn" data-pop="cp-text-more" aria-label="text — rit., a tempo, dolce… or your own, over the selected note" aria-expanded="false" disabled><i>text</i>&#9662;</button>
+        <span class="cp-more cp-menu cp-text-menu" id="cp-text-more" hidden>
+          <span class="cp-text-chips">${TEXTS.map((t) => `<button type="button" class="cp-btn cp-chip" data-act="text" data-text="${t}"><i>${t}</i></button>`).join("")}</span>
+          <span class="cp-text-row"><input class="cp-text-in" id="cp-text-in" type="text" maxlength="40" placeholder="your own…" aria-label="expression text"><button type="button" class="cp-btn cp-text-set" data-act="text-set">set</button></span>
+          <button type="button" class="cp-btn cp-menu-row" data-act="text" data-text=""><span>clear the text</span></button>
+        </span>
+      </span>
     </div>`;
   const moreBtn = host.querySelector(".cp-dur-more"), accMoreBtn = host.querySelector(".cp-acc-more");
   const tupMore = host.querySelector("#cp-tup-more"), tupBtn = host.querySelector(".cp-tuplet");
@@ -164,6 +182,10 @@ export function buildRails(host, { title, onAction }) {
     if (act === "clef") { onAction("clef", b.dataset.clef); return; }
     if (act === "art") { onAction("art", b.dataset.mark); return; }
     if (act === "arp") { onAction("arp", b.dataset.kind); return; }
+    if (act === "dyn") { onAction("dyn", b.dataset.dyn); return; }
+    if (act === "hairpin") { onAction("hairpin", b.dataset.kind); return; }
+    if (act === "text") { onAction("text", b.dataset.text ?? ""); return; }
+    if (act === "text-set") { const inp = host.querySelector("#cp-text-in"); onAction("text", inp.value); inp.value = ""; return; }
     if (act === "acc") { onAction("acc", Number(b.dataset.alter)); return; }
     if (act === "tuplet") { onAction("tuplet", b.dataset.n ? Number(b.dataset.n) : undefined); return; }
     onAction(act);
@@ -173,6 +195,10 @@ export function buildRails(host, { title, onAction }) {
     tupBtn.addEventListener("pointerdown", (e) => { if (e.button && e.button !== 0) return; clearTimeout(timer); timer = setTimeout(() => { swallow = true; toggle(tupMore, tupBtn); }, 450); });
     for (const t of ["pointerup", "pointercancel", "pointerleave"]) tupBtn.addEventListener(t, () => clearTimeout(timer));
   }
+  // typing in the text box: Enter sets; the editor's shortcuts stay out of inputs
+  { const inp = host.querySelector("#cp-text-in");
+    inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); closeMore(); onAction("text", inp.value); inp.value = ""; } else if (e.key === "Escape") { closeMore(); } });
+    inp.addEventListener("pointerdown", (e) => e.stopPropagation()); }
   const onDocDown = (e) => { if (![...host.querySelectorAll(".cp-more-wrap")].some((w) => w.contains(e.target))) closeMore(); };
   document.addEventListener("pointerdown", onDocDown);
   // the tempo buttons repeat while held (a click after a hold is swallowed)
@@ -210,7 +236,7 @@ export function buildRails(host, { title, onAction }) {
         host.querySelector(`.cp-rail-row[data-rail="${k}"]`).setAttribute("aria-checked", String(on));
       }
       if (shown) centreAll(); // a lane that was display:none had no metrics to measure
-      for (const b of host.querySelectorAll(".cp-art-btn, .cp-gliss-btn, .cp-arp-btn, .cp-slur-btn")) b.disabled = !hasSelection;
+      for (const b of host.querySelectorAll(".cp-art-btn, .cp-gliss-btn, .cp-arp-btn, .cp-slur-btn, .cp-expr-btn")) b.disabled = !hasSelection;
       // the armed change (key / time / clef waiting for a tap) shows on its picker and its button
       const key = pending?.kind === "key" ? KEYS.find((k) => k.fifths === pending.value) : null;
       host.querySelector("#cp-key-val").textContent = key ? `${key.major} / ${key.minor}m` : "";

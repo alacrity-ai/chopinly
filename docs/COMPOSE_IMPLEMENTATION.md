@@ -208,7 +208,7 @@ articulations and ornaments; chords can glissando.
 **Done when:** an eight-bar piece can modulate, change metre and switch the
 bass staff to treble at bar 5, and the layout is correct on both screen widths.
 
-## Phase 3 — the expression rail, sync, and the logbook link
+## Phase 3 — the expression rail, sync, and the logbook link — rail LANDED v85, sync v81 (WSHED-118 / 117, 2026-09-14); goal link open
 
 **Goal:** dynamics, hairpins and text; compositions follow the account and can
 be practiced.

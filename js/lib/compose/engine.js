@@ -277,7 +277,7 @@ export function cleanTies(doc) {
       }
     }
   }
-  cleanSlurs(doc); // slurs are re-derived with the ties, so every edit path keeps them whole
+  cleanSlurs(doc); cleanHairpins(doc); // slurs and hairpins are re-derived with the ties, so every edit path keeps them whole
   return doc;
 }
 
@@ -818,6 +818,84 @@ export function articulate(doc, evIds, mark) {
     if (all) { e.art = e.art.filter((m) => m !== mark); if (!e.art.length) delete e.art; }
     else if (!e.art?.includes(mark)) e.art = [...(e.art ?? []), mark];
   }
+  return d;
+}
+/** Dynamics, softest to loudest. */
+export const DYNAMICS = ["pp", "p", "mp", "mf", "f", "ff"];
+/** Set a dynamic on the selected notes (one per note); every note already has that one → off. */
+export function dynamic(doc, evIds, mark) {
+  if (!DYNAMICS.includes(mark)) throw new Nudge("no such dynamic");
+  const d = clone(doc);
+  const notes = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "note").map((f) => f.ev);
+  if (!notes.length) throw new Nudge("pick the notes for the dynamic");
+  const all = notes.every((e) => e.dyn === mark);
+  for (const e of notes) { if (all) delete e.dyn; else e.dyn = mark; }
+  return d;
+}
+export const HAIRPINS = ["cresc", "dim"];
+/**
+ * A hairpin from the earliest selected note of a staff to the latest (one note: to the staff's next
+ * note): `ev.hairpin` = "cresc-start" | "cresc-stop" | "dim-start" | "dim-stop". Hairpins do not nest,
+ * so matching is positional (`hairpinEnd`) and `cleanHairpins` drops any half left by an edit.
+ * The same span with the same kind again removes it.
+ */
+export function hairpin(doc, evIds, kind) {
+  if (!HAIRPINS.includes(kind)) throw new Nudge("no such hairpin");
+  const d = clone(doc);
+  const fs = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "note");
+  if (!fs.length) throw new Nudge("pick the notes for the hairpin");
+  const byStaff = new Map();
+  for (const f of fs) { if (!byStaff.has(f.staff)) byStaff.set(f.staff, []); byStaff.get(f.staff).push(f); }
+  for (const list of byStaff.values()) {
+    list.sort((a, b) => a.bar - b.bar || a.index - b.index);
+    const a = list[0].ev;
+    let b = list[list.length - 1].ev;
+    if (b === a) { let nx = nextEvent(d, list[0]); let guard = 0; while (nx && nx.kind !== "note" && guard++ < 64) nx = nextEvent(d, find(d, nx.id)); b = nx; }
+    if (!b || b.kind !== "note") throw new Nudge("a hairpin needs a note after it", { bar: list[0].bar });
+    if (a.hairpin === `${kind}-start` && hairpinEnd(d, list[0].staff, a) === b) { delete a.hairpin; delete b.hairpin; }
+    else { // the new span owns its range: any hairpin marker inside it goes (hairpins never nest)
+      const seq = d.measures.flatMap((m) => m.staves[list[0].staff].voices[0]);
+      for (let k = seq.indexOf(a); k <= seq.indexOf(b); k++) delete seq[k].hairpin;
+      a.hairpin = `${kind}-start`; b.hairpin = `${kind}-stop`;
+    }
+  }
+  cleanHairpins(d);
+  return d;
+}
+/** The note the hairpin starting at `ev` ends on: the first matching stop before any other start, or null. */
+export function hairpinEnd(doc, staff, ev) {
+  if (!ev.hairpin?.endsWith("-start")) return null;
+  const kind = ev.hairpin.slice(0, -6);
+  const seq = doc.measures.flatMap((m) => m.staves[staff].voices[0]);
+  for (let k = seq.indexOf(ev) + 1; k < seq.length; k++) {
+    if (seq[k].hairpin === `${kind}-stop`) return seq[k];
+    if (seq[k].hairpin?.endsWith("-start")) return null;
+  }
+  return null;
+}
+/** Re-derive every hairpin: rests carry none; a start without its stop (before another start) and a stop without its start are dropped. */
+export function cleanHairpins(doc) {
+  const nStaves = doc.parts[0].staves;
+  for (let staff = 0; staff < nStaves; staff++) {
+    const seq = doc.measures.flatMap((m) => m.staves[staff].voices[0]);
+    let open = null;
+    for (const e of seq) {
+      if (!e.hairpin) continue;
+      if (e.kind !== "note") { delete e.hairpin; continue; }
+      if (e.hairpin.endsWith("-start")) { if (open) delete open.hairpin; open = e; continue; }
+      if (open && e.hairpin === `${open.hairpin.slice(0, -6)}-stop`) open = null; else delete e.hairpin;
+    }
+    if (open) delete open.hairpin;
+  }
+  return doc;
+}
+/** Expression text (rit., a tempo, dolce…) on the earliest selected event; an empty string clears it. */
+export function exprText(doc, evIds, str) {
+  const d = clone(doc);
+  const fs = [...new Set(evIds)].map((id) => find(d, id)).filter(Boolean).sort((a, b) => a.bar - b.bar || a.staff - b.staff || a.index - b.index);
+  if (!fs.length) throw new Nudge("pick where the text goes");
+  const t = String(str ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+  if (t) fs[0].ev.text = t; else delete fs[0].ev.text;
   return d;
 }
 /** The rolled-chord signs: a plain wiggle, or one with an arrowhead saying which way the roll goes. */

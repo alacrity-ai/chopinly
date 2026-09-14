@@ -20,6 +20,8 @@ export const G = {
   tenutoAbove: cp(0xe4a4), tenutoBelow: cp(0xe4a5), fermataAbove: cp(0xe4c0), fermataBelow: cp(0xe4c1),
   trill: cp(0xe566), mordent: cp(0xe56c), lowerMordent: cp(0xe56d), turn: cp(0xe567),
   // rolled chords: the precomposed signs (buttons) and the wiggle segments + arrowheads a sign of any height is built from (rotated 90°)
+  // dynamics and the text hairpins (buttons); engraved hairpins are drawn as lines
+  dynPP: cp(0xe52b), dynP: cp(0xe520), dynMP: cp(0xe52c), dynMF: cp(0xe52d), dynF: cp(0xe522), dynFF: cp(0xe52f), hairpinCresc: cp(0xe53e), hairpinDim: cp(0xe53f),
   arpeggio: cp(0xe63c), arpeggioUp: cp(0xe634), arpeggioDown: cp(0xe635), wiggleArpUp: cp(0xeaa9), wiggleArpDown: cp(0xeaaa), wiggleArpUpArrow: cp(0xeaad), wiggleArpDownArrow: cp(0xeaae),
   // palette pictures (SMuFL "metronome" notes: head + stem + flags in one glyph)
   metDblWhole: cp(0xeca0), metWhole: cp(0xeca2), metHalf: cp(0xeca3), metQuarter: cp(0xeca5),
@@ -38,3 +40,6 @@ export const flagGlyph = (base, up) => ({ 8: up ? G.flagUp : G.flagDown, 16: up 
 export const metGlyph = (base) => ({ 0: G.metDblWhole, 1: G.metWhole, 2: G.metHalf, 4: G.metQuarter, 8: G.met8th, 16: G.met16th, 32: G.met32nd, 64: G.met64th })[base];
 /** Articulation glyph for a mark on the given side. */
 export const artGlyph = (mark, above) => ({ staccato: above ? G.staccatoAbove : G.staccatoBelow, accent: above ? G.accentAbove : G.accentBelow, tenuto: above ? G.tenutoAbove : G.tenutoBelow, fermata: above ? G.fermataAbove : G.fermataBelow, trill: G.trill, mordent: G.mordent, lowerMordent: G.lowerMordent, turn: G.turn })[mark];
+
+/** The Bravura glyph of a dynamic mark (pp … ff). */
+export const dynGlyph = (d) => ({ pp: G.dynPP, p: G.dynP, mp: G.dynMP, mf: G.dynMF, f: G.dynF, ff: G.dynFF })[d];

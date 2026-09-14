@@ -166,8 +166,9 @@ An **event** (one voice slot):
   gliss?: "start" | "stop",
   slurs?: [ { id, at: "start" | "stop" } ],                    // v84: a slur is the pair sharing an id; several may start or end here
   arp?: "plain" | "up" | "down",                                // v83: a rolled chord
-  dyn?: "pp" | "p" | "mp" | "mf" | "f" | "ff",                 // P3
-  hairpin?: "cresc-start" | "cresc-stop" | "dim-start" | "dim-stop",   // P3
+  dyn?: "pp" | "p" | "mp" | "mf" | "f" | "ff",                 // v85: one per note
+  hairpin?: "cresc-start" | "cresc-stop" | "dim-start" | "dim-stop",   // v85: positional pairs, never nested
+  text?: "rit.",                                                // v85: expression text over this event (a rest may carry it too)
 }
 ```
 
@@ -281,8 +282,11 @@ line 4; others centred on the middle line; a dotted rest gets its dot.
   stubs across a system break (the sight-singing rule).
 - Glissando: a straight line head to head with *gliss.* along it.
 - Slurs (v84): a tie-shaped curve from the first note's head to the last's on the head side, control offset `h` from the span (1.2–3.2) raised to clear the heads and stem tips between (`arc` in layout.js); two halves across a system break.
-- Hairpins (P3): two lines from the start column to the stop column below the
-  staff; a hairpin continues across a system break with an open end.
+- Hairpins (v85): two lines from the start note (after its dynamic, if any) to
+  the stop note on the expression line — below the staff and below whatever the
+  span's notes own there (`exprLine`); a hairpin continues across a system
+  break as two open halves. Dynamics sit on the same line under their note,
+  ink-centred like a mark; text sits above the staff over the note's ornaments.
 - Articulations sit at the notehead side opposite the stem (fermata always
   above); ornaments above the staff; dynamics below the staff at the column,
   text above at the column.
@@ -436,6 +440,10 @@ A composition carries the same identity as a score: `title`, `composer`, `tags` 
 - **Marks centred on ink (v82, Leif's review):** the layout gives a mark the head's centre; the renderer measures the glyph's ink once (canvas at 1000 px, cached per glyph after Bravura is in — `inkCentre` in render.js) and slides the `<text>` so the ink's centre lands there. A Bravura glyph's origin is its left side bearing, so the old start-anchored text sat half a glyph to the right. Until the font is in, the advance box is centred (`text-anchor: middle`) and the editor lays out again on `document.fonts.load`.
 - **Glyph centring corrected (v83):** `centreGlyph` had the ink term's sign wrong — a glyph whose ink sits above its baseline (every ornament, the fermata, the rolled-chord sign) was slid up by its half-height instead of down. Symmetric glyphs (accidentals, rests, heads) hid it; 4× screenshot measurement showed the trill 13 px high and the rolled-chord sign clipped. Every glyph button now measures within 0.5 px of its centre.
 - **Square buttons:** every icon- or glyph-only button carries `cp-sq` — one exact square (3.4 rem; 3 rem on the header; 2.8 rem at phone width) — so a rail reads as a grid; only the worded buttons (Select, Pan, rest, the pickers, *gliss.*) are wider.
+
+### 8.5f The expression rail (v85, WSHED-118)
+
+A fifth lane in `RAILS` (off by default, a row in Rails ▾): **pp p mp mf f ff** (Bravura dynamics, one per note, the same again clears) · **crescendo / diminuendo** (earliest selected note to the latest; one note: to the next; the same span and kind again clears; a new start before an open one replaces it) · **text ▾** (a popover of suggestions — rit., a tempo, accel., rall., cresc., dim., dolce, espress., legato, rubato, cantabile, marcato — a box for your own, and *clear*; the earliest selected event carries it). The expression lane lives in `rails.js` with the others rather than a separate `expression.js`. Playback: a note's velocity is the dynamic in force on its staff (mf until one is written); under a hairpin the notes ramp to the next written dynamic, or one step up / down when none follows (`velocities` in play.js).
 
 ### 8.6 Transport (v70) and the rails' look (v71)
 

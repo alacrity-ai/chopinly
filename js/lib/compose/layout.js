@@ -5,7 +5,7 @@
 import { keyAlterations, keySignatureGlyphs, CLEFS, staffStep } from "../music.js";
 import { ticks, capacity, groupSize } from "./ticks.js";
 import { timeAt, keyAt, clefAt } from "./model.js";
-import { onsets, diatonicOf, nextEvent, slurEnd } from "./engine.js";
+import { onsets, diatonicOf, nextEvent, slurEnd, hairpinEnd } from "./engine.js";
 
 export const STAFF_GAP = 8;      // S between the treble's bottom line and the bass's top line
 export const SYS_GAP = 10;       // S between systems
@@ -179,7 +179,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
           if (ev.ev.kind === "rest") {
             if (b.allRest[st]) { if (c.ticks === 0) drawn.push({ id: ev.ev.id, bar: b.index, staff: st, system: si, rest: true, whole: true, base: 1, dots: 0, x: (bodyStart + hbar.x1) / 2 - 0.85, y: yOfStep(st, 6) }); continue; }
             const base = ev.ev.dur.base;
-            drawn.push({ id: ev.ev.id, bar: b.index, staff: st, system: si, rest: true, base, dots: ev.ev.dur.dots, x, y: yOfStep(st, base <= 1 ? 6 : 4), ticks: c.ticks, tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index });
+            drawn.push({ id: ev.ev.id, bar: b.index, staff: st, system: si, rest: true, base, dots: ev.ev.dur.dots, x, y: yOfStep(st, base <= 1 ? 6 : 4), ticks: c.ticks, text: ev.ev.text ?? null, tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index });
             continue;
           }
           const base = ev.ev.dur.base, kind = headKind(base), headW = HEAD_W[kind];
@@ -187,7 +187,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
           const steps = ev.ev.pitches.map((p) => staffStep({ letter: p.step, acc: 0, octave: p.octave, diatonic: p.octave * 7 + "CDEFGAB".indexOf(p.step) }, clef));
           const far = steps.reduce((m, s2) => (Math.abs(s2 - 4) > Math.abs(m - 4) ? s2 : m), steps[0]);
           const stem = hasStem(base) ? (far >= 4 ? "down" : "up") : null;
-          const d = { id: ev.ev.id, bar: b.index, staff: st, system: si, rest: false, base, dots: ev.ev.dur.dots, kind, headW, x, stem, ticks: c.ticks, group: Math.floor(c.ticks / groupSize(b.time)), heads: [], ledgers: [], tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index, pitches: ev.ev.pitches, art: ev.ev.art ?? null, gliss: ev.ev.gliss ?? null, arp: ev.ev.arp ?? null, slurs: ev.ev.slurs ?? null, accLeft: x - c.accPad * sys.scale };
+          const d = { id: ev.ev.id, bar: b.index, staff: st, system: si, rest: false, base, dots: ev.ev.dur.dots, kind, headW, x, stem, ticks: c.ticks, group: Math.floor(c.ticks / groupSize(b.time)), heads: [], ledgers: [], tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index, pitches: ev.ev.pitches, art: ev.ev.art ?? null, gliss: ev.ev.gliss ?? null, arp: ev.ev.arp ?? null, slurs: ev.ev.slurs ?? null, dyn: ev.ev.dyn ?? null, hairpin: ev.ev.hairpin ?? null, text: ev.ev.text ?? null, accLeft: x - c.accPad * sys.scale };
           // heads: sorted by step; seconds flip to the other side of the stem
           const order = steps.map((s2, pi) => ({ step: s2, pi })).sort((a, b2) => a.step - b2.step);
           const walk = stem === "down" ? [...order].reverse() : order;
@@ -341,6 +341,34 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
       slurs.push({ id, staff, x1: startX + 0.3, y1: y2, x2, y2, dir, system: d2.system, half: "in", h: arc(startX, x2, y2, y2, second, d2.system) });
     }
   }
+  // -- expression: dynamics under the note (below the staff and below whatever the note owns there), hairpins on the
+  //    same line between their notes (open across a system break), text above the staff over the note's marks --
+  const dynamics = [], hairpins = [], texts = [];
+  const staffBot = (d) => systems[d.system].staffTop[d.staff] + 4, staffTopOf = (d) => systems[d.system].staffTop[d.staff];
+  const belowOf = (d) => (d.rest ? d.y + 1 : Math.max(d.botY, d.stem === "down" ? d.stemTipY : d.botY) + (d.art?.some((m) => m !== "fermata" && m !== "trill" && m !== "mordent" && m !== "lowerMordent" && m !== "turn") && d.stem !== "down" ? 1.3 : 0));
+  const exprLine = (items) => Math.max(...items.map((d) => Math.max(staffBot(d) + 2.6, belowOf(d) + 1.6)));
+  for (const d of drawn) {
+    if (!d.rest && d.dyn) dynamics.push({ x: d.x + d.headW / 2, y: exprLine([d]), dyn: d.dyn, system: d.system, staff: d.staff });
+    if (d.text) {
+      const orn = d.rest ? 0 : (d.art ?? []).reduce((n, m) => n + (m === "fermata" ? 1.8 : ["trill", "mordent", "lowerMordent", "turn"].includes(m) ? 1.4 : 0), 0);
+      const topExt = d.rest ? d.y - 1 : Math.min(d.topY, d.stem === "up" ? d.stemTipY : d.topY);
+      texts.push({ x: d.x, y: Math.min(staffTopOf(d) - 2.3, topExt - 1.3 - orn), text: d.text, system: d.system });
+    }
+    if (d.rest || !d.hairpin?.endsWith("-start")) continue;
+    const end = hairpinEnd(doc, d.staff, doc.measures[d.bar].staves[d.staff].voices[0][d.index]);
+    const d2 = end && byId.get(end.id);
+    if (!d2 || d2.rest) continue;
+    const kind = d.hairpin.slice(0, -6);
+    const span = drawn.filter((x) => x.staff === d.staff && pos(x) >= pos(d) && pos(x) <= pos(d2));
+    const x1 = d.x + (d.dyn ? 2.3 : 0), x2 = d2.dyn ? d2.x - 0.7 : d2.x + d2.headW;
+    if (d2.system === d.system) hairpins.push({ x1, x2, y: exprLine(span), kind, system: d.system, staff: d.staff });
+    else {
+      const endX = systems[d.system].barlines[systems[d.system].barlines.length - 1].x, startX = hit.systems[d2.system].bars[0].bodyX0;
+      const first = span.filter((x) => x.system === d.system), second = span.filter((x) => x.system === d2.system);
+      hairpins.push({ x1, x2: endX - 0.3, y: exprLine(first), kind, system: d.system, staff: d.staff, half: "out" });
+      hairpins.push({ x1: startX + 0.3, x2, y: exprLine(second), kind, system: d2.system, staff: d.staff, half: "in" });
+    }
+  }
   // -- rolled chords: a vertical wiggle left of everything the chord owns (flipped heads, accidentals), a space past the outer heads --
   const arps = [];
   for (const d of drawn) {
@@ -379,7 +407,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     tuplets.push({ x1, x2, y, above, n: first.tupletN, bracket, system: first.system });
   }
   const height = (TOP_PAD + systems.length * SYS_H - SYS_GAP + BOTTOM_PAD) * S;
-  return { S, unit: S, width, height, systems, drawn, beams, ties, slurs, tuplets, marks, glisses, arps, clefs, hit, nStaves };
+  return { S, unit: S, width, height, systems, drawn, beams, ties, slurs, tuplets, marks, glisses, arps, dynamics, hairpins, texts, clefs, hit, nStaves };
 }
 
 function restBetween(drawn, a, b) {
