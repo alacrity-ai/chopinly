@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition, validate, timeAt, isEmptyBar, evTicks } from "../js/lib/compose/model.js";
-import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar, setPitch, stepOf, retype, dot, tie, tuplet, accidental, clipFrom, paste, toRests } from "../js/lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar, setPitch, stepOf, retype, dot, tie, tuplet, accidental, clipFrom, paste, toRests, setKey, setTime, setClef, articulate, gliss, decompose } from "../js/lib/compose/engine.js";
 import { capacity, PPQ } from "../js/lib/compose/ticks.js";
 const Qt = PPQ;
 import { createHistory } from "../js/lib/compose/history.js";
@@ -420,4 +420,118 @@ test("fuzz: 8,000 random edits over every P1 op keep every invariant", () => {
   validate(d);
   for (const k of ["place", "remove", "retype", "dot", "tie", "tuplet", "accidental", "setPitch"]) assert.ok(counts[k] > 20, `${k}: ${counts[k]}`);
   assert.ok(d.measures.length < 200, "bars only grow when the last one is used");
+});
+
+// --- P2 (WSHED-117): key / time / clef anywhere, articulations, gliss ---------
+import { keyAt, clefAt } from "../js/lib/compose/model.js";
+
+test("setKey / setClef: a change holds until the next one; the value already in force removes the change; bar 1 always keeps its own", () => {
+  let d = setKey(fresh(), 2, 1);
+  assert.equal(keyAt(d, 1).fifths, 0); assert.equal(keyAt(d, 2).fifths, 1); assert.equal(keyAt(d, 7).fifths, 1);
+  d = setKey(d, 5, -3);
+  assert.equal(keyAt(d, 4).fifths, 1); assert.equal(keyAt(d, 6).fifths, -3);
+  d = setKey(d, 2, 0); // back to what bar 1 has → the change at bar 3 goes
+  assert.equal(d.measures[2].key, undefined); assert.equal(keyAt(d, 4).fifths, 0);
+  d = setKey(d, 0, 2); assert.equal(keyAt(d, 0).fifths, 2);
+  assert.throws(() => setKey(d, 0, 8), Nudge);
+  d = setClef(d, 4, 1, "treble");
+  assert.equal(clefAt(d, 3, 1), "bass"); assert.equal(clefAt(d, 4, 1), "treble"); assert.equal(clefAt(d, 4, 0), "treble");
+  d = setClef(d, 4, 1, "bass"); assert.equal(d.measures[4].clefs, undefined);
+  d = setClef(d, 6, 0, "tenor"); assert.equal(clefAt(d, 7, 0), "tenor");
+  validate(d);
+  // a placed note keeps its pitch across a clef change, and the new bar's spelling follows the new key
+  let e = place(setKey(fresh(), 1, 1), { bar: 1, staff: 0, ticks: 0, step: 1 }, Q).doc; // F line in G major → F#
+  assert.equal(e.measures[1].staves[0].voices[0][0].pitches[0].alter, 1);
+});
+
+test("decompose: one value when it is one, else the fewest plain values longest first", () => {
+  assert.deepEqual(decompose(Qt * 3), [{ base: 2, dots: 1 }]);
+  assert.deepEqual(decompose(Qt * 5), [{ base: 1, dots: 0 }, { base: 4, dots: 0 }]);
+  assert.deepEqual(decompose(Qt / 2 + Qt / 4), [{ base: 8, dots: 1 }]);
+  assert.equal(decompose(100), null);
+});
+
+test("setTime: 4/4 → 3/4 at bar 3 of a full eight bars re-cuts into 3/4 bars, loses no ticks, ties the notes that cross the new barlines", () => {
+  let d = fresh();
+  for (let b = 0; b < 8; b++) for (let i = 0; i < 4; i++) d = place(d, { bar: b, staff: 0, ticks: i * Qt, step: 4 + i }, Q).doc;
+  assert.equal(d.measures.length, 9);
+  const r = setTime(d, 2, { beats: 3, unit: 4 });
+  assert.deepEqual([r.before, r.after], [7, 10]);       // bars 3–9 (7 bars, 28 quarters incl. the empty ninth) → 10 bars of three
+  assert.equal(r.doc.measures.length, 2 + 10);           // the tenth 3/4 bar is already empty, so no extra trailing bar
+  validate(r.doc);
+  assert.deepEqual(timeAt(r.doc, 1), { beats: 4, unit: 4 }); assert.deepEqual(timeAt(r.doc, 2), { beats: 3, unit: 4 });
+  const all = r.doc.measures.slice(2).flatMap((m) => m.staves[0].voices[0]).filter((e) => e.kind === "note");
+  assert.equal(all.length, 24, "every quarter survived");
+  assert.equal(kinds(r.doc, 2), "n4 n4 n4"); assert.equal(kinds(r.doc, 3), "n4 n4 n4");
+  // a half note across the new barline becomes two tied quarters
+  let e = place(fresh(), { bar: 0, staff: 0, ticks: 2 * Qt, step: 4 }, H).doc; // beats 3–4
+  const t = setTime(e, 0, { beats: 3, unit: 4 });
+  assert.equal(kinds(t.doc, 0), "r2 n4"); assert.equal(kinds(t.doc, 1), "n4 r4 r4");
+  assert.equal(t.doc.measures[0].staves[0].voices[0][1].pitches[0].tie, "start");
+  assert.equal(t.doc.measures[1].staves[0].voices[0][0].pitches[0].tie, "stop");
+  validate(t.doc);
+  // 4/4 → 6/8 keeps the content; a whole note across bars splits into dotted values
+  let w = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, W).doc;
+  const s = setTime(w, 0, { beats: 6, unit: 8 });
+  assert.equal(kinds(s.doc, 0), "n2."); assert.equal(kinds(s.doc, 1), "n4 r8 r4."); // 4 quarters = a 6/8 bar (3 quarters) + a quarter; the rests complete each dotted-quarter group
+  validate(s.doc);
+  // a tuplet across the new barline refuses the change
+  let u = fresh();
+  for (let i = 0; i < 3; i++) u = place(u, { bar: 0, staff: 0, ticks: 2 * Qt + i * Qt, step: 4 }, Q).doc; // beats 3, 4 and bar 2 beat 1? no: beat 3, 4 of bar 1 and beat 1 of bar 2 → keep to bar 1
+  u = fresh();
+  for (let i = 0; i < 3; i++) u = place(u, { bar: 0, staff: 0, ticks: i * Qt, step: 4 }, Q).doc;
+  u = tuplet(u, u.measures[0].staves[0].voices[0].slice(0, 3).map((x) => x.id), 3); // triplet quarters over beats 1–2
+  assert.throws(() => setTime(u, 0, { beats: 1, unit: 4 }), /cross the new barline/);
+  // the same metre again removes a change and re-flows nothing; a later time change bounds the stretch
+  let v = setTime(fresh(), 3, { beats: 3, unit: 4 }).doc;
+  v = setTime(v, 5, { beats: 2, unit: 4 }).doc;
+  assert.deepEqual(timeAt(v, 4), { beats: 3, unit: 4 }); assert.deepEqual(timeAt(v, 5), { beats: 2, unit: 4 });
+  const back = setTime(v, 3, { beats: 4, unit: 4 });
+  assert.equal(back.doc.measures[3].time, undefined);
+  validate(back.doc);
+});
+
+test("articulate / gliss toggle on the selection; gliss needs a note after it and dies with it", () => {
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
+  d = place(d, { bar: 0, staff: 0, ticks: Qt, step: 6 }, Q).doc;
+  const [a, b] = bar1(d);
+  d = articulate(d, [a.id, b.id], "staccato");
+  assert.deepEqual([find(d, a.id).ev.art, find(d, b.id).ev.art], [["staccato"], ["staccato"]]);
+  d = articulate(d, [a.id], "accent");
+  assert.deepEqual(find(d, a.id).ev.art, ["staccato", "accent"]);
+  d = articulate(d, [a.id, b.id], "staccato"); // all have it → off
+  assert.deepEqual([find(d, a.id).ev.art, find(d, b.id).ev.art], [["accent"], undefined]);
+  assert.throws(() => articulate(d, [a.id], "bogus"), Nudge);
+  d = gliss(d, [a.id]);
+  assert.equal(find(d, a.id).ev.gliss, "start");
+  assert.throws(() => gliss(d, [b.id]), /needs a note after/);
+  d = gliss(d, [a.id]); assert.equal(find(d, a.id).ev.gliss, undefined);
+  d = gliss(d, [a.id]);
+  d = remove(d, [{ ev: b.id }]);
+  assert.equal(find(d, a.id).ev.gliss, undefined, "the gliss dies with its target");
+  validate(d);
+});
+
+test("fuzz: 3,000 edits mixing time / key / clef changes with notes keep every invariant", () => {
+  let seed = 23;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const pick = (a) => a[Math.floor(rnd() * a.length)];
+  let d = fresh();
+  const durs = [W, H, Q, E, { base: 16, dots: 0, rest: false }, { base: 4, dots: 1, rest: false }, { base: 8, dots: 0, rest: false, tuplet: 3 }];
+  const times = [{ beats: 4, unit: 4 }, { beats: 3, unit: 4 }, { beats: 6, unit: 8 }, { beats: 2, unit: 2 }, { beats: 5, unit: 4 }, { beats: 7, unit: 8 }];
+  let timeChanges = 0, nudges = 0;
+  for (let i = 0; i < 3000; i++) {
+    const x = rnd();
+    try {
+      if (x < 0.6) { const bar = Math.floor(rnd() * d.measures.length), cap = capacity(timeAt(d, bar)); d = place(d, { bar, staff: Math.floor(rnd() * 2), ticks: Math.floor(rnd() * cap), step: Math.floor(rnd() * 17) - 4 }, pick(durs)).doc; }
+      else if (x < 0.75) { const r = setTime(d, Math.floor(rnd() * d.measures.length), pick(times)); d = r.doc; timeChanges++; }
+      else if (x < 0.85) d = setKey(d, Math.floor(rnd() * d.measures.length), Math.floor(rnd() * 15) - 7);
+      else if (x < 0.92) d = setClef(d, Math.floor(rnd() * d.measures.length), Math.floor(rnd() * 2), pick(["treble", "bass", "alto", "tenor"]));
+      else { const ns = d.measures.flatMap((m) => m.staves.flatMap((s) => s.voices[0].filter((e) => e.kind === "note"))); if (ns.length) d = articulate(d, [pick(ns).id], pick(["staccato", "fermata", "trill"])); }
+    } catch (e) { if (!(e instanceof Nudge)) throw e; nudges++; }
+    if (i % 100 === 0) validate(d);
+    if (d.measures.length > 400) d = trimBars(d);
+  }
+  validate(d);
+  assert.ok(timeChanges > 100 && nudges >= 0, `${timeChanges} ${nudges}`);
 });

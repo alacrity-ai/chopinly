@@ -1,7 +1,7 @@
 // Layout → SVG (docs/COMPOSE_DESIGN.md §9). Bravura glyphs as <text>, geometry
 // as primitives, one <svg> for the score plus a separate overlay for the ghost
 // and the bar flash so pointer moves never touch the score's DOM.
-import { G, timeDigit, tupletDigit, restGlyph, headGlyph, flagGlyph } from "../staff/glyphs.js";
+import { G, timeDigit, tupletDigit, restGlyph, headGlyph, flagGlyph, artGlyph } from "../staff/glyphs.js";
 
 const NS = "http://www.w3.org/2000/svg";
 function el(name, attrs, text) {
@@ -40,9 +40,17 @@ export function renderComposition(container, L) {
     for (const lead of sys.leading) {
       lead.staves.forEach((st, si) => {
         const topY = st.topY;
-        if (lead.clef) { const clefStep = (st.clef.line - 1) * 2; g.append(glyph(lead.x + 0.2, topY + (8 - clefStep) / 2, G[st.clef.glyph])); }
+        if (lead.clef) { const clefStep = (st.clef.line - 1) * 2; const c = glyph(lead.x + 0.2, topY + (8 - clefStep) / 2, G[st.clef.glyph]); if (lead.small) c.setAttribute("style", `font-size:${(fs * 0.8).toFixed(1)}px`); g.append(c); }
         if (lead.key) st.keysig.forEach((k, i) => g.append(glyph(lead.keyX + i * 1.15, topY + (8 - k.step) / 2, G[k.acc])));
         if (lead.time) { const b = sys.bars[sys.leading.indexOf(lead)]; g.append(glyph(lead.timeX, topY + 1, timeDigit(b.time.beats))); g.append(glyph(lead.timeX, topY + 3, timeDigit(b.time.unit))); }
+      });
+    }
+    // courtesy key / time at the system's end when the next system opens with a change
+    if (sys.courtesyLead) {
+      const c = sys.courtesyLead;
+      c.staves.forEach((st) => {
+        st.keysig.forEach((k, i) => g.append(glyph(c.x + i * 1.15, st.topY + (8 - k.step) / 2, G[k.acc], "glyph cp-courtesy")));
+        if (c.time) { g.append(glyph(c.timeX, st.topY + 1, timeDigit(c.beats), "glyph cp-courtesy")); g.append(glyph(c.timeX, st.topY + 3, timeDigit(c.unit), "glyph cp-courtesy")); }
       });
     }
     // barlines spanning both staves
@@ -89,6 +97,14 @@ export function renderComposition(container, L) {
     const x1 = t.x1 + 0.12, x2 = t.x2 - 0.12, y1 = t.y1 + 0.62 * sgn, y2 = t.y2 + 0.62 * sgn;
     const b = Math.max(0.55, Math.min(1.35, len / 4)) * sgn, b2 = b - 0.26 * sgn, cx = Math.min(len * 0.3, 2.5);
     svg.append(el("path", { class: "cp-tie", d: `M${px(x1)},${px(y1)} C${px(x1 + cx)},${px(y1 + b)} ${px(x2 - cx)},${px(y2 + b)} ${px(x2)},${px(y2)} C${px(x2 - cx)},${px(y2 + b2)} ${px(x1 + cx)},${px(y1 + b2)} ${px(x1)},${px(y1)} Z` }));
+  }
+  for (const m of L.marks) svg.append(glyph(m.x, m.y, artGlyph(m.mark, m.above), "glyph cp-art"));
+  for (const gl of L.glisses) {
+    const g = el("g", { class: "cp-gliss" });
+    g.append(el("line", { x1: px(gl.x1), y1: px(gl.y1), x2: px(gl.x2), y2: px(gl.y2), class: "cp-gliss-line" }));
+    const ang = (Math.atan2(gl.y2 - gl.y1, gl.x2 - gl.x1) * 180) / Math.PI, mx = (gl.x1 + gl.x2) / 2, my = (gl.y1 + gl.y2) / 2;
+    g.append(el("text", { x: px(mx), y: px(my - 0.35), class: "cp-gliss-text", "text-anchor": "middle", transform: `rotate(${ang.toFixed(1)} ${px(mx)} ${px(my)})`, style: `font-size:${(S * 1.05).toFixed(1)}px` }, "gliss."));
+    svg.append(g);
   }
   for (const t of L.tuplets) {
     const g = el("g", { class: "cp-tuplet" });

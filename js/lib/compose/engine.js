@@ -210,6 +210,7 @@ export function cleanTies(doc) {
     for (let i = 0; i < seq.length; i++) {
       const ev = seq[i];
       if (ev.kind !== "note") continue;
+      if (ev.gliss && seq[i + 1]?.kind !== "note") delete ev.gliss;
       for (const p of ev.pitches) {
         if (p.tie !== "start" && p.tie !== "both") continue;
         const nx = seq[i + 1];
@@ -471,7 +472,7 @@ export function remove(doc, items) {
 
 /** Append an empty bar (in place — used by place; callers pass a clone). */
 export function appendBar(doc) {
-  doc.measures.push(newMeasure(doc.parts[0].staves));
+  doc.measures.push(newMeasure(doc.parts[0].staves, timeAt(doc, doc.measures.length - 1)));
   return doc;
 }
 /** Keep one empty bar after the last bar with anything in it (in place). */
@@ -597,4 +598,153 @@ export function paste(doc, clip, { bar, ticks: t, staff = 0 }) {
   ensureTrailingBar(d);
   const keys = placed.flatMap((p) => (p.ev.kind === "note" ? p.ev.pitches.map((_, i) => `${p.ev.id}:${i}`) : [p.ev.id]));
   return { doc: d, keys };
+}
+
+// --- key / time / clef anywhere; articulations; glissando (docs/COMPOSE_DESIGN.md §7.1, P2) ---
+
+export const MARKS = ["staccato", "accent", "tenuto", "fermata", "trill", "mordent", "turn"];
+export const TIME_UNITS = [1, 2, 4, 8, 16, 32];
+
+/** A key change at a bar (fifths −7 … 7); the key already in force there removes the change instead. */
+export function setKey(doc, bar, fifths) {
+  if (!Number.isInteger(fifths) || fifths < -7 || fifths > 7) throw new Nudge("keys run from seven flats to seven sharps");
+  const d = clone(doc);
+  if (bar > 0 && keyAt(d, bar - 1).fifths === fifths) delete d.measures[bar].key;
+  else d.measures[bar].key = { fifths };
+  return d;
+}
+/** A clef change for one staff at a bar; pitches are absolute, so nothing re-steps. */
+export function setClef(doc, bar, staff, clef) {
+  if (!CLEFS[clef]) throw new Nudge("no such clef");
+  const d = clone(doc), m = d.measures[bar];
+  if (bar > 0 && clefAt(d, bar - 1, staff) === clef) { if (m.clefs) { delete m.clefs[staff]; if (!Object.keys(m.clefs).length) delete m.clefs; } }
+  else m.clefs = { ...(m.clefs ?? {}), [staff]: clef };
+  return d;
+}
+/** A note's length as tied pieces: one plain / dotted value when it is one, else the fewest plain values longest first. */
+export function decompose(len) {
+  const one = fromTicks(len);
+  if (one) return [one];
+  const out = [];
+  let left = len;
+  for (const base of PLAIN_BASES) { const v = ticks({ base }); while (left >= v) { out.push({ base, dots: 0 }); left -= v; } }
+  if (left) return null;
+  return out;
+}
+/**
+ * A time change at a bar: the bars from there to the next time change are
+ * re-cut to the new capacity. Notes that cross a new barline split into tied
+ * notes; a tuplet that would cross one refuses the change; key and clef
+ * changes inside the stretch land on the bar that now holds their tick.
+ * Returns { doc, before, after } — the bar counts of the stretch, so the
+ * editor can ask before content spills into new bars.
+ */
+export function setTime(doc, bar, time) {
+  if (!Number.isInteger(time?.beats) || time.beats < 1 || time.beats > 32 || !TIME_UNITS.includes(time.unit)) throw new Nudge("that's not a time signature");
+  const old = timeAt(doc, bar);
+  const same = old.beats === time.beats && old.unit === time.unit;
+  let end = bar + 1;
+  while (end < doc.measures.length && !doc.measures[end].time) end++;
+  const nOld = end - bar;
+  if (same) {
+    // already in force: nothing to do — except that an explicit change equal to the metre before it is redundant and goes away
+    if (bar === 0 || !doc.measures[bar].time) return { doc, before: nOld, after: nOld };
+    const prev = timeAt(doc, bar - 1);
+    if (prev.beats !== time.beats || prev.unit !== time.unit) return { doc, before: nOld, after: nOld };
+    const d = clone(doc); delete d.measures[bar].time; return { doc: d, before: nOld, after: nOld };
+  }
+  const d = clone(doc);
+  const capOld = capacity(old), capNew = capacity(time), total = nOld * capOld, nNew = Math.max(1, Math.ceil(total / capNew));
+  const nStaves = d.parts[0].staves;
+  const fresh = Array.from({ length: nNew }, () => newMeasure(nStaves, time));
+  const oldBars = d.measures.slice(bar, end);
+  // key / clef changes inside the stretch follow their tick
+  oldBars.forEach((m, k) => { const nb = fresh[Math.min(nNew - 1, Math.floor((k * capOld) / capNew))]; if (m.key) nb.key = m.key; if (m.clefs) nb.clefs = { ...(nb.clefs ?? {}), ...m.clefs }; });
+  const prevT = bar > 0 ? timeAt(doc, bar - 1) : null;
+  if (!prevT || prevT.beats !== time.beats || prevT.unit !== time.unit) fresh[0].time = { beats: time.beats, unit: time.unit }; // back to the metre before it: the stretch simply rejoins it
+  if (bar === 0) { fresh[0].key ??= oldBars[0].key; fresh[0].clefs ??= oldBars[0].clefs; }
+  for (let st = 0; st < nStaves; st++) {
+    // the stretch as one stream of absolute ticks; tuplet groups travel as units
+    const items = [];
+    oldBars.forEach((m, k) => {
+      let unit = null;
+      for (const o of onsets(m.staves[st].voices[0])) {
+        const start = k * capOld + o.start, gid = groupId(o.ev);
+        if (gid) { if (unit && unit.gid === gid) { unit.len += o.len; unit.evs.push({ ev: o.ev, at: start }); } else { unit = { gid, start, len: o.len, evs: [{ ev: o.ev, at: start }] }; items.push(unit); } continue; }
+        unit = null;
+        if (o.ev.kind === "rest") continue;
+        items.push({ start, len: o.len, ev: o.ev });
+      }
+    });
+    const lanes = fresh.map(() => []); // per new bar: { start (local), ev }
+    for (const it of items) {
+      const b0 = Math.floor(it.start / capNew);
+      if (it.gid) {
+        if (it.start + it.len > (b0 + 1) * capNew) throw new Nudge(`a tuplet in bar ${bar + b0 + 1} would cross the new barline`, { bar: bar + b0 });
+        for (const e of it.evs) lanes[b0].push({ start: e.at - b0 * capNew, ev: e.ev });
+        continue;
+      }
+      // a plain note: cut at every new barline it crosses, tie the pieces
+      const parts = [];
+      let s = it.start, left = it.len;
+      while (left > 0) { const room = (Math.floor(s / capNew) + 1) * capNew - s, take = Math.min(room, left); parts.push({ s, take }); s += take; left -= take; }
+      const chain = [];
+      parts.forEach((p, pi) => {
+        const durs = decompose(p.take);
+        if (!durs) throw new Nudge(`a note in bar ${bar + Math.floor(p.s / capNew) + 1} can't be split at the new barline`, { bar: bar + Math.floor(p.s / capNew) });
+        let at = p.s;
+        for (const du of durs) { chain.push({ at, dur: du }); at += ticks(du); }
+        void pi;
+      });
+      chain.forEach((c, ci) => {
+        const last = ci === chain.length - 1;
+        const ev = ci === 0 ? { ...it.ev, dur: durOf(c.dur), pitches: it.ev.pitches.map((p) => ({ ...p })) } : { id: eid(), kind: "note", dur: durOf(c.dur), pitches: it.ev.pitches.map((p) => ({ ...p })) };
+        if (!last) { for (const p of ev.pitches) p.tie = "start"; delete ev.gliss; }
+        if (ci > 0) { delete ev.art; for (const p of ev.pitches) delete p.acc; }
+        const b = Math.floor(c.at / capNew);
+        lanes[b].push({ start: c.at - b * capNew, ev });
+      });
+    }
+    lanes.forEach((lane, b) => {
+      lane.sort((x, y) => x.start - y.start);
+      const out = [];
+      let pos = 0;
+      for (const x of lane) {
+        if (x.start > pos) out.push(...splitRest(x.start - pos, pos, time).map(restEvent));
+        out.push(x.ev); pos = x.start + ticks(x.ev.dur);
+      }
+      if (pos < capNew) out.push(...splitRest(capNew - pos, pos, time).map(restEvent));
+      fresh[b].staves[st].voices[0] = out;
+    });
+  }
+  d.measures.splice(bar, nOld, ...fresh);
+  for (let b = bar; b < bar + nNew; b++) normalizeBar(d, b);
+  cleanTies(d);
+  ensureTrailingBar(d);
+  return { doc: d, before: nOld, after: nNew };
+}
+
+/** Toggle an articulation / ornament on the selected notes: every note has it → off, else on for all. */
+export function articulate(doc, evIds, mark) {
+  if (!MARKS.includes(mark)) throw new Nudge("no such mark");
+  const d = clone(doc);
+  const notes = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "note").map((f) => f.ev);
+  if (!notes.length) throw new Nudge("pick notes for the mark");
+  const all = notes.every((e) => e.art?.includes(mark));
+  for (const e of notes) {
+    if (all) { e.art = e.art.filter((m) => m !== mark); if (!e.art.length) delete e.art; }
+    else if (!e.art?.includes(mark)) e.art = [...(e.art ?? []), mark];
+  }
+  return d;
+}
+/** Toggle a glissando from each selected note to the next note of its staff; nothing after it → Nudge. */
+export function gliss(doc, evIds) {
+  const d = clone(doc);
+  const fs = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "note");
+  if (!fs.length) throw new Nudge("pick a note to slide from");
+  const can = fs.filter((f) => nextEvent(d, f)?.kind === "note");
+  if (!can.length) throw new Nudge("gliss needs a note after it", { bar: fs[0].bar });
+  const all = can.every((f) => f.ev.gliss === "start");
+  for (const f of can) { if (all) delete f.ev.gliss; else f.ev.gliss = "start"; }
+  return d;
 }

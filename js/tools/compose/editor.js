@@ -10,13 +10,13 @@ import { haptic } from "../logbook/motion.js";
 import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt, lasso } from "../../lib/compose/hit.js";
-import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, dot, tie, tuplet, accidental, TUPLET_IN, Nudge } from "../../lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { createPlayer } from "../../lib/compose/play.js";
-import { clefAt, tempoOf, MIN_TEMPO, MAX_TEMPO } from "../../lib/compose/model.js";
+import { clefAt, keyAt, timeAt, tempoOf, MIN_TEMPO, MAX_TEMPO } from "../../lib/compose/model.js";
 import { ticks as ticksOf } from "../../lib/compose/ticks.js";
-import { buildRails, MAIN_BASES, MORE_BASES, durName, tupletName } from "./rails.js";
+import { buildRails, MAIN_BASES, MORE_BASES, KEYS, durName, tupletName } from "./rails.js";
 
 const TAP_MS = 300, TAP_PX = 10, PALM_PX = 40, S_MIN = 8, S_MAX = 22, SAVE_MS = 300, LASSO_PX = 6;
 const KEY_BASE = { 1: 64, 2: 32, 3: 16, 4: 8, 5: 4, 6: 2, 7: 1 };
@@ -38,6 +38,8 @@ export function openEditor({ id, ctx, onClose }) {
   const selection = new Set();        // "ev" | "ev:pi"
   let L = null, R = null, closed = false, saveTimer = 0, dirty = false, pasting = false;
   let tempo = tempoOf(c);              // playback tempo — saved with the piece, outside undo
+  let cursorBar = 0;                   // where key / time / clef changes go: the bar of the last tap or selection
+  let utilityOpen = !!store.get("utility", false);
   const sound = createSound(getAudio);
   const player = createPlayer({ getAudio, getDoc: () => doc, getTempo: () => tempo, onTick: showPlayhead, onEnd: () => syncTransport() });
 
@@ -62,7 +64,8 @@ export function openEditor({ id, ctx, onClose }) {
     showPlayhead(player.position);
   }
   function sync() {
-    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN });
+    cursorBar = Math.max(0, Math.min(doc.measures.length - 1, cursorBar));
+    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, utility: { open: utilityOpen, bar: cursorBar, bars: doc.measures.length, fifths: keyAt(doc, cursorBar).fifths, time: timeAt(doc, cursorBar), clefs: [clefAt(doc, cursorBar, 0), clefAt(doc, cursorBar, 1)] } });
     view.dataset.mode = mode; view.classList.toggle("pasting", pasting);
     syncTransport();
   }
@@ -153,10 +156,11 @@ export function openEditor({ id, ctx, onClose }) {
     const { x, y } = toS(clientX, clientY);
     const thing = thingAt(L, x, y);
     // In Place mode a rest (and a chord's stem) is where the next note goes; only a notehead selects.
-    if (thing && (mode === "select" || thing.type === "head")) { select(thing); return; }
+    if (thing && (mode === "select" || thing.type === "head")) { cursorBar = thing.bar; select(thing); return; }
     if (mode === "select") { if (selection.size) { selection.clear(); R.setSelection(selection); sync(); } return; }
     const slot = slotAt(L, x, y);
     if (!slot) return;
+    cursorBar = slot.bar;
     try {
       const r = place(doc, slot, armed);
       if (r.action === "same") { const want = stepOf(r.ev.pitches[0], clefAt(doc, slot.bar, slot.staff)); const pi = r.ev.pitches.findIndex((p) => stepOf(p, clefAt(doc, slot.bar, slot.staff)) === slot.step); select({ type: "head", ev: r.ev.id, pi: pi >= 0 ? pi : 0 }); void want; return; }
@@ -221,6 +225,7 @@ export function openEditor({ id, ctx, onClose }) {
   // in Place mode the armed duration stays armed and the next tap elsewhere still places.
   let drag = null; // { id, type, thing, items, cluster, wasSelected, y0, delta, base, preview, keys, t }
   function grabStart(e, thing) {
+    cursorBar = thing.bar;
     const wasSelected = selection.has(keyOf(thing));
     // a grabbed head that belongs to an all-noteheads selection takes the whole cluster with it
     const cluster = wasSelected && allHeads() && selection.size > 1;
@@ -283,7 +288,9 @@ export function openEditor({ id, ctx, onClose }) {
     if (cancel) return;
     if (!l.active) { if (selection.size) { selection.clear(); R.setSelection(selection); sync(); } return; } // a plain tap on empty staff
     selection.clear();
-    for (const t of lasso(L, l.pts)) selection.add(keyOf(t));
+    const got = lasso(L, l.pts);
+    for (const t of got) selection.add(keyOf(t));
+    if (got.length) cursorBar = Math.min(...got.map((t) => t.bar));
     R.setSelection(selection); sync(); haptic(selection.size ? 6 : 0);
   }
   function deleteSelection() {
@@ -418,6 +425,40 @@ export function openEditor({ id, ctx, onClose }) {
       case "tempo-down": setTempo(tempo - 1); return;
       case "tempo-up": setTempo(tempo + 1); return;
       case "tempo": { const v = prompt("tempo (beats per minute)", String(tempo)); if (v !== null) setTempo(v); return; }
+      case "utility": utilityOpen = !utilityOpen; store.set("utility", utilityOpen); sync(); setTimeout(layout, 0); return; // the rails' height changed: the view re-measures
+      case "bar-prev": cursorBar = Math.max(0, cursorBar - 1); sync(); return;
+      case "bar-next": cursorBar = Math.min(doc.measures.length - 1, cursorBar + 1); sync(); return;
+      case "key": {
+        try { commit(setKey(doc, cursorBar, arg)); const k = KEYS.find((x) => x.fifths === arg); toast(`${k ? `${k.major} major / ${k.minor} minor` : arg} from bar ${cursorBar + 1}`); haptic(8); }
+        catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, cursorBar); }
+        return;
+      }
+      case "time": {
+        let t = arg;
+        if (t === "custom") { const v = prompt("time signature (beats/unit, e.g. 7/8)", `${timeAt(doc, cursorBar).beats}/${timeAt(doc, cursorBar).unit}`); if (v === null) return; const m = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(v); if (!m || !TIME_UNITS.includes(Number(m[2]))) { toast("say it as beats/unit, like 7/8"); return; } t = { beats: Number(m[1]), unit: Number(m[2]) }; }
+        try {
+          const r = setTime(doc, cursorBar, t);
+          if (r.doc === doc) { toast(`already ${t.beats}/${t.unit} there`); return; }
+          if (r.after > r.before && !confirm(`${t.beats}/${t.unit} from bar ${cursorBar + 1} spills into ${r.after - r.before} more ${r.after - r.before === 1 ? "bar" : "bars"} — go ahead?`)) return;
+          commit(r.doc); toast(`${t.beats}/${t.unit} from bar ${cursorBar + 1}`); haptic(8);
+        } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar ?? cursorBar); }
+        return;
+      }
+      case "clef": {
+        try { commit(setClef(doc, cursorBar, arg.staff, arg.clef)); toast(`${arg.clef} clef on the ${arg.staff === 0 ? "upper" : "lower"} staff from bar ${cursorBar + 1}`); haptic(8); }
+        catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, cursorBar); }
+        return;
+      }
+      case "art": {
+        if (!selection.size) { toast("select notes for the mark"); return; }
+        try { commit(articulate(doc, selEvIds(), arg)); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+        return;
+      }
+      case "gliss": {
+        if (!selection.size) { toast("select the note to slide from"); return; }
+        try { commit(gliss(doc, selEvIds())); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+        return;
+      }
       case "zoom-in": setZoom(S + 2); return;
       case "zoom-out": setZoom(S - 2); return;
       case "dur":
@@ -541,7 +582,7 @@ export function openEditor({ id, ctx, onClose }) {
   const api = {
     id, close,
     /** For tests: the live state. */
-    get state() { return { mode, armed, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, doc }; },
+    get state() { return { mode, armed, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, cursorBar, utilityOpen, doc }; },
     /** For tests: the current layout. */
     get layout() { return L; },
     /** For tests: the client point of a musical place. */

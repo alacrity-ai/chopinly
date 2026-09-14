@@ -1,5 +1,5 @@
 // The composition document (docs/COMPOSE_DESIGN.md §4). Pure — node-testable.
-import { ticks, capacity, fromTicks } from "./ticks.js";
+import { ticks, capacity, fromTicks, splitRest } from "./ticks.js";
 
 export const SCHEMA = 1;
 export const DEFAULT_BARS = 8;
@@ -16,9 +16,9 @@ export const durOf = (dur) => ({ base: dur.base, dots: dur.dots ?? 0, ...(dur.tu
 export const restEvent = (dur) => ({ id: eid(), kind: "rest", dur: durOf(dur) });
 export const noteEvent = (dur, pitches) => ({ id: eid(), kind: "note", dur: durOf(dur), pitches });
 
-/** An empty bar for a time signature: one voice per staff, one whole rest (the whole-bar rest). */
-export function newMeasure(staves = 2) {
-  return { staves: Array.from({ length: staves }, () => ({ voices: [[restEvent({ base: 1 })]] })) };
+/** An empty bar for a time signature: one voice per staff holding the metre's standard rests (drawn as one whole-bar rest). */
+export function newMeasure(staves = 2, time = { beats: 4, unit: 4 }) {
+  return { staves: Array.from({ length: staves }, () => ({ voices: [splitRest(capacity(time), 0, time).map(restEvent)] })) };
 }
 
 /** A blank piano score: treble + bass, C major, 4/4, eight empty bars. */
