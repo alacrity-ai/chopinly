@@ -36,6 +36,8 @@ export const TIMES = [[2, 4], [3, 4], [4, 4], [5, 4], [6, 8], [9, 8], [12, 8], [
 export const CLEF_NAMES = ["treble", "soprano", "mezzo", "alto", "tenor", "baritone", "bass"];
 const clefBtn = (c) => `<button type="button" class="cp-btn cp-clef" data-act="clef" data-clef="${c}" aria-pressed="false" aria-label="${c} clef — then tap the beat it starts on"><span class="cp-glyph cp-glyph-sm">${G[CLEFS[c].glyph]}</span><small>${c}</small></button>`;
 
+/** What the mark buttons say; a mark not listed reads as its id. */
+const MARK_NAMES = { lowerMordent: "lower mordent — the one with the line through it" };
 /** The rails a reader can show or hide, in order — the header that holds the menu is not one of them. */
 export const RAILS = [["control", "Controls"], ["transport", "Transport"], ["palette", "Notes"], ["utility", "Key · time · clef · marks"]];
 export const DEFAULT_RAILS = { control: true, transport: true, palette: true, utility: false };
@@ -45,7 +47,7 @@ const FILE_ITEMS = [["save-pdf", "Save to Scores as PDF"], ["export-pdf", "Expor
 export function buildRails(host, { title, onAction }) {
   host.innerHTML = `
     <div class="cp-rail cp-header" role="toolbar" aria-label="composition">
-      <button type="button" class="cp-btn" data-act="back" aria-label="back to compositions">${icon("back")}</button>
+      <button type="button" class="cp-btn cp-sq" data-act="back" aria-label="back to compositions">${icon("back")}</button>
       <button type="button" class="cp-title" id="cp-title" data-act="details" aria-label="details — title, composer, tags">${esc(title)}</button>
       <span class="cp-more-wrap">
         <button type="button" class="cp-btn cp-pick cp-file" data-pop="cp-file-more" aria-label="file" aria-expanded="false"><span class="cp-pick-label">File</span>&#9662;</button>
@@ -57,54 +59,54 @@ export function buildRails(host, { title, onAction }) {
       </span>
     </div>
     <div class="cp-rail cp-control" role="toolbar" aria-label="controls" data-rail="control">
-      <button type="button" class="cp-btn" data-act="undo" aria-label="undo" disabled>${icon("undo")}</button>
-      <button type="button" class="cp-btn" data-act="redo" aria-label="redo" disabled>${icon("redo")}</button>
+      <button type="button" class="cp-btn cp-sq" data-act="undo" aria-label="undo" disabled>${icon("undo")}</button>
+      <button type="button" class="cp-btn cp-sq" data-act="redo" aria-label="redo" disabled>${icon("redo")}</button>
       <span class="cp-sep" aria-hidden="true"></span>
       <button type="button" class="cp-btn cp-mode" data-act="select" aria-pressed="false">${icon("cursor")}<span class="cp-word">Select</span></button>
-      <button type="button" class="cp-btn cp-mode" data-act="scrub" aria-pressed="false">${icon("hand")}<span class="cp-word">Scrub</span></button>
+      <button type="button" class="cp-btn cp-mode" data-act="pan" aria-pressed="false" aria-label="pan — one finger scrolls, two zoom">${icon("hand")}<span class="cp-word">Pan</span></button>
       <span class="cp-sep" aria-hidden="true"></span>
-      <button type="button" class="cp-btn" data-act="delete" aria-label="delete the selection" disabled>${icon("trash")}</button>
-      <button type="button" class="cp-btn" data-act="copy" aria-label="copy the selection" disabled>${icon("copy")}</button>
-      <button type="button" class="cp-btn" data-act="cut" aria-label="cut the selection" disabled>${icon("cut")}</button>
-      <button type="button" class="cp-btn" data-act="paste" aria-label="paste — then tap where it goes" aria-pressed="false" disabled>${icon("paste")}</button>
+      <button type="button" class="cp-btn cp-sq" data-act="delete" aria-label="delete the selection" disabled>${icon("trash")}</button>
+      <button type="button" class="cp-btn cp-sq" data-act="copy" aria-label="copy the selection" disabled>${icon("copy")}</button>
+      <button type="button" class="cp-btn cp-sq" data-act="cut" aria-label="cut the selection" disabled>${icon("cut")}</button>
+      <button type="button" class="cp-btn cp-sq" data-act="paste" aria-label="paste — then tap where it goes" aria-pressed="false" disabled>${icon("paste")}</button>
       <span class="cp-spring" aria-hidden="true"></span>
-      <button type="button" class="cp-btn cp-zoom" data-act="zoom-out" aria-label="smaller">&minus;</button>
-      <button type="button" class="cp-btn cp-zoom" data-act="zoom-in" aria-label="bigger">+</button>
+      <button type="button" class="cp-btn cp-sq cp-zoom" data-act="zoom-out" aria-label="smaller">&minus;</button>
+      <button type="button" class="cp-btn cp-sq cp-zoom" data-act="zoom-in" aria-label="bigger">+</button>
     </div>
     <div class="cp-rail cp-transport" role="toolbar" aria-label="transport" data-rail="transport">
-      <button type="button" class="cp-btn" data-act="stop" aria-label="stop — back to the start">${icon("stop")}</button>
-      <button type="button" class="cp-btn" data-act="rew" aria-label="a bar back">${icon("skipBack")}</button>
-      <button type="button" class="cp-btn cp-play" data-act="play" aria-label="play" aria-pressed="false"><span class="cp-play-ic">${icon("play")}</span><span class="cp-pause-ic">${icon("pause")}</span></button>
-      <button type="button" class="cp-btn" data-act="ff" aria-label="a bar forward">${icon("skipFwd")}</button>
+      <button type="button" class="cp-btn cp-sq" data-act="stop" aria-label="stop — back to the start">${icon("stop")}</button>
+      <button type="button" class="cp-btn cp-sq" data-act="rew" aria-label="a bar back">${icon("skipBack")}</button>
+      <button type="button" class="cp-btn cp-sq cp-play" data-act="play" aria-label="play" aria-pressed="false"><span class="cp-play-ic">${icon("play")}</span><span class="cp-pause-ic">${icon("pause")}</span></button>
+      <button type="button" class="cp-btn cp-sq" data-act="ff" aria-label="a bar forward">${icon("skipFwd")}</button>
       <span class="cp-pos-wrap">
         <input type="range" class="cp-pos" id="cp-pos" min="0" max="1" step="1" value="0" aria-label="position in the piece">
         <span class="cp-pos-read" id="cp-pos-read" aria-live="off">bar 1 of 8</span>
       </span>
       <span class="cp-tempo" role="group" aria-label="tempo">
         <span class="cp-tempo-mark" aria-hidden="true"><span class="cp-glyph cp-glyph-xs cp-glyph-note">${metGlyph(4)}</span><span class="cp-tempo-eq">=</span></span>
-        <button type="button" class="cp-btn cp-tempo-btn" data-act="tempo-down" aria-label="slower">&minus;</button>
+        <button type="button" class="cp-btn cp-sq cp-tempo-btn" data-act="tempo-down" aria-label="slower">&minus;</button>
         <button type="button" class="cp-btn cp-bpm" data-act="tempo" id="cp-bpm" aria-label="tempo — tap to type one">100</button>
-        <button type="button" class="cp-btn cp-tempo-btn" data-act="tempo-up" aria-label="faster">+</button>
+        <button type="button" class="cp-btn cp-sq cp-tempo-btn" data-act="tempo-up" aria-label="faster">+</button>
       </span>
     </div>
     <div class="cp-rail cp-palette" role="toolbar" aria-label="palette" data-rail="palette">
-      ${MAIN_BASES.map((b) => `<button type="button" class="cp-btn cp-dur" data-act="dur" data-base="${b}" aria-pressed="false" aria-label="${NAMES[b]}"><span class="cp-glyph cp-glyph-note">${metGlyph(b)}</span></button>`).join("")}
+      ${MAIN_BASES.map((b) => `<button type="button" class="cp-btn cp-sq cp-dur" data-act="dur" data-base="${b}" aria-pressed="false" aria-label="${NAMES[b]}"><span class="cp-glyph cp-glyph-note">${metGlyph(b)}</span></button>`).join("")}
       <span class="cp-more-wrap">
         <button type="button" class="cp-btn cp-dur-more" data-pop="cp-more" aria-label="more durations" aria-expanded="false"><span class="cp-glyph cp-glyph-sm cp-glyph-note" id="cp-more-glyph">${metGlyph(32)}</span>&#9662;</button>
-        <span class="cp-more" id="cp-more" hidden>${MORE_BASES.map((b) => `<button type="button" class="cp-btn cp-dur" data-act="dur" data-base="${b}" aria-pressed="false" aria-label="${NAMES[b]}"><span class="cp-glyph cp-glyph-note">${metGlyph(b)}</span></button>`).join("")}</span>
+        <span class="cp-more" id="cp-more" hidden>${MORE_BASES.map((b) => `<button type="button" class="cp-btn cp-sq cp-dur" data-act="dur" data-base="${b}" aria-pressed="false" aria-label="${NAMES[b]}"><span class="cp-glyph cp-glyph-note">${metGlyph(b)}</span></button>`).join("")}</span>
       </span>
       <span class="cp-sep" aria-hidden="true"></span>
-      <button type="button" class="cp-btn cp-dot" data-act="dot" aria-pressed="false" aria-label="dot"><span class="cp-glyph cp-dot-glyph" id="cp-dot-glyph">${G.dot}</span></button>
-      <button type="button" class="cp-btn" data-act="tie" aria-label="tie — select a note first"><span class="cp-tie-pic" aria-hidden="true"></span></button>
+      <button type="button" class="cp-btn cp-sq cp-dot" data-act="dot" aria-pressed="false" aria-label="dot"><span class="cp-glyph cp-dot-glyph" id="cp-dot-glyph">${G.dot}</span></button>
+      <button type="button" class="cp-btn cp-sq" data-act="tie" aria-label="tie — select a note first"><span class="cp-tie-pic" aria-hidden="true"></span></button>
       <span class="cp-more-wrap">
-        <button type="button" class="cp-btn cp-tuplet" data-act="tuplet" aria-pressed="false" aria-label="tuplet — hold for 2, 5, 6 or 7"><span class="cp-glyph cp-glyph-sm">${G.black}</span><small id="cp-tuplet-n">3</small></button>
-        <span class="cp-more" id="cp-tup-more" hidden>${[2, 3, 5, 6, 7].map((n) => `<button type="button" class="cp-btn cp-tup-n" data-act="tuplet" data-n="${n}" aria-label="${TUPLET_NAMES[n]}"><span class="cp-glyph cp-glyph-sm">${G.black}</span><small>${n}</small></button>`).join("")}</span>
+        <button type="button" class="cp-btn cp-sq cp-tuplet" data-act="tuplet" aria-pressed="false" aria-label="tuplet — hold for 2, 5, 6 or 7"><span class="cp-glyph cp-glyph-sm">${G.black}</span><small id="cp-tuplet-n">3</small></button>
+        <span class="cp-more" id="cp-tup-more" hidden>${[2, 3, 5, 6, 7].map((n) => `<button type="button" class="cp-btn cp-sq cp-tup-n" data-act="tuplet" data-n="${n}" aria-label="${TUPLET_NAMES[n]}"><span class="cp-glyph cp-glyph-sm">${G.black}</span><small>${n}</small></button>`).join("")}</span>
       </span>
       <span class="cp-sep" aria-hidden="true"></span>
-      ${[[1, "sharp"], [-1, "flat"], [0, "natural"]].map(([a, name]) => `<button type="button" class="cp-btn cp-acc" data-act="acc" data-alter="${a}" aria-pressed="false" aria-label="${name}"><span class="cp-glyph">${G[a]}</span></button>`).join("")}
+      ${[[1, "sharp"], [-1, "flat"], [0, "natural"]].map(([a, name]) => `<button type="button" class="cp-btn cp-sq cp-acc" data-act="acc" data-alter="${a}" aria-pressed="false" aria-label="${name}"><span class="cp-glyph">${G[a]}</span></button>`).join("")}
       <span class="cp-more-wrap">
         <button type="button" class="cp-btn cp-acc-more" data-pop="cp-acc-more" aria-label="double sharp, double flat" aria-expanded="false"><span class="cp-glyph cp-glyph-sm" id="cp-acc-more-glyph">${G[2]}</span>&#9662;</button>
-        <span class="cp-more" id="cp-acc-more" hidden>${[[2, "double sharp"], [-2, "double flat"]].map(([a, name]) => `<button type="button" class="cp-btn cp-acc" data-act="acc" data-alter="${a}" aria-pressed="false" aria-label="${name}"><span class="cp-glyph">${G[a]}</span></button>`).join("")}</span>
+        <span class="cp-more" id="cp-acc-more" hidden>${[[2, "double sharp"], [-2, "double flat"]].map(([a, name]) => `<button type="button" class="cp-btn cp-sq cp-acc" data-act="acc" data-alter="${a}" aria-pressed="false" aria-label="${name}"><span class="cp-glyph">${G[a]}</span></button>`).join("")}</span>
       </span>
       <span class="cp-sep" aria-hidden="true"></span>
       <button type="button" class="cp-btn cp-rest" data-act="rest" aria-pressed="false" aria-label="rest"><span class="cp-glyph cp-glyph-rest" id="cp-rest-glyph">${restGlyph(4)}</span><span class="cp-rest-word">rest</span></button>
@@ -123,9 +125,9 @@ export function buildRails(host, { title, onAction }) {
         <span class="cp-more cp-grid cp-clef-grid" id="cp-clef-more" hidden>${CLEF_NAMES.map(clefBtn).join("")}</span>
       </span>
       <span class="cp-sep" aria-hidden="true"></span>
-      ${["fermata", "staccato", "accent", "tenuto"].map((m) => `<button type="button" class="cp-btn cp-art-btn" data-act="art" data-mark="${m}" aria-label="${m}"><span class="cp-glyph">${artGlyph(m, true)}</span></button>`).join("")}
+      ${["fermata", "staccato", "accent", "tenuto"].map((m) => `<button type="button" class="cp-btn cp-sq cp-art-btn" data-act="art" data-mark="${m}" aria-label="${MARK_NAMES[m] ?? m}"><span class="cp-glyph">${artGlyph(m, true)}</span></button>`).join("")}
       <span class="cp-sep" aria-hidden="true"></span>
-      ${["trill", "mordent", "turn"].map((m) => `<button type="button" class="cp-btn cp-art-btn" data-act="art" data-mark="${m}" aria-label="${m}"><span class="cp-glyph">${artGlyph(m, true)}</span></button>`).join("")}
+      ${["trill", "mordent", "lowerMordent", "turn"].map((m) => `<button type="button" class="cp-btn cp-sq cp-art-btn" data-act="art" data-mark="${m}" aria-label="${MARK_NAMES[m] ?? m}"><span class="cp-glyph">${artGlyph(m, true)}</span></button>`).join("")}
       <span class="cp-sep" aria-hidden="true"></span>
       <button type="button" class="cp-btn cp-gliss-btn" data-act="gliss" aria-label="glissando to the next note"><i>gliss.</i></button>
     </div>`;
@@ -228,7 +230,7 @@ export function buildRails(host, { title, onAction }) {
       const mg = host.querySelector("#cp-more-glyph"), mt = metGlyph(moreOn ? armed.base : 32);
       if (mg.textContent !== mt) { mg.textContent = mt; centreGlyph(mg); }
       host.querySelector("[data-act=select]").setAttribute("aria-pressed", String(mode === "select"));
-      host.querySelector("[data-act=scrub]").setAttribute("aria-pressed", String(mode === "scrub"));
+      host.querySelector("[data-act=pan]").setAttribute("aria-pressed", String(mode === "pan"));
       host.querySelector("[data-act=rest]").setAttribute("aria-pressed", String(armed.rest));
       const rg = host.querySelector("#cp-rest-glyph"), rt = restGlyph(armed.base);
       if (rg.textContent !== rt) { rg.textContent = rt; centreGlyph(rg); }

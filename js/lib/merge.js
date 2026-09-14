@@ -9,9 +9,12 @@
 
 // Ink (WSHED-98 P2) is one entity per (score, page): the strokes drawn on it.
 // A brush (WSHED-106) is a pen the user defined: colour, width, opacity, order.
-export const KINDS = ["goal", "segment", "note", "take", "score", "mark", "ink", "brush"];
+// A composition (WSHED-117, v81) is a whole Compose document — title, composer,
+// tags, tempo and every bar — so it follows its owner to every device; it needs
+// no plan, the JSON is small (100 bars of solid sixteenths on two staves ≈ 350 KB).
+export const KINDS = ["goal", "segment", "note", "take", "score", "mark", "ink", "brush", "composition"];
 /** Sync body caps in bytes of JSON, per kind. Shared with functions/lib/sync.js so both sides refuse the same thing. */
-export const BODY_CAPS = { default: 8192, ink: 131072 };
+export const BODY_CAPS = { default: 8192, ink: 131072, composition: 1048576 };
 export const bodyCap = (kind) => BODY_CAPS[kind] ?? BODY_CAPS.default;
 export const key = (e) => `${e.kind}:${e.id}`;
 

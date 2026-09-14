@@ -426,6 +426,44 @@ test("compositions carry title, composer and tags like scores, cleaned the same 
   assert.throws(() => lb.updateComposition("c1", { title: "" }), /needs a title/);
 });
 
+test("compositions sync as kind composition: add / edit / delete go pending, opening does not, a remote version replaces the local one", () => {
+  const { lb, tick } = fresh();
+  const c = lb.addComposition({ id: "c1", title: "Étude", composer: "Leif", tags: [], measures: [{ staves: [] }], tempo: 100, openedAt: 1 });
+  assert.equal(c.updatedAt, NOON);
+  let env = lb.pendingEnvelopes();
+  assert.deepEqual(env.map((e) => `${e.kind}:${e.id}`), ["composition:c1"]);
+  assert.equal(env[0].body.title, "Étude"); assert.equal(env[0].body.tempo, 100); assert.ok(!("id" in env[0].body));
+  lb.clearPending(env);
+  tick(1000); lb.updateComposition("c1", { openedAt: 5 });
+  assert.equal(lb.pendingCount(), 0, "opening is not an edit"); assert.equal(lb.composition("c1").updatedAt, NOON);
+  tick(1000); lb.updateComposition("c1", { tempo: 120 });
+  assert.equal(lb.pendingCount(), 1); assert.equal(lb.composition("c1").updatedAt, NOON + 2000);
+  lb.clearPending(lb.pendingEnvelopes());
+  // a newer version from another device wins whole
+  const remote = { kind: "composition", id: "c1", updatedAt: NOON + 9000, deleted: 0, body: { title: "Étude in C", composer: "Leif", tags: ["study"], measures: [{ staves: [1] }], tempo: 88, openedAt: 7 } };
+  assert.equal(lb.applyRemote([remote]).applied, 1);
+  assert.equal(lb.composition("c1").title, "Étude in C"); assert.equal(lb.composition("c1").tempo, 88); assert.deepEqual(lb.composition("c1").measures, [{ staves: [1] }]);
+  assert.equal(lb.pendingCount(), 0);
+  // an older version loses
+  assert.equal(lb.applyRemote([{ ...remote, updatedAt: NOON, body: { ...remote.body, title: "stale" } }]).applied, 0);
+  assert.equal(lb.composition("c1").title, "Étude in C");
+  // delete → tombstone goes up; a remote tombstone removes it here
+  tick(1000); lb.removeComposition("c1");
+  env = lb.pendingEnvelopes();
+  assert.deepEqual(env.map((e) => [e.kind, e.id, e.deleted]), [["composition", "c1", 1]]);
+  lb.addComposition({ id: "c2", title: "Air", measures: [] });
+  lb.applyRemote([{ kind: "composition", id: "c2", updatedAt: NOON + 99000, deleted: 1, body: null }]);
+  assert.equal(lb.composition("c2"), null);
+  // sign-in upload carries compositions; a body over the cap stays home
+  lb.addComposition({ id: "c3", title: "Big", measures: [{ pad: "x".repeat(1100000) }] });
+  lb.markAllPending();
+  assert.ok(lb.doc.pending.includes("composition:c3"));
+  assert.ok(!lb.pendingEnvelopes().some((e) => e.id === "c3"), "an over-cap composition is not sent");
+  assert.ok(!lb.doc.pending.includes("composition:c3"), "and is not retried every sync");
+  assert.equal(lb.compositionSyncable(lb.composition("c3")), false);
+  assert.equal(lb.compositionSyncable(lb.composition("c1") ?? { id: "z", measures: [] }), true);
+});
+
 test("TYPES: three types with glyph + examples", () => {
   assert.deepEqual(Object.keys(TYPES), ["piece", "technique", "other"]);
   for (const t of Object.values(TYPES)) assert.ok(t.glyph && t.examples && t.cls);

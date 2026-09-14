@@ -1,5 +1,5 @@
 // Compose E2E (WSHED-114 / P0). Start a composition, arm durations, tap the
-// staff, select, delete, undo / redo, nudge on overflow, palm safety, Scrub,
+// staff, select, delete, undo / redo, nudge on overflow, palm safety, Pan,
 // reload. Chromium with an iPad user agent and touch.
 // BASE=… SHOTS=… node tests/e2e/compose.mjs
 import { chromium } from "/home/leif/lets-get-rich/claude_ops/.claude/skills/tcw-quote/node_modules/playwright/index.mjs";
@@ -15,6 +15,18 @@ page.on("dialog", (d) => d.accept(d.type() === "prompt" ? d.defaultValue() : und
 const step = async (name, f) => { try { await f(); console.log("ok  ", name); } catch (e) { console.log("FAIL", name, "—", e.message); try { console.log("  toast:", await page.evaluate(() => document.querySelector(".lb-toast")?.textContent), "state:", JSON.stringify(await state())); } catch { /* no editor */ } await page.screenshot({ path: `${S}/fail-compose.png` }); throw e; } };
 const lb = (fn, ...args) => page.evaluate(async ([src, a]) => { const m = await import("/js/lib/logbook.js"); return (new Function("m", "a", src))(m, a); }, [`return (${fn})(m, a)`, args]);
 const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging, lassoing: s.lassoing, pasting: s.pasting, hasClip: s.hasClip }; });
+/** Every visible icon/glyph button (.cp-sq) is one exact square per rail height: the header's own, the lanes' shared one. */
+const squares = () => page.evaluate(() => {
+  const out = { header: new Set(), lanes: new Set(), n: 0, bad: [] };
+  for (const b of document.querySelectorAll(".cp-editor .cp-btn.cp-sq")) {
+    const r = b.getBoundingClientRect(); if (!r.width) continue;
+    out.n++;
+    const w = Math.round(r.width * 2) / 2, h = Math.round(r.height * 2) / 2;
+    if (Math.abs(w - h) > 0.5) out.bad.push(`${b.dataset.act ?? b.className}: ${w}×${h}`);
+    (b.closest(".cp-header") ? out.header : out.lanes).add(`${w}×${h}`);
+  }
+  return { n: out.n, bad: out.bad, header: [...out.header], lanes: [...out.lanes] };
+});
 const kinds = (bar, staff = 0) => page.evaluate(([b, st]) => document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[st].voices[0].map((e) => `${e.kind === "rest" ? "r" : "n"}${e.dur.base}${e.dur.dots ? "." : ""}`).join(" "), [bar, staff]);
 const point = (place) => page.evaluate((p) => document.querySelector(".cp-editor").__editor.pointFor(p), place);
 const tapAt = async (place) => { let p = await point(place); const vr = await page.evaluate(() => { const r = document.querySelector("#cp-view").getBoundingClientRect(); return [r.top, r.bottom]; }); if (p.y > vr[1] - 24 || p.y < vr[0] + 12) { await page.evaluate((y) => { const v = document.querySelector("#cp-view"); v.scrollTop += y - v.getBoundingClientRect().top - v.clientHeight * 0.5; }, p.y); p = await point(place); } if (process.env.DEBUG_TAP) console.log("  tap", JSON.stringify(place), JSON.stringify(p), await page.evaluate(([x, y]) => { const el = document.elementFromPoint(x, y); const v = document.querySelector("#cp-view").getBoundingClientRect(); return { under: el?.closest?.(".cp-ev")?.dataset.ev ?? el?.tagName, view: [v.top, v.bottom], scrollTop: document.querySelector("#cp-view").scrollTop }; }, [p.x, p.y])); await page.touchscreen.tap(Math.round(p.x), Math.round(p.y)); await page.waitForTimeout(80); };
@@ -472,11 +484,17 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   const art = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures[0].staves[0].voices[0][0].art);
   if (!art?.includes("staccato")) throw new Error("staccato " + JSON.stringify(art));
   if ((await page.locator(".cp-svg .cp-art").count()) < 1) throw new Error("mark not drawn");
+  await page.click(".cp-art-btn[data-mark='lowerMordent']");
+  const art2 = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures[0].staves[0].voices[0][0].art);
+  if (!art2?.includes("lowerMordent")) throw new Error("lower mordent " + JSON.stringify(art2));
+  if ((await page.locator(".cp-svg .cp-art").count()) < 2) throw new Error("lower mordent not drawn");
+  const sq = await squares();
+  if (sq.n < 30 || sq.bad.length || sq.header.length !== 1 || sq.lanes.length !== 1) throw new Error("square buttons: " + JSON.stringify(sq));
   await page.click("[data-act=gliss]");
   if ((await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures[0].staves[0].voices[0][0].gliss)) !== "start") throw new Error("gliss not set");
   if ((await page.locator(".cp-svg .cp-gliss").count()) !== 1) throw new Error("gliss not drawn");
   await page.screenshot({ path: `${S}/cp-15-utility.png` });
-  await page.click("[data-act=gliss]"); await page.click(".cp-art-btn[data-mark='staccato']");
+  await page.click("[data-act=gliss]"); await page.click(".cp-art-btn[data-mark='staccato']"); await page.click(".cp-art-btn[data-mark='lowerMordent']");
   await page.keyboard.press("Escape"); await page.keyboard.press("v");
   await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=utility]"); await page.click("[data-pop=cp-rails-more]");
   if ((await st()).open) throw new Error("utility rail did not close");
@@ -508,11 +526,12 @@ await step("palm safety: a wide touch contact and a second simultaneous finger p
   if ((await kinds(4)) !== "n4 r4 r2") throw new Error("the pen did not place: " + (await kinds(4)));
 });
 
-await step("Scrub pans and places nothing; leaving Scrub pins the score again; zoom buttons change S", async () => {
+await step("Pan scrolls and places nothing; leaving Pan pins the score again; zoom buttons change S", async () => {
   await page.click("[data-act=zoom-in]"); await page.click("[data-act=zoom-in]");
   if ((await state()).S !== 16) throw new Error("zoom " + (await state()).S);
-  await page.click("[data-act=scrub]");
-  if ((await state()).mode !== "scrub") throw new Error("not scrub");
+  await page.click("[data-act=pan]");
+  if ((await state()).mode !== "pan") throw new Error("not pan");
+  if ((await page.locator("[data-act=pan] .cp-word").textContent()) !== "Pan") throw new Error("the mode is called Pan");
   const before = await page.evaluate(() => document.querySelector("#cp-view").scrollTop);
   const r = await page.evaluate(() => { const b = document.querySelector("#cp-view").getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; });
   await synth("pointerdown", { clientX: r.x, clientY: r.y, pointerType: "touch", pointerId: 51, width: 2, height: 2 });
@@ -522,9 +541,9 @@ await step("Scrub pans and places nothing; leaving Scrub pins the score again; z
   const after = await page.evaluate(() => document.querySelector("#cp-view").scrollTop);
   if (!(after > before)) throw new Error(`did not pan: ${before} → ${after}`);
   const notes = await page.evaluate(() => document.querySelectorAll(".cp-svg .cp-head").length);
-  await page.click("[data-act=scrub]");
+  await page.click("[data-act=pan]");
   if ((await state()).mode !== "place") throw new Error("not back to place");
-  if ((await page.evaluate(() => document.querySelectorAll(".cp-svg .cp-head").length)) !== notes) throw new Error("scrub placed something");
+  if ((await page.evaluate(() => document.querySelectorAll(".cp-svg .cp-head").length)) !== notes) throw new Error("pan placed something");
   await page.screenshot({ path: `${S}/cp-04-zoomed.png` });
 });
 
@@ -545,7 +564,7 @@ await step("the header title opens the details modal: title, composer and tags s
   if ((await page.locator("#cp-d-tagrow .sc-tag.on").count()) !== 2) throw new Error("tag rail should show the two picked tags");
   await page.click("#cp-d-save");
   await page.waitForSelector("#cp-d-title", { state: "detached" });
-  if ((await page.locator("#cp-title").textContent()) !== "Study in C") throw new Error("header title " + (await page.locator("#cp-title").textContent()));
+  if ((await page.locator("#cp-title").textContent()) !== "Leif – Study in C") throw new Error("header reads composer – title: " + (await page.locator("#cp-title").textContent()));
   const meta = await page.evaluate(() => { const c = document.querySelector(".cp-editor").__editor.state.doc; return { title: c.title, composer: c.composer, tags: c.tags }; });
   if (meta.title !== "Study in C" || meta.composer !== "Leif" || meta.tags.join() !== "study,exercise") throw new Error("saved " + JSON.stringify(meta));
 });
@@ -584,6 +603,8 @@ await step("phone width: the rails wrap, nothing widens, the editor still places
   await page.click(".sc-open");
   await page.waitForSelector(".cp-editor .cp-svg");
   await noWiden();
+  const sqp = await squares();
+  if (sqp.n < 20 || sqp.bad.length || sqp.header.length !== 1 || sqp.lanes.length !== 1) throw new Error("square buttons at phone width: " + JSON.stringify(sqp));
   await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 320; }); // bar 2 sits on the second system at this zoom; bring it into the viewport under the three rails
   await tapAt({ bar: 1, staff: 0, ticks: 2 * PPQ + 100, step: 2 });
   if ((await kinds(1)) !== "n4 r4 n4 r4") throw new Error("phone tap: " + (await kinds(1)));

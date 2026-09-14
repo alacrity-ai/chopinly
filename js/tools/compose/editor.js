@@ -1,6 +1,6 @@
 // The editor (docs/COMPOSE_DESIGN.md §8): a full-screen layer with the rails
 // on top and the score below. Place mode taps place the armed duration; Select
-// mode taps only select; Scrub is the one mode in which the score moves. In
+// mode taps only select; Pan is the one mode in which the score moves. In
 // edit modes a touch pointer counts only as a single clean tap — a resting
 // palm (wide, long, moving, or a second contact) is discarded — and pen and
 // mouse are trusted fully.
@@ -36,10 +36,11 @@ export function openEditor({ id, ctx, onClose }) {
   let armed = { base: MAIN_BASES.includes(savedArm?.base) || MORE_BASES.includes(savedArm?.base) ? savedArm.base : 4, dots: [0, 1, 2].includes(savedArm?.dots) ? savedArm.dots : 0, rest: !!savedArm?.rest, tuplet: TUPLET_IN[savedArm?.tuplet] ? savedArm.tuplet : null, alter: null };
   let tupletN = TUPLET_IN[savedArm?.tupletN] ? savedArm.tupletN : (armed.tuplet ?? 3);
   const saveArm = () => store.set("armed", { base: armed.base, dots: armed.dots, rest: armed.rest, tuplet: armed.tuplet, tupletN });
-  let mode = "place";                 // "place" | "select" | "scrub"
+  let mode = "place";                 // "place" | "select" | "pan"
   const selection = new Set();        // "ev" | "ev:pi"
   let L = null, R = null, closed = false, saveTimer = 0, dirty = false, pasting = false;
-  let title = c.title;                 // shown on the header; the details modal can change it
+  let title = c.title, composer = c.composer ?? ""; // shown on the header as "Composer – Title"; the details modal can change both
+  const heading = () => (composer ? `${composer} – ${title}` : title);
   let tempo = tempoOf(c);              // playback tempo — saved with the piece, outside undo
   let pending = null;                  // an armed key / time / clef change waiting for a tap: { kind, value }
   const savedRails = store.get("rails", null);
@@ -50,13 +51,32 @@ export function openEditor({ id, ctx, onClose }) {
   const el = document.createElement("div");
   el.className = "cp-editor";
   el.setAttribute("role", "region");
-  el.setAttribute("aria-label", c.title);
+  el.setAttribute("aria-label", heading());
   el.innerHTML = `<div class="cp-rails" id="cp-rails"></div><div class="cp-view" id="cp-view" data-mode="place"><div class="cp-sheet" id="cp-sheet"></div></div>`;
   document.body.append(el);
   const view = el.querySelector("#cp-view"), sheet = el.querySelector("#cp-sheet");
-  const rails = buildRails(el.querySelector("#cp-rails"), { title: c.title, onAction: act });
+  const rails = buildRails(el.querySelector("#cp-rails"), { title: heading(), onAction: act });
   setRunning?.(true);
-  logbook.updateComposition(id, { openedAt: Date.now() });
+  // every write goes through `put`, so the logbook listener below can tell our own saves from a
+  // change that arrived from another device (sync replaces the stored object; we mutate it in place)
+  let saving = false, held = c, warnedBig = false;
+  const put = (patch) => { saving = true; try { logbook.updateComposition(id, patch); } finally { saving = false; } held = logbook.composition(id); };
+  put({ openedAt: Date.now() });
+  const offRemote = logbook.on(() => {
+    if (closed || saving) return;
+    const cur = logbook.composition(id);
+    if (!cur) { close(); return; }                       // deleted — here (the details modal) or on another device
+    if (cur === held) return;                            // still our object: nothing came from outside
+    held = cur;
+    if (dirty) return;                                   // an edit is about to save and will outrank it
+    if (drag) grabEnd({ pointerId: drag.id }, { cancel: true });
+    if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true });
+    doc = history.push(cur); title = cur.title; composer = cur.composer ?? ""; tempo = tempoOf(cur);
+    selection.clear(); pending = null; pasting = false;
+    el.setAttribute("aria-label", heading());
+    layout(); player.refresh(); rails.transport({ bpm: tempo });
+    toast("updated from another device");
+  });
 
   // --- layout / render -------------------------------------------------------
   const width = () => Math.max(300, view.clientWidth);
@@ -68,7 +88,7 @@ export function openEditor({ id, ctx, onClose }) {
     showPlayhead(player.position);
   }
   function sync() {
-    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title });
+    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title: heading() });
     view.dataset.mode = mode; view.classList.toggle("pasting", pasting); view.classList.toggle("arming", !!pending);
     syncTransport();
   }
@@ -98,11 +118,16 @@ export function openEditor({ id, ctx, onClose }) {
   function setTempo(v) {
     const n = Math.max(MIN_TEMPO, Math.min(MAX_TEMPO, Math.round(Number(v))));
     if (!Number.isFinite(n) || n === tempo) return;
-    tempo = n; logbook.updateComposition(id, { tempo }); player.refresh(); rails.transport({ bpm: tempo });
+    tempo = n; put({ tempo }); player.refresh(); rails.transport({ bpm: tempo });
   }
   const barStartOf = (bar) => barStarts(doc).starts[Math.max(0, Math.min(doc.measures.length - 1, bar))];
   function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(flush, SAVE_MS); }
-  function flush() { clearTimeout(saveTimer); if (!dirty || closed && !doc) return; logbook.updateComposition(id, { measures: doc.measures }); dirty = false; }
+  function flush() {
+    clearTimeout(saveTimer); if (!dirty || closed && !doc) return;
+    put({ measures: doc.measures }); dirty = false;
+    // a piece past the sync cap is kept here but no longer follows the account — say so once
+    if (!warnedBig && !logbook.compositionSyncable(held)) { warnedBig = true; toast("this piece is now too big to back up — it stays on this device"); }
+  }
 
   // --- coordinates -----------------------------------------------------------
   const toS = (clientX, clientY) => { const r = R.svg.getBoundingClientRect(); return { x: (clientX - r.left) / S, y: (clientY - r.top) / S }; };
@@ -158,7 +183,7 @@ export function openEditor({ id, ctx, onClose }) {
   }
   function setPending(next) {
     pending = next;
-    if (pending) { if (drag) grabEnd({ pointerId: drag.id }, { cancel: true }); if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true }); if (mode === "scrub") setMode("place"); pasting = false; }
+    if (pending) { if (drag) grabEnd({ pointerId: drag.id }, { cancel: true }); if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true }); if (mode === "pan") setMode("place"); pasting = false; }
     R?.showGhost(null); R?.showTarget(null); sync();
   }
   function applyChangeAt(clientX, clientY) {
@@ -238,7 +263,7 @@ export function openEditor({ id, ctx, onClose }) {
   function cutSelection() { if (!selection.size) return; copySelection(); deleteSelection(); }
   function setPasting(on) {
     pasting = !!on && !!clipboard;
-    if (pasting) { if (drag) grabEnd({ pointerId: drag.id }, { cancel: true }); if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true }); if (mode === "scrub") setMode("place"); pending = null; }
+    if (pasting) { if (drag) grabEnd({ pointerId: drag.id }, { cancel: true }); if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true }); if (mode === "pan") setMode("place"); pending = null; }
     R?.showGhost(null); R?.showTarget(null); sync();
   }
   function dropAt(clientX, clientY) {
@@ -348,12 +373,12 @@ export function openEditor({ id, ctx, onClose }) {
   // --- pointer policy --------------------------------------------------------
   const touches = new Set();
   let gesture = null;   // the pointer that may become a tap: { id, type, x, y, t, valid }
-  let scrub = null;     // Scrub state: { pointers: Map(id → {x, y}), scrollTop, dist0, S0, last, vy, inertia }
+  let pan = null;     // Pan state: { pointers: Map(id → {x, y}), scrollTop, dist0, S0, last, vy, inertia }
   const wide = (e) => (e.width > PALM_PX || e.height > PALM_PX);
 
   const headUnder = (e) => { if (!L) return null; const { x, y } = toS(e.clientX, e.clientY); const t = thingAt(L, x, y); return t?.type === "head" ? t : null; };
   view.addEventListener("pointerdown", (e) => {
-    if (mode === "scrub") { onScrubDown(e); return; }
+    if (mode === "pan") { onPanDown(e); return; }
     if (e.pointerType === "touch") {
       const valid = touches.size === 0 && !wide(e);
       touches.add(e.pointerId);
@@ -375,7 +400,7 @@ export function openEditor({ id, ctx, onClose }) {
     gesture = { id: e.pointerId, type: e.pointerType, x: e.clientX, y: e.clientY, t: performance.now(), valid: true };
   });
   view.addEventListener("pointermove", (e) => {
-    if (mode === "scrub") { onScrubMove(e); return; }
+    if (mode === "pan") { onPanMove(e); return; }
     if (drag) { grabMove(e); return; }
     if (lassoState) { lassoMove(e); return; }
     if (e.pointerType === "touch") { if (gesture?.id === e.pointerId && gesture.valid && Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > TAP_PX) { gesture.valid = false; R?.showGhost(null); R?.showTarget(null); } return; }
@@ -383,7 +408,7 @@ export function openEditor({ id, ctx, onClose }) {
     else if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > TAP_PX) { gesture.valid = false; R?.showGhost(null); R?.showTarget(null); }
   });
   const up = (e) => {
-    if (mode === "scrub") { onScrubUp(e); return; }
+    if (mode === "pan") { onPanUp(e); return; }
     if (drag?.id === e.pointerId) { if (e.pointerType === "touch") touches.delete(e.pointerId); grabEnd(e, { cancel: e.type === "pointercancel" }); return; }
     if (lassoState?.id === e.pointerId) { if (e.pointerType === "touch") touches.delete(e.pointerId); lassoEnd(e, { cancel: e.type === "pointercancel" }); return; }
     if (e.pointerType === "touch") {
@@ -407,38 +432,38 @@ export function openEditor({ id, ctx, onClose }) {
   view.addEventListener("pointerleave", (e) => { if (e.pointerType !== "touch") { R?.showGhost(null); R?.showTarget(null); } });
   view.addEventListener("contextmenu", (e) => e.preventDefault());
 
-  // --- Scrub: pan with one pointer (inertia), pinch to zoom with two ---------
-  function onScrubDown(e) {
+  // --- Pan: pan with one pointer (inertia), pinch to zoom with two ---------
+  function onPanDown(e) {
     try { view.setPointerCapture(e.pointerId); } catch { /* a synthetic pointer (tests) cannot be captured */ }
-    if (!scrub) scrub = { pointers: new Map(), last: performance.now(), vy: 0 };
-    cancelAnimationFrame(scrub.inertia);
-    scrub.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (scrub.pointers.size === 2) { const [a, b] = [...scrub.pointers.values()]; scrub.dist0 = Math.hypot(a.x - b.x, a.y - b.y); scrub.S0 = S; }
+    if (!pan) pan = { pointers: new Map(), last: performance.now(), vy: 0 };
+    cancelAnimationFrame(pan.inertia);
+    pan.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pan.pointers.size === 2) { const [a, b] = [...pan.pointers.values()]; pan.dist0 = Math.hypot(a.x - b.x, a.y - b.y); pan.S0 = S; }
   }
-  function onScrubMove(e) {
-    if (!scrub?.pointers.has(e.pointerId)) return;
-    const prev = scrub.pointers.get(e.pointerId);
-    scrub.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (scrub.pointers.size === 1) {
+  function onPanMove(e) {
+    if (!pan?.pointers.has(e.pointerId)) return;
+    const prev = pan.pointers.get(e.pointerId);
+    pan.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pan.pointers.size === 1) {
       const dy = e.clientY - prev.y, now = performance.now();
       view.scrollTop -= dy;
-      scrub.vy = dy / Math.max(1, now - scrub.last); scrub.last = now;
-    } else if (scrub.pointers.size === 2 && scrub.dist0) {
-      const [a, b] = [...scrub.pointers.values()];
-      const ratio = Math.hypot(a.x - b.x, a.y - b.y) / scrub.dist0;
-      const next = Math.max(S_MIN, Math.min(S_MAX, Math.round(scrub.S0 * ratio)));
+      pan.vy = dy / Math.max(1, now - pan.last); pan.last = now;
+    } else if (pan.pointers.size === 2 && pan.dist0) {
+      const [a, b] = [...pan.pointers.values()];
+      const ratio = Math.hypot(a.x - b.x, a.y - b.y) / pan.dist0;
+      const next = Math.max(S_MIN, Math.min(S_MAX, Math.round(pan.S0 * ratio)));
       if (next !== S) setZoom(next, false);
     }
   }
-  function onScrubUp(e) {
-    if (!scrub) return;
-    scrub.pointers.delete(e.pointerId);
-    if (scrub.pointers.size === 0) {
-      let v = scrub.vy * 16; // px per frame
-      const glide = () => { if (Math.abs(v) < 0.5) return; view.scrollTop -= v; v *= 0.93; scrub.inertia = requestAnimationFrame(glide); };
-      if (Math.abs(v) > 1) scrub.inertia = requestAnimationFrame(glide);
+  function onPanUp(e) {
+    if (!pan) return;
+    pan.pointers.delete(e.pointerId);
+    if (pan.pointers.size === 0) {
+      let v = pan.vy * 16; // px per frame
+      const glide = () => { if (Math.abs(v) < 0.5) return; view.scrollTop -= v; v *= 0.93; pan.inertia = requestAnimationFrame(glide); };
+      if (Math.abs(v) > 1) pan.inertia = requestAnimationFrame(glide);
       store.set("zoom", S);
-    } else scrub.dist0 = null;
+    } else pan.dist0 = null;
   }
   function setZoom(next, persist = true) {
     next = Math.max(S_MIN, Math.min(S_MAX, next));
@@ -455,13 +480,13 @@ export function openEditor({ id, ctx, onClose }) {
       case "back": close(); return;
       case "details": { // title · composer · tags in the shared modal; the header follows a rename, a delete leaves the editor
         flush();
-        openCompositionDetails(id).then((r) => { if (closed) return; if (r.deleted) { close(); return; } if (r.saved) { title = r.saved.title; el.setAttribute("aria-label", title); sync(); } });
+        openCompositionDetails(id).then((r) => { if (closed) return; if (r.deleted) { close(); return; } if (r.saved) { title = r.saved.title; composer = r.saved.composer ?? ""; held = logbook.composition(id); el.setAttribute("aria-label", heading()); sync(); } });
         return;
       }
       case "undo": if (history.canUndo) { doc = history.undo(); dirty = true; pruneSelection(); layout(); flush(); } return;
       case "redo": if (history.canRedo) { doc = history.redo(); dirty = true; pruneSelection(); layout(); flush(); } return;
       case "select": setMode(mode === "select" ? "place" : "select"); return;
-      case "scrub": setMode(mode === "scrub" ? "place" : "scrub"); return;
+      case "pan": setMode(mode === "pan" ? "place" : "pan"); return;
       case "delete": deleteSelection(); return;
       case "copy": copySelection(); return;
       case "cut": cutSelection(); return;
@@ -571,9 +596,9 @@ export function openEditor({ id, ctx, onClose }) {
     if (mode === next) return;
     if (drag) grabEnd({ pointerId: drag.id }, { cancel: true });
     if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true });
-    if (next === "scrub") { pasting = false; pending = null; R?.showTarget(null); }
+    if (next === "pan") { pasting = false; pending = null; R?.showTarget(null); }
     mode = next; R?.showGhost(null);
-    if (mode === "scrub") { gesture = null; } else { cancelAnimationFrame(scrub?.inertia); scrub = null; }
+    if (mode === "pan") { gesture = null; } else { cancelAnimationFrame(pan?.inertia); pan = null; }
     sync();
   }
   const onKey = (e) => {
@@ -594,7 +619,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (e.key === ".") { act("dot"); return; }
     if (e.key === "t" || e.key === "T") { act("tie"); return; }
     const k = e.key.toLowerCase();
-    if (k === "r") act("rest"); else if (k === "s") setMode(mode === "scrub" ? "place" : "scrub"); else if (k === "v") setMode(mode === "select" ? "place" : "select");
+    if (k === "r") act("rest"); else if (k === "h") setMode(mode === "pan" ? "place" : "pan"); else if (k === "v") setMode(mode === "select" ? "place" : "select");
     else if (k === "=" || k === "+") act("zoom-in"); else if (k === "-") act("zoom-out");
   };
   document.addEventListener("keydown", onKey);
@@ -611,11 +636,12 @@ export function openEditor({ id, ctx, onClose }) {
     closed = true;
     flush();
     const trimmed = trimBars(doc);
-    if (trimmed.measures.length !== doc.measures.length) logbook.updateComposition(id, { measures: trimmed.measures });
+    if (trimmed.measures.length !== doc.measures.length && logbook.composition(id)) put({ measures: trimmed.measures });
+    offRemote();
     document.removeEventListener("keydown", onKey);
     window.removeEventListener("resize", onResize);
     window.removeEventListener("pagehide", onHide);
-    cancelAnimationFrame(scrub?.inertia);
+    cancelAnimationFrame(pan?.inertia);
     player.destroy();
     rails.destroy();
     sound.destroy();

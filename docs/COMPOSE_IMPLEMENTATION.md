@@ -30,7 +30,7 @@ edge, rerun E2E against production, screenshots on the card, hand off to Leif.
   table into `js/lib/staff/glyphs.js` is a pure move; `tests/staff.test.mjs`
   and the sight-singing E2E stay green.
 - **Copy in register.** *composition*, *bar*, *place*, *arm*, *Select*,
-  *Scrub*. Not *document*, *canvas*, *object*, *insert mode*.
+  *Pan*. Not *document*, *canvas*, *object*, *insert mode*.
 - **No half-measure fallbacks.** A layout that cannot fit, an export that cannot
   embed the font, a bar that does not add up — all visible failures, never
   quietly degraded.
@@ -125,14 +125,14 @@ iPad before P1 starts.**
     `#/compose`, `#/compose/<id>`. `list.js`: *+ composition* (a title prompt,
     default *Untitled*), rows title · bars · last opened, tap → editor, hold →
     rename / delete. Empty state: *nothing written yet — start a composition*.
-12. **Editor.** Control rail (undo · redo · Select · Scrub · delete · − +) and
+12. **Editor.** Control rail (undo · redo · Select · Pan · delete · − +) and
     palette rail (whole · half · quarter · eighth · sixteenth · *more* with
     double whole / 32nd / 64th · Rest toggle; dot / tie / tuplet / accidentals
     drawn but disabled until P1); modes per §8.2; pointer policy per §8.3
     (single-touch tap rule, pen full, palm discarded); ghost on move (pen /
     mouse) and on down (touch); place on up at the down point; single selection
     (tap head / rest); delete; undo / redo; keys `1`–`7`, `r`, `s`, `v`, `Esc`,
-    Delete, Cmd/Ctrl+Z; Scrub pans with inertia and pinches zoom (S 8–22, re-laid
+    Delete, Cmd/Ctrl+Z; Pan pans with inertia and pinches zoom (S 8–22, re-laid
     out); auto-append bar; save debounced 300 ms + flush on `pagehide` / unmount;
     `setRunning(true)` while an editor is open (keeps the screen awake at the
     piano). Nudges flash the bar and toast the sentence.
@@ -143,7 +143,7 @@ iPad before P1 starts.**
     (auto-append); tap a head → selected; delete → rest back; undo / redo;
     eighth armed → tap the "and" → lands on the off-beat; rest on → rest placed;
     a touch pointer with width 60 does nothing; two simultaneous touches do
-    nothing; Scrub pans; reload restores; `#/sightsinging` still renders.
+    nothing; Pan pans; reload restores; `#/sightsinging` still renders.
     Screenshots at 390 px and 1,024 px.
 15. **Ship.** PR, merge, deploy, poll, prod E2E, screenshots, handoff. Leif
     writes a few bars on the iPad with the Pencil and a palm down, and reports.
@@ -219,13 +219,13 @@ be practiced.
    between columns, open across a system break; text above.
 3. **UI.** `expression.js` as a second drop-down: pp p mp mf f ff, < >, *text*
    (a prompt; suggestions *rit.* *a tempo* *cresc.* *dim.* *dolce*).
-4. **Sync.** `merge.js`: `KINDS` + `composition`, `BODY_CAPS.composition =
-   262144`; logbook `touch("composition", …)` on every save, tombstone on
-   delete; verify `functions/lib/sync.js` accepts the kind and cap unchanged;
-   `tests/merge.test.mjs` + `accounts-sync.mjs` E2E gain a composition round
-   trip between two contexts (last-write-wins on the whole document — stated in
-   the design; two devices editing the same piece at once is not a supported
-   flow).
+4. **Sync.** *Landed early in v81 (WSHED-117, Leif: "compositions should save
+   to the cloud, no premium needed"):* `KINDS` + `composition`,
+   `BODY_CAPS.composition = 1048576`; the logbook touches on add / edit and
+   tombstones on delete (opening does not touch); the API accepts the kind
+   unchanged; `tests/logbook.test.mjs` covers the envelopes and
+   `tests/e2e/accounts-sync.mjs` runs a two-device round trip. Last-write-wins
+   on the whole document (design §8.5e).
 5. **Logbook link.** `goalId` on a composition; `list.js` search by title /
    composer; *practice this* starts the clock (picker mode `composition`);
    `placeForGoal` gains compositions; goal page shows its composition; deleting

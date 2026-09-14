@@ -604,7 +604,8 @@ export function paste(doc, clip, { bar, ticks: t, staff = 0 }) {
 
 // --- key / time / clef anywhere; articulations; glissando (docs/COMPOSE_DESIGN.md §7.1, P2) ---
 
-export const MARKS = ["staccato", "accent", "tenuto", "fermata", "trill", "mordent", "turn"];
+/** The marks a note can carry. `mordent` is the plain one (SMuFL ornamentShortTrill); `lowerMordent` has the line through it (ornamentMordent). */
+export const MARKS = ["staccato", "accent", "tenuto", "fermata", "trill", "mordent", "lowerMordent", "turn"];
 export const TIME_UNITS = [1, 2, 4, 8, 16, 32];
 
 /** A key change at a bar (fifths −7 … 7); the key already in force there removes the change instead. */
