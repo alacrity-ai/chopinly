@@ -488,6 +488,20 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   const art2 = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures[0].staves[0].voices[0][0].art);
   if (!art2?.includes("lowerMordent")) throw new Error("lower mordent " + JSON.stringify(art2));
   if ((await page.locator(".cp-svg .cp-art").count()) < 2) throw new Error("lower mordent not drawn");
+  // every mark's ink is centred on its head: x attribute = head centre − measured ink centre (no advance-box fallback once Bravura is in)
+  const centred = await page.evaluate(() => {
+    if (!document.fonts.check('1em "Bravura"')) return { font: false };
+    const ed = document.querySelector(".cp-editor").__editor, S = ed.state.S, L = ed.layout;
+    const ctx = document.createElement("canvas").getContext("2d"); ctx.font = '1000px "Bravura"';
+    const out = [];
+    document.querySelectorAll(".cp-svg .cp-art").forEach((t, i) => {
+      const m = ctx.measureText(t.textContent), c = (m.actualBoundingBoxRight - m.actualBoundingBoxLeft) / 2000;
+      const inkCentre = Number(t.getAttribute("x")) + c * 4 * S, head = L.marks[i].x * S;
+      out.push({ mark: L.marks[i].mark, off: Math.abs(inkCentre - head), anchored: t.hasAttribute("text-anchor"), width: (m.actualBoundingBoxRight + m.actualBoundingBoxLeft) / 1000 * 4 * S });
+    });
+    return { font: true, marks: out };
+  });
+  if (!centred.font || centred.marks.length < 2 || centred.marks.some((m) => m.off > 0.05 || m.anchored || m.width < 4)) throw new Error("marks not centred on ink: " + JSON.stringify(centred));
   const sq = await squares();
   if (sq.n < 30 || sq.bad.length || sq.header.length !== 1 || sq.lanes.length !== 1) throw new Error("square buttons: " + JSON.stringify(sq));
   await page.click("[data-act=gliss]");

@@ -629,6 +629,8 @@ export function openEditor({ id, ctx, onClose }) {
   window.addEventListener("pagehide", onHide);
 
   layout();
+  // marks are centred on measured ink; if Bravura is not in yet the first render centred their advance box — lay out again once it is
+  if (document.fonts && !document.fonts.check('1em "Bravura"')) document.fonts.load('1em "Bravura"').then(() => { if (!closed) layout(); }, () => {});
   toast(`${durName(armed.base)} armed — tap the staff`);
 
   function close({ silent = false } = {}) {
