@@ -695,6 +695,51 @@ await step("voices: the switcher writes into voice 2 (padded, tinted, stems down
   void Z;
 });
 
+await step("rest drag (Select mode): pen down on a rest takes it, dragging down two steps moves the glyph (restY −2, the bar unchanged), release commits one undo step; ↑ nudges a selected rest; Place mode still places over a rest", async () => {
+  if ((await state()).mode !== "select") await page.click("[data-act=select]");
+  const S = (await state()).S;
+  // the last bar's lower staff holds a whole-bar rest — nothing else nearby to grab by mistake
+  const last = (await state()).bars - 1;
+  const restId = await page.evaluate((b) => document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[1].voices[0][0].id, last);
+  const restY = () => page.evaluate((id) => { const s = document.querySelector(".cp-editor").__editor.state.doc; for (const m of s.measures) for (const st of m.staves) for (const v of st.voices) { const e = v?.find((x) => x.id === id); if (e) return e.restY ?? 0; } return null; }, restId);
+  const box = async () => { const r = await page.evaluate((id) => { const el = document.querySelector(`.cp-ev[data-ev="${id}"] .rest`); el.scrollIntoView({ block: "center" }); const b = el.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }, restId); await page.waitForTimeout(50); return r; };
+  const b0 = await box();
+  const before = await kinds(last, 1);
+  const pen = (type, o) => synth(type, { pointerType: "pen", pointerId: 77, width: 1, height: 1, pressure: 0.5, ...o });
+  await pen("pointerdown", { clientX: b0.x, clientY: b0.y });
+  let s = await state();
+  if (!s.dragging || s.selection.length !== 1 || s.selection[0] !== restId) throw new Error("pen down on a rest did not grab it " + JSON.stringify(s));
+  await pen("pointermove", { clientX: b0.x, clientY: b0.y + S / 2 });
+  await pen("pointermove", { clientX: b0.x, clientY: b0.y + S });
+  if ((await restY()) !== -2) throw new Error("mid-drag restY " + (await restY()));
+  const b1 = await box();
+  if (Math.abs((b1.y - b0.y) - S) > 1.5) throw new Error(`the glyph did not follow: moved ${b1.y - b0.y}px, expected ${S}`);
+  await pen("pointerup", { clientX: b0.x, clientY: b0.y + S });
+  s = await state();
+  if (s.dragging || (await restY()) !== -2 || s.selection.length !== 1) throw new Error("after the rest drag " + JSON.stringify(s));
+  if ((await kinds(last, 1)) !== before) throw new Error("the bar changed: " + (await kinds(last, 1)));
+  await page.click("[data-act=undo]");
+  if ((await restY()) !== 0) throw new Error("undo of a rest drag " + (await restY()));
+  await page.click("[data-act=redo]");
+  if ((await restY()) !== -2) throw new Error("redo of a rest drag " + (await restY()));
+  // ↑ nudges the selected rest one step (the note keys stay untouched: no note is selected)
+  await page.keyboard.press("ArrowUp");
+  if ((await restY()) !== -1) throw new Error("ArrowUp nudge " + (await restY()));
+  await page.click("[data-act=undo]"); await page.click("[data-act=undo]");
+  if ((await restY()) !== 0) throw new Error("two undos " + (await restY()));
+  // in Place mode a press on a rest is still a placement, not a grab
+  await page.click("[data-act=select]"); // toggles back to Place
+  if ((await state()).mode !== "place") throw new Error("not back in Place mode");
+  const b2 = await box();
+  await pen("pointerdown", { clientX: b2.x, clientY: b2.y });
+  if ((await state()).dragging) throw new Error("a rest grabbed in Place mode");
+  await pen("pointerup", { clientX: b2.x, clientY: b2.y });
+  await page.waitForTimeout(80);
+  if ((await kinds(last, 1)) === before) throw new Error("the tap over the rest placed nothing: " + (await kinds(last, 1)));
+  await page.click("[data-act=undo]");
+  if ((await kinds(last, 1)) !== before) throw new Error("undo of the placement");
+});
+
 await step("Pan scrolls and places nothing; leaving Pan pins the score again; zoom buttons change S", async () => {
   await page.click("[data-act=zoom-in]"); await page.click("[data-act=zoom-in]");
   if ((await state()).S !== 16) throw new Error("zoom " + (await state()).S);

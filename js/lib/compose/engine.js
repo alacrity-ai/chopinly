@@ -3,7 +3,7 @@
 // the new document; a refused edit throws Nudge(sentence) and the document is
 // untouched. Pure — node-testable.
 import { groupSize, ticks, capacity, splitRest, fromTicks } from "./ticks.js";
-import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, MAX_VOICES, DEFAULT_BARS, eid } from "./model.js";
+import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, MAX_VOICES, REST_Y_MAX, DEFAULT_BARS, eid } from "./model.js";
 import { parsePitch, keyAlterations, CLEFS } from "../music.js";
 
 export class Nudge extends Error { constructor(msg, { bar = null } = {}) { super(msg); this.name = "Nudge"; this.bar = bar; } }
@@ -409,16 +409,26 @@ export function normalizeBar(doc, bar) {
       if (!voice) return null;
       const live = new Set(voice.filter((e) => e.kind === "note" && e.dur.tuplet).map(groupId));
       const out = [];
-      let pos = 0, gapStart = null, gapIds = [];
+      let pos = 0, gapStart = null, gapEvs = [];
       const flush = () => {
         if (gapStart === null) return;
         const parts = splitRest(pos - gapStart, gapStart, time);
-        parts.forEach((d, i) => { const r = restEvent(d); if (gapIds[i]) r.id = gapIds[i]; out.push(r); });
-        gapStart = null; gapIds = [];
+        let at = gapStart;
+        parts.forEach((d, i) => {
+          const r = restEvent(d);
+          if (gapEvs[i]) r.id = gapEvs[i].ev.id;
+          // a rest that comes back at the same onset with the same length keeps its look (hidden / dragged)
+          const same = gapEvs.find((g) => g.at === at && evTicks(g.ev) === ticks(d));
+          if (same?.ev.hidden) r.hidden = true;
+          if (same?.ev.restY) r.restY = same.ev.restY;
+          at += ticks(d);
+          out.push(r);
+        });
+        gapStart = null; gapEvs = [];
       };
       for (const ev of voice) {
         const plainRest = ev.kind === "rest" && (!ev.dur.tuplet || !live.has(ev.dur.tuplet.id));
-        if (plainRest) { if (gapStart === null) gapStart = pos; gapIds.push(ev.id); }
+        if (plainRest) { if (gapStart === null) gapStart = pos; gapEvs.push({ ev, at: pos }); }
         else { flush(); out.push(ev); }
         pos += evTicks(ev);
       }
@@ -634,7 +644,7 @@ export function clipFrom(doc, items) {
     const ev = f.ev;
     const asRest = ev.kind === "rest" || pis.has("rest");
     const pitches = asRest ? null : (pis.has("*") ? ev.pitches : ev.pitches.filter((_, i) => pis.has(i))).map((p) => ({ ...p }));
-    raw.push({ abs, staff: f.staff, voice: f.voice, kind: asRest ? "rest" : "note", dur: durOf(ev.dur), pitches, len: evTicks(ev), ...(ev.cross ? { cross: ev.cross } : {}) });
+    raw.push({ abs, staff: f.staff, voice: f.voice, kind: asRest ? "rest" : "note", dur: durOf(ev.dur), pitches, len: evTicks(ev), ...(ev.cross && !asRest ? { cross: ev.cross } : {}) }); // a rest never crosses
   }
   if (!raw.length) return null;
   const origin = Math.min(...raw.map((r) => r.abs)), top = Math.min(...raw.map((r) => r.staff)), low = Math.min(...raw.map((r) => r.voice));
@@ -670,7 +680,7 @@ export function paste(doc, clip, { bar, ticks: t, staff = 0, voice = 0 }) {
     if (dur.tuplet) { if (!gids.has(dur.tuplet.id)) gids.set(dur.tuplet.id, `t${eid()}`); dur = { ...dur, tuplet: { ...dur.tuplet, id: gids.get(dur.tuplet.id) } }; }
     const ev = e.kind === "rest" ? restEvent(dur) : noteEvent(dur, e.pitches.map((p) => ({ ...p })));
     const st = top + e.dStaff;
-    if (e.cross && st + e.cross >= 0 && st + e.cross < nStaves) ev.cross = e.cross;
+    if (e.cross && ev.kind === "note" && st + e.cross >= 0 && st + e.cross < nStaves) ev.cross = e.cross;
     placed.push({ bar: loc.bar, staff: st, voice: vOf(e), start: loc.ticks, ev });
   }
   // rebuild every touched (bar, staff, voice): keep what lies outside the region, drop what overlaps it (tuplets whole), add the phrase, fill the gaps
@@ -1050,6 +1060,21 @@ export function crossStaff(doc, evIds, dir) {
     const next = (f.ev.cross ?? 0) + dir;
     if (Math.abs(next) > 1 || f.staff + next < 0 || f.staff + next >= nStaves) throw new Nudge(dir < 0 ? "there is no staff above" : "there is no staff below", { bar: f.bar });
     if (next === 0) delete f.ev.cross; else f.ev.cross = next;
+  }
+  return d;
+}
+/** Move the selected rests up (delta > 0) or down by staff steps: a display offset on top of the
+ * automatic place (`ev.restY`, within ±REST_Y_MAX; 0 clears it). Playback and the bar's arithmetic
+ * never see it — it only moves the glyph out of another voice's way. */
+export function nudgeRest(doc, evIds, delta) {
+  const d = clone(doc);
+  const rests = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "rest");
+  if (!rests.length) throw new Nudge("pick the rests to move");
+  if (!Number.isInteger(delta)) throw new Nudge("rests move by whole steps");
+  for (const f of rests) {
+    const y = (f.ev.restY ?? 0) + delta;
+    if (Math.abs(y) > REST_Y_MAX) throw new Nudge(delta > 0 ? "that rest is as high as it goes" : "that rest is as low as it goes", { bar: f.bar });
+    if (y === 0) delete f.ev.restY; else f.ev.restY = y;
   }
   return d;
 }

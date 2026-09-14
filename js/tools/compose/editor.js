@@ -10,7 +10,7 @@ import { haptic } from "../logbook/motion.js";
 import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt, lasso } from "../../lib/compose/hit.js";
-import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, dynamic, hairpin, exprText, setVoice, swapVoices, crossStaff, hideRest, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, dynamic, hairpin, exprText, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { createPlayer } from "../../lib/compose/play.js";
@@ -262,6 +262,7 @@ export function openEditor({ id, ctx, onClose }) {
   const selItems = () => [...selection].map((k) => { const [ev, pi] = k.split(":"); return pi === undefined ? { ev } : { ev, pi: Number(pi) }; });
   const selEvIds = () => [...new Set(selItems().map((it) => it.ev))];
   const allHeads = () => selection.size > 0 && [...selection].every((k) => k.includes(":"));
+  const allRests = () => selection.size > 0 && [...selection].every((k) => !k.includes(":") && find(doc, k)?.ev.kind === "rest");
   const allNotes = () => selection.size > 0 && selEvIds().every((id) => find(doc, id)?.ev.kind === "note");
   /** After undo / redo: keep whatever is still there (a note that came back stays selected). */
   function pruneSelection() {
@@ -311,11 +312,13 @@ export function openEditor({ id, ctx, onClose }) {
   // --- grab + drag: pen / mouse / one finger down on a notehead takes it at once; vertical
   // movement re-pitches by staff step (sounding each), release commits. The mode is untouched:
   // in Place mode the armed duration stays armed and the next tap elsewhere still places.
+  // In Select mode a rest grabs the same way: dragging moves the glyph by staff steps out of
+  // another voice's way (`nudgeRest`) — silent, the bar's arithmetic untouched.
   let drag = null; // { id, type, thing, items, cluster, wasSelected, y0, delta, base, preview, keys, t }
   function grabStart(e, thing) {
     const wasSelected = selection.has(keyOf(thing));
-    // a grabbed head that belongs to an all-noteheads selection takes the whole cluster with it
-    const cluster = wasSelected && allHeads() && selection.size > 1;
+    // a grabbed head that belongs to an all-noteheads selection takes the whole cluster with it (rests likewise)
+    const cluster = wasSelected && (thing.type === "rest" ? allRests() : allHeads()) && selection.size > 1;
     if (!cluster) select(thing, { toggle: false });
     const items = cluster ? selItems() : [{ ev: thing.ev, pi: thing.pi }];
     drag = { id: e.pointerId, type: e.pointerType, thing, items, cluster, wasSelected, y0: e.clientY, delta: 0, base: doc, preview: doc, keys: [...selection], keys0: [...selection], t: performance.now() };
@@ -327,6 +330,12 @@ export function openEditor({ id, ctx, onClose }) {
     const delta = Math.round((drag.y0 - e.clientY) / (S / 2));
     if (delta === drag.delta) return;
     try {
+      if (drag.thing.type === "rest") {
+        const ids = drag.items.map((it) => it.ev);
+        drag.preview = nudgeRest(drag.base, ids, delta); drag.delta = delta; drag.keys = ids;
+        doc = drag.preview; layout(); haptic(3);
+        return;
+      }
       const r = setPitch(drag.base, drag.items, delta);
       drag.delta = delta; drag.preview = r.doc; drag.keys = r.moved.map((m) => `${m.ev}:${m.pi}`);
       doc = r.doc;
@@ -400,7 +409,8 @@ export function openEditor({ id, ctx, onClose }) {
   let pan = null;     // Pan state: { pointers: Map(id → {x, y}), scrollTop, dist0, S0, last, vy, inertia }
   const wide = (e) => (e.width > PALM_PX || e.height > PALM_PX);
 
-  const headUnder = (e) => { if (!L) return null; const { x, y } = toS(e.clientX, e.clientY); const t = thingAt(L, x, y); return t?.type === "head" ? t : null; };
+  /** The grabbable thing under the pointer: a head in any mode; in Select mode a rest as well. */
+  const headUnder = (e) => { if (!L) return null; const { x, y } = toS(e.clientX, e.clientY); const t = thingAt(L, x, y); return t?.type === "head" || (t?.type === "rest" && mode === "select") ? t : null; };
   view.addEventListener("pointerdown", (e) => {
     if (mode === "pan") { onPanDown(e); return; }
     if (e.pointerType === "touch") {
@@ -606,6 +616,10 @@ export function openEditor({ id, ctx, onClose }) {
         try { commit(hideRest(doc, selEvIds())); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
         return;
       }
+      case "rest-nudge": { // ↑ / ↓ on a rest-only selection: one staff step
+        try { commit(nudgeRest(doc, selEvIds(), arg)); haptic(4); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+        return;
+      }
       case "zoom-in": setZoom(S + 2); return;
       case "zoom-out": setZoom(S - 2); return;
       case "dur":
@@ -690,6 +704,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (mod && /^[1-4]$/.test(e.key)) { e.preventDefault(); act("voice", Number(e.key) - 1); return; }
     if (mod && e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); act("cross", e.key === "ArrowUp" ? -1 : 1); return; }
     if (mod) return;
+    if ((e.key === "ArrowUp" || e.key === "ArrowDown") && allRests()) { e.preventDefault(); act("rest-nudge", e.key === "ArrowUp" ? 1 : -1); return; }
     if (e.key === " " || e.code === "Space") { e.preventDefault(); act("play"); return; }
     if (e.key === "Home") { e.preventDefault(); act("stop"); return; }
     if (e.key === "Escape" && pending) { setPending(null); return; }
