@@ -82,6 +82,11 @@ and the page planner, which take the editor's document. Rules:
   dropped, as `cleanHairpins` dropped it before.
 - The old fields are deleted; `v` becomes 3. A document already at v3 is
   returned as is (same object).
+- **The upgrade is never persisted by opening (v93).** v91 wrote the upgraded
+  measures on open, which touched the piece and let a device that merely
+  opened a stale copy outrank another device's real work through sync (Leif's
+  Étude, 2026-09-14, recovered from D1 time travel). Opening writes `openedAt`
+  alone; the first real edit saves the upgraded measures with `v: 3`.
 
 ### 1.2 Invariants (added to `validate`)
 
