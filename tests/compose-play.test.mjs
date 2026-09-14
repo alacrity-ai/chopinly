@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition } from "../js/lib/compose/model.js";
-import { place, arpeggio, slur, dynamic, hairpin } from "../js/lib/compose/engine.js";
+import { place, arpeggio, slur, dynamic, hairpin, tie } from "../js/lib/compose/engine.js";
 import { timeline, velocities } from "../js/lib/compose/play.js";
 import { PPQ } from "../js/lib/compose/ticks.js";
 
@@ -80,4 +80,25 @@ test("velocity: mf until a dynamic is written; a hairpin ramps to the next dynam
   const v2 = [...Array(8)].map((_, i) => velocities(d).get(ev(i)));
   assert.ok(v2[7] < v2[5] && Math.abs(v2[7] - (0.95 - 0.12)) < 1e-9, "a step down: " + v2.join());
   assert.equal(timeline(d).notes.find((n) => n.at === 4 * PPQ).vel, 0.95, "the timeline carries it");
+});
+
+test("voices: every voice sounds; a tie holds within its voice across a bar the voice is absent from; two voices on one pitch re-strike; slur legato is per voice", () => {
+  const V2 = { base: 4, dots: 0, rest: false };
+  let d = newComposition({ id: "v2" });
+  d = place(d, { bar: 0, staff: 0, ticks: 0, step: 8 }, V2).doc;                       // F5 voice 1
+  d = place(d, { bar: 0, staff: 0, ticks: 0, step: 8, voice: 1 }, V2).doc;             // F5 voice 2 at the same onset
+  d = place(d, { bar: 0, staff: 0, ticks: 3 * PPQ, step: 0, voice: 1 }, V2).doc;       // E4 voice 2 beat 4
+  d = place(d, { bar: 1, staff: 0, ticks: 0, step: 0, voice: 1 }, { base: 2, dots: 0, rest: false }).doc; // E4 voice 2 in bar 2
+  d = tie(d, [{ ev: d.measures[0].staves[0].voices[1].findLast((e) => e.kind === "note").id }]);                         // E4 → bar 2's E4, in voice 2
+  const tl = timeline(d).notes;
+  assert.deepEqual(tl.filter((n) => n.at === 0).map((n) => n.midi), [77, 77], "both voices strike F5");
+  const e4 = tl.filter((n) => n.midi === 64);
+  assert.equal(e4.length, 1, "the tied E4 sounds once");
+  assert.equal(e4[0].len, PPQ + 2 * PPQ, "beat 4 of bar 1 plus the half in bar 2");
+  // legato: a slur in voice 2 does not make voice 1 legato
+  const v2 = d.measures[0].staves[0].voices[1].filter((e) => e.kind === "note");
+  const s = slur(d, [v2[0].id, v2[1].id]);
+  const n = timeline(s).notes;
+  assert.ok(n.find((x) => x.at === 0 && x.midi === 77 && x.legato), "voice 2's F5 is legato");
+  assert.ok(n.find((x) => x.at === 0 && x.midi === 77 && !x.legato), "voice 1's F5 is not");
 });

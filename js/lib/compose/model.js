@@ -1,7 +1,8 @@
 // The composition document (docs/COMPOSE_DESIGN.md §4). Pure — node-testable.
 import { ticks, capacity, fromTicks, splitRest, groupSize } from "./ticks.js";
 
-export const SCHEMA = 1;
+export const SCHEMA = 2;
+export const MAX_VOICES = 4;
 export const DEFAULT_BARS = 8;
 export const DEFAULT_TEMPO = 100, MIN_TEMPO = 20, MAX_TEMPO = 300;
 /** The playback tempo of a document (older documents carry none). */
@@ -16,9 +17,26 @@ export const durOf = (dur) => ({ base: dur.base, dots: dur.dots ?? 0, ...(dur.tu
 export const restEvent = (dur) => ({ id: eid(), kind: "rest", dur: durOf(dur) });
 export const noteEvent = (dur, pitches) => ({ id: eid(), kind: "note", dur: durOf(dur), pitches });
 
-/** An empty bar for a time signature: one voice per staff holding the metre's standard rests (drawn as one whole-bar rest). */
+/** The metre's standard rests filling a whole bar (drawn as one whole-bar rest). */
+export const barRests = (time) => splitRest(capacity(time), 0, time).map(restEvent);
+/** An empty bar for a time signature: one voice per staff holding the metre's standard rests. */
 export function newMeasure(staves = 2, time = { beats: 4, unit: 4 }) {
-  return { staves: Array.from({ length: staves }, () => ({ voices: [splitRest(capacity(time), 0, time).map(restEvent)] })) };
+  return { staves: Array.from({ length: staves }, () => ({ voices: [barRests(time)] })) };
+}
+/**
+ * Voices are sparse per bar (docs/COMPOSE_VOICES_DESIGN.md §3): `staves[si].voices[k]`
+ * (k = voice − 1) is present only where that voice has a note; voice 1 is always present.
+ * An absent voice is a `null` slot (never a trailing one). These walk what is present.
+ */
+export const voicesOf = (staff) => staff.voices.map((v, vi) => [vi, v]).filter(([, v]) => v);
+export const voiceIn = (m, staff, vi) => m.staves[staff].voices[vi] ?? null;
+/** Voices present on a staff of a bar. */
+export const voiceCount = (m, staff) => m.staves[staff].voices.filter(Boolean).length;
+/** Every voice a document uses anywhere (0-based), for the switcher's ink. */
+export function usedVoices(doc) {
+  const out = new Set([0]);
+  for (const m of doc.measures) for (const s of m.staves) s.voices.forEach((v, vi) => { if (v) out.add(vi); });
+  return out;
 }
 
 /** A blank piano score: treble + bass, C major, 4/4, eight empty bars. */
@@ -54,11 +72,11 @@ export function clefAt(doc, bar, staff, at = 0) {
 /** Every event's ticks; a voice's total. */
 export const evTicks = (ev) => ticks(ev.dur);
 export const voiceTicks = (voice) => voice.reduce((n, ev) => n + evTicks(ev), 0);
-export const isEmptyBar = (m) => m.staves.every((s) => s.voices.every((v) => v.every((ev) => ev.kind === "rest")));
+export const isEmptyBar = (m) => m.staves.every((s) => s.voices.every((v) => !v || v.every((ev) => ev.kind === "rest")));
 
 /** Throws on the first broken invariant (docs/COMPOSE_DESIGN.md §4.2). */
 export function validate(doc) {
-  if (doc.v !== SCHEMA) throw new Error("schema");
+  if (doc.v !== 1 && doc.v !== SCHEMA) throw new Error("schema"); // v1 documents are v2 documents with one voice per staff
   if (!doc.measures.length) throw new Error("no bars");
   const m0 = doc.measures[0];
   if (!m0.key || !m0.time || !m0.clefs) throw new Error("bar 1 must carry key, time and clefs");
@@ -73,14 +91,19 @@ export function validate(doc) {
       lastAt = c.at;
     }
     m.staves.forEach((s, si) => s.voices.forEach((v, vi) => {
+      if (vi >= MAX_VOICES) throw new Error(`bar ${bi + 1} staff ${si}: more than ${MAX_VOICES} voices`);
+      if (!v) { if (vi === 0) throw new Error(`bar ${bi + 1} staff ${si}: no voice 1`); if (vi === s.voices.length - 1) throw new Error(`bar ${bi + 1} staff ${si}: a trailing empty voice slot`); return; }
+      if (vi > 0 && !v.some((e) => e.kind === "note")) throw new Error(`bar ${bi + 1} staff ${si} voice ${vi + 1}: present without a note`);
       const sum = voiceTicks(v);
-      if (sum !== cap) throw new Error(`bar ${bi + 1} staff ${si} voice ${vi}: ${sum} ticks, bar holds ${cap}`);
+      if (sum !== cap) throw new Error(`bar ${bi + 1} staff ${si} voice ${vi + 1}: ${sum} ticks, bar holds ${cap}`);
       const groups = new Map();
       v.forEach((ev, i) => {
         if (ids.has(ev.id)) throw new Error(`duplicate event id ${ev.id}`);
         ids.add(ev.id);
         if (ev.kind === "note" && !(ev.pitches?.length > 0)) throw new Error(`note ${ev.id} without pitches`);
         if (ev.kind === "rest" && ev.pitches) throw new Error(`rest ${ev.id} with pitches`);
+        if (ev.hidden && ev.kind !== "rest") throw new Error(`note ${ev.id} marked hidden`);
+        if (ev.cross !== undefined && (ev.kind !== "note" || (ev.cross !== 1 && ev.cross !== -1) || si + ev.cross < 0 || si + ev.cross >= m.staves.length)) throw new Error(`bar ${bi + 1}: ${ev.id} crosses to a staff that is not there`);
         if (ev.dur.tuplet) { const g = groups.get(ev.dur.tuplet.id) ?? { n: ev.dur.tuplet.n, plain: 0, last: i - 1, notes: 0 }; if (g.last !== i - 1) throw new Error(`bar ${bi + 1}: tuplet ${ev.dur.tuplet.id} is not contiguous`); g.last = i; g.plain += ticks({ base: ev.dur.base, dots: ev.dur.dots }); if (ev.kind === "note") g.notes++; groups.set(ev.dur.tuplet.id, g); }
       });
       for (const [gid, g] of groups) {

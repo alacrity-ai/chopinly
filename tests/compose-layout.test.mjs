@@ -218,3 +218,142 @@ test("expression: dynamics sit under the staff below the note, a hairpin runs be
   const L2 = layoutComposition(e, { unit: 12, width: 700 });
   assert.deepEqual(L2.hairpins.map((h) => [h.half, h.system]), [["out", 0], ["in", 1]]);
 });
+
+test("golden: a piece that never uses a second voice lays out exactly as it did before multi-voice landed (every value the old engraver produced)", async () => {
+  const fs = await import("node:fs");
+  const { goldenLayout } = await import("./fixtures/compose-golden.mjs");
+  const golden = JSON.parse(fs.readFileSync(new URL("./fixtures/compose-golden.json", import.meta.url), "utf8"));
+  const diffs = [];
+  const walk = (g, n, path) => {
+    if (diffs.length > 12) return;
+    if (Array.isArray(g)) { if (!Array.isArray(n) || n.length !== g.length) { diffs.push(`${path}: length ${g.length} → ${n?.length}`); return; } g.forEach((x, i) => walk(x, n[i], `${path}[${i}]`)); return; }
+    if (g && typeof g === "object") { if (!n || typeof n !== "object") { diffs.push(`${path}: missing`); return; } for (const k of Object.keys(g)) walk(g[k], n[k], `${path}.${k}`); return; } // new keys are allowed; old ones must agree
+    if (g !== n && !(typeof g === "number" && typeof n === "number" && Math.abs(g - n) < 1e-3)) diffs.push(`${path}: ${JSON.stringify(g)} → ${JSON.stringify(n)}`);
+  };
+  walk(golden.w1024, goldenLayout(1024), "w1024"); walk(golden.w700, goldenLayout(700), "w700");
+  assert.deepEqual(diffs, []);
+});
+
+// --- P5 (WSHED-120): voices in the engraving ------------------------------------------------------
+import { crossStaff, hideRest, setVoice } from "../js/lib/compose/engine.js";
+const V = (voice, base = 4) => [{ base, dots: 0, rest: false, tuplet: null, alter: null }, voice];
+const put = (d, bar, staff, ticks, step, [armed, voice]) => place(d, { bar, staff, ticks, step, voice }, armed).doc;
+
+test("two voices on one staff: voice 1 stems up and voice 2 down whatever the pitch; rests of the two voices sit high and low; a bar with voice 1 alone keeps the far-from-the-middle rule", () => {
+  let d = put(fresh(), 0, 0, 0, 10, V(0));                 // a high note in voice 1: alone it would stem down
+  let L = layoutComposition(d, { unit: 12, width: 1024 });
+  assert.equal(L.drawn.find((x) => !x.rest).stem, "down");
+  d = put(d, 0, 0, PPQ, -2, V(1));                          // voice 2 enters low: alone it would stem up
+  L = layoutComposition(d, { unit: 12, width: 1024 });
+  const n1 = L.drawn.find((x) => !x.rest && x.voice === 0), n2 = L.drawn.find((x) => !x.rest && x.voice === 1);
+  assert.equal(n1.stem, "up"); assert.equal(n2.stem, "down");
+  const top = L.systems[0].staffTop[0];
+  const r1 = L.drawn.filter((x) => x.rest && x.voice === 0 && x.bar === 0 && x.staff === 0), r2 = L.drawn.filter((x) => x.rest && x.voice === 1 && x.bar === 0 && x.staff === 0);
+  assert.ok(r1.length && r2.length);
+  assert.ok(r1.every((r) => r.y === top + 1), "voice 1 rests a space above the middle line: " + r1.map((r) => r.y - top));
+  assert.ok(r2.every((r) => r.y === top + 3), "voice 2 rests a space below: " + r2.map((r) => r.y - top));
+  // the next bar has voice 1 only: its whole rest hangs from the fourth line as ever, nothing is tinted
+  assert.ok(L.drawn.filter((x) => x.bar === 1 && x.staff === 0).every((x) => x.voice === 0 && (!x.rest || x.y === top + 1)));
+  // the whole-bar rest of voice 1 when only voice 2 sounds in a bar sits high too
+  let e = put(fresh(), 2, 0, 0, 4, V(1));
+  const L2 = layoutComposition(e, { unit: 12, width: 1024 });
+  const whole = L2.drawn.find((x) => x.rest && x.whole && x.bar === 2 && x.staff === 0);
+  assert.ok(whole && whole.voice === 0 && whole.y === L2.systems[0].staffTop[0] + 0, "voice 1's whole rest a space up: " + (whole && whole.y - L2.systems[0].staffTop[0]));
+});
+
+test("collisions: a second voice a second (or a unison of a different value) under the first moves right of its stem and the column widens; a unison of the same value shares one head with two stems", () => {
+  let d = put(fresh(), 0, 0, 0, 4, V(0)); d = put(d, 0, 0, 0, 3, V(1));    // B4 over A4 at one onset
+  d = put(d, 0, 0, PPQ, 4, V(0));                                            // a following column to measure the room
+  let L = layoutComposition(d, { unit: 12, width: 1024 });
+  const a = L.drawn.find((x) => !x.rest && x.voice === 0 && x.ticks === 0), b = L.drawn.find((x) => !x.rest && x.voice === 1 && x.ticks === 0);
+  assert.ok(Math.abs(b.x - (a.x + a.headW + 0.1)) < 1e-9, `voice 2 right of voice 1's stem: ${a.x} → ${b.x}`);
+  assert.ok(b.heads[0].x > a.stemX, "clear of the up stem");
+  const next = L.drawn.find((x) => !x.rest && x.ticks === PPQ);
+  const plain = layoutComposition(put(put(fresh(), 0, 0, 0, 4, V(0)), 0, 0, PPQ, 4, V(0)), { unit: 12, width: 1024 }).drawn.find((x) => !x.rest && x.ticks === PPQ);
+  assert.ok(next.x > plain.x + 1, "the next column moved over for the offset");
+  // a third apart: no offset
+  let e = put(fresh(), 0, 0, 0, 4, V(0)); e = put(e, 0, 0, 0, 2, V(1));
+  L = layoutComposition(e, { unit: 12, width: 1024 });
+  const [p, q] = [L.drawn.find((x) => !x.rest && x.voice === 0), L.drawn.find((x) => !x.rest && x.voice === 1)];
+  assert.equal(p.x, q.x);
+  // a unison of quarters: one head, two stems, no offset; a unison of a quarter over a half: offset, two heads
+  let u = put(fresh(), 0, 0, 0, 4, V(0)); u = put(u, 0, 0, 0, 4, V(1));
+  L = layoutComposition(u, { unit: 12, width: 1024 });
+  const [u1, u2] = [L.drawn.find((x) => !x.rest && x.voice === 0), L.drawn.find((x) => !x.rest && x.voice === 1)];
+  assert.equal(u1.x, u2.x); assert.equal(u2.shared, true); assert.equal(u2.heads[0].shared, true); assert.ok(!u1.heads[0].shared);
+  assert.ok(u1.stem === "up" && u2.stem === "down" && u1.stemX > u2.stemX, "stems on either side of the shared head");
+  let w = put(fresh(), 0, 0, 0, 4, V(0)); w = put(w, 0, 0, 0, 4, V(1, 2));
+  L = layoutComposition(w, { unit: 12, width: 1024 });
+  const [w1, w2] = [L.drawn.find((x) => !x.rest && x.voice === 0), L.drawn.find((x) => !x.rest && x.voice === 1)];
+  assert.ok(w2.x > w1.x && !w2.shared);
+  // accidentals of both voices stack in one column left of everything the column owns
+  let s = put(fresh(), 0, 0, 0, 4, V(0)); s = put(s, 0, 0, 0, 3, V(1));
+  const ids = s.measures[0].staves[0].voices.map((v) => v[0].id);
+  s = accidental(s, [{ ev: ids[0], pi: 0 }], 1); s = accidental(s, [{ ev: ids[1], pi: 0 }], -1);
+  L = layoutComposition(s, { unit: 12, width: 1024 });
+  const [s1, s2] = [L.drawn.find((x) => x.id === ids[0]), L.drawn.find((x) => x.id === ids[1])];
+  assert.ok(s1.heads[0].accX !== undefined && s2.heads[0].accX !== undefined);
+  assert.ok(s2.heads[0].accX < s1.heads[0].accX && s1.heads[0].accX < s1.x, "two columns of accidentals, both left of the heads: " + [s1.heads[0].accX, s2.heads[0].accX, s1.x].join());
+});
+
+test("beams are per voice: eighths in voice 1 and voice 2 over the same beat make two beams, one above and one below; a slur in voice 2 clears its own notes only", () => {
+  let d = fresh();
+  for (let i = 0; i < 2; i++) { d = put(d, 0, 0, i * (PPQ / 2), 6, V(0, 8)); d = put(d, 0, 0, i * (PPQ / 2), 0, V(1, 8)); }
+  let L = layoutComposition(d, { unit: 12, width: 1024 });
+  assert.equal(L.beams.length, 2);
+  const up = L.beams.find((b) => b.voice === 0), down = L.beams.find((b) => b.voice === 1);
+  assert.ok(up && down && up.dir === "up" && down.dir === "down" && up.y1 < down.y1, JSON.stringify(L.beams));
+  const v2 = d.measures[0].staves[0].voices[1].filter((e) => e.kind === "note");
+  d = slur(d, [v2[0].id, v2[1].id]);
+  L = layoutComposition(d, { unit: 12, width: 1024 });
+  assert.equal(L.slurs.length, 1); assert.equal(L.slurs[0].voice, 1); assert.equal(L.slurs[0].dir, "down", "in a two-voice bar voice 2's slur goes below, clear of voice 1");
+  assert.ok(L.slurs[0].y1 > L.beams.find((b) => b.voice === 1).y1, "under voice 2's beam");
+  // and a voice-1 slur in the same bar goes above
+  const v1n = d.measures[0].staves[0].voices[0].filter((e) => e.kind === "note");
+  const L3 = layoutComposition(slur(d, [v1n[0].id, v1n[1].id]), { unit: 12, width: 1024 });
+  assert.deepEqual(L3.slurs.map((x) => [x.voice, x.dir]).sort(), [[0, "up"], [1, "down"]]);
+});
+
+test("cross-staff: a lower-staff note crossed up draws on the upper staff (owner unchanged, found where drawn); a beam with notes on both staves runs between them with stems toward it", () => {
+  let d = put(fresh(), 0, 1, 0, 10, V(0));                      // a high note on the bass staff (E4 on a ledger line)
+  const id = d.measures[0].staves[1].voices[0][0].id;
+  let L = layoutComposition(d, { unit: 12, width: 1024 });
+  const home = L.drawn.find((x) => x.id === id);
+  assert.equal(home.drawStaff, 1); assert.equal(home.heads[0].step, 10);
+  d = crossStaff(d, [id], -1);
+  L = layoutComposition(d, { unit: 12, width: 1024 });
+  const away = L.drawn.find((x) => x.id === id);
+  assert.equal(away.staff, 1); assert.equal(away.drawStaff, 0); assert.equal(away.cross, -1);
+  assert.equal(away.heads[0].step, -2, "E4 sits on the treble staff's first ledger line below");
+  assert.ok(away.heads[0].y > L.systems[0].staffTop[0] + 4 && away.heads[0].y < L.systems[0].staffTop[1], "drawn between the staves, hanging off the upper one");
+  assert.equal(away.stem, "down", "the stem points home");
+  const th = thingAt(L, away.heads[0].x + away.headW / 2, away.heads[0].y);
+  assert.ok(th && th.ev === id && th.staff === 1 && th.voice === 0, "found where it is drawn, owned by the lower staff: " + JSON.stringify(th));
+  // four eighths on the lower staff rising (two beat groups): the last note crossed up → the second pair's beam runs through the gap
+  let e = fresh();
+  for (let i = 0; i < 4; i++) e = put(e, 0, 1, i * (PPQ / 2), 6 + i * 2, V(0, 8));
+  const ids = e.measures[0].staves[1].voices[0].filter((x) => x.kind === "note").map((x) => x.id);
+  e = crossStaff(e, ids.slice(3), -1);
+  L = layoutComposition(e, { unit: 12, width: 1024 });
+  const beam = L.beams.filter((b) => b.cross);
+  assert.equal(beam.length, 1, "one cross-staff beam: " + JSON.stringify(L.beams));
+  assert.equal(L.beams.length, 2);
+  const gapTop = L.systems[0].staffTop[0] + 4, gapBot = L.systems[0].staffTop[1];
+  assert.ok(beam[0].y1 > gapTop && beam[0].y1 < gapBot && beam[0].y1 === beam[0].y2, "flat, in the gap");
+  const notes = ids.map((x) => L.drawn.find((n) => n.id === x));
+  assert.deepEqual(notes.map((n) => n.stem), ["down", "down", "up", "down"], "the first pair beams by the average (high notes → down); the crossed pair's stems point at the beam in the gap");
+  assert.ok(notes.slice(2).every((n) => Math.abs(n.stemTipY - beam[0].y1) < 1e-9), "every stem of the crossed pair reaches the beam");
+  assert.ok(notes.every((n) => Math.abs(n.stemTipY - n.stemFromY) >= 2.75 - 1e-9), "stems long enough");
+  // a hidden rest stays in the layout (faint on screen, selectable) and in the hit table
+  let h = put(fresh(), 0, 0, 0, 4, V(0));
+  const rest = h.measures[0].staves[0].voices[0][1];
+  h = hideRest(h, [rest.id]);
+  L = layoutComposition(h, { unit: 12, width: 1024 });
+  const hr = L.drawn.find((x) => x.id === rest.id);
+  assert.ok(hr && hr.hidden === true);
+  assert.equal(thingAt(L, hr.x + 0.7, hr.y)?.ev, rest.id);
+  // moving the note to voice 2 → the tint follows (voice index on the drawn thing), voice 1's rests come back
+  const mv = setVoice(h, [h.measures[0].staves[0].voices[0][0].id], 1);
+  L = layoutComposition(mv, { unit: 12, width: 1024 });
+  assert.ok(L.drawn.some((x) => !x.rest && x.voice === 1) && L.drawn.some((x) => x.rest && x.whole && x.voice === 0 && x.bar === 0));
+});

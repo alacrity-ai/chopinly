@@ -34,6 +34,7 @@ function el(name, attrs, text) {
 export function renderComposition(container, L) {
   const S = L.S, px = (v) => (v * S).toFixed(2), fs = 4 * S;
   const glyphOf = (x, y, ch, cls = "glyph") => el("text", { x: px(x), y: px(y), class: cls }, ch);
+  const vcls = (vi) => (vi ? ` cp-v${vi + 1}` : ""); // voices 2–4 tint on screen (skin tokens --voice-2..4); voice 1 is ink
   /** The nodes of one ghost note / rest. */
   const ghostNodes = (spec) => {
     if (spec.glyph) { const gg = glyphOf(spec.x, spec.y, G[spec.glyph], "glyph"); if (spec.small) gg.setAttribute("style", `font-size:${(fs * 0.8).toFixed(1)}px`); return [gg]; }
@@ -84,16 +85,16 @@ export function renderComposition(container, L) {
   }
   // clef changes inside a bar (small, before the beat they take effect on)
   for (const c of L.clefs) { const cg = glyph(c.x, c.y, G[c.glyph], "glyph cp-clef-change"); cg.setAttribute("style", `font-size:${(fs * 0.8).toFixed(1)}px`); cg.dataset.bar = c.bar; cg.dataset.staff = c.staff; svg.append(cg); }
-  // beams (under the notes)
+  // beams (under the notes); a cross-staff beam runs between the staves
   for (const b of L.beams) {
     const t = b.dir === "up" ? b.t : -b.t;
-    svg.append(el("polygon", { points: `${px(b.x1)},${px(b.y1)} ${px(b.x2)},${px(b.y2)} ${px(b.x2)},${px(b.y2 + t)} ${px(b.x1)},${px(b.y1 + t)}`, class: "beam" }));
+    svg.append(el("polygon", { points: `${px(b.x1)},${px(b.y1)} ${px(b.x2)},${px(b.y2)} ${px(b.x2)},${px(b.y2 + t)} ${px(b.x1)},${px(b.y1 + t)}`, class: `beam${vcls(b.voice)}` }));
   }
   // notes + rests
   const groups = new Map();
   for (const d of L.drawn) {
-    const g = el("g", { class: "cp-ev note", "data-ev": d.id, "data-bar": d.bar, "data-staff": d.staff });
-    if (d.rest) {
+    const g = el("g", { class: `cp-ev note${vcls(d.voice)}${d.hidden ? " cp-hidden" : ""}`, "data-ev": d.id, "data-bar": d.bar, "data-staff": d.staff, "data-voice": d.voice });
+    if (d.rest) { // a hidden rest is drawn faint on screen so it can still be picked and shown again; paper leaves it out
       g.append(glyph(d.x, d.y, restGlyph(d.base), "glyph rest"));
       for (let i = 0; i < (d.dots ?? 0); i++) g.append(glyph(d.x + 1.5 + i * 0.7, d.y - 0.5, G.dot, "glyph head-part"));
     } else {
@@ -105,8 +106,8 @@ export function renderComposition(container, L) {
       for (const h of d.heads) {
         const hg = el("g", { class: "cp-head-g", "data-pi": h.pi });
         hg.append(el("circle", { cx: px(h.x + d.headW / 2), cy: px(h.y), r: px(1.4), class: "halo" }));
-        if (h.acc !== null && h.acc !== undefined) hg.append(glyph(Math.min(h.x, d.x) - 1.35 - h.accCol * 1.15, h.y, G[h.acc], "glyph head-part"));
-        hg.append(glyph(h.x, h.y, headGlyph(d.base), "glyph head cp-head"));
+        if (h.acc !== null && h.acc !== undefined) hg.append(glyph(h.accX ?? (Math.min(h.x, d.x) - 1.35 - h.accCol * 1.15), h.y, G[h.acc], "glyph head-part"));
+        if (!h.shared) hg.append(glyph(h.x, h.y, headGlyph(d.base), "glyph head cp-head")); // a unison shared with the other voice: one head, two stems
         for (let i = 0; i < (d.dots ?? 0); i++) hg.append(glyph(Math.max(h.x, d.x) + d.headW + 0.4 + i * 0.7, h.step % 2 === 0 ? h.y - 0.5 : h.y, G.dot, "glyph head-part"));
         g.append(hg);
       }
@@ -120,13 +121,13 @@ export function renderComposition(container, L) {
     const sgn = t.dir === "up" ? -1 : 1, len = Math.max(0.6, t.x2 - t.x1);
     const x1 = t.x1 + 0.12, x2 = t.x2 - 0.12, y1 = t.y1 + 0.62 * sgn, y2 = t.y2 + 0.62 * sgn;
     const b = Math.max(0.55, Math.min(1.35, len / 4)) * sgn, b2 = b - 0.26 * sgn, cx = Math.min(len * 0.3, 2.5);
-    svg.append(el("path", { class: "cp-tie", d: `M${px(x1)},${px(y1)} C${px(x1 + cx)},${px(y1 + b)} ${px(x2 - cx)},${px(y2 + b)} ${px(x2)},${px(y2)} C${px(x2 - cx)},${px(y2 + b2)} ${px(x1 + cx)},${px(y1 + b2)} ${px(x1)},${px(y1)} Z` }));
+    svg.append(el("path", { class: `cp-tie${vcls(t.voice)}`, d: `M${px(x1)},${px(y1)} C${px(x1 + cx)},${px(y1 + b)} ${px(x2 - cx)},${px(y2 + b)} ${px(x2)},${px(y2)} C${px(x2 - cx)},${px(y2 + b2)} ${px(x1 + cx)},${px(y1 + b2)} ${px(x1)},${px(y1)} Z` }));
   }
   for (const t of L.slurs) { // a tie's shape, arched by the layout's h and a touch thicker through the middle
     const sgn = t.dir === "up" ? -1 : 1, len = Math.max(1, t.x2 - t.x1);
     const x1 = t.x1, x2 = t.x2, y1 = t.y1, y2 = t.y2;
     const b = t.h * sgn, b2 = b - 0.3 * sgn, cx = Math.min(len * 0.32, 4);
-    svg.append(el("path", { class: "cp-slur", d: `M${px(x1)},${px(y1)} C${px(x1 + cx)},${px(y1 + b)} ${px(x2 - cx)},${px(y2 + b)} ${px(x2)},${px(y2)} C${px(x2 - cx)},${px(y2 + b2)} ${px(x1 + cx)},${px(y1 + b2)} ${px(x1)},${px(y1)} Z` }));
+    svg.append(el("path", { class: `cp-slur${vcls(t.voice)}`, d: `M${px(x1)},${px(y1)} C${px(x1 + cx)},${px(y1 + b)} ${px(x2 - cx)},${px(y2 + b)} ${px(x2)},${px(y2)} C${px(x2 - cx)},${px(y2 + b2)} ${px(x1 + cx)},${px(y1 + b2)} ${px(x1)},${px(y1)} Z` }));
   }
   for (const m of L.marks) { // m.x is the head's centre; the glyph's ink is centred on it (advance-centred until Bravura is in)
     const ch = artGlyph(m.mark, m.above), c = inkCentre(ch);
@@ -196,10 +197,11 @@ export function renderComposition(container, L) {
         for (const hg of g.querySelectorAll(".cp-head-g")) hg.classList.toggle("sel", whole || ids.has(`${id}:${hg.dataset.pi}`));
       }
     },
-    /** { x, y, base, rest, stemUp } in S, an array of them (a phrase), or null to hide. */
-    showGhost(spec) {
+    /** { x, y, base, rest, stemUp, voice } in S, an array of them (a phrase), or null to hide. The ghost wears the active voice's colour. */
+    showGhost(spec, voice = 0) {
       if (!spec) { ghost.setAttribute("hidden", ""); return; }
       ghost.replaceChildren();
+      ghost.setAttribute("class", `cp-ghost${vcls(voice)}`);
       if (Array.isArray(spec)) { for (const g of spec) ghost.append(...ghostNodes(g)); ghost.removeAttribute("hidden"); return; }
       ghost.append(...ghostNodes(spec));
       ghost.removeAttribute("hidden");

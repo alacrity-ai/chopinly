@@ -10,11 +10,11 @@ import { haptic } from "../logbook/motion.js";
 import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt, lasso } from "../../lib/compose/hit.js";
-import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, dynamic, hairpin, exprText, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, dynamic, hairpin, exprText, setVoice, swapVoices, crossStaff, hideRest, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { createPlayer } from "../../lib/compose/play.js";
-import { clefAt, timeAt, tempoOf, MIN_TEMPO, MAX_TEMPO } from "../../lib/compose/model.js";
+import { clefAt, timeAt, tempoOf, usedVoices, MAX_VOICES, MIN_TEMPO, MAX_TEMPO } from "../../lib/compose/model.js";
 import { ticks as ticksOf, capacity, groupSize } from "../../lib/compose/ticks.js";
 import { CLEFS } from "../../lib/music.js";
 import { buildRails, MAIN_BASES, MORE_BASES, KEYS, RAILS, DEFAULT_RAILS, durName, tupletName } from "./rails.js";
@@ -37,6 +37,8 @@ export function openEditor({ id, ctx, onClose }) {
   let tupletN = TUPLET_IN[savedArm?.tupletN] ? savedArm.tupletN : (armed.tuplet ?? 3);
   const saveArm = () => store.set("armed", { base: armed.base, dots: armed.dots, rest: armed.rest, tuplet: armed.tuplet, tupletN });
   let mode = "place";                 // "place" | "select" | "pan"
+  let voice = 0;                      // the active voice (0-based; the rail shows 1–4) — a piece always opens in voice 1; it follows the pen (docs/COMPOSE_VOICES_DESIGN.md §7.2)
+  let voiceHinted = false;            // the "voice N — tap the staff" toast, once a session
   const selection = new Set();        // "ev" | "ev:pi"
   let L = null, R = null, closed = false, saveTimer = 0, dirty = false, pasting = false;
   let title = c.title, composer = c.composer ?? ""; // shown on the header as "Composer – Title"; the details modal can change both
@@ -87,8 +89,15 @@ export function openEditor({ id, ctx, onClose }) {
     sync();
     showPlayhead(player.position);
   }
+  /** What the selection allows the voice menu to do. */
+  function selFacts() {
+    const fs = selEvIds().map((id) => find(doc, id)).filter(Boolean);
+    const notes = fs.filter((f) => f.ev.kind === "note"), rests = fs.filter((f) => f.ev.kind === "rest");
+    const n = doc.parts[0].staves;
+    return { any: fs.length > 0, notes: notes.length > 0, rests: rests.length > 0, hidden: rests.length > 0 && rests.every((f) => f.ev.hidden), up: notes.some((f) => f.staff + (f.ev.cross ?? 0) - 1 >= 0 && Math.abs((f.ev.cross ?? 0) - 1) <= 1), down: notes.some((f) => f.staff + (f.ev.cross ?? 0) + 1 < n && Math.abs((f.ev.cross ?? 0) + 1) <= 1) };
+  }
   function sync() {
-    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title: heading() });
+    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title: heading(), voice, used: usedVoices(doc), sel: selFacts() });
     view.dataset.mode = mode; view.classList.toggle("pasting", pasting); view.classList.toggle("arming", !!pending);
     syncTransport();
   }
@@ -142,7 +151,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (!slot) return null;
     const g = ticksOf(clipboard.events[0].dur);
     const cap = barAt(L, slot.bar).bar.cap;
-    return { bar: slot.bar, ticks: Math.max(0, Math.min(cap - 1, Math.round(slot.ticks / g) * g)), staff: Math.max(0, Math.min(L.nStaves - clipboard.staves, slot.staff)) };
+    return { bar: slot.bar, ticks: Math.max(0, Math.min(cap - 1, Math.round(slot.ticks / g) * g)), staff: Math.max(0, Math.min(L.nStaves - clipboard.staves, slot.staff)), voice };
   }
   /** The phrase as ghost notes at a target, using the columns that exist today (good enough to see where it lands). */
   function pasteGhost(target) {
@@ -153,13 +162,15 @@ export function openEditor({ id, ctx, onClose }) {
       if (!loc) continue;
       const hb = barAt(L, loc.bar);
       if (!hb) continue;
-      const staff = target.staff + e.dStaff, x = xOfTicks(hb.bar, loc.ticks);
+      const staff = target.staff + e.dStaff, drawStaff = Math.max(0, Math.min(L.nStaves - 1, staff + (e.cross ?? 0))), x = xOfTicks(hb.bar, loc.ticks);
       if (e.kind === "rest") { out.push({ x, y: stepY(hb.sys, staff, e.dur.base <= 1 ? 6 : 4), base: e.dur.base, rest: true }); continue; }
-      const clef = clefAt(doc, loc.bar, staff, loc.ticks);
-      for (const p of e.pitches) { const st = stepOf(p, clef); out.push({ x, y: stepY(hb.sys, staff, st), base: e.dur.base, rest: false, stem: false }); }
+      const clef = clefAt(doc, loc.bar, drawStaff, loc.ticks);
+      for (const p of e.pitches) { const st = stepOf(p, clef); out.push({ x, y: stepY(hb.sys, drawStaff, st), base: e.dur.base, rest: false, stem: false }); }
     }
     return out;
   }
+  /** Which way the ghost's stem points: by the voice rule once the bar's staff holds (or is about to hold) more than one voice. */
+  const ghostStemUp = (slot) => { const st = doc.measures[slot.bar].staves[slot.staff]; const nV = st.voices.filter(Boolean).length + (st.voices[voice] ? 0 : 1); return nV > 1 ? voice % 2 === 0 : slot.step < 4; };
   // --- an armed key / time / clef change: the tap says where it goes ---
   /** Where a pending change would land for a client point: key / time → { bar }; clef → { bar, staff, at } on the nearest beat. */
   function changeTarget(clientX, clientY) {
@@ -204,11 +215,12 @@ export function openEditor({ id, ctx, onClose }) {
   }
   function ghostAt(clientX, clientY) {
     if (pending) { const t = changeTarget(clientX, clientY); if (!t) { R.showGhost(null); R.showTarget(null); return; } return changeGhost(t); }
-    if (pasting) { const t = pasteTarget(clientX, clientY); return R.showGhost(t ? pasteGhost(t) : null); }
+    if (pasting) { const t = pasteTarget(clientX, clientY); return R.showGhost(t ? pasteGhost(t) : null, voice); }
     if (mode !== "place" || !L) return R?.showGhost(null);
     const { x, y } = toS(clientX, clientY);
     const slot = slotAt(L, x, y);
     if (!slot) return R.showGhost(null);
+    slot.voice = voice;
     try {
       const s = snap(doc, slot, armed);
       const { sys, bar } = barAt(L, slot.bar);
@@ -216,7 +228,7 @@ export function openEditor({ id, ctx, onClose }) {
       const gy = armed.rest ? stepY(sys, slot.staff, armed.base <= 1 ? 6 : 4) : stepY(sys, slot.staff, slot.step);
       const ledgers = [];
       if (!armed.rest) { for (let st = -2; st >= slot.step; st -= 2) ledgers.push(stepY(sys, slot.staff, st)); for (let st = 10; st <= slot.step; st += 2) ledgers.push(stepY(sys, slot.staff, st)); }
-      R.showGhost({ x: gx, y: gy, base: armed.base, dots: armed.dots, onLine: slot.step % 2 === 0, rest: armed.rest, stemUp: slot.step < 4, ledgers });
+      R.showGhost({ x: gx, y: gy, base: armed.base, dots: armed.dots, onLine: slot.step % 2 === 0, rest: armed.rest, stemUp: ghostStemUp(slot), ledgers }, voice);
     } catch (e) { if (!(e instanceof Nudge)) throw e; R.showGhost(null); }
   }
 
@@ -232,9 +244,11 @@ export function openEditor({ id, ctx, onClose }) {
     if (mode === "select") { if (selection.size) { selection.clear(); R.setSelection(selection); sync(); } return; }
     const slot = slotAt(L, x, y);
     if (!slot) return;
+    slot.voice = voice; // a tap places into the active voice, exactly where it is tapped — a rest of another voice there is not the target, the slot is
     try {
       const r = place(doc, slot, armed);
-      if (r.action === "same") { const voice = doc.measures[slot.bar].staves[slot.staff].voices[0], clef = clefAt(doc, slot.bar, slot.staff, onsetOf(voice, voice.find((e) => e.id === r.ev.id))); const pi = r.ev.pitches.findIndex((p) => stepOf(p, clef) === slot.step); select({ type: "head", ev: r.ev.id, pi: pi >= 0 ? pi : 0 }); return; }
+      if (r.action === "none") return;
+      if (r.action === "same") { const f = find(doc, r.ev.id), v = doc.measures[f.bar].staves[f.staff].voices[f.voice], clef = clefAt(doc, slot.bar, slot.staff, onsetOf(v, f.ev)); const pi = r.ev.pitches.findIndex((p) => stepOf(p, clef) === slot.step); select({ type: "head", ev: r.ev.id, pi: pi >= 0 ? pi : 0, voice: f.voice }); return; }
       commit(r.doc);
       if (armed.alter !== null) { armed = { ...armed, alter: null }; sync(); } // an accidental carries once
       if (r.ev.kind === "note") sound.play(r.ev.pitches, 260);
@@ -288,8 +302,11 @@ export function openEditor({ id, ctx, onClose }) {
     const key = keyOf(thing);
     if (selection.has(key)) { if (toggle) selection.delete(key); }
     else { selection.clear(); selection.add(key); }
+    follow(thing);
     R.setSelection(selection); sync(); haptic(4);
   }
+  /** The voice follows the pen: selecting a thing makes its voice the active one (the switcher moves). */
+  function follow(thing) { if (thing && Number.isInteger(thing.voice) && thing.voice !== voice) { voice = thing.voice; } }
 
   // --- grab + drag: pen / mouse / one finger down on a notehead takes it at once; vertical
   // movement re-pitches by staff step (sounding each), release commits. The mode is untouched:
@@ -356,10 +373,17 @@ export function openEditor({ id, ctx, onClose }) {
     const l = lassoState; lassoState = null;
     R.showLasso(null);
     if (cancel) return;
-    if (!l.active) { if (selection.size) { selection.clear(); R.setSelection(selection); sync(); } return; } // a plain tap on empty staff
+    if (!l.active) { // a plain tap: on a rest (or a stem) it selects that; on empty staff it clears
+      const t = thingAt(L, l.pts[0].x, l.pts[0].y);
+      if (t) { select(t); return; }
+      if (selection.size) { selection.clear(); R.setSelection(selection); sync(); }
+      return;
+    }
     selection.clear();
     const got = lasso(L, l.pts);
     for (const t of got) selection.add(keyOf(t));
+    const lastHead = [...got].reverse().find((t) => t.type === "head") ?? got[got.length - 1];
+    follow(lastHead); // the last head lassoed sets the active voice
     R.setSelection(selection); sync(); haptic(selection.size ? 6 : 0);
   }
   function deleteSelection() {
@@ -553,6 +577,35 @@ export function openEditor({ id, ctx, onClose }) {
         try { commit(arpeggio(doc, selEvIds(), arg)); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
         return;
       }
+      case "voice": { // arg = 0-based voice: with notes selected they move to it; otherwise it becomes the voice the next tap writes in
+        const v = Number(arg);
+        if (!(v >= 0 && v < MAX_VOICES)) return;
+        if (selection.size && selFacts().notes) {
+          try { const ids = selEvIds(); commit(setVoice(doc, ids, v)); voice = v; pruneSelection(); R.setSelection(selection); sync(); haptic(8); } // the selection stays selected, so a wrong move is one tap back
+          catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+          return;
+        }
+        if (voice === v) { sync(); return; }
+        voice = v; if (mode === "pan") setMode("place"); else sync();
+        if (!voiceHinted) { voiceHinted = true; toast(`voice ${v + 1} — tap the staff`); }
+        return;
+      }
+      case "voice-swap": { // swap voices 1 and 2 in the bars the selection touches
+        if (!selection.size) { toast("select notes in the bars to swap"); return; }
+        const bars = [...new Map(selEvIds().map((id) => find(doc, id)).filter(Boolean).map((f) => [`${f.bar}:${f.staff}`, { bar: f.bar, staff: f.staff }])).values()];
+        try { commit(swapVoices(doc, bars, 0, 1)); pruneSelection(); R.setSelection(selection); sync(); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+        return;
+      }
+      case "cross": { // arg = −1 (to the staff above) | 1 (below)
+        if (!selection.size) { toast("select the notes to cross"); return; }
+        try { commit(crossStaff(doc, selEvIds(), Number(arg))); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+        return;
+      }
+      case "hide-rest": {
+        if (!selection.size) { toast("select the rests to hide"); return; }
+        try { commit(hideRest(doc, selEvIds())); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+        return;
+      }
       case "zoom-in": setZoom(S + 2); return;
       case "zoom-out": setZoom(S - 2); return;
       case "dur":
@@ -634,6 +687,8 @@ export function openEditor({ id, ctx, onClose }) {
     if (mod && e.key.toLowerCase() === "c") { e.preventDefault(); copySelection(); return; }
     if (mod && e.key.toLowerCase() === "x") { e.preventDefault(); cutSelection(); return; }
     if (mod && e.key.toLowerCase() === "v") { e.preventDefault(); if (clipboard) { setPasting(true); toast("tap where the phrase goes"); } return; }
+    if (mod && /^[1-4]$/.test(e.key)) { e.preventDefault(); act("voice", Number(e.key) - 1); return; }
+    if (mod && e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); act("cross", e.key === "ArrowUp" ? -1 : 1); return; }
     if (mod) return;
     if (e.key === " " || e.code === "Space") { e.preventDefault(); act("play"); return; }
     if (e.key === "Home") { e.preventDefault(); act("stop"); return; }
@@ -681,7 +736,7 @@ export function openEditor({ id, ctx, onClose }) {
   const api = {
     id, close,
     /** For tests: the live state. */
-    get state() { return { mode, armed, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, pending, rails: railsOn, title, doc }; },
+    get state() { return { mode, armed, voice, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, pending, rails: railsOn, title, doc }; },
     /** For tests: the current layout. */
     get layout() { return L; },
     /** For tests: the client point of a musical place. */

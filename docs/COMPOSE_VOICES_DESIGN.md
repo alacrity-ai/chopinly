@@ -1,8 +1,9 @@
 # Compose — Multi-voice design (up to four voices per staff, cross-staff notes)
 
-**Status:** design for Leif's review, 2026-09-14. Companion to
-[`COMPOSE_DESIGN.md`](COMPOSE_DESIGN.md) (the tool as built through v85) and
-[`COMPOSE_IMPLEMENTATION.md`](COMPOSE_IMPLEMENTATION.md). Nothing here is built.
+**Status:** LANDED as written in **v86** (2026-09-14, WSHED-120, every phase V0–V4 in one
+release) — Leif's call: "land the spec as written". Companion to
+[`COMPOSE_DESIGN.md`](COMPOSE_DESIGN.md) and [`COMPOSE_IMPLEMENTATION.md`](COMPOSE_IMPLEMENTATION.md).
+§12 lists where the build differs from the text, and what is still open.
 
 **Why.** Compose is locked to voice 1 of each staff. That cannot express an inner
 line under a melody, two-part counterpoint on one staff, a held bass under moving
@@ -240,3 +241,44 @@ hand rising) and depends only on V0 + the beam pass of V1.
    engraver's colours only, with the number on hold?
 4. Cross-staff on the **voice menu** (this design), or its own `↑ ↓` pair on the
    Utility rail?
+
+## 12. As built (v86) — where the code differs from the text above
+
+- **Absent voices are `null` slots.** `voices[k]` for a voice that is silent in the bar is `null`
+  (never a trailing one), so voice 3 can exist without voice 2. `voicesOf`, `voiceIn`, `usedVoices`
+  in `model.js`; `compactVoices` / `ensureVoice` in `engine.js`. A v1 document validates as v2.
+- **Ties and glissandi are adjacent-only within the voice** (`nextEvent`): a voice absent from the
+  next bar has nothing to tie to. A one-note slur or hairpin reaches the voice's next note anywhere
+  later (`nextNote`), rests and silent bars skipped. Slurs, hairpins and ties are re-derived per
+  (staff, voice) — `seqOf(doc, staff, voice)`; `slurEnd` / `hairpinEnd` take the voice.
+- **Slurs and ties in a bar with more than one voice curve outward** — voice 1 (and 3) above,
+  voice 2 (and 4) below — not merely "away from the stem": away-from-the-stem put voice 2's slur
+  through voice 1's heads on the first screenshot. A single-voice bar is unchanged.
+- **A crossed note's stem points home** (drawn on the upper staff → down) when it is not beamed;
+  a beam whose notes sit on both staves runs flat through the gap with every stem toward it
+  (`makeCrossBeam`); a beam whose notes are all crossed keeps the home-pointing direction.
+- **Hidden rests draw faint on screen** (`.cp-hidden`, 28 %), so they can be picked and shown
+  again; they still count and still take taps. Paper (P4 export) leaves them out.
+- **A plain tap in Select mode picks the rest (or stem) under it** — before, only a lasso could
+  select a rest, which the *hide rest* row needs.
+- **Rests placed into a voice that is not in the bar do nothing** (`action: "none"`): a silent voice
+  draws nothing, so there is nothing to place.
+- **Paste:** two clip voices that the cap folds onto one target voice refuse the whole drop
+  ("those overlap"); within one voice a paste overwrites its region as before (P0 behaviour).
+- **The active voice is session state**, reset to 1 on open (the text said "remembered per device,
+  reset on open" — the second half makes the first moot).
+- **Phone width:** the ▾ opens the same voice menu; its *voice 3* / *voice 4* rows activate a voice
+  when nothing is selected and move the selection when something is.
+- **Accidentals** of every voice in a column stack in one column per drawn staff and stand left of
+  everything the column owns there (`h.accX`), so a colliding voice's offset never puts a sharp
+  over another voice's head.
+- **Not built:** MusicXML `<voice>` / `<staff>` — export itself is WSHED-119; `crossStaff` and
+  `hideRest` are ready for it. The §11 questions were answered by landing the text as written
+  (stems by bar, rests drawn, numbers, cross-staff on the menu + `⌘⇧↑/↓`).
+- **Tests:** engine (sparse voices, per-voice ties, setVoice / swap / cross / hide, paste offsets,
+  setTime per voice, a 4,000-edit fuzz across four voices), layout (stems, rest offsets,
+  collisions + shared unison, per-voice beams and slur sides, cross-staff drawing and beams,
+  hidden rests), playback (voices merge, per-voice ties and legato), and a **golden layout**
+  (`tests/fixtures/compose-golden.json`, written by the v85 engraver) that proves a single-voice
+  piece lays out exactly as before. E2E: `tests/e2e/compose.mjs` "voices" step + the phone-width
+  switcher check.

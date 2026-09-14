@@ -3,7 +3,7 @@
 // the new document; a refused edit throws Nudge(sentence) and the document is
 // untouched. Pure — node-testable.
 import { groupSize, ticks, capacity, splitRest, fromTicks } from "./ticks.js";
-import { clone, restEvent, noteEvent, durOf, newMeasure, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, DEFAULT_BARS, eid } from "./model.js";
+import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, MAX_VOICES, DEFAULT_BARS, eid } from "./model.js";
 import { parsePitch, keyAlterations, CLEFS } from "../music.js";
 
 export class Nudge extends Error { constructor(msg, { bar = null } = {}) { super(msg); this.name = "Nudge"; this.bar = bar; } }
@@ -112,7 +112,7 @@ export function retype(doc, evIds, dur) {
   const found = evIds.map((id) => find(d, id)).filter(Boolean);
   if (found.some((f) => f.ev.kind !== "note")) throw new Nudge("pick notes to retype");
   // left to right within a bar so an earlier note's growth is seen by the next
-  found.sort((a, b) => a.bar - b.bar || a.staff - b.staff || a.index - b.index);
+  found.sort((a, b) => a.bar - b.bar || a.staff - b.staff || a.voice - b.voice || a.index - b.index);
   for (const f of found) {
     const voice = d.measures[f.bar].staves[f.staff].voices[f.voice];
     const idx = voice.indexOf(f.ev);
@@ -201,13 +201,10 @@ export function slur(doc, evIds) {
   const d = clone(doc);
   const fs = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "note");
   if (!fs.length) throw new Nudge("pick the notes to slur");
-  const byStaff = new Map();
-  for (const f of fs) { if (!byStaff.has(f.staff)) byStaff.set(f.staff, []); byStaff.get(f.staff).push(f); }
-  for (const list of byStaff.values()) {
-    list.sort((a, b) => a.bar - b.bar || a.index - b.index);
+  for (const list of byLine(fs).values()) {
     const a = list[0].ev;
     let b = list[list.length - 1].ev;
-    if (b === a) { let nx = nextEvent(d, list[0]); let guard = 0; while (nx && nx.kind !== "note" && guard++ < 64) nx = nextEvent(d, find(d, nx.id)); b = nx; }
+    if (b === a) b = nextNote(d, list[0]);
     if (!b || b.kind !== "note") throw new Nudge("slur needs a note after it", { bar: list[0].bar });
     const have = (a.slurs ?? []).find((x) => x.at === "start" && (b.slurs ?? []).some((y) => y.id === x.id && y.at === "stop"));
     if (have) { // exactly this slur exists → off
@@ -222,19 +219,29 @@ export function slur(doc, evIds) {
   cleanSlurs(d);
   return d;
 }
-/** The note the slur `id` starting at `ev` ends on (later in the staff's sequence), or null. */
-export function slurEnd(doc, staff, ev, id) {
-  const seq = doc.measures.flatMap((m) => m.staves[staff].voices[0]);
+/** Every event of one voice of one staff across the piece, in order (a voice absent from a bar contributes nothing). */
+export const seqOf = (doc, staff, voice) => doc.measures.flatMap((m) => m.staves[staff].voices[voice] ?? []);
+/** Found events grouped by the line they sit in (staff + voice), each list in score order. */
+function byLine(fs) {
+  const out = new Map();
+  for (const f of fs) { const k = `${f.staff}:${f.voice}`; if (!out.has(k)) out.set(k, []); out.get(k).push(f); }
+  for (const list of out.values()) list.sort((a, b) => a.bar - b.bar || a.index - b.index);
+  return out;
+}
+/** The note the slur `id` starting at `ev` ends on (later in its voice's sequence), or null. */
+export function slurEnd(doc, staff, voice, ev, id) {
+  const seq = seqOf(doc, staff, voice);
   const i = seq.indexOf(ev);
   if (i < 0) return null;
   for (let k = i + 1; k < seq.length; k++) if (seq[k].slurs?.some((x) => x.id === id && x.at === "stop")) return seq[k];
   return null;
 }
-/** Re-derive every slur: rests carry none; a start without a stop later in the staff (or the reverse) is dropped. */
+/** Re-derive every slur: rests carry none; a start without a stop later in its voice (or the reverse) is dropped. */
 export function cleanSlurs(doc) {
   const nStaves = doc.parts[0].staves;
-  for (let staff = 0; staff < nStaves; staff++) {
-    const seq = doc.measures.flatMap((m) => m.staves[staff].voices[0]);
+  for (let staff = 0; staff < nStaves; staff++) for (let voice = 0; voice < MAX_VOICES; voice++) {
+    const seq = seqOf(doc, staff, voice);
+    if (!seq.length) continue;
     const startAt = new Map(), stopAt = new Map();
     seq.forEach((e, i) => { if (e.kind !== "note") { delete e.slurs; return; } for (const x of e.slurs ?? []) { const m = x.at === "start" ? startAt : stopAt; if (!m.has(x.id)) m.set(x.id, i); } });
     const ok = (x) => startAt.has(x.id) && stopAt.has(x.id) && startAt.get(x.id) < stopAt.get(x.id);
@@ -247,33 +254,47 @@ export function cleanSlurs(doc) {
   }
   return doc;
 }
-/** The event after `f` in its staff: the next in the voice, else the first of the next bar. */
+/**
+ * The event after `f` in its voice, adjacent in time: the next in the bar, else the first of the
+ * next bar when the voice is there. A voice absent from the next bar has nothing next (silence),
+ * so a tie or a gliss never reaches across a bar the voice does not sound in.
+ */
 export function nextEvent(doc, f) {
   const voice = doc.measures[f.bar].staves[f.staff].voices[f.voice];
   const i = voice.indexOf(f.ev);
   if (i >= 0 && i + 1 < voice.length) return voice[i + 1];
-  return doc.measures[f.bar + 1]?.staves[f.staff].voices[f.voice][0] ?? null;
+  return doc.measures[f.bar + 1]?.staves[f.staff].voices[f.voice]?.[0] ?? null;
+}
+/** The next note of `f`'s voice anywhere later in the piece (rests and silent bars skipped) — what a one-note slur or hairpin reaches for. */
+export function nextNote(doc, f) {
+  const seq = seqOf(doc, f.staff, f.voice);
+  for (let k = seq.indexOf(f.ev) + 1; k < seq.length; k++) if (seq[k].kind === "note") return seq[k];
+  return null;
 }
 /**
- * Re-derive every tie: a `start` survives only when the next event of the
- * staff holds the same spelled pitch, and that pitch is marked `stop` (or
+ * Re-derive every tie: a `start` survives only when the next event of its
+ * voice holds the same spelled pitch, and that pitch is marked `stop` (or
  * `both`). Runs after every edit, so no tie ever dangles.
  */
 export function cleanTies(doc) {
   const nStaves = doc.parts[0].staves;
-  for (let staff = 0; staff < nStaves; staff++) {
-    const seq = doc.measures.flatMap((m) => m.staves[staff].voices[0]);
+  for (let staff = 0; staff < nStaves; staff++) for (let voice = 0; voice < MAX_VOICES; voice++) {
+    const seq = seqOf(doc, staff, voice);
+    if (!seq.length) continue;
     for (const ev of seq) for (const p of ev.pitches ?? []) { if (p.tie === "stop") delete p.tie; else if (p.tie === "both") p.tie = "start"; }
-    for (let i = 0; i < seq.length; i++) {
-      const ev = seq[i];
-      if (ev.kind !== "note") continue;
-      if (ev.gliss && seq[i + 1]?.kind !== "note") delete ev.gliss;
-      for (const p of ev.pitches) {
-        if (p.tie !== "start" && p.tie !== "both") continue;
-        const nx = seq[i + 1];
-        const q = nx?.kind === "note" ? nx.pitches.find((x) => samePitch(p, x)) : null;
-        if (!q) { if (p.tie === "both") p.tie = "stop"; else delete p.tie; continue; }
-        q.tie = q.tie === "start" ? "both" : "stop";
+    for (let bar = 0; bar < doc.measures.length; bar++) {
+      const v = doc.measures[bar].staves[staff].voices[voice];
+      if (!v) continue;
+      for (const ev of v) {
+        if (ev.kind !== "note") continue;
+        const nx = nextEvent(doc, { bar, staff, voice, ev }); // adjacent in time — never across a bar the voice is silent in
+        if (ev.gliss && nx?.kind !== "note") delete ev.gliss;
+        for (const p of ev.pitches) {
+          if (p.tie !== "start" && p.tie !== "both") continue;
+          const q = nx?.kind === "note" ? nx.pitches.find((x) => samePitch(p, x)) : null;
+          if (!q) { if (p.tie === "both") p.tie = "stop"; else delete p.tie; continue; }
+          q.tie = q.tie === "start" ? "both" : "stop";
+        }
       }
     }
   }
@@ -385,6 +406,7 @@ export function normalizeBar(doc, bar) {
   const time = timeAt(doc, bar), cap = capacity(time), m = doc.measures[bar];
   for (const staff of m.staves) {
     staff.voices = staff.voices.map((voice) => {
+      if (!voice) return null;
       const live = new Set(voice.filter((e) => e.kind === "note" && e.dur.tuplet).map(groupId));
       const out = [];
       let pos = 0, gapStart = null, gapIds = [];
@@ -404,8 +426,23 @@ export function normalizeBar(doc, bar) {
       if (voiceTicks(out) !== cap) throw new Error(`bar ${bar + 1} does not add up (${voiceTicks(out)} of ${cap})`);
       return out;
     });
+    compactVoices(staff);
   }
   return doc;
+}
+/** A secondary voice left with only rests leaves the bar; trailing empty slots go too (docs/COMPOSE_VOICES_DESIGN.md §3). */
+export function compactVoices(staff) {
+  staff.voices = staff.voices.map((v, vi) => (vi > 0 && v && !v.some((e) => e.kind === "note") ? null : v));
+  while (staff.voices.length > 1 && !staff.voices[staff.voices.length - 1]) staff.voices.pop();
+  return staff;
+}
+/** The voice `vi` of a staff in a bar, created as one bar of rests when absent (in place). */
+export function ensureVoice(doc, bar, staff, vi) {
+  if (!Number.isInteger(vi) || vi < 0 || vi >= MAX_VOICES) throw new Nudge(`voices run 1 to ${MAX_VOICES}`, { bar });
+  const st = doc.measures[bar].staves[staff];
+  while (st.voices.length <= vi) st.voices.push(null);
+  st.voices[vi] ??= barRests(timeAt(doc, bar));
+  return st.voices[vi];
 }
 
 /**
@@ -414,9 +451,10 @@ export function normalizeBar(doc, bar) {
  * group's ratio; with a tuplet armed on plain rests, a whole new group has to
  * fit. Does not change the document.
  */
-export function snap(doc, { bar, staff, ticks: t }, armed) {
-  const voice = doc.measures[bar].staves[staff].voices[0];
-  const cap = capacity(timeAt(doc, bar));
+export function snap(doc, { bar, staff, ticks: t, voice: vi = 0 }, armed) {
+  const time = timeAt(doc, bar);
+  const voice = doc.measures[bar].staves[staff].voices[vi] ?? barRests(time); // a voice not in this bar yet: one bar of rests to tap into
+  const cap = capacity(time);
   const tt = Math.max(0, Math.min(cap - 1, Math.round(t)));
   const os = onsets(voice);
   const hit = os.find((o) => tt >= o.start && tt < o.start + o.len) ?? os[os.length - 1];
@@ -449,10 +487,12 @@ export function snap(doc, { bar, staff, ticks: t }, armed) {
  */
 export function place(doc, slot, armed) {
   const d = clone(doc);
-  const { bar, staff, step } = slot;
+  const { bar, staff, step, voice: vi = 0 } = slot;
+  if (!Number.isInteger(vi) || vi < 0 || vi >= MAX_VOICES) throw new Nudge(`voices run 1 to ${MAX_VOICES}`, { bar });
   const s = snap(d, slot, armed);
   const time = timeAt(d, bar), key = keyAt(d, bar), clef = clefAt(d, bar, staff, s.onset);
-  const voice = d.measures[bar].staves[staff].voices[0];
+  if (armed.rest && !d.measures[bar].staves[staff].voices[vi]) return { doc, ev: null, action: "none" }; // a rest into a voice that is not there changes nothing (a silent voice draws nothing)
+  const voice = ensureVoice(d, bar, staff, vi);
   const pitch = () => { const p = pitchFromStep(step, clef, key); if (armed.alter !== null && armed.alter !== undefined) spell(p, armed.alter, keyAlt(key, p.step)); return p; };
   if (s.joins) {
     if (armed.rest) throw new Nudge("that beat already has a note", { bar });
@@ -483,7 +523,7 @@ export function place(doc, slot, armed) {
     ...(s.newGroup ? fill(s.need - s.unit, s.onset + s.unit, time, s.newGroup) : []),
     ...fill(gapB, s.onset + s.need, time, s.group),
   ];
-  d.measures[bar].staves[staff].voices[0] = [...before, ...mid, ...after];
+  d.measures[bar].staves[staff].voices[vi] = [...before, ...mid, ...after];
   normalizeBar(d, bar);
   cleanTies(d);
   if (bar === d.measures.length - 1 && !isEmptyBar(d.measures[bar])) appendBar(d);
@@ -497,6 +537,7 @@ export function find(doc, evId) {
     for (let staff = 0; staff < m.staves.length; staff++) {
       const voices = m.staves[staff].voices;
       for (let voice = 0; voice < voices.length; voice++) {
+        if (!voices[voice]) continue;
         const index = voices[voice].findIndex((e) => e.id === evId);
         if (index >= 0) return { bar, staff, voice, index, ev: voices[voice][index] };
       }
@@ -593,11 +634,11 @@ export function clipFrom(doc, items) {
     const ev = f.ev;
     const asRest = ev.kind === "rest" || pis.has("rest");
     const pitches = asRest ? null : (pis.has("*") ? ev.pitches : ev.pitches.filter((_, i) => pis.has(i))).map((p) => ({ ...p }));
-    raw.push({ abs, staff: f.staff, kind: asRest ? "rest" : "note", dur: durOf(ev.dur), pitches, len: evTicks(ev) });
+    raw.push({ abs, staff: f.staff, voice: f.voice, kind: asRest ? "rest" : "note", dur: durOf(ev.dur), pitches, len: evTicks(ev), ...(ev.cross ? { cross: ev.cross } : {}) });
   }
   if (!raw.length) return null;
-  const origin = Math.min(...raw.map((r) => r.abs)), top = Math.min(...raw.map((r) => r.staff));
-  const events = raw.sort((a, b) => a.abs - b.abs || a.staff - b.staff).map((r) => ({ dStaff: r.staff - top, offset: r.abs - origin, kind: r.kind, dur: r.dur, pitches: r.pitches, len: r.len }));
+  const origin = Math.min(...raw.map((r) => r.abs)), top = Math.min(...raw.map((r) => r.staff)), low = Math.min(...raw.map((r) => r.voice));
+  const events = raw.sort((a, b) => a.abs - b.abs || a.staff - b.staff || a.voice - b.voice).map((r) => ({ dStaff: r.staff - top, dVoice: r.voice - low, offset: r.abs - origin, kind: r.kind, dur: r.dur, pitches: r.pitches, len: r.len, ...(r.cross ? { cross: r.cross } : {}) }));
   return { events, span: Math.max(...raw.map((r) => r.abs + r.len)) - origin, staves: Math.max(...events.map((e) => e.dStaff)) + 1 };
 }
 
@@ -610,11 +651,12 @@ export function clipFrom(doc, items) {
  * barline refuses the whole drop. Returns { doc, keys } with the selection
  * keys of what was pasted.
  */
-export function paste(doc, clip, { bar, ticks: t, staff = 0 }) {
+export function paste(doc, clip, { bar, ticks: t, staff = 0, voice = 0 }) {
   if (!clip?.events.length) throw new Nudge("nothing to paste");
   const d = clone(doc);
   const nStaves = d.parts[0].staves;
   const top = Math.max(0, Math.min(nStaves - clip.staves, staff));
+  const vOf = (e) => Math.min(MAX_VOICES - 1, voice + (e.dVoice ?? 0)); // the phrase's lowest voice lands in the active one; the rest keep their offsets, capped
   const A0 = barStarts(d).starts[bar] + Math.max(0, Math.round(t));
   // make room: append bars until the whole span fits
   while (barStarts(d).total < A0 + clip.span) appendBar(d);
@@ -627,17 +669,19 @@ export function paste(doc, clip, { bar, ticks: t, staff = 0 }) {
     let dur = e.dur;
     if (dur.tuplet) { if (!gids.has(dur.tuplet.id)) gids.set(dur.tuplet.id, `t${eid()}`); dur = { ...dur, tuplet: { ...dur.tuplet, id: gids.get(dur.tuplet.id) } }; }
     const ev = e.kind === "rest" ? restEvent(dur) : noteEvent(dur, e.pitches.map((p) => ({ ...p })));
-    placed.push({ bar: loc.bar, staff: top + e.dStaff, start: loc.ticks, ev });
+    const st = top + e.dStaff;
+    if (e.cross && st + e.cross >= 0 && st + e.cross < nStaves) ev.cross = e.cross;
+    placed.push({ bar: loc.bar, staff: st, voice: vOf(e), start: loc.ticks, ev });
   }
-  // rebuild every touched (bar, staff): keep what lies outside the region, drop what overlaps it (tuplets whole), add the phrase, fill the gaps
+  // rebuild every touched (bar, staff, voice): keep what lies outside the region, drop what overlaps it (tuplets whole), add the phrase, fill the gaps
   const touched = new Map();
-  for (const p of placed) { const k = `${p.bar}:${p.staff}`; if (!touched.has(k)) touched.set(k, []); touched.get(k).push(p); }
+  for (const p of placed) { const k = `${p.bar}:${p.staff}:${p.voice}`; if (!touched.has(k)) touched.set(k, []); touched.get(k).push(p); }
   const { starts } = barStarts(d);
   for (const [k, items] of touched) {
-    const [b, st] = k.split(":").map(Number);
+    const [b, st, vi] = k.split(":").map(Number);
     const time = timeAt(d, b), cap = capacity(time);
     const r0 = Math.max(0, A0 - starts[b]), r1 = Math.min(cap, A0 + clip.span - starts[b]);
-    const voice = d.measures[b].staves[st].voices[0];
+    const voice = ensureVoice(d, b, st, vi);
     const os = onsets(voice);
     const dropped = new Set(os.filter((o) => !(o.start + o.len <= r0 || o.start >= r1)).map((o) => groupId(o.ev)).filter(Boolean));
     const keep = os.filter((o) => (o.start + o.len <= r0 || o.start >= r1) && !dropped.has(groupId(o.ev))).map((o) => ({ start: o.start, len: o.len, ev: o.ev }));
@@ -651,9 +695,9 @@ export function paste(doc, clip, { bar, ticks: t, staff = 0 }) {
       out.push(x.ev); pos = x.start + x.len;
     }
     if (pos < cap) out.push(...gap(cap - pos, pos));
-    d.measures[b].staves[st].voices[0] = out;
-    normalizeBar(d, b);
+    d.measures[b].staves[st].voices[vi] = out;
   }
+  for (const k of touched.keys()) normalizeBar(d, Number(k.split(":")[0]));
   cleanTies(d);
   ensureTrailingBar(d);
   const keys = placed.flatMap((p) => (p.ev.kind === "note" ? p.ev.pitches.map((_, i) => `${p.ev.id}:${i}`) : [p.ev.id]));
@@ -746,12 +790,13 @@ export function setTime(doc, bar, time) {
   const prevT = bar > 0 ? timeAt(doc, bar - 1) : null;
   if (!prevT || prevT.beats !== time.beats || prevT.unit !== time.unit) fresh[0].time = { beats: time.beats, unit: time.unit }; // back to the metre before it: the stretch simply rejoins it
   if (bar === 0) { fresh[0].key ??= oldBars[0].key; fresh[0].clefs ??= oldBars[0].clefs; }
-  for (let st = 0; st < nStaves; st++) {
+  for (let st = 0; st < nStaves; st++) for (let vi = 0; vi < MAX_VOICES; vi++) {
+    if (vi > 0 && !oldBars.some((m) => m.staves[st].voices[vi])) continue;
     // the stretch as one stream of absolute ticks; tuplet groups travel as units
     const items = [];
     oldBars.forEach((m, k) => {
       let unit = null;
-      for (const o of onsets(m.staves[st].voices[0])) {
+      for (const o of onsets(m.staves[st].voices[vi] ?? [])) {
         const start = k * capOld + o.start, gid = groupId(o.ev);
         if (gid) { if (unit && unit.gid === gid) { unit.len += o.len; unit.evs.push({ ev: o.ev, at: start }); } else { unit = { gid, start, len: o.len, evs: [{ ev: o.ev, at: start }] }; items.push(unit); } continue; }
         unit = null;
@@ -797,7 +842,8 @@ export function setTime(doc, bar, time) {
         out.push(x.ev); pos = x.start + ticks(x.ev.dur);
       }
       if (pos < capNew) out.push(...splitRest(capNew - pos, pos, time).map(restEvent));
-      fresh[b].staves[st].voices[0] = out;
+      if (vi === 0) fresh[b].staves[st].voices[0] = out;
+      else if (lane.length) { while (fresh[b].staves[st].voices.length <= vi) fresh[b].staves[st].voices.push(null); fresh[b].staves[st].voices[vi] = out; }
     });
   }
   d.measures.splice(bar, nOld, ...fresh);
@@ -844,17 +890,14 @@ export function hairpin(doc, evIds, kind) {
   const d = clone(doc);
   const fs = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "note");
   if (!fs.length) throw new Nudge("pick the notes for the hairpin");
-  const byStaff = new Map();
-  for (const f of fs) { if (!byStaff.has(f.staff)) byStaff.set(f.staff, []); byStaff.get(f.staff).push(f); }
-  for (const list of byStaff.values()) {
-    list.sort((a, b) => a.bar - b.bar || a.index - b.index);
+  for (const list of byLine(fs).values()) {
     const a = list[0].ev;
     let b = list[list.length - 1].ev;
-    if (b === a) { let nx = nextEvent(d, list[0]); let guard = 0; while (nx && nx.kind !== "note" && guard++ < 64) nx = nextEvent(d, find(d, nx.id)); b = nx; }
+    if (b === a) b = nextNote(d, list[0]);
     if (!b || b.kind !== "note") throw new Nudge("a hairpin needs a note after it", { bar: list[0].bar });
-    if (a.hairpin === `${kind}-start` && hairpinEnd(d, list[0].staff, a) === b) { delete a.hairpin; delete b.hairpin; }
+    if (a.hairpin === `${kind}-start` && hairpinEnd(d, list[0].staff, list[0].voice, a) === b) { delete a.hairpin; delete b.hairpin; }
     else { // the new span owns its range: any hairpin marker inside it goes (hairpins never nest)
-      const seq = d.measures.flatMap((m) => m.staves[list[0].staff].voices[0]);
+      const seq = seqOf(d, list[0].staff, list[0].voice);
       for (let k = seq.indexOf(a); k <= seq.indexOf(b); k++) delete seq[k].hairpin;
       a.hairpin = `${kind}-start`; b.hairpin = `${kind}-stop`;
     }
@@ -862,11 +905,11 @@ export function hairpin(doc, evIds, kind) {
   cleanHairpins(d);
   return d;
 }
-/** The note the hairpin starting at `ev` ends on: the first matching stop before any other start, or null. */
-export function hairpinEnd(doc, staff, ev) {
+/** The note the hairpin starting at `ev` ends on: the first matching stop in its voice before any other start, or null. */
+export function hairpinEnd(doc, staff, voice, ev) {
   if (!ev.hairpin?.endsWith("-start")) return null;
   const kind = ev.hairpin.slice(0, -6);
-  const seq = doc.measures.flatMap((m) => m.staves[staff].voices[0]);
+  const seq = seqOf(doc, staff, voice);
   for (let k = seq.indexOf(ev) + 1; k < seq.length; k++) {
     if (seq[k].hairpin === `${kind}-stop`) return seq[k];
     if (seq[k].hairpin?.endsWith("-start")) return null;
@@ -876,8 +919,8 @@ export function hairpinEnd(doc, staff, ev) {
 /** Re-derive every hairpin: rests carry none; a start without its stop (before another start) and a stop without its start are dropped. */
 export function cleanHairpins(doc) {
   const nStaves = doc.parts[0].staves;
-  for (let staff = 0; staff < nStaves; staff++) {
-    const seq = doc.measures.flatMap((m) => m.staves[staff].voices[0]);
+  for (let staff = 0; staff < nStaves; staff++) for (let voice = 0; voice < MAX_VOICES; voice++) {
+    const seq = seqOf(doc, staff, voice);
     let open = null;
     for (const e of seq) {
       if (!e.hairpin) continue;
@@ -919,5 +962,103 @@ export function gliss(doc, evIds) {
   if (!can.length) throw new Nudge("gliss needs a note after it", { bar: fs[0].bar });
   const all = can.every((f) => f.ev.gliss === "start");
   for (const f of can) { if (all) delete f.ev.gliss; else f.ev.gliss = "start"; }
+  return d;
+}
+
+// --- voices (docs/COMPOSE_VOICES_DESIGN.md §4) ---------------------------------------
+
+/** The lines (bar, staff, voice) and tick ranges a set of events occupies. */
+function ranges(d, fs) {
+  return fs.map((f) => { const o = onsets(d.measures[f.bar].staves[f.staff].voices[f.voice]); const x = o[f.index]; return { ...f, start: x.start, end: x.start + x.len }; });
+}
+/**
+ * Move notes to another voice of their own staff, at their own onsets. Refused
+ * (bar flash, nothing changes) when the target voice already sounds anywhere
+ * under them, or a tuplet group would be split. The time they leave becomes
+ * rests in the source voice (which leaves the bar if that was its last note);
+ * the target voice is created in the bar when it is not there yet.
+ */
+export function setVoice(doc, evIds, vi) {
+  if (!Number.isInteger(vi) || vi < 0 || vi >= MAX_VOICES) throw new Nudge(`voices run 1 to ${MAX_VOICES}`);
+  const d = clone(doc);
+  const fs = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "note" && f.voice !== vi);
+  if (!fs.length) { if (evIds.length && [...new Set(evIds)].every((id) => find(doc, id)?.voice === vi)) return doc; throw new Nudge("pick the notes to move"); }
+  const ids = new Set(fs.map((f) => f.ev.id));
+  for (const f of fs) { // a tuplet travels whole, or not at all
+    const gid = groupId(f.ev);
+    if (gid && d.measures[f.bar].staves[f.staff].voices[f.voice].some((e) => groupId(e) === gid && e.kind === "note" && !ids.has(e.id))) throw new Nudge("move the whole tuplet", { bar: f.bar });
+  }
+  // tuplet rests come along so the group still adds up
+  const moving = [...fs];
+  for (const f of fs) { const gid = groupId(f.ev); if (!gid) continue; d.measures[f.bar].staves[f.staff].voices[f.voice].forEach((e, index) => { if (groupId(e) === gid && !ids.has(e.id)) { ids.add(e.id); moving.push({ bar: f.bar, staff: f.staff, voice: f.voice, index, ev: e }); } }); }
+  const byBar = new Map();
+  for (const r of ranges(d, moving)) { const k = `${r.bar}:${r.staff}`; if (!byBar.has(k)) byBar.set(k, []); byBar.get(k).push(r); }
+  for (const [k, items] of byBar) {
+    const [bar, staff] = k.split(":").map(Number);
+    const time = timeAt(d, bar), cap = capacity(time);
+    const target = d.measures[bar].staves[staff].voices[vi];
+    const busy = target ? onsets(target).filter((o) => o.ev.kind === "note" || groupId(o.ev)) : []; // a note, or a tuplet's rest, in the target is in the way
+    for (const it of items) if (busy.some((o) => o.start < it.end && o.start + o.len > it.start)) throw new Nudge(`voice ${vi + 1} already sounds there`, { bar });
+    // source: the moved events become rests
+    for (const it of items) { const src = d.measures[bar].staves[staff].voices[it.voice]; src[src.indexOf(it.ev)] = restEvent(it.ev.dur); }
+    // target: keep everything outside the moved ranges, add the events, fill the gaps
+    const tv = ensureVoice(d, bar, staff, vi);
+    const keep = onsets(tv).filter((o) => !items.some((it) => o.start < it.end && o.start + o.len > it.start)).map((o) => ({ start: o.start, len: o.len, ev: o.ev }));
+    const all = [...keep, ...items.map((it) => ({ start: it.start, len: it.end - it.start, ev: it.ev }))].sort((a, b) => a.start - b.start);
+    const out = [];
+    let pos = 0;
+    const gap = (len, at) => { try { return splitRest(len, at, time).map(restEvent); } catch { throw new Nudge("that doesn't line up with the beat", { bar }); } };
+    for (const x of all) { if (x.start < pos) throw new Nudge(`voice ${vi + 1} already sounds there`, { bar }); if (x.start > pos) out.push(...gap(x.start - pos, pos)); out.push(x.ev); pos = x.start + x.len; }
+    if (pos < cap) out.push(...gap(cap - pos, pos));
+    d.measures[bar].staves[staff].voices[vi] = out;
+    normalizeBar(d, bar);
+  }
+  cleanTies(d);
+  return d;
+}
+/** Exchange two voices of a staff in whole bars: bars = [{ bar, staff }]. A bar where neither is present is untouched; voice 1 never leaves (it becomes rests). */
+export function swapVoices(doc, bars, a, b) {
+  for (const v of [a, b]) if (!Number.isInteger(v) || v < 0 || v >= MAX_VOICES) throw new Nudge(`voices run 1 to ${MAX_VOICES}`);
+  if (a === b) return doc;
+  const d = clone(doc);
+  const seen = new Set();
+  let touched = 0;
+  for (const { bar, staff } of bars) {
+    const k = `${bar}:${staff}`;
+    if (seen.has(k)) continue; seen.add(k);
+    const st = d.measures[bar].staves[staff];
+    const va = st.voices[a] ?? null, vb = st.voices[b] ?? null;
+    if (!va && !vb) continue;
+    while (st.voices.length <= Math.max(a, b)) st.voices.push(null);
+    st.voices[a] = vb; st.voices[b] = va;
+    if (!st.voices[0]) st.voices[0] = barRests(timeAt(d, bar));
+    touched++;
+    normalizeBar(d, bar);
+  }
+  if (!touched) throw new Nudge("nothing to swap there");
+  cleanTies(d);
+  return d;
+}
+/** Draw the selected notes on the staff above (dir −1) or below (+1) their own — a step toward it from where they are drawn now; back to their own staff when that is where the step lands. */
+export function crossStaff(doc, evIds, dir) {
+  if (dir !== 1 && dir !== -1) throw new Nudge("cross to the upper or the lower staff");
+  const d = clone(doc);
+  const nStaves = d.parts[0].staves;
+  const fs = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "note");
+  if (!fs.length) throw new Nudge("pick the notes to cross");
+  for (const f of fs) {
+    const next = (f.ev.cross ?? 0) + dir;
+    if (Math.abs(next) > 1 || f.staff + next < 0 || f.staff + next >= nStaves) throw new Nudge(dir < 0 ? "there is no staff above" : "there is no staff below", { bar: f.bar });
+    if (next === 0) delete f.ev.cross; else f.ev.cross = next;
+  }
+  return d;
+}
+/** Hide (or show again) the selected rests: every selected rest hidden → all shown, else all hidden. A hidden rest still counts and still takes taps. */
+export function hideRest(doc, evIds) {
+  const d = clone(doc);
+  const rests = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "rest").map((f) => f.ev);
+  if (!rests.length) throw new Nudge("pick the rests to hide");
+  const all = rests.every((e) => e.hidden);
+  for (const e of rests) { if (all) delete e.hidden; else e.hidden = true; }
   return d;
 }
