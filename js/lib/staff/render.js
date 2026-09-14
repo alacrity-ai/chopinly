@@ -1,17 +1,9 @@
 // Staff renderer: layout coordinates → SVG. Glyphs are Bravura (SMuFL) text;
 // geometry is drawn. Renders once; grading states are pure class toggles.
 import { layoutMelody } from "./layout.js";
+import { G, timeDigit } from "./glyphs.js";
 
 const NS = "http://www.w3.org/2000/svg";
-const G = {
-  gClef: "", cClef: "", fClef: "",
-  whole: "", half: "", black: "",
-  "-1": "", 0: "", 1: "",          // flat, natural, sharp
-  dot: "", flagUp: "", flagDown: "",
-  restWhole: "", restHalf: "", restQuarter: "", rest8th: "",
-};
-const timeDigit = (n) => String.fromCharCode(0xe080 + n);
-
 function el(name, attrs, text) {
   const node = document.createElementNS(NS, name);
   for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
