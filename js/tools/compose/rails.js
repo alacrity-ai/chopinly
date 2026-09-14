@@ -9,6 +9,20 @@ export const MORE_BASES = [0, 32, 64];
 const NAMES = { 0: "double whole", 1: "whole", 2: "half", 4: "quarter", 8: "eighth", 16: "sixteenth", 32: "thirty-second", 64: "sixty-fourth" };
 export const durName = (base) => NAMES[base];
 
+let meter = null;
+/** Slide a Bravura glyph so its ink is vertically centred where a typographic centre would be. */
+export function centreGlyph(span) {
+  meter ??= document.createElement("canvas").getContext("2d");
+  if (!meter) return;
+  const cs = getComputedStyle(span);
+  meter.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  const m = meter.measureText(span.textContent);
+  if (!("fontBoundingBoxAscent" in m) || !("actualBoundingBoxAscent" in m)) return;
+  // the box's centre sits (font ascent − font descent) / 2 above the baseline; the ink's centre (ink ascent − ink descent) / 2 above it
+  const dy = (m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) / 2 - (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2;
+  span.style.setProperty("--dy", `${dy.toFixed(2)}px`);
+}
+
 export function buildRails(host, { title, onAction }) {
   host.innerHTML = `
     <div class="cp-rail cp-control" role="toolbar" aria-label="controls">
@@ -16,8 +30,8 @@ export function buildRails(host, { title, onAction }) {
       <button type="button" class="cp-btn" data-act="undo" aria-label="undo" disabled>${icon("undo")}</button>
       <button type="button" class="cp-btn" data-act="redo" aria-label="redo" disabled>${icon("redo")}</button>
       <span class="cp-sep" aria-hidden="true"></span>
-      <button type="button" class="cp-btn cp-mode" data-act="select" aria-pressed="false">Select</button>
-      <button type="button" class="cp-btn cp-mode" data-act="scrub" aria-pressed="false">Scrub</button>
+      <button type="button" class="cp-btn cp-mode" data-act="select" aria-pressed="false">${icon("cursor")}<span class="cp-word">Select</span></button>
+      <button type="button" class="cp-btn cp-mode" data-act="scrub" aria-pressed="false">${icon("hand")}<span class="cp-word">Scrub</span></button>
       <span class="cp-sep" aria-hidden="true"></span>
       <button type="button" class="cp-btn" data-act="delete" aria-label="delete the selection" disabled>${icon("trash")}</button>
       <button type="button" class="cp-btn" data-act="copy" aria-label="copy the selection" disabled>${icon("copy")}</button>
@@ -36,8 +50,8 @@ export function buildRails(host, { title, onAction }) {
         <input type="range" class="cp-pos" id="cp-pos" min="0" max="1" step="1" value="0" aria-label="position in the piece">
         <span class="cp-pos-read" id="cp-pos-read" aria-live="off">bar 1 of 8</span>
       </span>
-      <span class="cp-tempo" aria-label="tempo">
-        <span class="cp-tempo-mark"><span class="cp-glyph cp-glyph-xs">${metGlyph(4)}</span><span class="cp-tempo-eq">=</span></span>
+      <span class="cp-tempo" role="group" aria-label="tempo">
+        <span class="cp-tempo-mark" aria-hidden="true"><span class="cp-glyph cp-glyph-xs">${metGlyph(4)}</span><span class="cp-tempo-eq">=</span></span>
         <button type="button" class="cp-btn cp-tempo-btn" data-act="tempo-down" aria-label="slower">&minus;</button>
         <button type="button" class="cp-btn cp-bpm" data-act="tempo" id="cp-bpm" aria-label="tempo — tap to type one">100</button>
         <button type="button" class="cp-btn cp-tempo-btn" data-act="tempo-up" aria-label="faster">+</button>
@@ -61,6 +75,10 @@ export function buildRails(host, { title, onAction }) {
       <button type="button" class="cp-btn cp-rest" data-act="rest" aria-pressed="false" aria-label="rest"><span class="cp-glyph cp-glyph-rest" id="cp-rest-glyph">${restGlyph(4)}</span><span class="cp-rest-word">rest</span></button>
     </div>`;
   const more = host.querySelector("#cp-more"), moreBtn = host.querySelector(".cp-dur-more");
+  // Bravura glyphs sit on a musical anchor, not a typographic centre: measure each one's ink and
+  // slide it so the ink is centred in its button (re-done whenever a glyph's text changes).
+  const centreAll = () => { for (const g of host.querySelectorAll(".cp-glyph")) centreGlyph(g); };
+  (document.fonts?.load?.('2rem "Bravura"') ?? Promise.resolve()).then(centreAll, centreAll);
   const closeMore = () => { more.hidden = true; moreBtn.setAttribute("aria-expanded", "false"); };
   host.addEventListener("click", (e) => {
     const b = e.target.closest("[data-act]");
@@ -94,7 +112,7 @@ export function buildRails(host, { title, onAction }) {
     /** The playhead: { pos, total, bar, bars, playing?, bpm? } — called every frame while playing, so it touches only what changed. */
     transport({ pos: t, total, bar, bars, playing, bpm }) {
       if (total !== undefined && Number(pos.max) !== total) pos.max = String(total);
-      if (!scrubbing && t !== undefined) pos.value = String(Math.round(t));
+      if (!scrubbing && t !== undefined) { pos.value = String(Math.round(t)); pos.style.setProperty("--p", `${(100 * Math.round(t) / Math.max(1, Number(pos.max))).toFixed(2)}%`); }
       if (bar !== undefined) { const read = `bar ${bar + 1} of ${bars}`; if (posRead.textContent !== read) posRead.textContent = read; }
       if (playing !== undefined) { const b = host.querySelector("[data-act=play]"); b.setAttribute("aria-pressed", String(playing)); b.setAttribute("aria-label", playing ? "pause" : "play"); }
       if (bpm !== undefined) host.querySelector("#cp-bpm").textContent = String(bpm);
@@ -104,11 +122,13 @@ export function buildRails(host, { title, onAction }) {
       for (const b of host.querySelectorAll(".cp-dur")) b.setAttribute("aria-pressed", String(mode === "place" && Number(b.dataset.base) === armed.base));
       const moreOn = mode === "place" && MORE_BASES.includes(armed.base);
       moreBtn.classList.toggle("on", moreOn);
-      host.querySelector("#cp-more-glyph").textContent = metGlyph(moreOn ? armed.base : 32);
+      const mg = host.querySelector("#cp-more-glyph"), mt = metGlyph(moreOn ? armed.base : 32);
+      if (mg.textContent !== mt) { mg.textContent = mt; centreGlyph(mg); }
       host.querySelector("[data-act=select]").setAttribute("aria-pressed", String(mode === "select"));
       host.querySelector("[data-act=scrub]").setAttribute("aria-pressed", String(mode === "scrub"));
       host.querySelector("[data-act=rest]").setAttribute("aria-pressed", String(armed.rest));
-      host.querySelector("#cp-rest-glyph").textContent = restGlyph(armed.base);
+      const rg = host.querySelector("#cp-rest-glyph"), rt = restGlyph(armed.base);
+      if (rg.textContent !== rt) { rg.textContent = rt; centreGlyph(rg); }
       host.querySelector("[data-act=undo]").disabled = !canUndo;
       host.querySelector("[data-act=redo]").disabled = !canRedo;
       host.querySelector("[data-act=delete]").disabled = !hasSelection;

@@ -387,7 +387,8 @@ await step("phone width: the rails wrap, nothing widens, the editor still places
   await page.click(".sc-open");
   await page.waitForSelector(".cp-editor .cp-svg");
   await noWiden();
-  await tapAt({ bar: 1, staff: 0, ticks: 2 * PPQ + 100, step: 2 }); // bar 2 is on the first system at phone width
+  await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 320; }); // bar 2 sits on the second system at this zoom; bring it into the viewport under the three rails
+  await tapAt({ bar: 1, staff: 0, ticks: 2 * PPQ + 100, step: 2 });
   if ((await kinds(1)) !== "n4 r4 n4 r4") throw new Error("phone tap: " + (await kinds(1)));
   await page.screenshot({ path: `${S}/cp-05-phone.png` });
 });
