@@ -66,7 +66,7 @@ export function openEditor({ id, ctx, onClose }) {
   // change that arrived from another device (sync replaces the stored object; we mutate it in place)
   let saving = false, held = c, warnedBig = false;
   const put = (patch) => { saving = true; try { logbook.updateComposition(id, patch); } finally { saving = false; } held = logbook.composition(id); };
-  put(c === stored ? { openedAt: Date.now() } : { openedAt: Date.now(), measures: c.measures, v: c.v });
+  put({ openedAt: Date.now() }); // opening is never an edit: an upgraded document stays in memory until a real edit saves it (v93 — writing it here stamped a stale copy as newest and overrode another device's work)
   const offRemote = logbook.on(() => {
     if (closed || saving) return;
     const cur = logbook.composition(id);
@@ -145,7 +145,7 @@ export function openEditor({ id, ctx, onClose }) {
   function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(flush, SAVE_MS); }
   function flush() {
     clearTimeout(saveTimer); if (!dirty || closed && !doc) return;
-    put({ measures: doc.measures }); dirty = false;
+    put({ measures: doc.measures, v: doc.v }); dirty = false; // the schema travels with the measures (an upgraded piece is persisted by its first real edit)
     // a piece past the sync cap is kept here but no longer follows the account — say so once
     if (!warnedBig && !logbook.compositionSyncable(held)) { warnedBig = true; toast("this piece is now too big to back up — it stays on this device"); }
   }
@@ -821,7 +821,7 @@ export function openEditor({ id, ctx, onClose }) {
     closed = true;
     flush();
     const trimmed = trimBars(doc);
-    if (trimmed.measures.length !== doc.measures.length && logbook.composition(id)) put({ measures: trimmed.measures });
+    if (trimmed.measures.length !== doc.measures.length && logbook.composition(id)) put({ measures: trimmed.measures, v: doc.v });
     offRemote();
     document.removeEventListener("keydown", onKey);
     window.removeEventListener("resize", onResize);
