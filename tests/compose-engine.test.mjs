@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition, validate, timeAt, isEmptyBar, evTicks } from "../js/lib/compose/model.js";
-import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar } from "../js/lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar, setPitch, stepOf } from "../js/lib/compose/engine.js";
 import { capacity, PPQ } from "../js/lib/compose/ticks.js";
 const Qt = PPQ;
 import { createHistory } from "../js/lib/compose/history.js";
@@ -139,4 +139,37 @@ test("history: push / undo / redo, and a push after undo drops the redo branch",
   h.push("b"); h.push("c");
   assert.equal(h.undo(), "b"); assert.equal(h.undo(), "a"); assert.equal(h.undo(), "a");
   assert.equal(h.redo(), "b"); h.push("d"); assert.equal(h.canRedo, false); assert.equal(h.redo(), "d");
+});
+
+test("setPitch: moves by staff step spelled from the key; a chord re-sorts and the moved index follows; collisions and the range nudge", () => {
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc; // B4
+  const ev = d.measures[0].staves[0].voices[0][0];
+  let r = setPitch(d, [{ ev: ev.id, pi: 0 }], 2);
+  assert.equal(find(r.doc, ev.id).ev.pitches[0].step + find(r.doc, ev.id).ev.pitches[0].octave, "D5");
+  assert.equal(r.pi, 0);
+  r = setPitch(r.doc, [{ ev: ev.id, pi: 0 }], -8); // D5 (step 6) → step -2 = C4, on its ledger line
+  assert.equal(find(r.doc, ev.id).ev.pitches[0].step + find(r.doc, ev.id).ev.pitches[0].octave, "C4");
+  assert.equal(stepOf({ step: "C", alter: 0, octave: 4 }, "treble"), -2);
+  // key spelling: in E♭ major, moving onto the E line gives E♭
+  let e = fresh(); e.measures[0].key = { fifths: -3 };
+  e = place(e, { bar: 0, staff: 0, ticks: 0, step: 1 }, Q).doc; // F4
+  const ev2 = e.measures[0].staves[0].voices[0][0];
+  const m = setPitch(e, [{ ev: ev2.id, pi: 0 }], -1).doc;
+  assert.deepEqual(find(m, ev2.id).ev.pitches[0], { step: "E", alter: -1, octave: 4 });
+  // chord: move the lower note above the upper one → the index follows the re-sort
+  let c = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
+  c = place(c, { bar: 0, staff: 0, ticks: 10, step: 6 }, Q).doc; // B4 + D5
+  const ev3 = c.measures[0].staves[0].voices[0][0];
+  const up = setPitch(c, [{ ev: ev3.id, pi: 0 }], 4); // B4 → F5, now above D5
+  assert.equal(up.pi, 1);
+  assert.deepEqual(find(up.doc, ev3.id).ev.pitches.map((p) => p.step + p.octave), ["D5", "F5"]);
+  assert.throws(() => setPitch(c, [{ ev: ev3.id, pi: 0 }], 2), Nudge); // onto D5
+  assert.throws(() => setPitch(c, [{ ev: ev3.id, pi: 0 }], 40), Nudge); // off the staff
+  const before = JSON.stringify(c);
+  try { setPitch(c, [{ ev: ev3.id, pi: 0 }], 2); } catch { /* nudged */ }
+  assert.equal(JSON.stringify(c), before);
+  // whole event: both pitches move
+  const both = setPitch(c, [{ ev: ev3.id }], 1).doc;
+  assert.deepEqual(find(both, ev3.id).ev.pitches.map((p) => p.step + p.octave), ["C5", "E5"]);
+  validate(both);
 });
