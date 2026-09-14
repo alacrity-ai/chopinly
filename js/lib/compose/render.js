@@ -1,7 +1,7 @@
 // Layout → SVG (docs/COMPOSE_DESIGN.md §9). Bravura glyphs as <text>, geometry
 // as primitives, one <svg> for the score plus a separate overlay for the ghost
 // and the bar flash so pointer moves never touch the score's DOM.
-import { G, timeDigit, restGlyph, headGlyph, flagGlyph } from "../staff/glyphs.js";
+import { G, timeDigit, tupletDigit, restGlyph, headGlyph, flagGlyph } from "../staff/glyphs.js";
 
 const NS = "http://www.w3.org/2000/svg";
 function el(name, attrs, text) {
@@ -16,11 +16,12 @@ export function renderComposition(container, L) {
   const glyphOf = (x, y, ch, cls = "glyph") => el("text", { x: px(x), y: px(y), class: cls }, ch);
   /** The nodes of one ghost note / rest. */
   const ghostNodes = (spec) => {
-    if (spec.rest) return [glyphOf(spec.x, spec.y, restGlyph(spec.base), "glyph rest")];
+    if (spec.rest) { const out = [glyphOf(spec.x, spec.y, restGlyph(spec.base), "glyph rest")]; for (let i = 0; i < (spec.dots ?? 0); i++) out.push(glyphOf(spec.x + 1.5 + i * 0.7, spec.y - 0.5, G.dot, "glyph head-part")); return out; }
     const out = [], headW = spec.base <= 1 ? 1.7 : 1.18;
     if (spec.base >= 2 && spec.stem !== false) { const up = spec.stemUp, sx = up ? spec.x + headW - 0.07 : spec.x + 0.07; out.push(el("rect", { x: px(sx - 0.065), y: px(up ? spec.y - 3.5 : spec.y), width: px(0.13), height: px(3.5), class: "stem" })); }
     for (const ly of spec.ledgers ?? []) out.push(el("line", { x1: px(spec.x - 0.35), y1: px(ly), x2: px(spec.x + headW + 0.35), y2: px(ly), class: "sline" }));
     out.push(glyphOf(spec.x, spec.y, headGlyph(spec.base), "glyph head"));
+    for (let i = 0; i < (spec.dots ?? 0); i++) out.push(glyphOf(spec.x + headW + 0.4 + i * 0.7, spec.onLine ? spec.y - 0.5 : spec.y, G.dot, "glyph head-part"));
     return out;
   };
   const svg = el("svg", { class: "cp-svg staff-svg", viewBox: `0 0 ${L.width} ${L.height}`, width: L.width, height: L.height, style: `font-size:${fs}px` });
@@ -72,7 +73,7 @@ export function renderComposition(container, L) {
       for (const h of d.heads) {
         const hg = el("g", { class: "cp-head-g", "data-pi": h.pi });
         hg.append(el("circle", { cx: px(h.x + d.headW / 2), cy: px(h.y), r: px(1.4), class: "halo" }));
-        if (h.acc !== null && h.acc !== undefined) hg.append(glyph(h.x - 1.35 - (h.flip && d.stem === "up" ? d.headW : 0), h.y, G[h.acc], "glyph head-part"));
+        if (h.acc !== null && h.acc !== undefined) hg.append(glyph(Math.min(h.x, d.x) - 1.35 - h.accCol * 1.15, h.y, G[h.acc], "glyph head-part"));
         hg.append(glyph(h.x, h.y, headGlyph(d.base), "glyph head cp-head"));
         for (let i = 0; i < (d.dots ?? 0); i++) hg.append(glyph(Math.max(h.x, d.x) + d.headW + 0.4 + i * 0.7, h.step % 2 === 0 ? h.y - 0.5 : h.y, G.dot, "glyph head-part"));
         g.append(hg);
@@ -80,6 +81,24 @@ export function renderComposition(container, L) {
     }
     svg.append(g);
     groups.set(d.id, g);
+  }
+
+  // ties (a tapered filled curve) and tuplet brackets + digits
+  for (const t of L.ties) {
+    const sgn = t.dir === "up" ? -1 : 1, len = Math.max(0.6, t.x2 - t.x1);
+    const x1 = t.x1 + 0.12, x2 = t.x2 - 0.12, y1 = t.y1 + 0.62 * sgn, y2 = t.y2 + 0.62 * sgn;
+    const b = Math.max(0.55, Math.min(1.35, len / 4)) * sgn, b2 = b - 0.26 * sgn, cx = Math.min(len * 0.3, 2.5);
+    svg.append(el("path", { class: "cp-tie", d: `M${px(x1)},${px(y1)} C${px(x1 + cx)},${px(y1 + b)} ${px(x2 - cx)},${px(y2 + b)} ${px(x2)},${px(y2)} C${px(x2 - cx)},${px(y2 + b2)} ${px(x1 + cx)},${px(y1 + b2)} ${px(x1)},${px(y1)} Z` }));
+  }
+  for (const t of L.tuplets) {
+    const g = el("g", { class: "cp-tuplet" });
+    const mid = (t.x1 + t.x2) / 2, hook = t.above ? 0.8 : -0.8;
+    if (t.bracket) {
+      g.append(el("polyline", { class: "cp-tuplet-line", points: `${px(t.x1)},${px(t.y + hook)} ${px(t.x1)},${px(t.y)} ${px(mid - 1.0)},${px(t.y)}` }));
+      g.append(el("polyline", { class: "cp-tuplet-line", points: `${px(mid + 1.0)},${px(t.y)} ${px(t.x2)},${px(t.y)} ${px(t.x2)},${px(t.y + hook)}` }));
+    }
+    g.append(el("text", { x: px(mid), y: px(t.y + 0.55), class: "glyph cp-tuplet-digit", "text-anchor": "middle" }, tupletDigit(t.n)));
+    svg.append(g);
   }
 
   // overlay: ghost + bar flash

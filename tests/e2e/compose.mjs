@@ -17,7 +17,7 @@ const lb = (fn, ...args) => page.evaluate(async ([src, a]) => { const m = await 
 const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging, lassoing: s.lassoing, pasting: s.pasting, hasClip: s.hasClip }; });
 const kinds = (bar, staff = 0) => page.evaluate(([b, st]) => document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[st].voices[0].map((e) => `${e.kind === "rest" ? "r" : "n"}${e.dur.base}${e.dur.dots ? "." : ""}`).join(" "), [bar, staff]);
 const point = (place) => page.evaluate((p) => document.querySelector(".cp-editor").__editor.pointFor(p), place);
-const tapAt = async (place) => { const p = await point(place); await page.touchscreen.tap(Math.round(p.x), Math.round(p.y)); await page.waitForTimeout(80); };
+const tapAt = async (place) => { const p = await point(place); if (process.env.DEBUG_TAP) console.log("  tap", JSON.stringify(place), JSON.stringify(p), await page.evaluate(([x, y]) => { const el = document.elementFromPoint(x, y); const v = document.querySelector("#cp-view").getBoundingClientRect(); return { under: el?.closest?.(".cp-ev")?.dataset.ev ?? el?.tagName, view: [v.top, v.bottom], scrollTop: document.querySelector("#cp-view").scrollTop }; }, [p.x, p.y])); await page.touchscreen.tap(Math.round(p.x), Math.round(p.y)); await page.waitForTimeout(80); };
 const noWiden = async () => { const w = await page.evaluate(() => ({ vw: innerWidth, doc: document.documentElement.scrollWidth })); if (w.doc > w.vw) throw new Error("page widened " + JSON.stringify(w)); };
 const PPQ = 6720;
 /** Synthetic pointer events straight at the view — the only way to fake a palm or a Pencil in Chromium. */
@@ -306,6 +306,84 @@ await step("transport: play moves the playhead and the rail's readout, pause hol
   await page.keyboard.press("Space");
   if ((await st()).playing) throw new Error("Space did not pause");
   await page.click("[data-act=stop]");
+});
+
+await step("notation: dot a chord (both heads, one event), tie two same-pitch notes (a curve appears), an armed triplet opens a group that taps fill (bracket + 3), three lassoed eighths become a triplet, ♭ on a selected head, an armed ♯ carries once", async () => {
+  const Z = (await state()).S; // the zoom (S is the screenshot dir)
+  const full = (bar, staff = 0) => page.evaluate(([b, st]) => document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[st].voices[0].map((e) => `${e.kind === "rest" ? "r" : "n"}${e.dur.base}${".".repeat(e.dur.dots)}${e.dur.tuplet ? `/${e.dur.tuplet.n}` : ""}`).join(" "), [bar, staff]);
+  const pitches = (bar, i) => page.evaluate(([b, i]) => document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[0].voices[0][i].pitches.map((p) => `${p.step}${p.alter > 0 ? "#".repeat(p.alter) : "b".repeat(-p.alter)}${p.octave}${p.tie ? ":" + p.tie : ""}`).join("+"), [bar, i]);
+  const scrollTo = (bar) => page.evaluate((b) => { const ed = document.querySelector(".cp-editor").__editor; const v = document.querySelector("#cp-view"); const p = ed.pointFor({ bar: b, staff: 0, ticks: 0, step: 4 }); v.scrollTop += p.y - v.getBoundingClientRect().top - v.clientHeight * 0.4; }, bar);
+  const pen = (type, o) => synth(type, { pointerType: "pen", pointerId: 91, width: 1, height: 1, pressure: 0.5, ...o });
+  const armed = async () => (await state()).armed;
+  await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
+  if ((await state()).mode !== "place") await page.keyboard.press("v");
+  if ((await armed()).base !== 4) await page.keyboard.press("5"); // quarter (pressing the armed one again would un-arm it)
+  await scrollTo(5);
+  if ((await full(5)) !== "r1") throw new Error("bar 6 not empty: " + (await full(5)));
+  // dot: a chord on beat 1, select a head, dot → the whole event is dotted
+  await tapAt({ bar: 5, staff: 0, ticks: 0, step: 4 }); await tapAt({ bar: 5, staff: 0, ticks: 0, step: 6 });
+  if ((await pitches(5, 0)) !== "B4+D5") throw new Error("chord " + (await pitches(5, 0)));
+  await tapAt({ bar: 5, staff: 0, ticks: 0, step: 4 }); // select the B4 head (tap on the head)
+  if ((await state()).selection.length !== 1) throw new Error("head not selected " + JSON.stringify(await state()));
+  await page.click("[data-act=dot]");
+  if ((await full(5)) !== "n4. r8 r2") throw new Error("dot: " + (await full(5)));
+  if ((await pitches(5, 0)) !== "B4+D5") throw new Error("dot lost a pitch");
+  await page.click("[data-act=dot]"); // again → undot
+  if ((await full(5)) !== "n4 r4 r2") throw new Error("undot: " + (await full(5)));
+  await page.keyboard.press("Escape"); // clear the selection
+  // tie: B4 on beats 3 and 4, select beat 3, tie
+  await tapAt({ bar: 5, staff: 0, ticks: 2 * PPQ + 300, step: 4 }); await tapAt({ bar: 5, staff: 0, ticks: 3 * PPQ + 300, step: 4 }); // a hair right of the onset: a tap dead on a note's column reads as that note
+  if ((await full(5)) !== "n4 r4 n4 n4") throw new Error("before tie: " + (await full(5)));
+  await tapAt({ bar: 5, staff: 0, ticks: 2 * PPQ, step: 4 });
+  await page.click("[data-act=tie]");
+  if ((await pitches(5, 2)) !== "B4:start" || (await pitches(5, 3)) !== "B4:stop") throw new Error("tie: " + (await pitches(5, 2)) + " " + (await pitches(5, 3)));
+  if ((await page.locator(".cp-tie").count()) !== 1) throw new Error("tie not drawn");
+  await page.keyboard.press("Escape");
+  // armed triplet: eighth + tuplet on → the first tap opens the group in a quarter's room, two more fill it
+  await page.keyboard.press("4"); // eighth
+  await page.click("[data-act=tuplet]");
+  if ((await armed()).tuplet !== 3) throw new Error("tuplet not armed " + JSON.stringify(await armed()));
+  await scrollTo(6);
+  await tapAt({ bar: 6, staff: 0, ticks: 0, step: 4 });
+  if ((await full(6)) !== "n8/3 r4/3 r4 r2") throw new Error("triplet open: " + (await full(6)));
+  await tapAt({ bar: 6, staff: 0, ticks: 2240 + 300, step: 5 }); await tapAt({ bar: 6, staff: 0, ticks: 4480 + 300, step: 6 });
+  if ((await full(6)) !== "n8/3 n8/3 n8/3 r4 r2") throw new Error("triplet fill: " + (await full(6)));
+  if ((await page.locator(".cp-svg .cp-tuplet").count()) !== 1) throw new Error("tuplet digit drawn " + (await page.locator(".cp-svg .cp-tuplet").count()));
+  await page.click("[data-act=tuplet]"); // off
+  if ((await armed()).tuplet !== null) throw new Error("tuplet still armed");
+  // selection tuplet: three plain eighths on beats 3–4, lasso them, tuplet → triplet + freed eighth rest
+  for (const t of [2 * PPQ + 300, 2.5 * PPQ + 300, 3 * PPQ + 300]) await tapAt({ bar: 6, staff: 0, ticks: t, step: 4 });
+  if ((await full(6)) !== "n8/3 n8/3 n8/3 r4 n8 n8 n8 r8") throw new Error("three eighths: " + (await full(6)));
+  await page.click("[data-act=select]");
+  const a = await point({ bar: 6, staff: 0, ticks: 2 * PPQ, step: 4 }), b = await point({ bar: 6, staff: 0, ticks: 3 * PPQ, step: 4 });
+  const x0 = a.x - 0.5 * Z, x1 = b.x + 1.8 * Z, yTop = a.y - 1.2 * Z, yBot = a.y + 1.2 * Z;
+  await pen("pointerdown", { clientX: x0, clientY: yTop });
+  for (const [x, y] of [[x1, yTop], [x1, yBot], [x0, yBot], [x0, yTop + 4]]) await pen("pointermove", { clientX: x, clientY: y });
+  await pen("pointerup", { clientX: x0, clientY: yTop + 4 });
+  if ((await state()).selection.length !== 3) throw new Error("lasso got " + JSON.stringify((await state()).selection));
+  await page.click("[data-act=tuplet]");
+  if ((await full(6)) !== "n8/3 n8/3 n8/3 r4 n8/3 n8/3 n8/3 r4") throw new Error("selection triplet: " + (await full(6))); // the freed eighth and the trailing eighth rest merge into beat 4
+  if ((await page.locator(".cp-svg .cp-tuplet").count()) !== 2) throw new Error("tuplet digits " + (await page.locator(".cp-svg .cp-tuplet").count()));
+  await page.keyboard.press("Escape"); await page.keyboard.press("v"); // back to Place
+  // accidentals: ♭ on a selected head; an armed ♯ carries once
+  await tapAt({ bar: 6, staff: 0, ticks: 0, step: 4 }); // select the first triplet head (B4)
+  await page.click(".cp-acc[data-alter='-1']");
+  if ((await pitches(6, 0)) !== "Bb4") throw new Error("flat: " + (await pitches(6, 0)));
+  const flats = await page.evaluate(() => [...document.querySelectorAll(".cp-svg .head-part")].filter((t) => t.textContent === "\ue260").length);
+  if (flats < 1) throw new Error("flat glyph not drawn");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("5"); // quarter (the eighth is armed)
+  await page.click(".cp-acc[data-alter='1']");
+  if ((await armed()).alter !== 1) throw new Error("sharp not armed");
+  await scrollTo(7);
+  await tapAt({ bar: 7, staff: 0, ticks: 0, step: 3 }); // A4 → A#4
+  if ((await pitches(7, 0)) !== "A#4") throw new Error("armed sharp: " + (await pitches(7, 0)));
+  if ((await armed()).alter !== null) throw new Error("sharp did not clear");
+  await tapAt({ bar: 7, staff: 0, ticks: PPQ + 300, step: 3 });
+  if ((await pitches(7, 1)) !== "A4") throw new Error("sharp carried twice: " + (await pitches(7, 1)));
+  await scrollTo(5);
+  await page.screenshot({ path: `${S}/cp-14-notation.png` });
+  await scrollTo(0); await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
 });
 
 await step("Rest toggle: a rest placed into a bar with notes leaves the bar adding up", async () => {

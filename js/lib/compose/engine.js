@@ -2,13 +2,14 @@
 // clones the document, changes it, re-normalises the touched bar and returns
 // the new document; a refused edit throws Nudge(sentence) and the document is
 // untouched. Pure — node-testable.
-import { ticks, capacity, splitRest, grid } from "./ticks.js";
-import { clone, restEvent, noteEvent, newMeasure, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, DEFAULT_BARS, eid } from "./model.js";
+import { ticks, capacity, splitRest, fromTicks } from "./ticks.js";
+import { clone, restEvent, noteEvent, durOf, newMeasure, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, DEFAULT_BARS, eid } from "./model.js";
 import { parsePitch, keyAlterations, CLEFS } from "../music.js";
 
 export class Nudge extends Error { constructor(msg, { bar = null } = {}) { super(msg); this.name = "Nudge"; this.bar = bar; } }
 
 const LETTERS = ["C", "D", "E", "F", "G", "A", "B"];
+const PLAIN_BASES = [1, 2, 4, 8, 16, 32, 64];
 
 /** The spelled pitch on a staff step for a clef, taking the key's alteration for that letter. */
 export function pitchFromStep(step, clef, key) {
@@ -22,10 +23,45 @@ export function pitchFromStep(step, clef, key) {
 export const midiOf = (p) => parsePitch(`${p.step}${p.alter === 1 ? "#" : p.alter === -1 ? "b" : ""}${p.octave}`).midi + (Math.abs(p.alter) === 2 ? p.alter : 0);
 /** Diatonic index of a pitch (for chord ordering). */
 export const diatonicOf = (p) => p.octave * 7 + LETTERS.indexOf(p.step);
-
 /** Staff step of a spelled pitch on a clef. */
 export const stepOf = (p, clef) => diatonicOf(p) - parsePitch(CLEFS[clef].bottom).diatonic;
 export const STEP_MIN = -10, STEP_MAX = 18;
+const samePitch = (a, b) => a.step === b.step && a.octave === b.octave && a.alter === b.alter;
+const keyAlt = (key, step) => keyAlterations(key.fifths).get(step) ?? 0;
+
+// --- tuplets ----------------------------------------------------------------
+/** n in the time of `in`, per the palette: duplet 2:3, triplet 3:2, quintuplet 5:4, sextuplet 6:4, septuplet 7:4. */
+export const TUPLET_IN = { 2: 3, 3: 2, 5: 4, 6: 4, 7: 4 };
+export const tupletOf = (n, id = `t${eid()}`) => ({ n, in: TUPLET_IN[n], id });
+/** Rests filling a gap inside a tuplet group: tuplet-valued, longest first. */
+export function splitTupletGap(gap, tuplet) {
+  const out = [];
+  let left = gap;
+  for (const base of PLAIN_BASES) { const v = ticks({ base, tuplet }); while (left >= v) { out.push({ base, dots: 0, tuplet }); left -= v; } }
+  if (left) throw new Error(`cannot fill ${gap} ticks inside a tuplet`);
+  return out;
+}
+const groupId = (ev) => ev.dur.tuplet?.id ?? null;
+/** The rests for a gap: plain (standard splits) or, inside a tuplet group, tuplet-valued. */
+const fill = (gap, at, time, tuplet) => (gap > 0 ? (tuplet ? splitTupletGap(gap, tuplet) : splitRest(gap, at, time)).map(restEvent) : []);
+
+/** items [{ ev, pi? }] → Map(evId → Set(pi | "*")). */
+function groupItems(items) {
+  const byEv = new Map();
+  for (const it of items) { if (!byEv.has(it.ev)) byEv.set(it.ev, new Set()); byEv.get(it.ev).add(it.pi === undefined || it.pi === null ? "*" : it.pi); }
+  return byEv;
+}
+/** The selected pitches of a note per item group: [{ f, ps }]. */
+function targets(d, items) {
+  const out = [];
+  for (const [evId, pis] of groupItems(items)) {
+    const f = find(d, evId);
+    if (!f || f.ev.kind !== "note") continue;
+    const ps = pis.has("*") ? [...f.ev.pitches] : [...pis].map((i) => f.ev.pitches[i]).filter(Boolean);
+    if (ps.length) out.push({ f, ps });
+  }
+  return out;
+}
 
 /**
  * Move pitches by staff steps, spelled from the key (docs/COMPOSE_DESIGN.md §7.1).
@@ -38,8 +74,7 @@ export const STEP_MIN = -10, STEP_MAX = 18;
 export function setPitch(doc, items, delta) {
   if (!delta) return { doc, pi: items[0]?.pi ?? null, moved: items.map((it) => ({ ev: it.ev, pi: it.pi ?? null })) };
   const d = clone(doc);
-  const byEv = new Map();
-  for (const it of items) { if (!byEv.has(it.ev)) byEv.set(it.ev, new Set()); byEv.get(it.ev).add(it.pi === undefined || it.pi === null ? "*" : it.pi); }
+  const byEv = groupItems(items);
   const moved = [];
   let movedPi = null;
   for (const [evId, pis] of byEv) {
@@ -51,7 +86,7 @@ export function setPitch(doc, items, delta) {
       const step = stepOf(p, clef) + delta;
       if (step < STEP_MIN || step > STEP_MAX) throw new Nudge("off the staff", { bar: f.bar });
       const np = pitchFromStep(step, clef, key);
-      p.step = np.step; p.alter = np.alter; p.octave = np.octave;
+      p.step = np.step; p.alter = np.alter; p.octave = np.octave; delete p.acc;
     }
     const seen = new Set();
     for (const q of f.ev.pitches) { const k = q.step + q.octave; if (seen.has(k)) throw new Nudge("that note is already in the chord", { bar: f.bar }); seen.add(k); }
@@ -59,14 +94,17 @@ export function setPitch(doc, items, delta) {
     for (const p of targets) moved.push({ ev: evId, pi: f.ev.pitches.indexOf(p) });
     if (targets.length === 1 && byEv.size === 1) movedPi = f.ev.pitches.indexOf(targets[0]);
   }
+  cleanTies(d);
   return { doc: d, pi: movedPi, moved };
 }
 
 /**
- * Retype events to a duration (docs/COMPOSE_DESIGN.md §7.1). Shorter → the
- * difference becomes rests after it; longer → consumes the rests that follow
- * it in the bar. All or nothing: if any event cannot fit, the Nudge names the
- * bar and the document is untouched. Rests are not retyped (they are the gaps).
+ * Retype events to a duration (docs/COMPOSE_DESIGN.md §7.1) — `dur` is a
+ * duration or a function of the event. Shorter → the difference becomes rests
+ * after it; longer → consumes the rests that follow it in the bar. Inside a
+ * tuplet the ratio is kept and only that group's rests are consumed or made.
+ * All or nothing: if any event cannot fit, the Nudge names the bar and the
+ * document is untouched. Rests are not retyped (they are the gaps).
  */
 export function retype(doc, evIds, dur) {
   const d = clone(doc);
@@ -80,25 +118,31 @@ export function retype(doc, evIds, dur) {
     const idx = voice.indexOf(f.ev);
     const ev = voice[idx];
     const time = timeAt(d, f.bar);
-    const oldLen = ticks(ev.dur), newLen = ticks(dur);
+    const want = typeof dur === "function" ? dur(ev) : dur;
+    const tuplet = ev.dur.tuplet ?? null;
+    const oldLen = ticks(ev.dur), newLen = ticks({ base: want.base, dots: want.dots ?? 0, tuplet });
     const start = onsets(voice)[idx].start;
-    ev.dur = { base: dur.base, dots: dur.dots ?? 0, ...(dur.tuplet ? { tuplet: dur.tuplet } : {}) };
+    ev.dur = durOf({ base: want.base, dots: want.dots ?? 0, tuplet });
     if (newLen < oldLen) {
-      voice.splice(idx + 1, 0, ...splitRest(oldLen - newLen, start + newLen, time).map(restEvent));
+      voice.splice(idx + 1, 0, ...fill(oldLen - newLen, start + newLen, time, tuplet));
     } else if (newLen > oldLen) {
       let need = newLen - oldLen, k = idx + 1, got = 0;
       while (got < need) {
         const nx = voice[k];
-        if (!nx || nx.kind !== "rest") throw new Nudge("too long for this bar", { bar: f.bar });
+        if (!nx || nx.kind !== "rest" || groupId(nx) !== (tuplet?.id ?? null)) throw new Nudge(tuplet ? "too long for this tuplet" : "too long for this bar", { bar: f.bar });
         got += ticks(nx.dur); voice.splice(k, 1);
       }
-      if (got > need) voice.splice(idx + 1, 0, ...splitRest(got - need, start + newLen, time).map(restEvent));
+      if (got > need) voice.splice(idx + 1, 0, ...fill(got - need, start + newLen, time, tuplet));
     }
     bars.add(f.bar);
   }
   for (const bar of bars) normalizeBar(d, bar);
+  cleanTies(d);
   return d;
 }
+
+/** Dot (dots = 1 or 2) or undot (0) notes: a retype that keeps each note's base. */
+export const dot = (doc, evIds, dots) => retype(doc, evIds, (ev) => ({ base: ev.dur.base, dots }));
 
 /** Notes → rests of the same length (a rest has no pitch to become a note). */
 export function toRests(doc, evIds) {
@@ -114,6 +158,154 @@ export function toRests(doc, evIds) {
   }
   if (!bars.size) return doc;
   for (const bar of bars) normalizeBar(d, bar);
+  cleanTies(d);
+  return d;
+}
+
+/**
+ * Tie (docs/COMPOSE_DESIGN.md §2): one note selected → each of its pitches ties
+ * to the same pitch in the next event of the staff (across a barline included);
+ * several selected → only pitches whose next event is also selected. A chord
+ * ties every pitch that has a match. Every selected pitch already tied → untie.
+ * Nothing tieable → Nudge "tie needs the same pitch next".
+ */
+export function tie(doc, items) {
+  const d = clone(doc);
+  const ts = targets(d, items);
+  if (!ts.length) throw new Nudge("pick a note to tie");
+  const all = ts.flatMap((t) => t.ps);
+  const starts = all.filter((p) => p.tie === "start" || p.tie === "both");
+  if (starts.length === all.length) { for (const p of starts) { if (p.tie === "both") p.tie = "stop"; else delete p.tie; } cleanTies(d); return d; }
+  const selected = new Set(ts.map((t) => t.f.ev.id));
+  let tied = 0;
+  for (const { f, ps } of ts) {
+    const nx = nextEvent(d, f);
+    if (!nx || nx.kind !== "note" || (ts.length > 1 && !selected.has(nx.id))) continue;
+    for (const p of ps) {
+      if (p.tie === "start" || p.tie === "both") continue;
+      if (nx.pitches.some((q) => samePitch(p, q))) { p.tie = p.tie === "stop" ? "both" : "start"; tied++; }
+    }
+  }
+  if (!tied) throw new Nudge("tie needs the same pitch next", { bar: ts[0].f.bar });
+  cleanTies(d);
+  return d;
+}
+/** The event after `f` in its staff: the next in the voice, else the first of the next bar. */
+export function nextEvent(doc, f) {
+  const voice = doc.measures[f.bar].staves[f.staff].voices[f.voice];
+  const i = voice.indexOf(f.ev);
+  if (i >= 0 && i + 1 < voice.length) return voice[i + 1];
+  return doc.measures[f.bar + 1]?.staves[f.staff].voices[f.voice][0] ?? null;
+}
+/**
+ * Re-derive every tie: a `start` survives only when the next event of the
+ * staff holds the same spelled pitch, and that pitch is marked `stop` (or
+ * `both`). Runs after every edit, so no tie ever dangles.
+ */
+export function cleanTies(doc) {
+  const nStaves = doc.parts[0].staves;
+  for (let staff = 0; staff < nStaves; staff++) {
+    const seq = doc.measures.flatMap((m) => m.staves[staff].voices[0]);
+    for (const ev of seq) for (const p of ev.pitches ?? []) { if (p.tie === "stop") delete p.tie; else if (p.tie === "both") p.tie = "start"; }
+    for (let i = 0; i < seq.length; i++) {
+      const ev = seq[i];
+      if (ev.kind !== "note") continue;
+      for (const p of ev.pitches) {
+        if (p.tie !== "start" && p.tie !== "both") continue;
+        const nx = seq[i + 1];
+        const q = nx?.kind === "note" ? nx.pitches.find((x) => samePitch(p, x)) : null;
+        if (!q) { if (p.tie === "both") p.tie = "stop"; else delete p.tie; continue; }
+        q.tie = q.tie === "start" ? "both" : "stop";
+      }
+    }
+  }
+  return doc;
+}
+
+/**
+ * Accidental (docs/COMPOSE_DESIGN.md §7.1): set `alter` on the selected
+ * pitches. Pressing the accidental a pitch already has takes it back to the
+ * key's spelling; a natural (or any accidental) the key already implies is
+ * drawn as a cautionary (`acc: "show"`), and pressing it again hides it.
+ */
+export function accidental(doc, items, alter) {
+  const d = clone(doc);
+  const ts = targets(d, items);
+  if (!ts.length) throw new Nudge("pick a note for the accidental");
+  for (const { f, ps } of ts) {
+    const key = keyAt(d, f.bar);
+    for (const p of ps) spell(p, alter, keyAlt(key, p.step));
+  }
+  cleanTies(d);
+  return d;
+}
+/** Apply an explicit accidental to a pitch given the key's alteration for its letter. */
+function spell(p, alter, ka) {
+  if (p.alter === alter) {
+    if (alter === ka) { if (p.acc === "show") delete p.acc; else p.acc = "show"; }
+    else { p.alter = ka; delete p.acc; }
+  } else {
+    p.alter = alter;
+    if (alter === ka) p.acc = "show"; else delete p.acc;
+  }
+}
+
+/**
+ * Tuplet (docs/COMPOSE_DESIGN.md §2): the selected run of events (side by
+ * side in one voice) becomes n in the time of `in`: their durations keep base
+ * and dots, gain the ratio, and the time they free becomes rests after the
+ * group. Their plain total must be n × a plain value. If the run is already
+ * one tuplet group, the group is undone: durations go plain and the rests
+ * after it are consumed (Nudge when they do not suffice).
+ */
+export function tuplet(doc, evIds, n = 3) {
+  if (!TUPLET_IN[n]) throw new Nudge("tuplets come in 2, 3, 5, 6 or 7");
+  const d = clone(doc);
+  const found = [...new Set(evIds)].map((id) => find(d, id)).filter(Boolean).sort((a, b) => a.bar - b.bar || a.staff - b.staff || a.index - b.index);
+  if (!found.length) throw new Nudge("pick the notes to make a tuplet");
+  const f0 = found[0];
+  if (found.some((f) => f.bar !== f0.bar || f.staff !== f0.staff || f.voice !== f0.voice)) throw new Nudge("pick a run of notes in one bar", { bar: f0.bar });
+  if (found.some((f, i) => f.index !== f0.index + i)) throw new Nudge("pick notes side by side", { bar: f0.bar });
+  const voice = d.measures[f0.bar].staves[f0.staff].voices[f0.voice], time = timeAt(d, f0.bar);
+  const gids = new Set(found.map((f) => groupId(f.ev)));
+  if (gids.size === 1 && !gids.has(null)) { // undo the whole group
+    const gid = [...gids][0];
+    const members = voice.filter((e) => groupId(e) === gid);
+    const last = voice.indexOf(members[members.length - 1]);
+    const start = onsets(voice)[voice.indexOf(members[0])].start;
+    const plain = members.reduce((s, e) => s + ticks({ base: e.dur.base, dots: e.dur.dots }), 0);
+    const now = members.reduce((s, e) => s + ticks(e.dur), 0);
+    let need = plain - now, got = 0, k = last + 1;
+    while (got < need) {
+      const nx = voice[k];
+      if (!nx || nx.kind !== "rest" || groupId(nx)) throw new Nudge("no room to undo the tuplet", { bar: f0.bar });
+      got += ticks(nx.dur); voice.splice(k, 1);
+    }
+    for (const e of members) e.dur = durOf({ base: e.dur.base, dots: e.dur.dots });
+    if (got > need) voice.splice(last + 1, 0, ...fill(got - need, start + plain, time, null));
+    normalizeBar(d, f0.bar); cleanTies(d);
+    return d;
+  }
+  if (gids.size > 1 || !gids.has(null)) throw new Nudge("those are already in a tuplet", { bar: f0.bar });
+  const T = found.reduce((s, f) => s + ticks(f.ev.dur), 0);
+  if (!Number.isInteger(T / n) || !fromTicks(T / n)) throw new Nudge(`those don't make a tuplet of ${n}`, { bar: f0.bar });
+  if (!found.some((f) => f.ev.kind === "note")) throw new Nudge("a tuplet needs a note", { bar: f0.bar });
+  const tp = tupletOf(n);
+  const start = onsets(voice)[f0.index].start, span = (T * tp.in) / n, end = f0.index + found.length;
+  if (span > T) { // a duplet takes more room than the run it replaces: the rests after it give way
+    let need = span - T, got = 0;
+    while (got < need) {
+      const nx = voice[end];
+      if (!nx || nx.kind !== "rest" || groupId(nx)) throw new Nudge(`no room for the ${n === 2 ? "duplet" : "tuplet"}`, { bar: f0.bar });
+      got += ticks(nx.dur); voice.splice(end, 1);
+    }
+    for (const f of found) f.ev.dur = durOf({ ...f.ev.dur, tuplet: tp });
+    if (got > need) voice.splice(end, 0, ...fill(got - need, start + span, time, null));
+  } else {
+    for (const f of found) f.ev.dur = durOf({ ...f.ev.dur, tuplet: tp });
+    voice.splice(end, 0, ...fill(T - span, start + span, time, null));
+  }
+  normalizeBar(d, f0.bar); cleanTies(d);
   return d;
 }
 
@@ -123,11 +315,16 @@ export function onsets(voice) {
   return voice.map((ev) => { const len = evTicks(ev); const o = { ev, start: t, len }; t += len; return o; });
 }
 
-/** Re-split every run of rests in a bar into standard groupings; throws if a voice does not add up. */
+/**
+ * Re-split every run of plain rests in a bar into standard groupings; a tuplet
+ * group that is all rests dissolves into plain rests; other tuplet rests stay
+ * as they are. Throws if a voice does not add up.
+ */
 export function normalizeBar(doc, bar) {
   const time = timeAt(doc, bar), cap = capacity(time), m = doc.measures[bar];
   for (const staff of m.staves) {
     staff.voices = staff.voices.map((voice) => {
+      const live = new Set(voice.filter((e) => e.kind === "note" && e.dur.tuplet).map(groupId));
       const out = [];
       let pos = 0, gapStart = null, gapIds = [];
       const flush = () => {
@@ -137,7 +334,8 @@ export function normalizeBar(doc, bar) {
         gapStart = null; gapIds = [];
       };
       for (const ev of voice) {
-        if (ev.kind === "rest") { if (gapStart === null) gapStart = pos; gapIds.push(ev.id); }
+        const plainRest = ev.kind === "rest" && (!ev.dur.tuplet || !live.has(ev.dur.tuplet.id));
+        if (plainRest) { if (gapStart === null) gapStart = pos; gapIds.push(ev.id); }
         else { flush(); out.push(ev); }
         pos += evTicks(ev);
       }
@@ -149,32 +347,44 @@ export function normalizeBar(doc, bar) {
   return doc;
 }
 
-/** Where a tap would land: { onset } for the armed duration inside the rest under `t`, or a Nudge. Does not change the document. */
+/**
+ * Where a tap would land: { onset } for the armed duration inside the rest
+ * under `t`, or a Nudge. Inside a tuplet group the armed base takes the
+ * group's ratio; with a tuplet armed on plain rests, a whole new group has to
+ * fit. Does not change the document.
+ */
 export function snap(doc, { bar, staff, ticks: t }, armed) {
   const voice = doc.measures[bar].staves[staff].voices[0];
-  const dur = ticks(armed), cap = capacity(timeAt(doc, bar));
+  const cap = capacity(timeAt(doc, bar));
   const tt = Math.max(0, Math.min(cap - 1, Math.round(t)));
   const os = onsets(voice);
   const hit = os.find((o) => tt >= o.start && tt < o.start + o.len) ?? os[os.length - 1];
   if (hit.ev.kind === "note") return { onset: hit.start, joins: hit.ev };
-  // the run of rests around the tap
+  // the run of rests around the tap, within one tuplet group (or plain)
+  const gid = groupId(hit.ev);
   let i0 = os.indexOf(hit), i1 = i0;
-  while (i0 > 0 && os[i0 - 1].ev.kind === "rest") i0--;
-  while (i1 < os.length - 1 && os[i1 + 1].ev.kind === "rest") i1++;
+  while (i0 > 0 && os[i0 - 1].ev.kind === "rest" && groupId(os[i0 - 1].ev) === gid) i0--;
+  while (i1 < os.length - 1 && os[i1 + 1].ev.kind === "rest" && groupId(os[i1 + 1].ev) === gid) i1++;
   const runStart = os[i0].start, runEnd = os[i1].start + os[i1].len;
-  if (runEnd - runStart < dur) throw new Nudge("no room in this bar", { bar });
-  const g = grid(armed), cands = [];
-  for (let k = Math.ceil(runStart / g) * g; k <= runEnd - dur; k += g) cands.push(k);
-  if (runStart <= runEnd - dur && !cands.includes(runStart)) cands.push(runStart);
-  if (!cands.length) throw new Nudge("no room in this bar", { bar });
+  const group = hit.ev.dur.tuplet ?? null;
+  const newGroup = !group && armed.tuplet ? tupletOf(armed.tuplet) : null;
+  const unit = ticks({ base: armed.base, dots: armed.dots ?? 0, tuplet: group ?? newGroup });
+  const need = newGroup ? unit * newGroup.n : unit; // a new group needs its whole span (n tuplet units = `in` plain ones)
+  if (runEnd - runStart < need) throw new Nudge(group ? "no room in this tuplet" : "no room in this bar", { bar });
+  const cands = [];
+  // plain rests snap to the bar's grid (beats first); inside a tuplet group the grid counts from the run's start
+  for (let k = group ? runStart : Math.ceil(runStart / need) * need; k <= runEnd - need; k += need) cands.push(k);
+  if (!cands.includes(runStart)) cands.push(runStart);
   const onset = cands.reduce((best, c) => (Math.abs(c - tt) < Math.abs(best - tt) ? c : best), cands[0]);
-  return { onset, joins: null, runStart, runEnd };
+  return { onset, joins: null, runStart, runEnd, group, newGroup, unit, need };
 }
 
 /**
  * Place the armed duration at the tapped slot and step. Into a rest: the note
- * (or rest) consumes the rests under it. Onto a note's slot: the pitch joins the
- * chord. Returns { doc, ev, action: "place" | "chord" | "same" }.
+ * (or rest) consumes the rests under it (a new tuplet group brings its own
+ * rests). Onto a note's slot: the pitch joins the chord (an armed accidental
+ * respells a pitch already there). Returns { doc, ev, action: "place" |
+ * "chord" | "same" | "alter" }.
  */
 export function place(doc, slot, armed) {
   const d = clone(doc);
@@ -182,28 +392,39 @@ export function place(doc, slot, armed) {
   const s = snap(d, slot, armed);
   const time = timeAt(d, bar), key = keyAt(d, bar), clef = clefAt(d, bar, staff);
   const voice = d.measures[bar].staves[staff].voices[0];
+  const pitch = () => { const p = pitchFromStep(step, clef, key); if (armed.alter !== null && armed.alter !== undefined) spell(p, armed.alter, keyAlt(key, p.step)); return p; };
   if (s.joins) {
     if (armed.rest) throw new Nudge("that beat already has a note", { bar });
     const ev = voice.find((e) => e.id === s.joins.id);
-    const p = pitchFromStep(step, clef, key);
-    if (ev.pitches.some((q) => q.step === p.step && q.octave === p.octave)) return { doc, ev, action: "same" };
+    const p = pitch();
+    const there = ev.pitches.find((q) => q.step === p.step && q.octave === p.octave);
+    if (there) {
+      if (armed.alter === null || armed.alter === undefined || (there.alter === p.alter && (there.acc ?? null) === (p.acc ?? null))) return { doc, ev, action: "same" };
+      there.alter = p.alter; if (p.acc) there.acc = p.acc; else delete there.acc;
+      cleanTies(d);
+      return { doc: d, ev, action: "alter" };
+    }
     ev.pitches.push(p);
     ev.pitches.sort((a, b) => diatonicOf(a) - diatonicOf(b));
+    cleanTies(d);
     return { doc: d, ev, action: "chord" };
   }
-  const dur = ticks(armed);
+  const tp = s.group ?? s.newGroup;
+  const dur = { base: armed.base, dots: armed.dots ?? 0, tuplet: tp };
   const os = onsets(voice);
   const before = os.filter((o) => o.start + o.len <= s.runStart).map((o) => o.ev);
   const after = os.filter((o) => o.start >= s.runEnd).map((o) => o.ev);
-  const ev = armed.rest ? restEvent(armed) : noteEvent(armed, [pitchFromStep(step, clef, key)]);
-  const gapA = s.onset - s.runStart, gapB = s.runEnd - (s.onset + dur);
+  const ev = armed.rest ? restEvent(dur) : noteEvent(dur, [pitch()]);
+  const gapA = s.onset - s.runStart, gapB = s.runEnd - (s.onset + s.need);
   const mid = [
-    ...(gapA > 0 ? splitRest(gapA, s.runStart, time).map(restEvent) : []),
+    ...fill(gapA, s.runStart, time, s.group),
     ev,
-    ...(gapB > 0 ? splitRest(gapB, s.onset + dur, time).map(restEvent) : []),
+    ...(s.newGroup ? fill(s.need - s.unit, s.onset + s.unit, time, s.newGroup) : []),
+    ...fill(gapB, s.onset + s.need, time, s.group),
   ];
   d.measures[bar].staves[staff].voices[0] = [...before, ...mid, ...after];
   normalizeBar(d, bar);
+  cleanTies(d);
   if (bar === d.measures.length - 1 && !isEmptyBar(d.measures[bar])) appendBar(d);
   return { doc: d, ev, action: "place" };
 }
@@ -231,9 +452,7 @@ export function find(doc, evId) {
 export function remove(doc, items) {
   const d = clone(doc);
   const bars = new Set();
-  const byEv = new Map();
-  for (const it of items) { if (!byEv.has(it.ev)) byEv.set(it.ev, new Set()); if (it.pi !== undefined && it.pi !== null) byEv.get(it.ev).add(it.pi); else byEv.get(it.ev).add("*"); }
-  for (const [evId, pis] of byEv) {
+  for (const [evId, pis] of groupItems(items)) {
     const f = find(d, evId);
     if (!f) continue;
     const voice = d.measures[f.bar].staves[f.staff].voices[f.voice];
@@ -246,12 +465,18 @@ export function remove(doc, items) {
   }
   if (!bars.size) return doc;
   for (const bar of bars) normalizeBar(d, bar);
+  cleanTies(d);
   return d;
 }
 
 /** Append an empty bar (in place — used by place; callers pass a clone). */
 export function appendBar(doc) {
   doc.measures.push(newMeasure(doc.parts[0].staves));
+  return doc;
+}
+/** Keep one empty bar after the last bar with anything in it (in place). */
+function ensureTrailingBar(doc) {
+  if (!isEmptyBar(doc.measures[doc.measures.length - 1])) appendBar(doc);
   return doc;
 }
 
@@ -285,12 +510,19 @@ export function locate(doc, abs) {
  * The selection as a phrase: items [{ ev, pi? }] → { events: [{ dStaff, offset,
  * kind, dur, pitches? }], span, staves }. Offsets count from the earliest
  * selected onset; staves from the topmost selected staff. A chord with only
- * some pitches selected copies just those.
+ * some pitches selected copies just those. A tuplet travels whole: its
+ * unselected members come along as rests, so the group still adds up.
  */
 export function clipFrom(doc, items) {
   const { starts } = barStarts(doc);
-  const byEv = new Map();
-  for (const it of items) { if (!byEv.has(it.ev)) byEv.set(it.ev, new Set()); byEv.get(it.ev).add(it.pi === undefined || it.pi === null ? "*" : it.pi); }
+  const byEv = groupItems(items);
+  // whole tuplet groups
+  for (const [evId] of [...byEv]) {
+    const f = find(doc, evId);
+    const gid = f && groupId(f.ev);
+    if (!gid) continue;
+    for (const e of doc.measures[f.bar].staves[f.staff].voices[f.voice]) if (groupId(e) === gid && !byEv.has(e.id)) byEv.set(e.id, new Set(["rest"]));
+  }
   const raw = [];
   for (const [evId, pis] of byEv) {
     const f = find(doc, evId);
@@ -298,8 +530,9 @@ export function clipFrom(doc, items) {
     const voice = doc.measures[f.bar].staves[f.staff].voices[f.voice];
     const abs = starts[f.bar] + onsets(voice)[f.index].start;
     const ev = f.ev;
-    const pitches = ev.kind === "note" ? (pis.has("*") ? ev.pitches : ev.pitches.filter((_, i) => pis.has(i))).map((p) => ({ ...p })) : null;
-    raw.push({ abs, staff: f.staff, kind: ev.kind, dur: { ...ev.dur }, pitches, len: evTicks(ev) });
+    const asRest = ev.kind === "rest" || pis.has("rest");
+    const pitches = asRest ? null : (pis.has("*") ? ev.pitches : ev.pitches.filter((_, i) => pis.has(i))).map((p) => ({ ...p }));
+    raw.push({ abs, staff: f.staff, kind: asRest ? "rest" : "note", dur: durOf(ev.dur), pitches, len: evTicks(ev) });
   }
   if (!raw.length) return null;
   const origin = Math.min(...raw.map((r) => r.abs)), top = Math.min(...raw.map((r) => r.staff));
@@ -310,10 +543,11 @@ export function clipFrom(doc, items) {
 /**
  * Drop a phrase at { bar, ticks, staff } (staff = where the phrase's top staff
  * lands; clamped so every staff of the phrase exists). The region the phrase
- * covers is cleared first — anything overlapping it goes — then the phrase is
- * written, and bars are appended if it runs past the end. An event that would
- * straddle a barline refuses the whole drop. Returns { doc, keys } with the
- * selection keys of what was pasted.
+ * covers is cleared first — anything overlapping it goes, a tuplet group
+ * whole — then the phrase is written (tuplet groups get fresh ids), and bars
+ * are appended if it runs past the end. An event that would straddle a
+ * barline refuses the whole drop. Returns { doc, keys } with the selection
+ * keys of what was pasted.
  */
 export function paste(doc, clip, { bar, ticks: t, staff = 0 }) {
   if (!clip?.events.length) throw new Nudge("nothing to paste");
@@ -324,14 +558,17 @@ export function paste(doc, clip, { bar, ticks: t, staff = 0 }) {
   // make room: append bars until the whole span fits
   while (barStarts(d).total < A0 + clip.span) appendBar(d);
   const placed = []; // { bar, staff, start, ev }
+  const gids = new Map();
   for (const e of clip.events) {
     const loc = locate(d, A0 + e.offset);
     if (!loc) throw new Nudge("that runs off the end", { bar: d.measures.length - 1 });
     if (loc.ticks + e.len > loc.cap) throw new Nudge("that would cross a barline", { bar: loc.bar });
-    const ev = e.kind === "rest" ? restEvent(e.dur) : { id: eid(), kind: "note", dur: { ...e.dur }, pitches: e.pitches.map((p) => ({ ...p })) };
+    let dur = e.dur;
+    if (dur.tuplet) { if (!gids.has(dur.tuplet.id)) gids.set(dur.tuplet.id, `t${eid()}`); dur = { ...dur, tuplet: { ...dur.tuplet, id: gids.get(dur.tuplet.id) } }; }
+    const ev = e.kind === "rest" ? restEvent(dur) : noteEvent(dur, e.pitches.map((p) => ({ ...p })));
     placed.push({ bar: loc.bar, staff: top + e.dStaff, start: loc.ticks, ev });
   }
-  // rebuild every touched (bar, staff): keep what lies outside the region, drop what overlaps it, add the phrase, fill the gaps
+  // rebuild every touched (bar, staff): keep what lies outside the region, drop what overlaps it (tuplets whole), add the phrase, fill the gaps
   const touched = new Map();
   for (const p of placed) { const k = `${p.bar}:${p.staff}`; if (!touched.has(k)) touched.set(k, []); touched.get(k).push(p); }
   const { starts } = barStarts(d);
@@ -340,19 +577,24 @@ export function paste(doc, clip, { bar, ticks: t, staff = 0 }) {
     const time = timeAt(d, b), cap = capacity(time);
     const r0 = Math.max(0, A0 - starts[b]), r1 = Math.min(cap, A0 + clip.span - starts[b]);
     const voice = d.measures[b].staves[st].voices[0];
-    const keep = onsets(voice).filter((o) => o.start + o.len <= r0 || o.start >= r1).map((o) => ({ start: o.start, len: o.len, ev: o.ev }));
+    const os = onsets(voice);
+    const dropped = new Set(os.filter((o) => !(o.start + o.len <= r0 || o.start >= r1)).map((o) => groupId(o.ev)).filter(Boolean));
+    const keep = os.filter((o) => (o.start + o.len <= r0 || o.start >= r1) && !dropped.has(groupId(o.ev))).map((o) => ({ start: o.start, len: o.len, ev: o.ev }));
     const all = [...keep, ...items.map((p) => ({ start: p.start, len: evTicks(p.ev), ev: p.ev }))].sort((a, b2) => a.start - b2.start);
     const out = [];
     let pos = 0;
+    const gap = (len, at) => { try { return splitRest(len, at, time).map(restEvent); } catch { throw new Nudge("that doesn't line up with the beat", { bar: b }); } };
     for (const x of all) {
       if (x.start < pos) throw new Nudge("those overlap", { bar: b });
-      if (x.start > pos) out.push(...splitRest(x.start - pos, pos, time).map(restEvent));
+      if (x.start > pos) out.push(...gap(x.start - pos, pos));
       out.push(x.ev); pos = x.start + x.len;
     }
-    if (pos < cap) out.push(...splitRest(cap - pos, pos, time).map(restEvent));
+    if (pos < cap) out.push(...gap(cap - pos, pos));
     d.measures[b].staves[st].voices[0] = out;
     normalizeBar(d, b);
   }
+  cleanTies(d);
+  ensureTrailingBar(d);
   const keys = placed.flatMap((p) => (p.ev.kind === "note" ? p.ev.pitches.map((_, i) => `${p.ev.id}:${i}`) : [p.ev.id]));
   return { doc: d, keys };
 }

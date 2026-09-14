@@ -153,7 +153,7 @@ where the ghost showed, a resting palm never moves or marks the score, the
 notes sound, undo works, and the app is unchanged for anyone who never opens
 Compose. Leif's verdict on the feel gates P1.
 
-## Phase 1 — editing (select, drag, retype, chords, dots, ties, tuplets, accidentals)
+## Phase 1 — editing (select, drag, retype, chords, dots, ties, tuplets, accidentals) — LANDED v67–v69 (WSHED-115) + v72 (WSHED-116, 2026-09-13)
 
 **Goal:** everything in the brief's "usage would feel like" paragraph.
 

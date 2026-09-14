@@ -24,10 +24,11 @@ export function timeline(doc) {
         for (const p of o.ev.pitches) {
           const midi = midiOf(p), k = `${staff}:${midi}`;
           const held = open.get(k);
-          if (held && held.at + held.len === at) { held.len += o.len; if (!p.tie) open.delete(k); continue; }
+          const starts = p.tie === "start" || p.tie === "both";
+          if (held && held.at + held.len === at) { held.len += o.len; if (!starts) open.delete(k); continue; }
           const n = { at, len: o.len, midi, staff };
           notes.push(n);
-          if (p.tie) open.set(k, n); else open.delete(k);
+          if (starts) open.set(k, n); else open.delete(k);
         }
       }
     });
