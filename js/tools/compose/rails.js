@@ -1,7 +1,8 @@
 // The control rail and the palette rail (docs/COMPOSE_DESIGN.md §8.1). Pure
 // markup + click wiring; the editor owns the state and calls `update`.
 import { icon } from "../../lib/icons.js";
-import { metGlyph, restGlyph, G } from "../../lib/staff/glyphs.js";
+import { metGlyph, restGlyph, artGlyph, G } from "../../lib/staff/glyphs.js";
+import { CLEFS } from "../../lib/music.js";
 import { esc } from "../logbook/util.js";
 
 export const MAIN_BASES = [1, 2, 4, 8, 16];
@@ -25,6 +26,10 @@ export function centreGlyph(span) {
   span.style.setProperty("--dy", `${dy.toFixed(2)}px`);
 }
 
+/** The fifteen keys, flats to sharps, with their major and relative minor names. */
+export const KEYS = [["C♭", "A♭"], ["G♭", "E♭"], ["D♭", "B♭"], ["A♭", "F"], ["E♭", "C"], ["B♭", "G"], ["F", "D"], ["C", "A"], ["G", "E"], ["D", "B"], ["A", "F♯"], ["E", "C♯"], ["B", "G♯"], ["F♯", "D♯"], ["C♯", "A♯"]].map(([major, minor], i) => ({ fifths: i - 7, major, minor }));
+export const TIMES = [[2, 4], [3, 4], [4, 4], [5, 4], [6, 8], [9, 8], [12, 8], [2, 2], [3, 8], [7, 8]];
+
 export function buildRails(host, { title, onAction }) {
   host.innerHTML = `
     <div class="cp-rail cp-control" role="toolbar" aria-label="controls">
@@ -40,6 +45,8 @@ export function buildRails(host, { title, onAction }) {
       <button type="button" class="cp-btn" data-act="cut" aria-label="cut the selection" disabled>${icon("cut")}</button>
       <button type="button" class="cp-btn" data-act="paste" aria-label="paste — then tap where it goes" aria-pressed="false" disabled>${icon("paste")}</button>
       <span class="cp-title" id="cp-title">${esc(title)}</span>
+      <button type="button" class="cp-btn cp-util-toggle" data-act="utility" aria-pressed="false" aria-label="key, time, clef and marks" aria-expanded="false"><span class="cp-glyph cp-glyph-sm">${G.gClef}</span><span class="cp-util-word">key · time · clef</span>${icon("more")}</button>
+      <span class="cp-sep" aria-hidden="true"></span>
       <button type="button" class="cp-btn cp-zoom" data-act="zoom-out" aria-label="smaller">&minus;</button>
       <button type="button" class="cp-btn cp-zoom" data-act="zoom-in" aria-label="bigger">+</button>
     </div>
@@ -62,7 +69,7 @@ export function buildRails(host, { title, onAction }) {
     <div class="cp-rail cp-palette" role="toolbar" aria-label="palette">
       ${MAIN_BASES.map((b) => `<button type="button" class="cp-btn cp-dur" data-act="dur" data-base="${b}" aria-pressed="false" aria-label="${NAMES[b]}"><span class="cp-glyph">${metGlyph(b)}</span></button>`).join("")}
       <span class="cp-more-wrap">
-        <button type="button" class="cp-btn cp-dur-more" data-act="more" aria-label="more durations" aria-expanded="false"><span class="cp-glyph cp-glyph-sm" id="cp-more-glyph">${metGlyph(32)}</span>&#9662;</button>
+        <button type="button" class="cp-btn cp-dur-more" data-pop="cp-more" aria-label="more durations" aria-expanded="false"><span class="cp-glyph cp-glyph-sm" id="cp-more-glyph">${metGlyph(32)}</span>&#9662;</button>
         <span class="cp-more" id="cp-more" hidden>${MORE_BASES.map((b) => `<button type="button" class="cp-btn cp-dur" data-act="dur" data-base="${b}" aria-pressed="false" aria-label="${NAMES[b]}"><span class="cp-glyph">${metGlyph(b)}</span></button>`).join("")}</span>
       </span>
       <span class="cp-sep" aria-hidden="true"></span>
@@ -75,31 +82,59 @@ export function buildRails(host, { title, onAction }) {
       <span class="cp-sep" aria-hidden="true"></span>
       ${[[1, "sharp"], [-1, "flat"], [0, "natural"]].map(([a, name]) => `<button type="button" class="cp-btn cp-acc" data-act="acc" data-alter="${a}" aria-pressed="false" aria-label="${name}"><span class="cp-glyph">${G[a]}</span></button>`).join("")}
       <span class="cp-more-wrap">
-        <button type="button" class="cp-btn cp-acc-more" data-act="more-acc" aria-label="double sharp, double flat" aria-expanded="false"><span class="cp-glyph cp-glyph-sm" id="cp-acc-more-glyph">${G[2]}</span>&#9662;</button>
+        <button type="button" class="cp-btn cp-acc-more" data-pop="cp-acc-more" aria-label="double sharp, double flat" aria-expanded="false"><span class="cp-glyph cp-glyph-sm" id="cp-acc-more-glyph">${G[2]}</span>&#9662;</button>
         <span class="cp-more" id="cp-acc-more" hidden>${[[2, "double sharp"], [-2, "double flat"]].map(([a, name]) => `<button type="button" class="cp-btn cp-acc" data-act="acc" data-alter="${a}" aria-pressed="false" aria-label="${name}"><span class="cp-glyph">${G[a]}</span></button>`).join("")}</span>
       </span>
       <span class="cp-sep" aria-hidden="true"></span>
       <button type="button" class="cp-btn cp-rest" data-act="rest" aria-pressed="false" aria-label="rest"><span class="cp-glyph cp-glyph-rest" id="cp-rest-glyph">${restGlyph(4)}</span><span class="cp-rest-word">rest</span></button>
+    </div>
+    <div class="cp-rail cp-utility" id="cp-utility" role="toolbar" aria-label="key, time, clef and marks" hidden>
+      <span class="cp-at" role="group" aria-label="target bar">
+        <button type="button" class="cp-btn cp-at-btn" data-act="bar-prev" aria-label="previous bar">&lsaquo;</button>
+        <span class="cp-at-read" id="cp-at-read">bar 1</span>
+        <button type="button" class="cp-btn cp-at-btn" data-act="bar-next" aria-label="next bar">&rsaquo;</button>
+      </span>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-pick" data-pop="cp-key-more" aria-label="key signature" aria-expanded="false"><span class="cp-pick-label">Key</span><b class="cp-pick-val" id="cp-key-val">C</b>&#9662;</button>
+        <span class="cp-more cp-grid cp-key-grid" id="cp-key-more" hidden>${KEYS.map((k) => `<button type="button" class="cp-btn cp-key" data-act="key" data-fifths="${k.fifths}" aria-pressed="false" aria-label="${k.major} major, ${k.minor} minor"><b>${k.major}</b><small>${k.minor}m</small></button>`).join("")}</span>
+      </span>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-pick" data-pop="cp-time-more" aria-label="time signature" aria-expanded="false"><span class="cp-pick-label">Time</span><b class="cp-pick-val" id="cp-time-val">4/4</b>&#9662;</button>
+        <span class="cp-more cp-grid" id="cp-time-more" hidden>${TIMES.map((t) => `<button type="button" class="cp-btn cp-time" data-act="time" data-beats="${t[0]}" data-unit="${t[1]}" aria-pressed="false" aria-label="${t[0]} ${t[1]}"><b>${t[0]}</b><b>${t[1]}</b></button>`).join("")}<button type="button" class="cp-btn cp-time-custom" data-act="time" data-custom="1" aria-label="another time signature">other…</button></span>
+      </span>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-pick" data-pop="cp-clef-more" aria-label="clefs" aria-expanded="false"><span class="cp-pick-label">Clef</span><span class="cp-pick-val cp-clef-val" id="cp-clef-val"><span class="cp-glyph cp-glyph-xs">${G.gClef}</span><span class="cp-glyph cp-glyph-xs">${G.fClef}</span></span>&#9662;</button>
+        <span class="cp-more cp-clef-more" id="cp-clef-more" hidden>${[0, 1].map((st) => `<span class="cp-clef-row"><span class="cp-clef-row-label">${st === 0 ? "upper" : "lower"}</span>${["treble", "bass", "alto", "tenor"].map((c) => `<button type="button" class="cp-btn cp-clef" data-act="clef" data-staff="${st}" data-clef="${c}" aria-pressed="false" aria-label="${c} clef, ${st === 0 ? "upper" : "lower"} staff"><span class="cp-glyph cp-glyph-sm">${G[CLEFS[c].glyph]}</span><small>${c === "alto" ? "alto" : c === "tenor" ? "tenor" : ""}</small></button>`).join("")}</span>`).join("")}</span>
+      </span>
+      <span class="cp-sep" aria-hidden="true"></span>
+      ${["fermata", "staccato", "accent", "tenuto"].map((m) => `<button type="button" class="cp-btn cp-art-btn" data-act="art" data-mark="${m}" aria-label="${m}"><span class="cp-glyph">${artGlyph(m, true)}</span></button>`).join("")}
+      <span class="cp-sep" aria-hidden="true"></span>
+      ${["trill", "mordent", "turn"].map((m) => `<button type="button" class="cp-btn cp-art-btn" data-act="art" data-mark="${m}" aria-label="${m}"><span class="cp-glyph">${artGlyph(m, true)}</span></button>`).join("")}
+      <span class="cp-sep" aria-hidden="true"></span>
+      <button type="button" class="cp-btn cp-gliss-btn" data-act="gliss" aria-label="glissando to the next note"><i>gliss.</i></button>
     </div>`;
-  const more = host.querySelector("#cp-more"), moreBtn = host.querySelector(".cp-dur-more");
-  const accMore = host.querySelector("#cp-acc-more"), accMoreBtn = host.querySelector(".cp-acc-more");
+  const moreBtn = host.querySelector(".cp-dur-more"), accMoreBtn = host.querySelector(".cp-acc-more");
   const tupMore = host.querySelector("#cp-tup-more"), tupBtn = host.querySelector(".cp-tuplet");
+  const pops = [...host.querySelectorAll("[data-pop]")].map((b) => [host.querySelector(`#${b.dataset.pop}`), b]).concat([[tupMore, tupBtn]]);
   // Bravura glyphs sit on a musical anchor, not a typographic centre: measure each one's ink and
   // slide it so the ink is centred in its button (re-done whenever a glyph's text changes).
   const centreAll = () => { for (const g of host.querySelectorAll(".cp-glyph")) centreGlyph(g); };
   (document.fonts?.load?.('2rem "Bravura"') ?? Promise.resolve()).then(centreAll, centreAll);
-  const closeMore = () => { for (const [m, b] of [[more, moreBtn], [accMore, accMoreBtn], [tupMore, tupBtn]]) { m.hidden = true; b.setAttribute("aria-expanded", "false"); } };
+  const closeMore = () => { for (const [m, b] of pops) { m.hidden = true; b.setAttribute("aria-expanded", "false"); } };
   const toggle = (m, b) => { const open = m.hidden; closeMore(); if (open) { m.hidden = false; b.setAttribute("aria-expanded", "true"); } };
   let swallow = false; // a click that follows a hold
   host.addEventListener("click", (e) => {
-    const b = e.target.closest("[data-act]");
+    const b = e.target.closest("[data-act], [data-pop]");
     if (!b || b.disabled) return;
     if (swallow) { swallow = false; return; }
+    if (b.dataset.pop) { toggle(host.querySelector(`#${b.dataset.pop}`), b); return; }
     const act = b.dataset.act;
-    if (act === "more") { toggle(more, moreBtn); return; }
-    if (act === "more-acc") { toggle(accMore, accMoreBtn); return; }
     closeMore();
     if (act === "dur") { onAction("dur", Number(b.dataset.base)); return; }
+    if (act === "key") { onAction("key", Number(b.dataset.fifths)); return; }
+    if (act === "time") { onAction("time", b.dataset.custom ? "custom" : { beats: Number(b.dataset.beats), unit: Number(b.dataset.unit) }); return; }
+    if (act === "clef") { onAction("clef", { staff: Number(b.dataset.staff), clef: b.dataset.clef }); return; }
+    if (act === "art") { onAction("art", b.dataset.mark); return; }
     if (act === "acc") { onAction("acc", Number(b.dataset.alter)); return; }
     if (act === "tuplet") { onAction("tuplet", b.dataset.n ? Number(b.dataset.n) : undefined); return; }
     onAction(act);
@@ -138,7 +173,23 @@ export function buildRails(host, { title, onAction }) {
       if (bpm !== undefined) host.querySelector("#cp-bpm").textContent = String(bpm);
     },
     /** Reflect the editor's state: { armed, mode, canUndo, canRedo, hasSelection, title }. */
-    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, title }) {
+    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, utility = null, title }) {
+      if (utility) {
+        const u = host.querySelector("#cp-utility"), tg = host.querySelector(".cp-util-toggle");
+        if (u.hidden === !!utility.open) { u.hidden = !utility.open; tg.setAttribute("aria-pressed", String(!!utility.open)); tg.setAttribute("aria-expanded", String(!!utility.open)); if (utility.open) centreAll(); }
+        host.querySelector("#cp-at-read").textContent = `bar ${utility.bar + 1}`;
+        host.querySelector("[data-act=bar-prev]").disabled = utility.bar <= 0;
+        host.querySelector("[data-act=bar-next]").disabled = utility.bar >= utility.bars - 1;
+        const key = KEYS.find((k) => k.fifths === utility.fifths);
+        host.querySelector("#cp-key-val").textContent = key ? `${key.major} / ${key.minor}m` : String(utility.fifths);
+        for (const b of host.querySelectorAll(".cp-key")) b.setAttribute("aria-pressed", String(Number(b.dataset.fifths) === utility.fifths));
+        host.querySelector("#cp-time-val").textContent = `${utility.time.beats}/${utility.time.unit}`;
+        for (const b of host.querySelectorAll(".cp-time")) b.setAttribute("aria-pressed", String(Number(b.dataset.beats) === utility.time.beats && Number(b.dataset.unit) === utility.time.unit));
+        const cv = host.querySelectorAll("#cp-clef-val .cp-glyph");
+        utility.clefs.forEach((c, i) => { const t = G[CLEFS[c].glyph]; if (cv[i] && cv[i].textContent !== t) { cv[i].textContent = t; centreGlyph(cv[i]); } });
+        for (const b of host.querySelectorAll(".cp-clef")) b.setAttribute("aria-pressed", String(utility.clefs[Number(b.dataset.staff)] === b.dataset.clef));
+        for (const b of host.querySelectorAll(".cp-art-btn, .cp-gliss-btn")) b.disabled = !hasSelection;
+      }
       for (const b of host.querySelectorAll(".cp-dur")) b.setAttribute("aria-pressed", String(mode === "place" && Number(b.dataset.base) === armed.base));
       const dg = host.querySelector("#cp-dot-glyph"), dt = G.dot.repeat(Math.max(1, armed.dots || 1));
       if (dg.textContent !== dt) { dg.textContent = dt; centreGlyph(dg); }

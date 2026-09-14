@@ -86,7 +86,15 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     }
   }
 
-  const keysigW = (b, si) => keySignatureGlyphs(b.key.fifths, b.clefs[si]).length;
+  /** The naturals that cancel the previous key at a change (fewer accidentals, or the other kind), in drawing order. */
+  const cancels = (b, si) => {
+    if (!b.showKey || b.index === 0) return [];
+    const prev = keyAt(doc, b.index - 1).fifths, next = b.key.fifths;
+    if (prev === 0 || (Math.sign(prev) === Math.sign(next) && Math.abs(next) >= Math.abs(prev))) return [];
+    const glyphs = keySignatureGlyphs(prev, b.clefs[si]);
+    return (Math.sign(prev) === Math.sign(next) ? glyphs.slice(Math.abs(next)) : glyphs).map((g) => ({ acc: 0, step: g.step }));
+  };
+  const keysigW = (b, si) => keySignatureGlyphs(b.key.fifths, b.clefs[si]).length + cancels(b, si).length;
   const leadingW = (b, first) => {
     const clef = first || b.showClef ? 3.4 : 0;
     const ks = first || b.showKey ? Math.max(...b.clefs.map((_, si) => keysigW(b, si))) * 1.15 + (Math.max(...b.clefs.map((_, si) => keysigW(b, si))) ? 0.8 : 0) : 0;
@@ -110,7 +118,10 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     }
     const lead = sys.bars.reduce((n, b, k) => n + leadingW(b, k === 0), 0);
     const body = sum - lead;
-    sys.scale = Math.min((avail - lead) / body, i >= bars.length ? 1.25 : 10);
+    // a courtesy key / time at the end when the next system opens with a change
+    const nb = bars[i];
+    sys.courtesy = nb && (nb.showKey || nb.showTime) ? { key: nb.showKey ? nb : null, time: nb.showTime ? nb : null, w: (nb.showKey ? Math.max(...nb.clefs.map((_, si) => keysigW(nb, si))) * 1.15 + 0.8 : 0) + (nb.showTime ? 3.0 : 0) + 0.4 } : null;
+    sys.scale = Math.min((avail - lead - (sys.courtesy?.w ?? 0)) / body, i >= bars.length ? 1.25 : 10);
     systems.push(sys);
   }
 
@@ -124,16 +135,17 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     sys.top = sysTop; sys.staffTop = Array.from({ length: nStaves }, (_, st) => staffTop(st));
     sys.leading = [];
     sys.barlines = [];
+    sys.courtesyLead = null;
     const hsys = { top: sysTop - 3, bottom: sysTop + BLOCK_H + 3, staves: sys.staffTop.map((t) => ({ topY: t })), bars: [] };
     let cursor = LEFT;
     sys.bars.forEach((b, k) => {
       const first = k === 0;
       const barX0 = cursor;
       // leading symbols
-      const lead = { x: cursor, clef: first || b.showClef, key: first || b.showKey, time: b.showTime, staves: [] };
+      const lead = { x: cursor, clef: first || b.showClef, small: !first && b.showClef, key: first || b.showKey, time: b.showTime, staves: [] };
       for (let st = 0; st < nStaves; st++) {
         const clef = b.clefs[st], ks = keySignatureGlyphs(b.key.fifths, clef);
-        lead.staves.push({ clef: CLEFS[clef], clefName: clef, keysig: ks, topY: staffTop(st) });
+        lead.staves.push({ clef: CLEFS[clef], clefName: clef, keysig: [...cancels(b, st), ...ks], topY: staffTop(st) });
       }
       const lw = leadingW(b, first);
       lead.w = lw;
@@ -162,7 +174,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
           const steps = ev.ev.pitches.map((p) => staffStep({ letter: p.step, acc: 0, octave: p.octave, diatonic: p.octave * 7 + "CDEFGAB".indexOf(p.step) }, clef));
           const far = steps.reduce((m, s2) => (Math.abs(s2 - 4) > Math.abs(m - 4) ? s2 : m), steps[0]);
           const stem = hasStem(base) ? (far >= 4 ? "down" : "up") : null;
-          const d = { id: ev.ev.id, bar: b.index, staff: st, system: si, rest: false, base, dots: ev.ev.dur.dots, kind, headW, x, stem, ticks: c.ticks, group: Math.floor(c.ticks / groupSize(b.time)), heads: [], ledgers: [], tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index, pitches: ev.ev.pitches };
+          const d = { id: ev.ev.id, bar: b.index, staff: st, system: si, rest: false, base, dots: ev.ev.dur.dots, kind, headW, x, stem, ticks: c.ticks, group: Math.floor(c.ticks / groupSize(b.time)), heads: [], ledgers: [], tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index, pitches: ev.ev.pitches, art: ev.ev.art ?? null, gliss: ev.ev.gliss ?? null };
           // heads: sorted by step; seconds flip to the other side of the stem
           const order = steps.map((s2, pi) => ({ step: s2, pi })).sort((a, b2) => a.step - b2.step);
           const walk = stem === "down" ? [...order].reverse() : order;
@@ -192,6 +204,14 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
       hsys.bars.push(hbar);
       sys.barlines.push({ x: cursor, final: b.index === bars.length - 1 });
     });
+    if (sys.courtesy) {
+      const nb = sys.courtesy.key ?? sys.courtesy.time;
+      const c = { x: cursor + 0.4, staves: [], key: !!sys.courtesy.key, time: !!sys.courtesy.time, timeX: 0 };
+      for (let st = 0; st < nStaves; st++) c.staves.push({ keysig: sys.courtesy.key ? [...cancels(nb, st), ...keySignatureGlyphs(nb.key.fifths, nb.clefs[st])] : [], topY: staffTop(st) });
+      c.timeX = c.x + (sys.courtesy.key ? Math.max(...c.staves.map((x) => x.keysig.length)) * 1.15 + 0.8 : 0);
+      c.beats = nb.time.beats; c.unit = nb.time.unit;
+      sys.courtesyLead = c;
+    }
     hit.systems.push(hsys);
   });
 
@@ -237,6 +257,33 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
       }
     }
   }
+  // -- articulations: opposite the stem (fermata and ornaments always above), stacked outward --
+  const marks = [];
+  const onLine = (y, top) => Number.isInteger(Math.round((y - top) * 2) / 2) && Math.abs(((y - top) * 2) % 2) < 1e-6; // an integer number of spaces from the staff top = on a line
+  for (const d of drawn) {
+    if (d.rest || !d.art?.length) continue;
+    const stemUp = d.stem === "up";
+    const staffTopY = systems[d.system].staffTop[d.staff], staffBotY = staffTopY + 4;
+    // articulations hug the head on the side away from the stem (in a space, never on a line); fermata and ornaments go above the staff
+    let near = stemUp ? d.botY + 1 : d.topY - 1;
+    if (near >= staffTopY && near <= staffBotY && onLine(near, staffTopY)) near += stemUp ? 0.5 : -0.5;
+    let high = Math.min(staffTopY - 1.4, (d.stem === "up" ? d.stemTipY : d.topY) - 1.2);
+    for (const m of d.art) {
+      const ornament = m === "fermata" || m === "trill" || m === "mordent" || m === "turn";
+      if (ornament) { marks.push({ x: d.x + d.headW / 2, y: high, mark: m, above: true, system: d.system }); high -= m === "fermata" ? 1.8 : 1.4; }
+      else { marks.push({ x: d.x + d.headW / 2, y: near, mark: m, above: !stemUp, system: d.system }); near += stemUp ? 1.1 : -1.1; if (!stemUp) high = Math.min(high, near - 0.4); }
+    }
+  }
+  // -- glissandi: a line from the note to the next note of the staff (in one system) --
+  const glisses = [];
+  for (const d of drawn) {
+    if (d.rest || d.gliss !== "start") continue;
+    const nx = nextEvent(doc, { bar: d.bar, staff: d.staff, voice: 0, ev: doc.measures[d.bar].staves[d.staff].voices[0][d.index] });
+    const d2 = nx && byId.get(nx.id);
+    if (!d2 || d2.rest || d2.system !== d.system) continue;
+    const y1 = (d.topY + d.botY) / 2, y2 = (d2.topY + d2.botY) / 2;
+    glisses.push({ x1: d.x + d.headW + 0.35, y1, x2: d2.x - 0.35, y2, system: d.system });
+  }
   // -- tuplets: a bracket (unless one beamed run) and the digit over each group --
   const tuplets = [];
   const groups = new Map();
@@ -258,7 +305,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     tuplets.push({ x1, x2, y, above, n: first.tupletN, bracket, system: first.system });
   }
   const height = (TOP_PAD + systems.length * SYS_H - SYS_GAP + BOTTOM_PAD) * S;
-  return { S, unit: S, width, height, systems, drawn, beams, ties, tuplets, hit, nStaves };
+  return { S, unit: S, width, height, systems, drawn, beams, ties, tuplets, marks, glisses, hit, nStaves };
 }
 
 function restBetween(drawn, a, b) {

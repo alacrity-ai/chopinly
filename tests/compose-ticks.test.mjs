@@ -35,11 +35,11 @@ test("capacities and beat groups for common metres", () => {
   assert.deepEqual(beatGroups({ beats: 4, unit: 4 }), [0, Q, 2 * Q, 3 * Q, 4 * Q]);
 });
 
-test("splitRest: standard rests, aligned to their own size, longest first; compound metres keep rests inside the dotted group; a full bar is one whole rest in any metre", () => {
+test("splitRest: standard rests, aligned to their own size, longest first; compound metres keep rests inside the dotted group; a full bar is the metre's own split (the layout draws it as one whole-bar rest)", () => {
   const Q = PPQ, t44 = { beats: 4, unit: 4 }, t34 = { beats: 3, unit: 4 }, t68 = { beats: 6, unit: 8 };
   assert.deepEqual(splitRest(4 * Q, 0, t44), [{ base: 1, dots: 0 }]);
-  assert.deepEqual(splitRest(3 * Q, 0, t34), [{ base: 1, dots: 0 }]);
-  assert.deepEqual(splitRest(3 * Q, 0, t68), [{ base: 1, dots: 0 }]);
+  assert.deepEqual(splitRest(3 * Q, 0, t34), [{ base: 2, dots: 1 }]); // drawn as a whole-bar rest by the layout; stored as one value that spans the bar so it adds up
+  assert.deepEqual(splitRest(3 * Q, 0, t68), [{ base: 2, dots: 1 }]);
   // a quarter on beat 1 leaves quarter + half (the half rest sits on beat 3, where it is aligned)
   assert.deepEqual(splitRest(3 * Q, Q, t44), [{ base: 4, dots: 0 }, { base: 2, dots: 0 }]);
   // beats 3–4 empty → one half rest; beats 2–3 empty → two quarter rests (a half rest may not start on beat 2)

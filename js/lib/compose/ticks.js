@@ -53,11 +53,11 @@ export function fromTicks(t) {
 /**
  * The standard rests for a gap of `len` ticks starting at `at` in a bar of
  * `time`: aligned to their own size, longest first, never crossing a beat
- * group. A gap that is the whole bar is one whole rest whatever the metre.
+ * group. (A bar that is all rests is *drawn* as one whole-bar rest by the
+ * layout; its events are still the metre's split, so every bar adds up.)
  */
 export function splitRest(len, at, time) {
-  const cap = capacity(time);
-  if (at === 0 && len === cap) return [{ base: 1, dots: 0 }];
+  if (at === 0 && len === capacity(time) && fromTicks(len)) return [fromTicks(len)]; // a whole empty bar is one rest when one value spans it (whole in 4/4, dotted half in 3/4 and 6/8)
   const compound = groupSize(time) !== WHOLE / time.unit;
   const candidates = compound ? [...PLAIN, ...DOTTED].sort((a, b) => b - a) : PLAIN;
   const out = [];

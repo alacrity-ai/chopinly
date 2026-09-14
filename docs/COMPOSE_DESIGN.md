@@ -402,6 +402,15 @@ document and the per-device zoom. Undo history is per open editor, not saved.
 - **Accidentals** ♯ ♭ ♮ (𝄪 𝄫 behind the ▾) act on the selected pitches; without a selection they arm for the next placed pitch and clear after it (one-shot). Pressing the accidental a pitch already has takes it back to the key; an accidental the key already implies becomes a cautionary (`acc: "show"`), pressed again it hides. Chords stack accidentals into columns six steps apart.
 - Keys: `.` dot, `t` tie.
 
+### 8.5b The utility rail as built (v73)
+
+A fourth lane, toggled by the **𝄞 …** button on the control rail (remembered per device), holds **‹ bar N ›** (the *target bar*: it follows the last tap, grab, lasso or drop, and the arrows move it), then **Key ▾ · Time ▾ · Clef ▾** pickers whose buttons show what is in force at that bar, then fermata · staccato · accent · tenuto · trill · mordent · turn · *gliss.* acting on the selection.
+
+- **Key** (15 keys, C♭ … C♯ with relative minors) inserts a change at the target bar; picking the key already in force there removes an explicit change. Cancelled accidentals get naturals before the new signature; the same key/time re-appear as a courtesy at the end of a system when the next system opens with a change.
+- **Time** (2/4 3/4 4/4 5/4 6/8 9/8 12/8 2/2 3/8 7/8, or *other…*) re-cuts the bars from the target bar to the next time change: notes that cross a new barline split into tied pieces (`decompose`: one plain / dotted value, else the fewest plain values); a tuplet that would cross refuses the change (bar flash); key and clef changes inside the stretch follow their tick; if content spills into new bars the editor asks first. Choosing the metre before the stretch simply rejoins it. Empty bars are stored as one rest that spans the bar when a value does (whole in 4/4, dotted half in 3/4 and 6/8), else the metre's standard split — always drawn as one whole-bar rest.
+- **Clef** per staff (treble, bass, alto, tenor) at the target bar; pitches are absolute so nothing re-steps; a mid-piece clef draws at 80 %.
+- **Marks** toggle on every selected note (all have it → off). Staccato, accent and tenuto hug the head on the side away from the stem, in a space; fermata and the ornaments go above the staff. **gliss.** draws a line with its label to the next note of the staff and vanishes if either end goes.
+
 ### 8.6 Transport (v70) and the rails' look (v71)
 
 A third rail sits between the control rail and the palette: **stop · a bar back · play/pause · a bar forward · position slider (bar N of M) · tempo (♩= − / +, hold to repeat, tap the number to type)**. `Space` toggles play, `Home` stops. Playback (`play.js`) turns the document into a timeline of absolute-tick notes (ties merge into one sounding note), sequences them 180 ms ahead on the audio clock through the piano voice, and a playhead line on the overlay follows; the view scrolls only when the playing system leaves it. The tempo is saved with the piece (`tempo`, default 100, 20–300) and is *not* an undoable edit. Editing while playing re-sequences from the current position.

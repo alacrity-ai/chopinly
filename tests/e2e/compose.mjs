@@ -17,7 +17,7 @@ const lb = (fn, ...args) => page.evaluate(async ([src, a]) => { const m = await 
 const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging, lassoing: s.lassoing, pasting: s.pasting, hasClip: s.hasClip }; });
 const kinds = (bar, staff = 0) => page.evaluate(([b, st]) => document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[st].voices[0].map((e) => `${e.kind === "rest" ? "r" : "n"}${e.dur.base}${e.dur.dots ? "." : ""}`).join(" "), [bar, staff]);
 const point = (place) => page.evaluate((p) => document.querySelector(".cp-editor").__editor.pointFor(p), place);
-const tapAt = async (place) => { const p = await point(place); if (process.env.DEBUG_TAP) console.log("  tap", JSON.stringify(place), JSON.stringify(p), await page.evaluate(([x, y]) => { const el = document.elementFromPoint(x, y); const v = document.querySelector("#cp-view").getBoundingClientRect(); return { under: el?.closest?.(".cp-ev")?.dataset.ev ?? el?.tagName, view: [v.top, v.bottom], scrollTop: document.querySelector("#cp-view").scrollTop }; }, [p.x, p.y])); await page.touchscreen.tap(Math.round(p.x), Math.round(p.y)); await page.waitForTimeout(80); };
+const tapAt = async (place) => { let p = await point(place); const vr = await page.evaluate(() => { const r = document.querySelector("#cp-view").getBoundingClientRect(); return [r.top, r.bottom]; }); if (p.y > vr[1] - 24 || p.y < vr[0] + 12) { await page.evaluate((y) => { const v = document.querySelector("#cp-view"); v.scrollTop += y - v.getBoundingClientRect().top - v.clientHeight * 0.5; }, p.y); p = await point(place); } if (process.env.DEBUG_TAP) console.log("  tap", JSON.stringify(place), JSON.stringify(p), await page.evaluate(([x, y]) => { const el = document.elementFromPoint(x, y); const v = document.querySelector("#cp-view").getBoundingClientRect(); return { under: el?.closest?.(".cp-ev")?.dataset.ev ?? el?.tagName, view: [v.top, v.bottom], scrollTop: document.querySelector("#cp-view").scrollTop }; }, [p.x, p.y])); await page.touchscreen.tap(Math.round(p.x), Math.round(p.y)); await page.waitForTimeout(80); };
 const noWiden = async () => { const w = await page.evaluate(() => ({ vw: innerWidth, doc: document.documentElement.scrollWidth })); if (w.doc > w.vw) throw new Error("page widened " + JSON.stringify(w)); };
 const PPQ = 6720;
 /** Synthetic pointer events straight at the view — the only way to fake a palm or a Pencil in Chromium. */
@@ -384,6 +384,66 @@ await step("notation: dot a chord (both heads, one event), tie two same-pitch no
   await scrollTo(5);
   await page.screenshot({ path: `${S}/cp-14-notation.png` });
   await scrollTo(0); await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
+});
+
+await step("utility rail: key → G at bar 3 (signature + naturals later), time → 3/4 at bar 3 asks before spilling and re-flows, clef → treble on the lower staff at bar 5, staccato on a selection, gliss between two notes", async () => {
+  const st = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { cursorBar: s.cursorBar, open: s.utilityOpen, bars: s.bars, sel: s.selection.length }; });
+  const meta = (bar) => page.evaluate((b) => { const m = document.querySelector(".cp-editor").__editor.state.doc.measures[b]; return { key: m.key?.fifths ?? null, time: m.time ? `${m.time.beats}/${m.time.unit}` : null, clefs: m.clefs ?? null }; }, bar);
+  await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
+  if ((await state()).mode !== "place") await page.keyboard.press("v");
+  await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
+  await page.click("[data-act=utility]");
+  if (!(await st()).open || (await page.locator("#cp-utility").isHidden())) throw new Error("utility rail did not open");
+  // target bar follows the last tap; ‹ › adjust it
+  await tapAt({ bar: 2, staff: 0, ticks: 0, step: 4 });
+  if ((await st()).cursorBar !== 2) throw new Error("cursor bar " + JSON.stringify(await st()));
+  await page.click("[data-act=bar-next]"); await page.click("[data-act=bar-prev]");
+  if ((await page.locator("#cp-at-read").textContent()) !== "bar 3") throw new Error("readout " + (await page.locator("#cp-at-read").textContent()));
+  // key: G major from bar 3
+  await page.click("[data-pop=cp-key-more]");
+  await page.click(".cp-key[data-fifths='1']");
+  if ((await meta(2)).key !== 1) throw new Error("key not set " + JSON.stringify(await meta(2)));
+  if ((await page.locator("#cp-key-val").textContent()) !== "G / Em") throw new Error("key readout " + (await page.locator("#cp-key-val").textContent()));
+  // the F line in bar 3 now spells F♯ (spelling follows the key in force)
+  await page.keyboard.press("5"); await page.keyboard.press("5"); // quarter (press twice: the first may un-arm)
+  if ((await state()).armed.base !== 4 || (await state()).mode !== "place") { await page.keyboard.press("5"); }
+  await tapAt({ bar: 2, staff: 0, ticks: PPQ + 300, step: 1 });
+  const f = await page.evaluate(() => { const v = document.querySelector(".cp-editor").__editor.state.doc.measures[2].staves[0].voices[0]; return v.filter((e) => e.kind === "note").map((e) => e.pitches.map((p) => p.step + p.alter).join()).join(" "); });
+  if (!f.includes("F1")) throw new Error("spelling in G major: " + f);
+  // time: 3/4 from bar 3 — the piece has content past bar 3, so it asks; accepted → bars re-flow
+  const barsBefore = (await st()).bars;
+  await page.click("[data-pop=cp-time-more]");
+  await page.click(".cp-time[data-beats='3'][data-unit='4']");
+  await page.waitForTimeout(150);
+  if ((await meta(2)).time !== "3/4") throw new Error("time not set " + JSON.stringify(await meta(2)));
+  if (!((await st()).bars > barsBefore)) throw new Error(`bars did not spill: ${barsBefore} → ${(await st()).bars}`);
+  const sums = await page.evaluate(() => { const d = document.querySelector(".cp-editor").__editor.state.doc; const T = { 0: 6720 * 4, 2: 6720 * 3 }; return d.measures.map((m, i) => m.staves.map((s) => s.voices[0].reduce((n, e) => n + (26880 / e.dur.base) * (e.dur.dots ? 1.5 : 1) * (e.dur.tuplet ? e.dur.tuplet.in / e.dur.tuplet.n : 1), 0)).join("/") + ":" + (i < 2 ? T[0] : T[2])); });
+  if (sums.some((x) => { const [a, b] = x.split(":"); return a.split("/").some((v) => Number(v) !== Number(b)); })) throw new Error("bars do not add up after 3/4: " + sums.join(" "));
+  await page.click("[data-act=undo]");
+  if ((await st()).bars !== barsBefore || (await meta(2)).time !== null) throw new Error("undo of the time change");
+  // clef: lower staff → treble from bar 5
+  await page.click("[data-act=bar-next]"); await page.click("[data-act=bar-next]");
+  await page.click("[data-pop=cp-clef-more]");
+  await page.click(".cp-clef[data-staff='1'][data-clef='treble']");
+  if ((await meta(4)).clefs?.[1] !== "treble") throw new Error("clef not set " + JSON.stringify(await meta(4)));
+  if ((await page.locator(".cp-clef[data-staff='1'][data-clef='treble']").getAttribute("aria-pressed")) !== "true") throw new Error("clef picker not reflecting");
+  // staccato on a selection; gliss from the first note of bar 1 to the next
+  await page.click("[data-act=select]");
+  await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
+  await tapAt({ bar: 0, staff: 0, ticks: 0, step: 4 });
+  if ((await st()).sel !== 1) throw new Error("no selection for the mark");
+  await page.click(".cp-art-btn[data-mark='staccato']");
+  const art = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures[0].staves[0].voices[0][0].art);
+  if (!art?.includes("staccato")) throw new Error("staccato " + JSON.stringify(art));
+  if ((await page.locator(".cp-svg .cp-art").count()) < 1) throw new Error("mark not drawn");
+  await page.click("[data-act=gliss]");
+  if ((await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures[0].staves[0].voices[0][0].gliss)) !== "start") throw new Error("gliss not set");
+  if ((await page.locator(".cp-svg .cp-gliss").count()) !== 1) throw new Error("gliss not drawn");
+  await page.screenshot({ path: `${S}/cp-15-utility.png` });
+  await page.click("[data-act=gliss]"); await page.click(".cp-art-btn[data-mark='staccato']");
+  await page.keyboard.press("Escape"); await page.keyboard.press("v");
+  await page.click("[data-act=utility]");
+  if ((await st()).open) throw new Error("utility rail did not close");
 });
 
 await step("Rest toggle: a rest placed into a bar with notes leaves the bar adding up", async () => {
