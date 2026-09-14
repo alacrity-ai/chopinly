@@ -387,12 +387,23 @@ await step("notation: dot a chord (both heads, one event), tie two same-pitch no
 });
 
 await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 (asks before spilling, re-flows); tenor clef then tap beat 3 of bar 5 on the lower staff (holds from there); more clefs behind ▾; Esc cancels an armed change; staccato on a selection; gliss between two notes", async () => {
-  const st = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { pending: s.pending, open: s.utilityOpen, bars: s.bars, sel: s.selection.length }; });
+  const st = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { pending: s.pending, open: s.rails.utility, bars: s.bars, sel: s.selection.length }; });
   const meta = (bar) => page.evaluate((b) => { const m = document.querySelector(".cp-editor").__editor.state.doc.measures[b]; return { key: m.key?.fifths ?? null, time: m.time ? `${m.time.beats}/${m.time.unit}` : null, clefs: m.clefs ?? null, changes: m.clefChanges ?? null }; }, bar);
   await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
   if ((await state()).mode !== "place") await page.keyboard.press("v");
   await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
-  await page.click("[data-act=utility]");
+  // the header's Rails ▾ menu shows and hides lanes; the File ▾ menu is a placeholder for export
+  if (!(await page.locator(".cp-header [data-act=back]").count()) || !(await page.locator(".cp-header #cp-title").count())) throw new Error("back / title not on the header rail");
+  await page.click("[data-pop=cp-file-more]");
+  if ((await page.locator("#cp-file-more .cp-menu-row:disabled").count()) < 4) throw new Error("file menu placeholders");
+  await page.click("[data-pop=cp-file-more]");
+  await page.click("[data-pop=cp-rails-more]");
+  if ((await page.locator("#cp-rails-more .cp-rail-row").count()) !== 4) throw new Error("rail rows");
+  await page.click(".cp-rail-row[data-rail=transport]");
+  if (!(await page.locator(".cp-transport").isHidden()) || (await page.locator("#cp-rails-more").isHidden())) throw new Error("transport should hide and the menu stay open");
+  await page.click(".cp-rail-row[data-rail=transport]");
+  if (await page.locator(".cp-transport").isHidden()) throw new Error("transport should show again");
+  await page.click(".cp-rail-row[data-rail=utility]"); await page.click("[data-pop=cp-rails-more]");
   if (!(await st()).open || (await page.locator("#cp-utility").isHidden())) throw new Error("utility rail did not open");
   if (await page.locator("[data-act=bar-prev], [data-act=bar-next], #cp-at-read").count()) throw new Error("the bar selector is still there");
   // key: pick G major → the cursor is armed (picker shows it); tap bar 3 → the change lands there and the cursor clears
@@ -464,7 +475,7 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   await page.screenshot({ path: `${S}/cp-15-utility.png` });
   await page.click("[data-act=gliss]"); await page.click(".cp-art-btn[data-mark='staccato']");
   await page.keyboard.press("Escape"); await page.keyboard.press("v");
-  await page.click("[data-act=utility]");
+  await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=utility]"); await page.click("[data-pop=cp-rails-more]");
   if ((await st()).open) throw new Error("utility rail did not close");
 });
 

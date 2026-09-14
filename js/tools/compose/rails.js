@@ -21,8 +21,11 @@ export function centreGlyph(span) {
   meter.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
   const m = meter.measureText(span.textContent);
   if (!("fontBoundingBoxAscent" in m) || !("actualBoundingBoxAscent" in m)) return;
-  // the box's centre sits (font ascent − font descent) / 2 above the baseline; the ink's centre (ink ascent − ink descent) / 2 above it
-  const dy = (m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) / 2 - (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2;
+  // the box's centre sits (font ascent − font descent) / 2 above the baseline. A note's head is centred on the
+  // baseline, so a note puts its baseline there (the stem and flags rise above); anything else centres its ink,
+  // whose centre is (ink ascent − ink descent) / 2 above the baseline.
+  const note = span.classList.contains("cp-glyph-note");
+  const dy = (m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) / 2 - (note ? 0 : (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2);
   span.style.setProperty("--dy", `${dy.toFixed(2)}px`);
 }
 
@@ -33,10 +36,27 @@ export const TIMES = [[2, 4], [3, 4], [4, 4], [5, 4], [6, 8], [9, 8], [12, 8], [
 export const CLEF_NAMES = ["treble", "soprano", "mezzo", "alto", "tenor", "baritone", "bass"];
 const clefBtn = (c) => `<button type="button" class="cp-btn cp-clef" data-act="clef" data-clef="${c}" aria-pressed="false" aria-label="${c} clef — then tap the beat it starts on"><span class="cp-glyph cp-glyph-sm">${G[CLEFS[c].glyph]}</span><small>${c}</small></button>`;
 
+/** The rails a reader can show or hide, in order — the header that holds the menu is not one of them. */
+export const RAILS = [["control", "Controls"], ["transport", "Transport"], ["palette", "Notes"], ["utility", "Key · time · clef · marks"]];
+export const DEFAULT_RAILS = { control: true, transport: true, palette: true, utility: false };
+/** What the File menu will hold (P4 export); nothing works yet, so every row is disabled. */
+const FILE_ITEMS = [["save-pdf", "Save to Scores as PDF"], ["export-pdf", "Export PDF"], ["export-xml", "Export MusicXML"], ["export-midi", "Export MIDI"]];
+
 export function buildRails(host, { title, onAction }) {
   host.innerHTML = `
-    <div class="cp-rail cp-control" role="toolbar" aria-label="controls">
+    <div class="cp-rail cp-header" role="toolbar" aria-label="composition">
       <button type="button" class="cp-btn" data-act="back" aria-label="back to compositions">${icon("back")}</button>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-pick cp-file" data-pop="cp-file-more" aria-label="file" aria-expanded="false"><span class="cp-pick-label">File</span>&#9662;</button>
+        <span class="cp-more cp-menu" id="cp-file-more" hidden>${FILE_ITEMS.map(([act, label]) => `<button type="button" class="cp-btn cp-menu-row" data-act="${act}" disabled><span>${label}</span><small>soon</small></button>`).join("")}</span>
+      </span>
+      <span class="cp-title" id="cp-title">${esc(title)}</span>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-pick cp-rails-btn" data-pop="cp-rails-more" aria-label="show or hide rails" aria-expanded="false">${icon("grip")}<span class="cp-pick-label">Rails</span>&#9662;</button>
+        <span class="cp-more cp-menu" id="cp-rails-more" hidden>${RAILS.map(([k, label]) => `<button type="button" class="cp-btn cp-menu-row cp-rail-row" role="menuitemcheckbox" data-act="rail" data-rail="${k}" aria-checked="true"><span class="cp-check">${icon("check")}</span><span>${label}</span></button>`).join("")}</span>
+      </span>
+    </div>
+    <div class="cp-rail cp-control" role="toolbar" aria-label="controls" data-rail="control">
       <button type="button" class="cp-btn" data-act="undo" aria-label="undo" disabled>${icon("undo")}</button>
       <button type="button" class="cp-btn" data-act="redo" aria-label="redo" disabled>${icon("redo")}</button>
       <span class="cp-sep" aria-hidden="true"></span>
@@ -47,13 +67,11 @@ export function buildRails(host, { title, onAction }) {
       <button type="button" class="cp-btn" data-act="copy" aria-label="copy the selection" disabled>${icon("copy")}</button>
       <button type="button" class="cp-btn" data-act="cut" aria-label="cut the selection" disabled>${icon("cut")}</button>
       <button type="button" class="cp-btn" data-act="paste" aria-label="paste — then tap where it goes" aria-pressed="false" disabled>${icon("paste")}</button>
-      <span class="cp-title" id="cp-title">${esc(title)}</span>
-      <button type="button" class="cp-btn cp-util-toggle" data-act="utility" aria-pressed="false" aria-label="key, time, clef and marks" aria-expanded="false"><span class="cp-glyph cp-glyph-sm">${G.gClef}</span><span class="cp-util-word">key · time · clef</span>${icon("more")}</button>
-      <span class="cp-sep" aria-hidden="true"></span>
+      <span class="cp-spring" aria-hidden="true"></span>
       <button type="button" class="cp-btn cp-zoom" data-act="zoom-out" aria-label="smaller">&minus;</button>
       <button type="button" class="cp-btn cp-zoom" data-act="zoom-in" aria-label="bigger">+</button>
     </div>
-    <div class="cp-rail cp-transport" role="toolbar" aria-label="transport">
+    <div class="cp-rail cp-transport" role="toolbar" aria-label="transport" data-rail="transport">
       <button type="button" class="cp-btn" data-act="stop" aria-label="stop — back to the start">${icon("stop")}</button>
       <button type="button" class="cp-btn" data-act="rew" aria-label="a bar back">${icon("skipBack")}</button>
       <button type="button" class="cp-btn cp-play" data-act="play" aria-label="play" aria-pressed="false"><span class="cp-play-ic">${icon("play")}</span><span class="cp-pause-ic">${icon("pause")}</span></button>
@@ -63,17 +81,17 @@ export function buildRails(host, { title, onAction }) {
         <span class="cp-pos-read" id="cp-pos-read" aria-live="off">bar 1 of 8</span>
       </span>
       <span class="cp-tempo" role="group" aria-label="tempo">
-        <span class="cp-tempo-mark" aria-hidden="true"><span class="cp-glyph cp-glyph-xs">${metGlyph(4)}</span><span class="cp-tempo-eq">=</span></span>
+        <span class="cp-tempo-mark" aria-hidden="true"><span class="cp-glyph cp-glyph-xs cp-glyph-note">${metGlyph(4)}</span><span class="cp-tempo-eq">=</span></span>
         <button type="button" class="cp-btn cp-tempo-btn" data-act="tempo-down" aria-label="slower">&minus;</button>
         <button type="button" class="cp-btn cp-bpm" data-act="tempo" id="cp-bpm" aria-label="tempo — tap to type one">100</button>
         <button type="button" class="cp-btn cp-tempo-btn" data-act="tempo-up" aria-label="faster">+</button>
       </span>
     </div>
-    <div class="cp-rail cp-palette" role="toolbar" aria-label="palette">
-      ${MAIN_BASES.map((b) => `<button type="button" class="cp-btn cp-dur" data-act="dur" data-base="${b}" aria-pressed="false" aria-label="${NAMES[b]}"><span class="cp-glyph">${metGlyph(b)}</span></button>`).join("")}
+    <div class="cp-rail cp-palette" role="toolbar" aria-label="palette" data-rail="palette">
+      ${MAIN_BASES.map((b) => `<button type="button" class="cp-btn cp-dur" data-act="dur" data-base="${b}" aria-pressed="false" aria-label="${NAMES[b]}"><span class="cp-glyph cp-glyph-note">${metGlyph(b)}</span></button>`).join("")}
       <span class="cp-more-wrap">
-        <button type="button" class="cp-btn cp-dur-more" data-pop="cp-more" aria-label="more durations" aria-expanded="false"><span class="cp-glyph cp-glyph-sm" id="cp-more-glyph">${metGlyph(32)}</span>&#9662;</button>
-        <span class="cp-more" id="cp-more" hidden>${MORE_BASES.map((b) => `<button type="button" class="cp-btn cp-dur" data-act="dur" data-base="${b}" aria-pressed="false" aria-label="${NAMES[b]}"><span class="cp-glyph">${metGlyph(b)}</span></button>`).join("")}</span>
+        <button type="button" class="cp-btn cp-dur-more" data-pop="cp-more" aria-label="more durations" aria-expanded="false"><span class="cp-glyph cp-glyph-sm cp-glyph-note" id="cp-more-glyph">${metGlyph(32)}</span>&#9662;</button>
+        <span class="cp-more" id="cp-more" hidden>${MORE_BASES.map((b) => `<button type="button" class="cp-btn cp-dur" data-act="dur" data-base="${b}" aria-pressed="false" aria-label="${NAMES[b]}"><span class="cp-glyph cp-glyph-note">${metGlyph(b)}</span></button>`).join("")}</span>
       </span>
       <span class="cp-sep" aria-hidden="true"></span>
       <button type="button" class="cp-btn cp-dot" data-act="dot" aria-pressed="false" aria-label="dot"><span class="cp-glyph cp-dot-glyph" id="cp-dot-glyph">${G.dot}</span></button>
@@ -91,7 +109,7 @@ export function buildRails(host, { title, onAction }) {
       <span class="cp-sep" aria-hidden="true"></span>
       <button type="button" class="cp-btn cp-rest" data-act="rest" aria-pressed="false" aria-label="rest"><span class="cp-glyph cp-glyph-rest" id="cp-rest-glyph">${restGlyph(4)}</span><span class="cp-rest-word">rest</span></button>
     </div>
-    <div class="cp-rail cp-utility" id="cp-utility" role="toolbar" aria-label="key, time, clef and marks" hidden>
+    <div class="cp-rail cp-utility" id="cp-utility" role="toolbar" aria-label="key, time, clef and marks" data-rail="utility" hidden>
       <span class="cp-more-wrap">
         <button type="button" class="cp-btn cp-pick" data-pop="cp-key-more" aria-label="key signature — pick one, then tap the bar it starts at" aria-expanded="false" aria-pressed="false"><span class="cp-pick-label">Key</span><b class="cp-pick-val" id="cp-key-val"></b>&#9662;</button>
         <span class="cp-more cp-grid cp-key-grid" id="cp-key-more" hidden>${KEYS.map((k) => `<button type="button" class="cp-btn cp-key" data-act="key" data-fifths="${k.fifths}" aria-pressed="false" aria-label="${k.major} major, ${k.minor} minor"><b>${k.major}</b><small>${k.minor}m</small></button>`).join("")}</span>
@@ -127,6 +145,7 @@ export function buildRails(host, { title, onAction }) {
     if (swallow) { swallow = false; return; }
     if (b.dataset.pop) { toggle(host.querySelector(`#${b.dataset.pop}`), b); return; }
     const act = b.dataset.act;
+    if (act === "rail") { onAction("rail", b.dataset.rail); return; } // the menu stays open: several rails can be toggled in one go
     closeMore();
     if (act === "dur") { onAction("dur", Number(b.dataset.base)); return; }
     if (act === "key") { onAction("key", Number(b.dataset.fifths)); return; }
@@ -171,12 +190,15 @@ export function buildRails(host, { title, onAction }) {
       if (bpm !== undefined) host.querySelector("#cp-bpm").textContent = String(bpm);
     },
     /** Reflect the editor's state: { armed, mode, canUndo, canRedo, hasSelection, title }. */
-    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, utility = null, pending = null, title }) {
-      if (utility) {
-        const u = host.querySelector("#cp-utility"), tg = host.querySelector(".cp-util-toggle");
-        if (u.hidden === !!utility.open) { u.hidden = !utility.open; tg.setAttribute("aria-pressed", String(!!utility.open)); tg.setAttribute("aria-expanded", String(!!utility.open)); if (utility.open) centreAll(); }
-        for (const b of host.querySelectorAll(".cp-art-btn, .cp-gliss-btn")) b.disabled = !hasSelection;
+    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, rails = DEFAULT_RAILS, pending = null, title }) {
+      let shown = false;
+      for (const [k] of RAILS) {
+        const lane = host.querySelector(`.cp-rail[data-rail="${k}"]`), on = !!rails[k];
+        if (lane.hidden === on) { lane.hidden = !on; if (on) shown = true; }
+        host.querySelector(`.cp-rail-row[data-rail="${k}"]`).setAttribute("aria-checked", String(on));
       }
+      if (shown) centreAll(); // a lane that was display:none had no metrics to measure
+      for (const b of host.querySelectorAll(".cp-art-btn, .cp-gliss-btn")) b.disabled = !hasSelection;
       // the armed change (key / time / clef waiting for a tap) shows on its picker and its button
       const key = pending?.kind === "key" ? KEYS.find((k) => k.fifths === pending.value) : null;
       host.querySelector("#cp-key-val").textContent = key ? `${key.major} / ${key.minor}m` : "";
