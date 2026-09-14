@@ -190,6 +190,63 @@ export function tie(doc, items) {
   cleanTies(d);
   return d;
 }
+/**
+ * Slur (docs/COMPOSE_DESIGN.md §7.1): from the earliest selected note of a staff to the latest
+ * (one note: to the staff's next note). A slur is a pair of entries sharing an id —
+ * `ev.slurs: [{ id, at: "start" | "stop" }]` — so slurs may nest, overlap, and share a note
+ * as an end (a phrasing slur over articulation slurs), and an edit can never leave half of one
+ * (`cleanSlurs`). The same span again removes it.
+ */
+export function slur(doc, evIds) {
+  const d = clone(doc);
+  const fs = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "note");
+  if (!fs.length) throw new Nudge("pick the notes to slur");
+  const byStaff = new Map();
+  for (const f of fs) { if (!byStaff.has(f.staff)) byStaff.set(f.staff, []); byStaff.get(f.staff).push(f); }
+  for (const list of byStaff.values()) {
+    list.sort((a, b) => a.bar - b.bar || a.index - b.index);
+    const a = list[0].ev;
+    let b = list[list.length - 1].ev;
+    if (b === a) { let nx = nextEvent(d, list[0]); let guard = 0; while (nx && nx.kind !== "note" && guard++ < 64) nx = nextEvent(d, find(d, nx.id)); b = nx; }
+    if (!b || b.kind !== "note") throw new Nudge("slur needs a note after it", { bar: list[0].bar });
+    const have = (a.slurs ?? []).find((x) => x.at === "start" && (b.slurs ?? []).some((y) => y.id === x.id && y.at === "stop"));
+    if (have) { // exactly this slur exists → off
+      a.slurs = a.slurs.filter((x) => x.id !== have.id); if (!a.slurs.length) delete a.slurs;
+      b.slurs = b.slurs.filter((x) => x.id !== have.id); if (!b.slurs.length) delete b.slurs;
+    } else {
+      const id = `s${eid()}`;
+      a.slurs = [...(a.slurs ?? []), { id, at: "start" }];
+      b.slurs = [...(b.slurs ?? []), { id, at: "stop" }];
+    }
+  }
+  cleanSlurs(d);
+  return d;
+}
+/** The note the slur `id` starting at `ev` ends on (later in the staff's sequence), or null. */
+export function slurEnd(doc, staff, ev, id) {
+  const seq = doc.measures.flatMap((m) => m.staves[staff].voices[0]);
+  const i = seq.indexOf(ev);
+  if (i < 0) return null;
+  for (let k = i + 1; k < seq.length; k++) if (seq[k].slurs?.some((x) => x.id === id && x.at === "stop")) return seq[k];
+  return null;
+}
+/** Re-derive every slur: rests carry none; a start without a stop later in the staff (or the reverse) is dropped. */
+export function cleanSlurs(doc) {
+  const nStaves = doc.parts[0].staves;
+  for (let staff = 0; staff < nStaves; staff++) {
+    const seq = doc.measures.flatMap((m) => m.staves[staff].voices[0]);
+    const startAt = new Map(), stopAt = new Map();
+    seq.forEach((e, i) => { if (e.kind !== "note") { delete e.slurs; return; } for (const x of e.slurs ?? []) { const m = x.at === "start" ? startAt : stopAt; if (!m.has(x.id)) m.set(x.id, i); } });
+    const ok = (x) => startAt.has(x.id) && stopAt.has(x.id) && startAt.get(x.id) < stopAt.get(x.id);
+    for (const e of seq) {
+      if (!e.slurs) continue;
+      const seen = new Set();
+      e.slurs = e.slurs.filter((x) => ok(x) && !seen.has(`${x.id}:${x.at}`) && seen.add(`${x.id}:${x.at}`));
+      if (!e.slurs.length) delete e.slurs;
+    }
+  }
+  return doc;
+}
 /** The event after `f` in its staff: the next in the voice, else the first of the next bar. */
 export function nextEvent(doc, f) {
   const voice = doc.measures[f.bar].staves[f.staff].voices[f.voice];
@@ -220,6 +277,7 @@ export function cleanTies(doc) {
       }
     }
   }
+  cleanSlurs(doc); // slurs are re-derived with the ties, so every edit path keeps them whole
   return doc;
 }
 

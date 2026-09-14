@@ -2160,6 +2160,7 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-acc-more { padding: 0 0.55rem 0 0.6rem; gap: 0.15rem; }
 .cp-acc-more.on .cp-glyph { color: var(--fg-on-accent); }
 .cp-tie-pic { display: inline-block; width: 1.5rem; height: 0.65rem; border: 2.2px solid currentColor; border-top: none; border-radius: 0 0 0.75rem 0.75rem; }
+.cp-slur-pic { display: inline-block; width: 1.7rem; height: 0.8rem; border: 2.2px solid currentColor; border-bottom: none; border-radius: 0.85rem 0.85rem 0 0; }
 .cp-title { flex: 1; min-width: 4rem; text-align: center; font-family: var(--serif); font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-dim); padding: 0 0.5rem; }
 /* transport */
 .cp-play .cp-play-ic, .cp-play .cp-pause-ic { display: inline-flex; }
@@ -2202,7 +2203,7 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-svg .cp-ev.sel .head, .cp-svg .cp-ev.sel .rest, .cp-svg .cp-ev.sel .stem, .cp-svg .cp-ev.sel .head-part, .cp-svg .cp-head-g.sel .head, .cp-svg .cp-head-g.sel .head-part { fill: var(--hi); }
 .cp-svg .cp-head-g.sel .halo { fill: color-mix(in srgb, var(--hi) 22%, transparent); }
 .cp-svg .cp-brace { fill: var(--fg); }
-.cp-svg .cp-tie { fill: var(--fg); }
+.cp-svg .cp-tie, .cp-svg .cp-slur { fill: var(--fg); }
 .cp-svg .cp-tuplet-line { fill: none; stroke: var(--fg); stroke-width: 1.2; stroke-linecap: square; }
 .cp-svg .cp-tuplet-digit { font-size: 0.62em; fill: var(--fg); }
 .cp-svg .cp-art, .cp-svg .cp-courtesy { fill: var(--fg); }

@@ -5,7 +5,7 @@
 import { keyAlterations, keySignatureGlyphs, CLEFS, staffStep } from "../music.js";
 import { ticks, capacity, groupSize } from "./ticks.js";
 import { timeAt, keyAt, clefAt } from "./model.js";
-import { onsets, diatonicOf, nextEvent } from "./engine.js";
+import { onsets, diatonicOf, nextEvent, slurEnd } from "./engine.js";
 
 export const STAFF_GAP = 8;      // S between the treble's bottom line and the bass's top line
 export const SYS_GAP = 10;       // S between systems
@@ -187,7 +187,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
           const steps = ev.ev.pitches.map((p) => staffStep({ letter: p.step, acc: 0, octave: p.octave, diatonic: p.octave * 7 + "CDEFGAB".indexOf(p.step) }, clef));
           const far = steps.reduce((m, s2) => (Math.abs(s2 - 4) > Math.abs(m - 4) ? s2 : m), steps[0]);
           const stem = hasStem(base) ? (far >= 4 ? "down" : "up") : null;
-          const d = { id: ev.ev.id, bar: b.index, staff: st, system: si, rest: false, base, dots: ev.ev.dur.dots, kind, headW, x, stem, ticks: c.ticks, group: Math.floor(c.ticks / groupSize(b.time)), heads: [], ledgers: [], tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index, pitches: ev.ev.pitches, art: ev.ev.art ?? null, gliss: ev.ev.gliss ?? null, arp: ev.ev.arp ?? null, accLeft: x - c.accPad * sys.scale };
+          const d = { id: ev.ev.id, bar: b.index, staff: st, system: si, rest: false, base, dots: ev.ev.dur.dots, kind, headW, x, stem, ticks: c.ticks, group: Math.floor(c.ticks / groupSize(b.time)), heads: [], ledgers: [], tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index, pitches: ev.ev.pitches, art: ev.ev.art ?? null, gliss: ev.ev.gliss ?? null, arp: ev.ev.arp ?? null, slurs: ev.ev.slurs ?? null, accLeft: x - c.accPad * sys.scale };
           // heads: sorted by step; seconds flip to the other side of the stem
           const order = steps.map((s2, pi) => ({ step: s2, pi })).sort((a, b2) => a.step - b2.step);
           const walk = stem === "down" ? [...order].reverse() : order;
@@ -290,6 +290,57 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
       else { marks.push({ x: d.x + d.headW / 2, y: near, mark: m, above: !stemUp, system: d.system }); near += stemUp ? 1.1 : -1.1; if (!stemUp) high = Math.min(high, near - 0.4); }
     }
   }
+  // -- slurs: from the first note's head to the last's, on the side away from the stems (mixed stems: above), arched
+  //    high enough to clear whatever lies between; a system break makes two half slurs like a tie --
+  const slurs = [];
+  const spans = [];
+  for (const d of drawn) {
+    if (d.rest || !d.slurs) continue;
+    for (const sl of d.slurs) {
+      if (sl.at !== "start") continue;
+      const end = slurEnd(doc, d.staff, doc.measures[d.bar].staves[d.staff].voices[0][d.index], sl.id);
+      const d2 = end && byId.get(end.id);
+      if (d2 && !d2.rest) spans.push({ id: sl.id, d, d2 });
+    }
+  }
+  // shortest first, so an outer slur can see the inner ones it must clear
+  const pos = (x) => x.bar * 1e4 + x.index;
+  spans.sort((p, q) => (pos(p.d2) - pos(p.d)) - (pos(q.d2) - pos(q.d)));
+  for (const { id, d, d2 } of spans) {
+    const between = drawn.filter((x) => !x.rest && x.staff === d.staff && pos(x) >= pos(d) && pos(x) <= pos(d2));
+    // on the head side: every stemmed note points up → below the heads; any stem down (or no stems) → above
+    const stemmed = between.filter((x) => x.stem);
+    const up = !(stemmed.length && stemmed.every((x) => x.stem === "up"));
+    const edge = (x) => (up ? Math.min(x.topY, x.stem === "up" ? x.stemTipY : x.topY) : Math.max(x.botY, x.stem === "down" ? x.stemTipY : x.botY));
+    // an end sits past the head on the head side, past the stem tip when the stem points into the slur's side
+    const endAt = (x, first) => {
+      const onStem = up ? x.stem === "up" : x.stem === "down";
+      const px0 = onStem ? x.stemX + (first ? 0.1 : -0.1) : x.x + x.headW / 2 + (first ? 0.15 : -0.15);
+      const py = onStem ? x.stemTipY + (up ? -0.6 : 0.6) : (up ? x.topY : x.botY) + (up ? -0.75 : 0.75);
+      return [px0, py];
+    };
+    const [x1, y1] = endAt(d, true), [x2, y2] = endAt(d2, false);
+    const inner = slurs.filter((o) => o.staff === d.staff && o.dir === (up ? "up" : "down") && o.x1 >= x1 - 0.5 && o.x2 <= x2 + 0.5);
+    const arc = (xa, xb, ya, yb, items, system) => {
+      const len = Math.max(1, xb - xa), mid = (ya + yb) / 2;
+      let h = Math.max(1.2, Math.min(3.2, len / 5));
+      let ext = up ? Infinity : -Infinity;
+      for (const x of items) ext = up ? Math.min(ext, edge(x)) : Math.max(ext, edge(x));
+      for (const o of inner) if (o.system === system) { const peak = (o.y1 + o.y2) / 2 + (up ? -0.75 : 0.75) * o.h; ext = up ? Math.min(ext, peak) : Math.max(ext, peak); }
+      if (Number.isFinite(ext)) { const need = (up ? mid - ext : ext - mid) + 0.9; if (need / 0.75 > h) h = Math.min(7, need / 0.75); }
+      return h;
+    };
+    const dir = up ? "up" : "down", staff = d.staff;
+    if (d2.system === d.system) {
+      const items = between.filter((x) => x !== d && x !== d2);
+      slurs.push({ id, staff, x1, y1, x2, y2, dir, system: d.system, h: arc(x1, x2, y1, y2, items, d.system) });
+    } else {
+      const endX = systems[d.system].barlines[systems[d.system].barlines.length - 1].x, startX = hit.systems[d2.system].bars[0].bodyX0;
+      const first = between.filter((x) => x.system === d.system && x !== d), second = between.filter((x) => x.system === d2.system && x !== d2);
+      slurs.push({ id, staff, x1, y1, x2: endX - 0.3, y2: y1, dir, system: d.system, half: "out", h: arc(x1, endX, y1, y1, first, d.system) });
+      slurs.push({ id, staff, x1: startX + 0.3, y1: y2, x2, y2, dir, system: d2.system, half: "in", h: arc(startX, x2, y2, y2, second, d2.system) });
+    }
+  }
   // -- rolled chords: a vertical wiggle left of everything the chord owns (flipped heads, accidentals), a space past the outer heads --
   const arps = [];
   for (const d of drawn) {
@@ -328,7 +379,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     tuplets.push({ x1, x2, y, above, n: first.tupletN, bracket, system: first.system });
   }
   const height = (TOP_PAD + systems.length * SYS_H - SYS_GAP + BOTTOM_PAD) * S;
-  return { S, unit: S, width, height, systems, drawn, beams, ties, tuplets, marks, glisses, arps, clefs, hit, nStaves };
+  return { S, unit: S, width, height, systems, drawn, beams, ties, slurs, tuplets, marks, glisses, arps, clefs, hit, nStaves };
 }
 
 function restBetween(drawn, a, b) {

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition } from "../js/lib/compose/model.js";
-import { place, setClef, setKey, setTime, articulate, arpeggio, accidental, MARKS } from "../js/lib/compose/engine.js";
+import { place, setClef, setKey, setTime, articulate, arpeggio, accidental, slur, MARKS } from "../js/lib/compose/engine.js";
 import { layoutComposition, SYS_H, TOP_PAD } from "../js/lib/compose/layout.js";
 import { slotAt, thingAt, ticksAt, xOfTicks, barAt } from "../js/lib/compose/hit.js";
 import { PPQ } from "../js/lib/compose/ticks.js";
@@ -160,4 +160,34 @@ test("a rolled chord gets a sign left of its accidentals spanning a space past i
   const accX = Math.min(...dn.heads.map((h) => h.x)) - 1.35;
   assert.ok(a.x < accX - 0.4, `left of the accidental (${a.x} vs ${accX})`);
   assert.ok(dn.x > before.drawn.find((x) => x.id === ev.id).x + 1, "the chord moved right to make room for the sign");
+});
+
+test("a slur arches on the head side (stems up → below, any stem down → above), clears the notes between, and splits at a system break", () => {
+  const A = { base: 4, dots: 0, rest: false, tuplet: null, alter: null };
+  let d = newComposition({ id: "s", now: 1 });
+  for (const [t, st] of [[0, 2], [PPQ, 3], [2 * PPQ, 1], [3 * PPQ, 0]]) d = place(d, { bar: 0, staff: 0, ticks: t, step: st }, A).doc;  // all below the middle line: stems up
+  const v = d.measures[0].staves[0].voices[0];
+  d = slur(d, [v[0].id, v[3].id]);
+  let L = layoutComposition(d, { unit: 10, width: 900 });
+  assert.equal(L.slurs.length, 1);
+  const s1 = L.slurs[0], first = L.drawn.find((x) => x.id === v[0].id), last = L.drawn.find((x) => x.id === v[3].id), peak = L.drawn.find((x) => x.id === v[2].id);
+  assert.equal(s1.dir, "down", "all stems up → the slur goes under the heads");
+  assert.ok(s1.y1 > first.botY && s1.y2 > last.botY, "starts and ends below the outer heads");
+  assert.ok(s1.h >= 1.2 && s1.h <= 6);
+  // the curve's belly (0.75 h below the chord line) must clear the lowest head between
+  assert.ok((s1.y1 + s1.y2) / 2 + 0.75 * s1.h > peak.botY + 0.5, "clears the note in the middle");
+  // a high note makes a stem-down note in the span → the slur flips above and clears the stem tips
+  d = place(d, { bar: 0, staff: 0, ticks: PPQ, step: 12 }, A).doc;      // a high pitch joins the second note's chord → that chord stems down
+  L = layoutComposition(d, { unit: 10, width: 900 });
+  assert.equal(L.slurs[0].dir, "up");
+  // a slur across a system break: two halves on two systems
+  let e = newComposition({ id: "s2", now: 1 });
+  for (let bar = 0; bar < 8; bar++) for (let q = 0; q < 4; q++) e = place(e, { bar, staff: 0, ticks: q * PPQ, step: 4 }, A).doc;
+  const L1 = layoutComposition(e, { unit: 12, width: 700 });
+  const breakBar = L1.hit.systems[1].bars[0].index;
+  const a = e.measures[breakBar - 1].staves[0].voices[0][3], b = e.measures[breakBar].staves[0].voices[0][0];
+  e = slur(e, [a.id, b.id]);
+  const L2 = layoutComposition(e, { unit: 12, width: 700 });
+  assert.deepEqual(L2.slurs.map((x) => x.half), ["out", "in"]);
+  assert.ok(L2.slurs[0].system === 0 && L2.slurs[1].system === 1);
 });
