@@ -259,6 +259,10 @@ hand rising) and depends only on V0 + the beam pass of V1.
   (`makeCrossBeam`); a beam whose notes are all crossed keeps the home-pointing direction.
 - **Hidden rests draw faint on screen** (`.cp-hidden`, 28 %), so they can be picked and shown
   again; they still count and still take taps. Paper (P4 export) leaves them out.
+- **The switcher is one `voice ▾` picker (v90, Leif's ask):** four squares plus the phone-only ▾ took a
+  third of the Notes rail and wrapped it onto two lines on many devices. One button shows the active
+  voice's number in its colour and opens the same menu (voices 1–4 to write in or move to, swap,
+  cross-staff, hide rest); rows are lit / dim as the squares were. Auto-follow and `⌘1–4` unchanged.
 - **Rests drag vertically (v87, Leif's ask after reviewing v86).** In Select mode a pen / finger / mouse
   down on a rest grabs it like a head; vertical movement moves the glyph by staff steps and release
   commits one undo step. The offset is `ev.restY` (whole steps, ± `REST_Y_MAX` = 12, relative to the

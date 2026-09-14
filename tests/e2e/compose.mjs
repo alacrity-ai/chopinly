@@ -581,7 +581,9 @@ await step("expression rail (via Rails ▾): f under the selected note, a cresce
   await page.keyboard.press("Escape"); await page.keyboard.press("v");
 });
 
-await step("voices: the switcher writes into voice 2 (padded, tinted, stems down) beside voice 1; selecting a head makes its voice active; a move onto a sounding voice is refused, to a free one lands; Ctrl-N switches; hold opens the voice menu (swap, hide rest); Ctrl-Shift-↑ crosses a note to the upper staff", async () => {
+await step("voices: the switcher writes into voice 2 (padded, tinted, stems down) beside voice 1; selecting a head makes its voice active; a move onto a sounding voice is refused, to a free one lands; Ctrl-N switches; the voice ▾ menu (swap, hide rest); Ctrl-Shift-↑ crosses a note to the upper staff; the Notes rail stays on one line", async () => {
+  const pickVoice = async (v) => { await page.click(".cp-voice-pick"); await page.click(`.cp-voice-row[data-act='voice'][data-v='${v}']`); };
+  const openVoices = async () => { if (await page.locator("#cp-voice-more").isHidden()) await page.click(".cp-voice-pick"); };
   const Z = (await state()).S;
   const vk = (bar, staff, vi) => page.evaluate(([b, st, v]) => { const x = document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[st].voices[v]; return x === undefined ? "none" : x === null ? "null" : x.map((e) => `${e.kind === "rest" ? "r" : "n"}${e.dur.base}`).join(" "); }, [bar, staff, vi]);
   const drawnOf = (id) => page.evaluate((i) => { const d = document.querySelector(".cp-editor").__editor.layout.drawn.find((x) => x.id === i); return d && { voice: d.voice, stem: d.stem, x: d.x, drawStaff: d.drawStaff, hidden: d.hidden, y: d.rest ? d.y : d.heads[0].y }; }, id);
@@ -595,12 +597,13 @@ await step("voices: the switcher writes into voice 2 (padded, tinted, stems down
   // a bar (not the last) whose bass staff is still empty
   const B = await page.evaluate(() => { const d = document.querySelector(".cp-editor").__editor.state.doc; return d.measures.findIndex((m, i) => i > 0 && i < d.measures.length - 1 && m.staves[1].voices.length === 1 && m.staves[1].voices[0].every((e) => e.kind === "rest")); });
   if (B < 1) throw new Error("no empty bass bar to write in");
-  // the switcher: four squares at the left of the Notes rail, voice 1 lit, the others dim until used
-  if ((await page.locator(".cp-palette .cp-voice").count()) !== 4) throw new Error("switcher buttons");
-  if ((await page.locator(".cp-voice[data-v='0'][aria-pressed='true']").count()) !== 1 || (await page.locator(".cp-voice.cp-unused").count()) !== 3) throw new Error("voice 1 should be the only lit voice");
-  if ((await page.locator(".cp-palette .cp-btn").first().getAttribute("data-act")) !== "voice") throw new Error("the switcher is not first on the rail");
+  // the voice picker: one ▾ button at the left of the Notes rail showing the active voice; the menu's rows: voice 1 lit, the others dim until used
+  if ((await page.locator(".cp-palette .cp-voice-pick").count()) !== 1 || (await page.textContent(".cp-voice-pick .cp-voice-n")) !== "1") throw new Error("voice picker");
+  if ((await page.locator(".cp-voice-row[data-act='voice'][data-v='0'][aria-pressed='true']").count()) !== 1 || (await page.locator(".cp-voice-row.cp-unused").count()) !== 3) throw new Error("voice 1 should be the only lit voice");
+  if ((await page.locator(".cp-palette .cp-btn").first().getAttribute("data-pop")) !== "cp-voice-more") throw new Error("the picker is not first on the rail");
+  { const rail = await page.locator(".cp-palette").boundingBox(), btn = await page.locator(".cp-palette .cp-sq").first().boundingBox(); if (rail.height > btn.height * 1.6) throw new Error(`the Notes rail wraps at iPad width: ${rail.height} vs ${btn.height}`); }
   // voice 2 → a tap on the empty empty bass staff creates voice 2 there, padded with rests, drawn tinted with its stem down
-  await page.click(".cp-voice[data-v='1']");
+  await pickVoice(1);
   if ((await state()).voice !== 1) throw new Error("voice 2 not active");
   await page.waitForFunction(() => document.querySelector(".lb-toast.show")?.textContent.includes("voice 2"), null, { timeout: 3000 });
   if ((await vk(B, 1, 0)) !== "r1") throw new Error("bass staff of the empty bar not empty: " + (await vk(B, 1, 0)));
@@ -615,9 +618,9 @@ await step("voices: the switcher writes into voice 2 (padded, tinted, stems down
   const fill = await page.evaluate((i) => getComputedStyle(document.querySelector(`.cp-ev[data-ev='${i}'] .cp-head`)).fill, v2);
   const fill1 = await page.evaluate(() => getComputedStyle(document.querySelector(".cp-ev[data-voice='0'] .cp-head")).fill);
   if (fill === fill1) throw new Error("voice 2 heads are not a different colour: " + fill);
-  if ((await page.locator(".cp-voice[data-v='1'].cp-unused").count()) !== 0) throw new Error("voice 2 should be full ink now");
+  if ((await page.locator(".cp-voice-row[data-v='1'].cp-unused").count()) !== 0) throw new Error("voice 2 should be full ink now");
   // voice 1 again → a note at the same onset lands beside it: two voices at one onset, stems opposite, one x
-  await page.click(".cp-voice[data-v='0']");
+  await pickVoice(0);
   await tapAt({ bar: B, staff: 1, ticks: 100, step: 8 });
   if ((await vk(B, 1, 0)) !== "n4 r4 r2" || (await vk(B, 1, 1)) !== "n4 r4 r2") throw new Error("both voices: " + (await vk(B, 1, 0)) + " / " + (await vk(B, 1, 1)));
   const v1 = await idOf(B, 1, 0, 0);
@@ -627,13 +630,13 @@ await step("voices: the switcher writes into voice 2 (padded, tinted, stems down
   await penTap(await headPt(v2));
   let s = await state();
   if (s.selection.length !== 1 || !s.selection[0].startsWith(v2) || s.voice !== 1) throw new Error("auto-follow " + JSON.stringify(s));
-  if ((await page.locator(".cp-voice[data-v='1'][aria-pressed='true']").count()) !== 1) throw new Error("switcher did not move");
+  if ((await page.locator(".cp-voice-pick[data-v='1']").count()) !== 1 || (await page.textContent(".cp-voice-pick .cp-voice-n")) !== "2") throw new Error("picker did not move");
   // move to voice 1 → refused (voice 1 sounds there), selection kept; move to voice 3 → lands, voice 2 leaves the bar
-  await page.click(".cp-voice[data-v='0']");
+  await pickVoice(0);
   await page.waitForFunction(() => document.querySelector(".lb-toast.show")?.textContent.includes("already sounds"), null, { timeout: 3000 });
   s = await state();
   if ((await vk(B, 1, 1)) !== "n4 r4 r2" || s.selection.length !== 1 || s.voice !== 1) throw new Error("refused move changed something " + JSON.stringify(s));
-  await page.click(".cp-voice[data-v='2']");
+  await pickVoice(2);
   if ((await vk(B, 1, 2)) !== "n4 r4 r2" || (await vk(B, 1, 1)) !== "null") throw new Error("move to voice 3: " + (await vk(B, 1, 2)) + " / " + (await vk(B, 1, 1)));
   s = await state();
   if (s.voice !== 2 || s.selection.length !== 1 || !s.selection[0].startsWith(v2)) throw new Error("after the move " + JSON.stringify(s));
@@ -644,10 +647,9 @@ await step("voices: the switcher writes into voice 2 (padded, tinted, stems down
   if ((await state()).voice !== 1) throw new Error("Ctrl-2");
   await page.keyboard.press("Control+1");
   if ((await state()).voice !== 0) throw new Error("Ctrl-1");
-  // hold a voice button → the voice menu; the rows for rests are off without a rest selected
-  const vb = await page.locator(".cp-voice[data-v='0']").boundingBox();
-  await page.mouse.move(vb.x + vb.width / 2, vb.y + vb.height / 2); await page.mouse.down(); await page.waitForTimeout(600); await page.mouse.up();
-  if (await page.locator("#cp-voice-more").isHidden()) throw new Error("hold did not open the voice menu");
+  // the picker opens the voice menu; the rows for rests are off without a rest selected
+  await page.click(".cp-voice-pick");
+  if (await page.locator("#cp-voice-more").isHidden()) throw new Error("the picker did not open the voice menu");
   if ((await page.locator("#cp-voice-more .cp-voice-row").count()) !== 8) throw new Error("voice menu rows");
   if (!(await page.locator(".cp-voice-row[data-act='hide-rest']").isDisabled()) || !(await page.locator(".cp-voice-row[data-act='voice-swap']").isDisabled())) throw new Error("rows should be off with nothing selected");
   await page.evaluate(() => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
@@ -655,7 +657,7 @@ await step("voices: the switcher writes into voice 2 (padded, tinted, stems down
   // swap 1 ↔ 2 in the bar of the selection: voice 1's note becomes voice 2, voice 1 is rests; voice 3 stays
   await penTap(await headPt(v1));
   if ((await state()).voice !== 0) throw new Error("selecting the voice-1 head should make voice 1 active");
-  await page.mouse.move(vb.x + vb.width / 2, vb.y + vb.height / 2); await page.mouse.down(); await page.waitForTimeout(600); await page.mouse.up();
+  await openVoices();
   await page.click(".cp-voice-row[data-act='voice-swap']");
   if ((await vk(B, 1, 0)) !== "r1" || (await vk(B, 1, 1)) !== "n4 r4 r2" || (await vk(B, 1, 2)) !== "n4 r4 r2") throw new Error("swap: " + [await vk(B, 1, 0), await vk(B, 1, 1), await vk(B, 1, 2)].join(" / "));
   if ((await drawnOf(v1)).voice !== 1 || (await drawnOf(v1)).stem !== "down") throw new Error("the swapped note draws as voice 2");
@@ -665,7 +667,7 @@ await step("voices: the switcher writes into voice 2 (padded, tinted, stems down
   await penTap(await headPt(rest));
   s = await state();
   if (s.selection.length !== 1 || s.selection[0] !== rest || s.voice !== 1) throw new Error("rest selection " + JSON.stringify(s));
-  await page.mouse.move(vb.x + vb.width / 2, vb.y + vb.height / 2); await page.mouse.down(); await page.waitForTimeout(600); await page.mouse.up();
+  await openVoices();
   if (await page.locator(".cp-voice-row[data-act='hide-rest']").isDisabled()) throw new Error("hide rest should be on with a rest selected");
   await page.click(".cp-voice-row[data-act='hide-rest']");
   if ((await drawnOf(rest)).hidden !== true || (await page.locator(`.cp-svg .cp-ev.cp-hidden[data-ev='${rest}']`).count()) !== 1) throw new Error("rest not hidden");
@@ -690,8 +692,8 @@ await step("voices: the switcher writes into voice 2 (padded, tinted, stems down
   await page.keyboard.press("Escape");
   for (let i = 0; i < 8; i++) await page.click("[data-act=undo]");
   if ((await vk(B, 1, 0)) !== "r1" || (await vk(B, 1, 1)) !== "none") throw new Error("undo chain: " + (await vk(B, 1, 0)) + " / " + (await vk(B, 1, 1)));
-  await page.click(".cp-voice[data-v='0']");
-  if ((await page.locator(".cp-voice.cp-unused").count()) !== 3) throw new Error("voices 2–4 should be dim again");
+  await pickVoice(0);
+  if ((await page.locator(".cp-voice-row.cp-unused").count()) !== 3) throw new Error("voices 2–4 should be dim again");
   await page.keyboard.press("v"); if ((await state()).mode !== "place") await page.keyboard.press("v");
   void Z;
 });
@@ -900,14 +902,13 @@ await step("phone width: the rails wrap, nothing widens, the editor still places
   await noWiden();
   const sqp = await squares();
   if (sqp.n < 20 || sqp.bad.length || sqp.header.length !== 1 || sqp.lanes.length !== 1) throw new Error("square buttons at phone width: " + JSON.stringify(sqp));
-  // voices 3 and 4 wait behind ▾ until used; 1 and 2 stay on the rail
-  const vis = await page.evaluate(() => [0, 1, 2, 3].map((v) => document.querySelector(`.cp-voice[data-v='${v}']`).getBoundingClientRect().width > 0).concat(document.querySelector(".cp-voice-more").getBoundingClientRect().width > 0));
-  if (vis.join() !== "true,true,false,false,true") throw new Error("phone switcher " + vis.join());
-  await page.click(".cp-voice-more");
+  // the voice picker is the one voice control at phone width too
+  if (!(await page.evaluate(() => document.querySelector(".cp-voice-pick").getBoundingClientRect().width > 0))) throw new Error("phone: no voice picker");
+  await page.click(".cp-voice-pick");
   if (await page.locator("#cp-voice-more").isHidden()) throw new Error("▾ did not open the voice menu");
   await page.click(".cp-voice-row[data-act='voice'][data-v='2']");
-  if ((await state()).voice !== 2 || !(await page.evaluate(() => document.querySelector(".cp-voice[data-v='2']").getBoundingClientRect().width > 0))) throw new Error("voice 3 from the menu");
-  await page.click(".cp-voice[data-v='0']");
+  if ((await state()).voice !== 2 || (await page.textContent(".cp-voice-pick .cp-voice-n")) !== "3") throw new Error("voice 3 from the menu");
+  await page.click(".cp-voice-pick"); await page.click(".cp-voice-row[data-act='voice'][data-v='0']");
   await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 320; }); // bar 2 sits on the second system at this zoom; bring it into the viewport under the three rails
   await tapAt({ bar: 1, staff: 0, ticks: 2 * PPQ + 100, step: 2 });
   if ((await kinds(1)) !== "n4 r4 n4 r4") throw new Error("phone tap: " + (await kinds(1)));

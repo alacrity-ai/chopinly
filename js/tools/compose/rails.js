@@ -99,9 +99,8 @@ export function buildRails(host, { title, onAction }) {
       </span>
     </div>
     <div class="cp-rail cp-palette" role="toolbar" aria-label="palette" data-rail="palette">
-      <span class="cp-more-wrap cp-voices" role="group" aria-label="voice — the one the next tap writes in; with notes selected, the one they move to">
-        ${[0, 1, 2, 3].map((v) => `<button type="button" class="cp-btn cp-sq cp-voice" data-act="voice" data-v="${v}" aria-pressed="false" aria-label="voice ${v + 1} — hold for the voice menu"><b>${v + 1}</b></button>`).join("")}
-        <button type="button" class="cp-btn cp-voice-more" data-pop="cp-voice-more" aria-label="voices 3 and 4, swap, cross-staff, hide rest" aria-expanded="false">&#9662;</button>
+      <span class="cp-more-wrap cp-voices">
+        <button type="button" class="cp-btn cp-pick cp-voice-pick" data-pop="cp-voice-more" data-v="0" aria-label="voice — the one the next tap writes in; with notes selected, the one they move to; swap, cross-staff, hide rest" aria-expanded="false"><span class="cp-pick-label">voice</span><b class="cp-voice-n">1</b>&#9662;</button>
         <span class="cp-more cp-menu" id="cp-voice-more" hidden>${VOICE_ROWS.map(([act, label, d]) => `<button type="button" class="cp-btn cp-menu-row cp-voice-row" data-act="${act}"${d.v !== undefined ? ` data-v="${d.v}"` : ""}${d.dir !== undefined ? ` data-dir="${d.dir}"` : ""}><span>${label}</span><small></small></button>`).join("")}</span>
       </span>
       <span class="cp-sep" aria-hidden="true"></span>
@@ -206,8 +205,6 @@ export function buildRails(host, { title, onAction }) {
     for (const t of ["pointerup", "pointercancel", "pointerleave"]) btn.addEventListener(t, () => clearTimeout(timer));
   };
   hold(tupBtn, () => toggle(tupMore, tupBtn));
-  const voiceMore = host.querySelector("#cp-voice-more"), voiceMoreBtn = host.querySelector(".cp-voice-more");
-  for (const b of host.querySelectorAll(".cp-voice")) hold(b, () => toggle(voiceMore, voiceMoreBtn));
   // typing in the text box: Enter sets; the editor's shortcuts stay out of inputs
   { const inp = host.querySelector("#cp-text-in");
     inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); closeMore(); onAction("text", inp.value); inp.value = ""; } else if (e.key === "Escape") { closeMore(); } });
@@ -243,11 +240,12 @@ export function buildRails(host, { title, onAction }) {
     /** Reflect the editor's state: { armed, mode, canUndo, canRedo, hasSelection, title }. */
     update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, rails = DEFAULT_RAILS, pending = null, title, voice = 0, used = new Set([0]), sel = {} }) {
       let shown = false;
-      // the switcher: the active voice lit in its colour, voices the piece uses in full ink, the rest dim; the menu's rows follow the selection
-      for (const b of host.querySelectorAll(".cp-voice")) { const v = Number(b.dataset.v); b.setAttribute("aria-pressed", String(v === voice)); b.classList.toggle("cp-unused", v !== voice && !used.has(v)); b.classList.toggle("cp-used", used.has(v)); }
+      // the voice picker (v90: one ▾ button, not four squares — the rail wrapped on many devices): the active voice's number in its colour;
+      // the menu's rows: the active one lit, voices the piece uses in full ink, the rest dim; the rows follow the selection
+      { const pick = host.querySelector(".cp-voice-pick"); pick.dataset.v = String(voice); pick.querySelector(".cp-voice-n").textContent = String(voice + 1); }
       for (const r of host.querySelectorAll(".cp-voice-row")) {
         const act = r.dataset.act, hint = r.querySelector("small");
-        if (act === "voice") { const v = Number(r.dataset.v); r.disabled = false; r.setAttribute("aria-pressed", String(v === voice)); hint.textContent = sel.notes ? (v === voice ? "here" : "move") : v === voice ? "writing" : "write"; }
+        if (act === "voice") { const v = Number(r.dataset.v); r.disabled = false; r.setAttribute("aria-pressed", String(v === voice)); r.classList.toggle("cp-unused", v !== voice && !used.has(v)); hint.textContent = sel.notes ? (v === voice ? "here" : "move") : v === voice ? "writing" : used.has(v) ? "write" : "write (new)"; }
         else if (act === "voice-swap") { r.disabled = !sel.any; hint.textContent = ""; }
         else if (act === "cross") { r.disabled = !(Number(r.dataset.dir) < 0 ? sel.up : sel.down); hint.textContent = Number(r.dataset.dir) < 0 ? "⌘⇧↑" : "⌘⇧↓"; }
         else if (act === "hide-rest") { r.disabled = !sel.rests; r.querySelector("span").textContent = sel.hidden ? "show rest" : "hide rest"; hint.textContent = ""; }
