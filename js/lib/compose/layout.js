@@ -49,8 +49,17 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
       const next = cols[i + 1]?.ticks ?? cap;
       c.w = colWidth(next - c.ticks);
       c.accPad = 0; c.dotPad = 0; // set by the accidental pass below
+      c.clefPad = 0; c.clefs = [];  // clef changes drawn just before this column
     });
-    return { index: bi, time, key, clefs, cap, cols, allRest, showTime: bi === 0 || !!m.time, showKey: !!m.key, showClef: !!m.clefs, m };
+    // a clef change inside the bar draws before the first column on or after its beat, else at the bar's end
+    const tailClefs = [];
+    for (const ch of m.clefChanges ?? []) {
+      const c = cols.find((x) => x.ticks >= ch.at);
+      if (c) { c.clefs.push(ch); c.clefPad = 2.6; } else tailClefs.push(ch);
+    }
+    const tailPad = tailClefs.length ? 2.6 : 0;
+    const clefFor = (st, t) => ((m.clefChanges ?? []).length ? clefAt(doc, bi, st, t) : clefs[st]);
+    return { index: bi, time, key, clefs, clefFor, cap, cols, tailClefs, tailPad, allRest, showTime: bi === 0 || !!m.time, showKey: !!m.key, showClef: !!m.clefs, m };
   });
 
   // -- accidentals + pads (per bar, per staff: key alterations, then a memory that resets at the barline) --
@@ -101,7 +110,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     const ts = b.showTime ? 3.0 : 0;
     return clef + ks + ts + (clef || ks || ts ? 0.6 : 0);
   };
-  const bodyW = (b) => Math.max(MIN_BAR, 1.0 + b.cols.reduce((n, c) => n + c.w + c.accPad + c.dotPad, 0) + 1.0);
+  const bodyW = (b) => Math.max(MIN_BAR, 1.0 + b.cols.reduce((n, c) => n + c.w + c.clefPad + c.accPad + c.dotPad, 0) + b.tailPad + 1.0);
 
   // -- pack bars into systems --
   const systems = [];
@@ -120,13 +129,14 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     const body = sum - lead;
     // a courtesy key / time at the end when the next system opens with a change
     const nb = bars[i];
-    sys.courtesy = nb && (nb.showKey || nb.showTime) ? { key: nb.showKey ? nb : null, time: nb.showTime ? nb : null, w: (nb.showKey ? Math.max(...nb.clefs.map((_, si) => keysigW(nb, si))) * 1.15 + 0.8 : 0) + (nb.showTime ? 3.0 : 0) + 0.4 } : null;
+    sys.courtesy = nb && (nb.showKey || nb.showTime || nb.showClef) ? { clef: nb.showClef ? nb : null, key: nb.showKey ? nb : null, time: nb.showTime ? nb : null, w: (nb.showClef ? 2.8 : 0) + (nb.showKey ? Math.max(...nb.clefs.map((_, si) => keysigW(nb, si))) * 1.15 + 0.8 : 0) + (nb.showTime ? 3.0 : 0) + 0.4 } : null;
     sys.scale = Math.min((avail - lead - (sys.courtesy?.w ?? 0)) / body, i >= bars.length ? 1.25 : 10);
     systems.push(sys);
   }
 
   // -- coordinates --
-  const drawn = [], beams = [], ties = [];
+  const drawn = [], beams = [], ties = [], clefs = [];
+  const clefY = (topY, clef) => topY + (8 - (CLEFS[clef].line - 1) * 2) / 2;
   const hit = { systems: [] };
   systems.forEach((sys, si) => {
     const sysTop = TOP_PAD + si * SYS_H;
@@ -158,7 +168,8 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
       const hbar = { index: b.index, x0: barX0, x1: bodyStart + bw, bodyX0: bodyStart, cols: [], cap: b.cap };
       let off = 1.0;
       for (const c of b.cols) {
-        const x = bodyStart + (off + c.accPad) * sys.scale;
+        for (const ch of c.clefs) clefs.push({ x: bodyStart + off * sys.scale + 0.15, y: clefY(staffTop(ch.staff), ch.clef), glyph: CLEFS[ch.clef].glyph, staff: ch.staff, bar: b.index, at: ch.at, system: si });
+        const x = bodyStart + (off + c.clefPad + c.accPad) * sys.scale;
         c.x = x;
         hbar.cols.push({ ticks: c.ticks, x });
         for (const ev of c.evs) {
@@ -170,7 +181,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
             continue;
           }
           const base = ev.ev.dur.base, kind = headKind(base), headW = HEAD_W[kind];
-          const clef = b.clefs[st];
+          const clef = b.clefFor(st, c.ticks);
           const steps = ev.ev.pitches.map((p) => staffStep({ letter: p.step, acc: 0, octave: p.octave, diatonic: p.octave * 7 + "CDEFGAB".indexOf(p.step) }, clef));
           const far = steps.reduce((m, s2) => (Math.abs(s2 - 4) > Math.abs(m - 4) ? s2 : m), steps[0]);
           const stem = hasStem(base) ? (far >= 4 ? "down" : "up") : null;
@@ -198,17 +209,19 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
           d.beams = beamCount(base);
           drawn.push(d);
         }
-        off += c.w + c.accPad + c.dotPad;
+        off += c.w + c.clefPad + c.accPad + c.dotPad;
       }
+      for (const ch of b.tailClefs) clefs.push({ x: hbar.x1 - b.tailPad * sys.scale + 0.15, y: clefY(staffTop(ch.staff), ch.clef), glyph: CLEFS[ch.clef].glyph, staff: ch.staff, bar: b.index, at: ch.at, system: si });
       cursor = hbar.x1;
       hsys.bars.push(hbar);
       sys.barlines.push({ x: cursor, final: b.index === bars.length - 1 });
     });
     if (sys.courtesy) {
-      const nb = sys.courtesy.key ?? sys.courtesy.time;
-      const c = { x: cursor + 0.4, staves: [], key: !!sys.courtesy.key, time: !!sys.courtesy.time, timeX: 0 };
-      for (let st = 0; st < nStaves; st++) c.staves.push({ keysig: sys.courtesy.key ? [...cancels(nb, st), ...keySignatureGlyphs(nb.key.fifths, nb.clefs[st])] : [], topY: staffTop(st) });
-      c.timeX = c.x + (sys.courtesy.key ? Math.max(...c.staves.map((x) => x.keysig.length)) * 1.15 + 0.8 : 0);
+      const nb = sys.courtesy.key ?? sys.courtesy.time ?? sys.courtesy.clef;
+      const c = { x: cursor + 0.4, staves: [], clef: !!sys.courtesy.clef, key: !!sys.courtesy.key, time: !!sys.courtesy.time, keyX: 0, timeX: 0 };
+      for (let st = 0; st < nStaves; st++) c.staves.push({ clef: sys.courtesy.clef && nb.m.clefs?.[st] ? { glyph: CLEFS[nb.m.clefs[st]].glyph, y: clefY(staffTop(st), nb.m.clefs[st]) } : null, keysig: sys.courtesy.key ? [...cancels(nb, st), ...keySignatureGlyphs(nb.key.fifths, nb.clefs[st])] : [], topY: staffTop(st) });
+      c.keyX = c.x + (c.clef ? 2.8 : 0);
+      c.timeX = c.keyX + (sys.courtesy.key ? Math.max(...c.staves.map((x) => x.keysig.length)) * 1.15 + 0.8 : 0);
       c.beats = nb.time.beats; c.unit = nb.time.unit;
       sys.courtesyLead = c;
     }
@@ -305,7 +318,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     tuplets.push({ x1, x2, y, above, n: first.tupletN, bracket, system: first.system });
   }
   const height = (TOP_PAD + systems.length * SYS_H - SYS_GAP + BOTTOM_PAD) * S;
-  return { S, unit: S, width, height, systems, drawn, beams, ties, tuplets, marks, glisses, hit, nStaves };
+  return { S, unit: S, width, height, systems, drawn, beams, ties, tuplets, marks, glisses, clefs, hit, nStaves };
 }
 
 function restBetween(drawn, a, b) {

@@ -16,6 +16,7 @@ export function renderComposition(container, L) {
   const glyphOf = (x, y, ch, cls = "glyph") => el("text", { x: px(x), y: px(y), class: cls }, ch);
   /** The nodes of one ghost note / rest. */
   const ghostNodes = (spec) => {
+    if (spec.glyph) { const gg = glyphOf(spec.x, spec.y, G[spec.glyph], "glyph"); if (spec.small) gg.setAttribute("style", `font-size:${(fs * 0.8).toFixed(1)}px`); return [gg]; }
     if (spec.rest) { const out = [glyphOf(spec.x, spec.y, restGlyph(spec.base), "glyph rest")]; for (let i = 0; i < (spec.dots ?? 0); i++) out.push(glyphOf(spec.x + 1.5 + i * 0.7, spec.y - 0.5, G.dot, "glyph head-part")); return out; }
     const out = [], headW = spec.base <= 1 ? 1.7 : 1.18;
     if (spec.base >= 2 && spec.stem !== false) { const up = spec.stemUp, sx = up ? spec.x + headW - 0.07 : spec.x + 0.07; out.push(el("rect", { x: px(sx - 0.065), y: px(up ? spec.y - 3.5 : spec.y), width: px(0.13), height: px(3.5), class: "stem" })); }
@@ -49,7 +50,8 @@ export function renderComposition(container, L) {
     if (sys.courtesyLead) {
       const c = sys.courtesyLead;
       c.staves.forEach((st) => {
-        st.keysig.forEach((k, i) => g.append(glyph(c.x + i * 1.15, st.topY + (8 - k.step) / 2, G[k.acc], "glyph cp-courtesy")));
+        if (st.clef) { const cg = glyph(c.x + 0.15, st.clef.y, G[st.clef.glyph], "glyph cp-courtesy"); cg.setAttribute("style", `font-size:${(fs * 0.8).toFixed(1)}px`); g.append(cg); }
+        st.keysig.forEach((k, i) => g.append(glyph(c.keyX + i * 1.15, st.topY + (8 - k.step) / 2, G[k.acc], "glyph cp-courtesy")));
         if (c.time) { g.append(glyph(c.timeX, st.topY + 1, timeDigit(c.beats), "glyph cp-courtesy")); g.append(glyph(c.timeX, st.topY + 3, timeDigit(c.unit), "glyph cp-courtesy")); }
       });
     }
@@ -60,6 +62,8 @@ export function renderComposition(container, L) {
     }
     svg.append(g);
   }
+  // clef changes inside a bar (small, before the beat they take effect on)
+  for (const c of L.clefs) { const cg = glyph(c.x, c.y, G[c.glyph], "glyph cp-clef-change"); cg.setAttribute("style", `font-size:${(fs * 0.8).toFixed(1)}px`); cg.dataset.bar = c.bar; cg.dataset.staff = c.staff; svg.append(cg); }
   // beams (under the notes)
   for (const b of L.beams) {
     const t = b.dir === "up" ? b.t : -b.t;
@@ -123,7 +127,8 @@ export function renderComposition(container, L) {
   const ghost = el("g", { class: "cp-ghost", hidden: "" });
   const lassoEl = el("polyline", { class: "cp-lasso", points: "", hidden: "" });
   const playhead = el("line", { class: "cp-playhead", x1: 0, y1: 0, x2: 0, y2: 0, hidden: "" });
-  overlay.append(flash, ghost, lassoEl, playhead);
+  const target = el("rect", { class: "cp-target", x: 0, y: 0, width: 0, height: 0, rx: px(0.6), hidden: "" });
+  overlay.append(flash, target, ghost, lassoEl, playhead);
   container.replaceChildren(svg, overlay);
 
   return {
@@ -143,6 +148,12 @@ export function renderComposition(container, L) {
       if (Array.isArray(spec)) { for (const g of spec) ghost.append(...ghostNodes(g)); ghost.removeAttribute("hidden"); return; }
       ghost.append(...ghostNodes(spec));
       ghost.removeAttribute("hidden");
+    },
+    /** Highlight a bar as the target of an armed change ({ hbar, sys }), or null to hide. */
+    showTarget(t) {
+      if (!t) { target.setAttribute("hidden", ""); return; }
+      target.setAttribute("x", px(t.hbar.x0)); target.setAttribute("y", px(t.sys.top + 1)); target.setAttribute("width", px(t.hbar.x1 - t.hbar.x0)); target.setAttribute("height", px(t.sys.bottom - t.sys.top - 2));
+      target.removeAttribute("hidden");
     },
     /** The lasso path while it is drawn (points in S), or null to hide. */
     showLasso(points) {

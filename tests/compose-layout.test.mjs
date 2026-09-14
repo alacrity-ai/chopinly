@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition } from "../js/lib/compose/model.js";
-import { place } from "../js/lib/compose/engine.js";
+import { place, setClef } from "../js/lib/compose/engine.js";
 import { layoutComposition, SYS_H, TOP_PAD } from "../js/lib/compose/layout.js";
 import { slotAt, thingAt, ticksAt, xOfTicks, barAt } from "../js/lib/compose/hit.js";
 import { PPQ } from "../js/lib/compose/ticks.js";
@@ -98,4 +98,21 @@ test("lasso: a polygon around two heads selects exactly them; things() lists hea
   assert.equal(inside(poly, a.x, a.y), true);
   assert.equal(inside(poly, heads[2].x, heads[2].y), false);
   assert.deepEqual(lasso(L, poly.slice(0, 2)), []);
+});
+
+test("a clef change on beat 3 draws a small clef before that beat's column; heads after it step in the new clef, heads before it in the old", () => {
+  let d = setClef(fresh(), 1, 1, "tenor", 2 * PPQ);
+  d = place(d, { bar: 1, staff: 1, ticks: 0, step: 4 }, Q).doc;        // D3 in bass (middle line)
+  d = place(d, { bar: 1, staff: 1, ticks: 2 * PPQ, step: 4 }, Q).doc;  // A3 in tenor (middle line)
+  const L = layoutComposition(d, { unit: 12, width: 1024 });
+  assert.equal(L.clefs.length, 1);
+  const c = L.clefs[0], heads = L.drawn.filter((x) => !x.rest && x.bar === 1).sort((a, b) => a.ticks - b.ticks);
+  assert.equal(c.glyph, "cClef"); assert.equal(c.staff, 1); assert.equal(c.at, 2 * PPQ);
+  assert.ok(c.x > heads[0].x && c.x < heads[1].x, `clef between the notes: ${heads[0].x} < ${c.x} < ${heads[1].x}`);
+  assert.equal(heads[0].heads[0].step, 4); assert.equal(heads[1].heads[0].step, 4); // both on the middle line, in their own clefs
+  // a clef change at the barline of the next system's first bar is shown as a courtesy at the end of the previous one
+  let e = setClef(fresh(), 6, 0, "alto");
+  const N = layoutComposition(e, { unit: 12, width: 900 });
+  const sysOf = (bar) => N.systems.findIndex((s) => s.bars.some((b) => b.index === bar));
+  if (sysOf(6) > 0 && sysOf(6) !== sysOf(5)) { const prev = N.systems[sysOf(6) - 1]; assert.ok(prev.courtesyLead?.clef, "courtesy clef"); assert.equal(prev.courtesyLead.staves[0].clef.glyph, "cClef"); }
 });

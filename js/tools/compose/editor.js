@@ -10,12 +10,13 @@ import { haptic } from "../logbook/motion.js";
 import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt, lasso } from "../../lib/compose/hit.js";
-import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { createPlayer } from "../../lib/compose/play.js";
-import { clefAt, keyAt, timeAt, tempoOf, MIN_TEMPO, MAX_TEMPO } from "../../lib/compose/model.js";
-import { ticks as ticksOf } from "../../lib/compose/ticks.js";
+import { clefAt, timeAt, tempoOf, MIN_TEMPO, MAX_TEMPO } from "../../lib/compose/model.js";
+import { ticks as ticksOf, capacity, groupSize } from "../../lib/compose/ticks.js";
+import { CLEFS } from "../../lib/music.js";
 import { buildRails, MAIN_BASES, MORE_BASES, KEYS, durName, tupletName } from "./rails.js";
 
 const TAP_MS = 300, TAP_PX = 10, PALM_PX = 40, S_MIN = 8, S_MAX = 22, SAVE_MS = 300, LASSO_PX = 6;
@@ -38,7 +39,7 @@ export function openEditor({ id, ctx, onClose }) {
   const selection = new Set();        // "ev" | "ev:pi"
   let L = null, R = null, closed = false, saveTimer = 0, dirty = false, pasting = false;
   let tempo = tempoOf(c);              // playback tempo — saved with the piece, outside undo
-  let cursorBar = 0;                   // where key / time / clef changes go: the bar of the last tap or selection
+  let pending = null;                  // an armed key / time / clef change waiting for a tap: { kind, value }
   let utilityOpen = !!store.get("utility", false);
   const sound = createSound(getAudio);
   const player = createPlayer({ getAudio, getDoc: () => doc, getTempo: () => tempo, onTick: showPlayhead, onEnd: () => syncTransport() });
@@ -64,9 +65,8 @@ export function openEditor({ id, ctx, onClose }) {
     showPlayhead(player.position);
   }
   function sync() {
-    cursorBar = Math.max(0, Math.min(doc.measures.length - 1, cursorBar));
-    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, utility: { open: utilityOpen, bar: cursorBar, bars: doc.measures.length, fifths: keyAt(doc, cursorBar).fifths, time: timeAt(doc, cursorBar), clefs: [clefAt(doc, cursorBar, 0), clefAt(doc, cursorBar, 1)] } });
-    view.dataset.mode = mode; view.classList.toggle("pasting", pasting);
+    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, utility: { open: utilityOpen } });
+    view.dataset.mode = mode; view.classList.toggle("pasting", pasting); view.classList.toggle("arming", !!pending);
     syncTransport();
   }
   function syncTransport() { rails.transport({ playing: player.playing, bpm: tempo, total: barStarts(doc).total, pos: player.position, bar: locate(doc, player.position)?.bar ?? doc.measures.length - 1, bars: doc.measures.length }); }
@@ -127,12 +127,55 @@ export function openEditor({ id, ctx, onClose }) {
       if (!hb) continue;
       const staff = target.staff + e.dStaff, x = xOfTicks(hb.bar, loc.ticks);
       if (e.kind === "rest") { out.push({ x, y: stepY(hb.sys, staff, e.dur.base <= 1 ? 6 : 4), base: e.dur.base, rest: true }); continue; }
-      const clef = clefAt(doc, loc.bar, staff);
+      const clef = clefAt(doc, loc.bar, staff, loc.ticks);
       for (const p of e.pitches) { const st = stepOf(p, clef); out.push({ x, y: stepY(hb.sys, staff, st), base: e.dur.base, rest: false, stem: false }); }
     }
     return out;
   }
+  // --- an armed key / time / clef change: the tap says where it goes ---
+  /** Where a pending change would land for a client point: key / time → { bar }; clef → { bar, staff, at } on the nearest beat. */
+  function changeTarget(clientX, clientY) {
+    if (!pending || !L) return null;
+    const { x, y } = toS(clientX, clientY);
+    const slot = slotAt(L, x, y);
+    if (!slot) return null;
+    if (pending.kind !== "clef") return { bar: slot.bar };
+    const time = timeAt(doc, slot.bar), beat = groupSize(time), cap = capacity(time);
+    let bar = slot.bar, at = Math.round(slot.ticks / beat) * beat;
+    if (at >= cap) { if (bar + 1 < doc.measures.length) { bar++; at = 0; } else at = cap - beat; } // the tail of the last beat means the next barline
+    return { bar, staff: slot.staff, at };
+  }
+  function changeGhost(t) {
+    if (pending.kind !== "clef") { const hb = barAt(L, t.bar); R.showGhost(null); return R.showTarget(hb ? { hbar: hb.bar, sys: hb.sys } : null); }
+    R.showTarget(null);
+    const hb = barAt(L, t.bar);
+    if (!hb) return R.showGhost(null);
+    const clef = CLEFS[pending.value];
+    R.showGhost({ glyph: clef.glyph, small: t.at > 0, x: xOfTicks(hb.bar, t.at) - (t.at > 0 ? 2.9 : 0.6), y: stepY(hb.sys, t.staff, (clef.line - 1) * 2) });
+  }
+  function setPending(next) {
+    pending = next;
+    if (pending) { if (drag) grabEnd({ pointerId: drag.id }, { cancel: true }); if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true }); if (mode === "scrub") setMode("place"); pasting = false; }
+    R?.showGhost(null); R?.showTarget(null); sync();
+  }
+  function applyChangeAt(clientX, clientY) {
+    const t = changeTarget(clientX, clientY);
+    if (!t) return;
+    const p = pending;
+    try {
+      if (p.kind === "key") { commit(setKey(doc, t.bar, p.value)); const k = KEYS.find((x) => x.fifths === p.value); toast(`${k ? `${k.major} major / ${k.minor} minor` : p.value} from bar ${t.bar + 1}`); }
+      else if (p.kind === "time") {
+        const v = p.value, r = setTime(doc, t.bar, v);
+        if (r.doc === doc) { toast(`already ${v.beats}/${v.unit} there`); setPending(null); return; }
+        if (r.after > r.before && !confirm(`${v.beats}/${v.unit} from bar ${t.bar + 1} spills into ${r.after - r.before} more ${r.after - r.before === 1 ? "bar" : "bars"} — go ahead?`)) { setPending(null); return; }
+        commit(r.doc); toast(`${v.beats}/${v.unit} from bar ${t.bar + 1}`);
+      } else { commit(setClef(doc, t.bar, t.staff, p.value, t.at)); toast(`${p.value} clef on the ${t.staff === 0 ? "upper" : "lower"} staff from ${t.at ? `beat ${t.at / groupSize(timeAt(doc, t.bar)) + 1} of ` : ""}bar ${t.bar + 1}`); }
+      haptic(8);
+    } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar ?? t.bar); }
+    setPending(null);
+  }
   function ghostAt(clientX, clientY) {
+    if (pending) { const t = changeTarget(clientX, clientY); if (!t) { R.showGhost(null); R.showTarget(null); return; } return changeGhost(t); }
     if (pasting) { const t = pasteTarget(clientX, clientY); return R.showGhost(t ? pasteGhost(t) : null); }
     if (mode !== "place" || !L) return R?.showGhost(null);
     const { x, y } = toS(clientX, clientY);
@@ -152,18 +195,18 @@ export function openEditor({ id, ctx, onClose }) {
   // --- a tap -----------------------------------------------------------------
   function tapAt(clientX, clientY) {
     if (!L) return;
+    if (pending) { applyChangeAt(clientX, clientY); return; }
     if (pasting) { dropAt(clientX, clientY); return; }
     const { x, y } = toS(clientX, clientY);
     const thing = thingAt(L, x, y);
     // In Place mode a rest (and a chord's stem) is where the next note goes; only a notehead selects.
-    if (thing && (mode === "select" || thing.type === "head")) { cursorBar = thing.bar; select(thing); return; }
+    if (thing && (mode === "select" || thing.type === "head")) { select(thing); return; }
     if (mode === "select") { if (selection.size) { selection.clear(); R.setSelection(selection); sync(); } return; }
     const slot = slotAt(L, x, y);
     if (!slot) return;
-    cursorBar = slot.bar;
     try {
       const r = place(doc, slot, armed);
-      if (r.action === "same") { const want = stepOf(r.ev.pitches[0], clefAt(doc, slot.bar, slot.staff)); const pi = r.ev.pitches.findIndex((p) => stepOf(p, clefAt(doc, slot.bar, slot.staff)) === slot.step); select({ type: "head", ev: r.ev.id, pi: pi >= 0 ? pi : 0 }); void want; return; }
+      if (r.action === "same") { const voice = doc.measures[slot.bar].staves[slot.staff].voices[0], clef = clefAt(doc, slot.bar, slot.staff, onsetOf(voice, voice.find((e) => e.id === r.ev.id))); const pi = r.ev.pitches.findIndex((p) => stepOf(p, clef) === slot.step); select({ type: "head", ev: r.ev.id, pi: pi >= 0 ? pi : 0 }); return; }
       commit(r.doc);
       if (armed.alter !== null) { armed = { ...armed, alter: null }; sync(); } // an accidental carries once
       if (r.ev.kind === "note") sound.play(r.ev.pitches, 260);
@@ -192,8 +235,8 @@ export function openEditor({ id, ctx, onClose }) {
   function cutSelection() { if (!selection.size) return; copySelection(); deleteSelection(); }
   function setPasting(on) {
     pasting = !!on && !!clipboard;
-    if (pasting) { if (drag) grabEnd({ pointerId: drag.id }, { cancel: true }); if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true }); if (mode === "scrub") setMode("place"); }
-    R?.showGhost(null); sync();
+    if (pasting) { if (drag) grabEnd({ pointerId: drag.id }, { cancel: true }); if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true }); if (mode === "scrub") setMode("place"); pending = null; }
+    R?.showGhost(null); R?.showTarget(null); sync();
   }
   function dropAt(clientX, clientY) {
     const t = pasteTarget(clientX, clientY);
@@ -225,7 +268,6 @@ export function openEditor({ id, ctx, onClose }) {
   // in Place mode the armed duration stays armed and the next tap elsewhere still places.
   let drag = null; // { id, type, thing, items, cluster, wasSelected, y0, delta, base, preview, keys, t }
   function grabStart(e, thing) {
-    cursorBar = thing.bar;
     const wasSelected = selection.has(keyOf(thing));
     // a grabbed head that belongs to an all-noteheads selection takes the whole cluster with it
     const cluster = wasSelected && allHeads() && selection.size > 1;
@@ -290,7 +332,6 @@ export function openEditor({ id, ctx, onClose }) {
     selection.clear();
     const got = lasso(L, l.pts);
     for (const t of got) selection.add(keyOf(t));
-    if (got.length) cursorBar = Math.min(...got.map((t) => t.bar));
     R.setSelection(selection); sync(); haptic(selection.size ? 6 : 0);
   }
   function deleteSelection() {
@@ -317,26 +358,26 @@ export function openEditor({ id, ctx, onClose }) {
       if (gesture?.type === "touch") gesture.valid = false; // a second finger spoils the first
       if (!valid) { if (gesture?.type !== "touch") return; gesture = { id: e.pointerId, type: "touch", valid: false }; return; }
       if (lassoState?.type === "touch") { lassoEnd({ pointerId: lassoState.id }, { cancel: true }); return; } // a second finger lets go
-      const head = pasting ? null : headUnder(e);
+      const head = pasting || pending ? null : headUnder(e);
       if (head) { gesture = null; grabStart(e, head); return; }
-      if (mode === "select" && !pasting) { gesture = null; lassoStart(e); return; }
+      if (mode === "select" && !pasting && !pending) { gesture = null; lassoStart(e); return; }
       gesture = { id: e.pointerId, type: "touch", x: e.clientX, y: e.clientY, t: performance.now(), valid: true };
       ghostAt(e.clientX, e.clientY);
       return;
     }
     if (e.button && e.button !== 0) return;
-    const head = pasting ? null : headUnder(e);
+    const head = pasting || pending ? null : headUnder(e);
     if (head) { gesture = null; grabStart(e, head); return; }
-    if (mode === "select" && !pasting) { gesture = null; lassoStart(e); return; }
+    if (mode === "select" && !pasting && !pending) { gesture = null; lassoStart(e); return; }
     gesture = { id: e.pointerId, type: e.pointerType, x: e.clientX, y: e.clientY, t: performance.now(), valid: true };
   });
   view.addEventListener("pointermove", (e) => {
     if (mode === "scrub") { onScrubMove(e); return; }
     if (drag) { grabMove(e); return; }
     if (lassoState) { lassoMove(e); return; }
-    if (e.pointerType === "touch") { if (gesture?.id === e.pointerId && gesture.valid && Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > TAP_PX) { gesture.valid = false; R?.showGhost(null); } return; }
+    if (e.pointerType === "touch") { if (gesture?.id === e.pointerId && gesture.valid && Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > TAP_PX) { gesture.valid = false; R?.showGhost(null); R?.showTarget(null); } return; }
     if (!gesture || gesture.id !== e.pointerId) ghostAt(e.clientX, e.clientY); // hover
-    else if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > TAP_PX) { gesture.valid = false; R?.showGhost(null); }
+    else if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > TAP_PX) { gesture.valid = false; R?.showGhost(null); R?.showTarget(null); }
   });
   const up = (e) => {
     if (mode === "scrub") { onScrubUp(e); return; }
@@ -346,7 +387,7 @@ export function openEditor({ id, ctx, onClose }) {
       touches.delete(e.pointerId);
       if (gesture?.id === e.pointerId) {
         const ok = gesture.valid && e.type === "pointerup" && performance.now() - gesture.t <= TAP_MS && touches.size === 0 && !wide(e);
-        const g = gesture; gesture = null; R?.showGhost(null);
+        const g = gesture; gesture = null; R?.showGhost(null); R?.showTarget(null);
         if (ok) tapAt(g.x, g.y);
       }
       return;
@@ -360,7 +401,7 @@ export function openEditor({ id, ctx, onClose }) {
   };
   view.addEventListener("pointerup", up);
   view.addEventListener("pointercancel", up);
-  view.addEventListener("pointerleave", (e) => { if (e.pointerType !== "touch") R?.showGhost(null); });
+  view.addEventListener("pointerleave", (e) => { if (e.pointerType !== "touch") { R?.showGhost(null); R?.showTarget(null); } });
   view.addEventListener("contextmenu", (e) => e.preventDefault());
 
   // --- Scrub: pan with one pointer (inertia), pinch to zoom with two ---------
@@ -426,27 +467,22 @@ export function openEditor({ id, ctx, onClose }) {
       case "tempo-up": setTempo(tempo + 1); return;
       case "tempo": { const v = prompt("tempo (beats per minute)", String(tempo)); if (v !== null) setTempo(v); return; }
       case "utility": utilityOpen = !utilityOpen; store.set("utility", utilityOpen); sync(); setTimeout(layout, 0); return; // the rails' height changed: the view re-measures
-      case "bar-prev": cursorBar = Math.max(0, cursorBar - 1); sync(); return;
-      case "bar-next": cursorBar = Math.min(doc.measures.length - 1, cursorBar + 1); sync(); return;
-      case "key": {
-        try { commit(setKey(doc, cursorBar, arg)); const k = KEYS.find((x) => x.fifths === arg); toast(`${k ? `${k.major} major / ${k.minor} minor` : arg} from bar ${cursorBar + 1}`); haptic(8); }
-        catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, cursorBar); }
+      case "key": { // arm the key; the next tap on a bar puts the change there (the armed one again → off)
+        if (pending?.kind === "key" && pending.value === arg) { setPending(null); return; }
+        const k = KEYS.find((x) => x.fifths === arg);
+        setPending({ kind: "key", value: arg }); toast(`${k ? `${k.major} major / ${k.minor} minor` : arg} — tap the bar it starts at`);
         return;
       }
       case "time": {
         let t = arg;
-        if (t === "custom") { const v = prompt("time signature (beats/unit, e.g. 7/8)", `${timeAt(doc, cursorBar).beats}/${timeAt(doc, cursorBar).unit}`); if (v === null) return; const m = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(v); if (!m || !TIME_UNITS.includes(Number(m[2]))) { toast("say it as beats/unit, like 7/8"); return; } t = { beats: Number(m[1]), unit: Number(m[2]) }; }
-        try {
-          const r = setTime(doc, cursorBar, t);
-          if (r.doc === doc) { toast(`already ${t.beats}/${t.unit} there`); return; }
-          if (r.after > r.before && !confirm(`${t.beats}/${t.unit} from bar ${cursorBar + 1} spills into ${r.after - r.before} more ${r.after - r.before === 1 ? "bar" : "bars"} — go ahead?`)) return;
-          commit(r.doc); toast(`${t.beats}/${t.unit} from bar ${cursorBar + 1}`); haptic(8);
-        } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar ?? cursorBar); }
+        if (t === "custom") { const v = prompt("time signature (beats/unit, e.g. 7/8)", "7/8"); if (v === null) return; const m = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(v); if (!m || !TIME_UNITS.includes(Number(m[2]))) { toast("say it as beats/unit, like 7/8"); return; } t = { beats: Number(m[1]), unit: Number(m[2]) }; }
+        if (pending?.kind === "time" && pending.value.beats === t.beats && pending.value.unit === t.unit) { setPending(null); return; }
+        setPending({ kind: "time", value: t }); toast(`${t.beats}/${t.unit} — tap the bar it starts at`);
         return;
       }
       case "clef": {
-        try { commit(setClef(doc, cursorBar, arg.staff, arg.clef)); toast(`${arg.clef} clef on the ${arg.staff === 0 ? "upper" : "lower"} staff from bar ${cursorBar + 1}`); haptic(8); }
-        catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, cursorBar); }
+        if (pending?.kind === "clef" && pending.value === arg) { setPending(null); return; }
+        setPending({ kind: "clef", value: arg }); toast(`${arg} clef — tap the beat it starts on`);
         return;
       }
       case "art": {
@@ -527,7 +563,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (mode === next) return;
     if (drag) grabEnd({ pointerId: drag.id }, { cancel: true });
     if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true });
-    if (next === "scrub" && pasting) { pasting = false; }
+    if (next === "scrub") { pasting = false; pending = null; R?.showTarget(null); }
     mode = next; R?.showGhost(null);
     if (mode === "scrub") { gesture = null; } else { cancelAnimationFrame(scrub?.inertia); scrub = null; }
     sync();
@@ -542,6 +578,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (mod) return;
     if (e.key === " " || e.code === "Space") { e.preventDefault(); act("play"); return; }
     if (e.key === "Home") { e.preventDefault(); act("stop"); return; }
+    if (e.key === "Escape" && pending) { setPending(null); return; }
     if (e.key === "Escape" && pasting) { setPasting(false); return; }
     if (e.key === "Escape") { if (selection.size) { selection.clear(); R.setSelection(selection); sync(); } else setMode(mode === "select" ? "place" : "select"); return; }
     if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelection(); return; }
@@ -582,7 +619,7 @@ export function openEditor({ id, ctx, onClose }) {
   const api = {
     id, close,
     /** For tests: the live state. */
-    get state() { return { mode, armed, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, cursorBar, utilityOpen, doc }; },
+    get state() { return { mode, armed, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, pending, utilityOpen, doc }; },
     /** For tests: the current layout. */
     get layout() { return L; },
     /** For tests: the client point of a musical place. */
