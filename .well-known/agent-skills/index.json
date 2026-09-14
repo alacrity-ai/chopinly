@@ -6,7 +6,7 @@
       "type": "knowledge",
       "description": "Plain-language overview of Chopinly — a free, local-first piano practice assistant — its tools, its articles on practicing the piano, and how to cite it. Written for LLMs and agents.",
       "url": "https://chopinly.com/llms.txt",
-      "sha256": "37adab504b61fd224f5357c18a39613eb74014f383a08525d816fe28fb5dc281"
+      "sha256": "862995be98fa9035e82899ead851e7b69384a965dc2d0b4936922117ff47b6d9"
     }
   ]
 }

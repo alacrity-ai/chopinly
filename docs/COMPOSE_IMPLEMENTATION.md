@@ -242,8 +242,11 @@ carries its dynamics, and *practice this* logs minutes against it.
 **P4a LANDED v88 (WSHED-121, 2026-09-14):** steps 1, 2, 4, 6 and 7 below for the PDF —
 as built in design §10.1 (painter split `paint.js`, baked Bravura outlines as form XObjects,
 static Fraunces subsets through vendored pdf-lib + fontkit UMD, the export sheet with a live
-page-1 preview, Add to Scores with replace-in-place). **P4b = WSHED-119:** MusicXML (step 3)
-and the public story (step 5).
+page-1 preview, Add to Scores with replace-in-place). **P4b LANDED v94 (WSHED-119, 2026-09-14):**
+MusicXML export **and import** (step 3, both directions — design `COMPOSE_MUSICXML_DESIGN.md`,
+code `js/lib/compose/{musicxml,xml,mxl}.js`, golden file + round-trip tests, XSD-checked once) and
+the public story (step 5: `docs/COMPOSE_QA.md`, the README section, `content/tools/compose.md`;
+the privacy table is unchanged — exports and imports are files the musician chooses).
 
 
 **Goal:** a composition leaves Chopinly as a printable PDF, lands in the Scores

@@ -1,6 +1,6 @@
 ---
 name: Ear training
-order: 7
+order: 8
 route: eartraining
 title: "Ear training for piano — hear a note, play it back, judged as you go | Chopinly"
 description: "Free ear training built for pianists: hear a reference, hear a note or a chord, play it back on the keyboard — or on your real piano through the microphone. Graded from single notes in one key to five-note chords across the piano. No ads, no sign-up, works offline."

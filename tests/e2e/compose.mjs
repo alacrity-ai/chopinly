@@ -1,6 +1,6 @@
 // Compose E2E (WSHED-114 / P0). Start a composition, arm durations, tap the
 // staff, select, delete, undo / redo, nudge on overflow, palm safety, Pan,
-// reload. Chromium with an iPad user agent and touch.
+// reload, export, MusicXML both ways. Chromium with an iPad user agent and touch.
 // BASE=… SHOTS=… node tests/e2e/compose.mjs
 import { readFileSync } from "node:fs";
 import { chromium } from "/home/leif/lets-get-rich/claude_ops/.claude/skills/tcw-quote/node_modules/playwright/index.mjs";
@@ -411,7 +411,7 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   // the header's Rails ▾ menu shows and hides lanes; the File ▾ menu is a placeholder for export
   if (!(await page.locator(".cp-header [data-act=back]").count()) || !(await page.locator(".cp-header #cp-title").count())) throw new Error("back / title not on the header rail");
   await page.click("[data-pop=cp-file-more]");
-  if ((await page.locator("#cp-file-more .cp-menu-row:disabled").count()) !== 2 || (await page.locator("#cp-file-more .cp-menu-row:not(:disabled)").count()) !== 2) throw new Error("file menu: two PDF rows live, MusicXML / MIDI placeholders");
+  if ((await page.locator("#cp-file-more .cp-menu-row:disabled").count()) !== 1 || (await page.locator("#cp-file-more .cp-menu-row:not(:disabled)").count()) !== 3) throw new Error("file menu: two PDF rows and MusicXML live, MIDI a placeholder");
   await page.click("[data-pop=cp-file-more]");
   await page.click("[data-pop=cp-rails-more]");
   if ((await page.locator("#cp-rails-more .cp-rail-row").count()) !== 5) throw new Error("rail rows"); // controls · transport · notes · utility · expression
@@ -895,6 +895,63 @@ await step("export: File ▾ → Export PDF opens the sheet with a page-1 previe
   await page.keyboard.press("Escape"); await page.waitForTimeout(350);
   if (await page.locator(".cp-export-wrap:not(.closing)").count()) await page.click(".cp-export-wrap .lb-close");
   await page.waitForFunction(() => !document.querySelector(".cp-export-wrap"), null, { timeout: 3000 });
+});
+
+await step("MusicXML: File ▾ → Export MusicXML downloads a part-wise 4.0 file; import on the list (plain and .mxl) makes new compositions with the same bars; the file menu's Share… path hands over the file", async () => {
+  const cid = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.id);
+  const before = await kinds(0);
+  await page.click("[data-pop=cp-file-more]");
+  const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 20000 }), page.click("#cp-file-more [data-act=export-xml]")]);
+  if (!/\.musicxml$/.test(dl.suggestedFilename())) throw new Error("download name " + dl.suggestedFilename());
+  const xmlPath = await dl.path();
+  const xml = readFileSync(xmlPath, "utf8");
+  if (!xml.startsWith("<?xml") || !/<score-partwise version="4.0">/.test(xml) || !/<divisions>6720<\/divisions>/.test(xml) || !/<work-title>/.test(xml)) throw new Error("not the MusicXML we make: " + xml.slice(0, 200));
+  await page.waitForFunction(() => document.querySelector(".lb-toast.show")?.textContent.includes("saved as"), null, { timeout: 5000 });
+  // where a share sheet exists the same choice as the PDF: Share… hands over the file
+  await page.evaluate(() => { navigator.canShare = () => true; navigator.share = async (d) => { window.__shared = d.files?.[0]?.name ?? null; }; });
+  await page.click("[data-pop=cp-file-more]"); await page.click("#cp-file-more [data-act=export-xml]");
+  await page.waitForSelector(".cp-saveway-wrap #cp-x-way-share", { timeout: 10000 });
+  await page.click("#cp-x-way-share");
+  await page.waitForFunction(() => /\.musicxml$/.test(window.__shared ?? ""), null, { timeout: 5000 });
+  await page.waitForFunction(() => !document.querySelector(".cp-saveway-wrap"), null, { timeout: 3000 });
+  await page.evaluate(() => { delete navigator.canShare; delete navigator.share; });
+  // import the download on the list → a new composition opens with the same bars, tagged imported
+  await page.click("[data-act=back]");
+  await page.waitForSelector("#cp-import-file", { state: "attached" });
+  const rows = await page.locator(".sc-row").count();
+  await page.setInputFiles("#cp-import-file", xmlPath);
+  await page.waitForFunction(() => document.querySelector(".lb-toast.show")?.textContent.includes("imported"), null, { timeout: 10000 });
+  await page.waitForSelector(".cp-editor .cp-svg");
+  const imp = await page.evaluate(() => { const d = document.querySelector(".cp-editor").__editor.state.doc; return { id: d.id, title: d.title, tags: d.tags }; });
+  if (imp.id === cid || !imp.tags.includes("imported")) throw new Error("import did not make a new tagged piece: " + JSON.stringify(imp));
+  if ((await kinds(0)) !== before) throw new Error(`imported bar 1 ${await kinds(0)} ≠ ${before}`);
+  await page.screenshot({ path: `${S}/cp-21-imported.png` });
+  // a compressed .mxl (the zip other programs write) imports too
+  const { deflateRawSync } = await import("node:zlib");
+  const enc = new TextEncoder(), raw = enc.encode(xml), data = deflateRawSync(raw), nm = enc.encode("score.musicxml");
+  const le16 = (n) => [n & 255, (n >> 8) & 255], le32 = (n) => [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255];
+  const local = Uint8Array.from([...le32(0x04034b50), ...le16(20), ...le16(0), ...le16(8), ...le16(0), ...le16(0), ...le32(0), ...le32(data.length), ...le32(raw.length), ...le16(nm.length), ...le16(0), ...nm]);
+  const central = Uint8Array.from([...le32(0x02014b50), ...le16(20), ...le16(20), ...le16(0), ...le16(8), ...le16(0), ...le16(0), ...le32(0), ...le32(data.length), ...le32(raw.length), ...le16(nm.length), ...le16(0), ...le16(0), ...le16(0), ...le16(0), ...le32(0), ...le32(0), ...nm]);
+  const eocd = Uint8Array.from([...le32(0x06054b50), ...le16(0), ...le16(0), ...le16(1), ...le16(1), ...le32(central.length), ...le32(local.length + data.length), ...le16(0)]);
+  const mxl = Buffer.concat([local, data, central, eocd]);
+  await page.click("[data-act=back]");
+  await page.waitForSelector("#cp-import-file", { state: "attached" });
+  await page.setInputFiles("#cp-import-file", { name: "Zipped.mxl", mimeType: "application/vnd.recordare.musicxml", buffer: mxl });
+  await page.waitForFunction(() => document.querySelector(".lb-toast.show")?.textContent.includes("imported"), null, { timeout: 10000 });
+  await page.waitForSelector(".cp-editor .cp-svg");
+  const imp2 = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.id);
+  if ((await kinds(0)) !== before) throw new Error(`mxl bar 1 ${await kinds(0)} ≠ ${before}`);
+  // a file that is not MusicXML says so and adds nothing
+  await page.click("[data-act=back]");
+  await page.waitForSelector("#cp-import-file", { state: "attached" });
+  if ((await page.locator(".sc-row").count()) !== rows + 2) throw new Error("rows after two imports: " + (await page.locator(".sc-row").count()));
+  await page.setInputFiles("#cp-import-file", { name: "notes.xml", mimeType: "text/xml", buffer: Buffer.from("<html><body>hi</body></html>") });
+  await page.waitForFunction(() => document.querySelector(".lb-toast.show")?.textContent.includes("not a MusicXML score"), null, { timeout: 5000 });
+  if ((await page.locator(".sc-row").count()) !== rows + 2) throw new Error("a refused file added a row");
+  // the imports leave, so the list below holds one piece
+  await page.evaluate(async (ids) => { const { logbook } = await import("/js/lib/logbook.js"); for (const id of ids) logbook.removeComposition(id); }, [imp.id, imp2]);
+  await page.goto(`${BASE}/?app=1&t=9#/compose/${cid}`);
+  await page.waitForSelector(".cp-editor .cp-svg");
 });
 
 await step("reload restores the composition, the zoom and the armed duration; opening is not an edit (updatedAt and the pending count stay)", async () => {

@@ -518,13 +518,22 @@ As built (the text below replaced the plan on 2026-09-14; the spike that decided
   XObjects, hidden rests skipped; the E2E exports, downloads, adds to Scores, opens the reader
   and measures ink, then re-sends to prove replace-in-place.
 
-### 10.2 MusicXML (P4)
+### 10.2 MusicXML — landed v94 (WSHED-119), both ways
 
-`doc → MusicXML 4.0 part-wise`: one `<part>` with `<staves>2</staves>`,
-`<divisions>6720</divisions>`, attributes on change bars, `<chord/>`, `<tie>` +
-`<tied>`, `<time-modification>` + `<tuplet>`, `<articulations>`, `<ornaments>`,
-`<glissando>`, `<dynamics>`, `<wedge>`, `<words>`. Because the model is shaped
-after MusicXML this is a serialiser, not a translation. Import is out of scope.
+`js/lib/compose/musicxml.js`: `toMusicXml(doc)` serialises MusicXML 4.0 part-wise (one part,
+`<staves>2</staves>`, `<divisions>6720</divisions>`, attributes on change bars, `<chord/>`,
+`<tie>` + `<tied>`, `<time-modification>` + `<tuplet>`, `<voice>` = voice + 4 × staff, `<staff>`
+from `ev.cross`, rest `display-step` / `display-octave` from `ev.restY`, articulations, ornaments,
+glissando, arpeggiate, `<direction>`s — dynamics, wedges, words with `relative-y` from `dy` — reached
+at their exact tick with `<backup>` / `<forward>`, accidentals by the engraver's own rule);
+`fromMusicXml(text)` reads part-wise or time-wise scores (any program's) into a document that passes
+`validate`, with `xml.js` (a small XML reader shared by browser and node) and `mxl.js` (the
+compressed container). The mapping in both directions, what is refused (with the bar) and what is
+dropped: **`docs/COMPOSE_MUSICXML_DESIGN.md`**. UI: File ▾ → *Export MusicXML* (save / share via
+`js/tools/compose/savefile.js`, shared with the PDF); *import* on the compositions list (a file
+picker for `.musicxml` / `.xml` / `.mxl`, several at once; each becomes a composition tagged
+*imported*). Tests: `tests/compose-musicxml.test.mjs` (golden file `tests/fixtures/compose-golden.musicxml`,
+round trips, other programs' shapes, the containers); the E2E exports, shares, imports plain and `.mxl`.
 
 ### 10.3 MIDI (follow-up)
 

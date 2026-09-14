@@ -5,6 +5,7 @@
 // entries regenerated when marks moved onto slots, WSHED-122), so a piece that never uses voice 2
 // keeps its exact layout. Regenerate only on purpose:
 //   node -e 'import("./tests/fixtures/compose-golden.mjs").then(m=>m.write())'
+// The MusicXML golden file (WSHED-119) likewise: .then(m=>m.writeXml())
 import { newComposition } from "../../js/lib/compose/model.js";
 import { place, tuplet, tie, slur, articulate, addExpression, addHairpin, setClef, arpeggio, accidental } from "../../js/lib/compose/engine.js";
 import { layoutComposition } from "../../js/lib/compose/layout.js";
@@ -45,6 +46,16 @@ export function goldenLayout(width = 1024) {
     return x;
   };
   return strip({ width: L.width, height: L.height, drawn: L.drawn, beams: L.beams, ties: L.ties, slurs: L.slurs, tuplets: L.tuplets, marks: L.marks, glisses: L.glisses, arps: L.arps, dynamics: L.dynamics, hairpins: L.hairpins, texts: L.texts, clefs: L.clefs, hit: L.hit, systems: L.systems.map((s) => ({ top: s.top, staffTop: s.staffTop, barlines: s.barlines, endX: s.endX, scale: s.scale, leading: s.leading.map((l) => ({ x: l.x, w: l.w, keyX: l.keyX, timeX: l.timeX })) })) });
+}
+/** The golden piece as MusicXML with a fixed date and software line (tests/compose-musicxml.test.mjs compares byte for byte). */
+export async function goldenXml() {
+  const { toMusicXml } = await import("../../js/lib/compose/musicxml.js");
+  return toMusicXml(goldenDoc(), { composer: "Golden", now: new Date(0), software: "Chopinly test" });
+}
+export async function writeXml() {
+  const fs = await import("node:fs");
+  fs.writeFileSync(new URL("./compose-golden.musicxml", import.meta.url), await goldenXml());
+  console.log("written");
 }
 export async function write() {
   const fs = await import("node:fs");

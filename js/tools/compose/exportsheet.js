@@ -12,6 +12,7 @@ import { renderComposition } from "../../lib/compose/render.js";
 import { planPages, renderPdf, exportOptions, PAGES, STAFF_MM, MARGINS } from "../../lib/compose/export/pdf.js";
 import { loadPdfLib } from "../../lib/compose/export/pdflib.js";
 import { importFile } from "../scores/library.js";
+import { saveFile } from "./savefile.js";
 
 const store = makeStore("compose");
 const SVG = "http://www.w3.org/2000/svg";
@@ -107,38 +108,12 @@ export function openExportSheet({ id, doc, primary = "export-pdf" }) {
     catch (e) { console.error(e); toast(e.message || "the export failed"); hint.textContent = was; }
     finally { busy = false; for (const b of body.querySelectorAll(".cp-export-actions button")) b.disabled = false; }
   }
-  /** A plain download: the browser's Downloads (Files on an iPad). */
-  const download = (file) => {
-    const url = URL.createObjectURL(file);
-    const a = document.createElement("a"); a.href = url; a.download = file.name; a.rel = "noopener"; document.body.append(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  };
-  /** Where a share sheet exists, ask: save to the device or share. Resolves "device" | "share" | null (dismissed). */
-  const chooseWay = (file) => new Promise((resolve) => {
-    let picked = null;
-    const s = openSheet({ title: "save PDF", cls: "lb-acct-wrap cp-saveway-wrap", html: `
-      <ul class="lb-acct-list">
-        <li><button type="button" class="lb-acct-row" id="cp-x-way-device">${icon("download")}<span><b>Save to device</b><small>${esc(file.name)} → Downloads / Files</small></span></button></li>
-        <li><button type="button" class="lb-acct-row" id="cp-x-way-share">${icon("share")}<span><b>Share…</b><small>AirDrop, Mail, Files, another app</small></span></button></li>
-      </ul>` });
-    s.body.querySelector("#cp-x-way-device").addEventListener("click", () => { picked = "device"; s.close(); });
-    s.body.querySelector("#cp-x-way-share").addEventListener("click", () => { picked = "share"; s.close(); });
-    s.closed.then(() => resolve(picked));
-  });
   $("#cp-x-save").addEventListener("click", () => run("#cp-x-save-hint", async () => {
     const file = await pdfFile();
-    const canShare = !!navigator.canShare?.({ files: [file] });
-    const idle = canShare ? "save to this device, or share it" : "downloads the file";
-    $("#cp-x-save-hint").textContent = idle;
-    const way = canShare ? await chooseWay(file) : "device";
-    if (way === "share") {
-      try { await navigator.share({ files: [file], title: c.title }); haptic(8); $("#cp-x-save-hint").textContent = "shared"; }
-      catch (e) { if (e.name !== "AbortError") throw e; }
-      return;
-    }
-    if (way !== "device") return; // dismissed
-    download(file);
-    haptic(8); stamp($("#cp-x-save")); $("#cp-x-save-hint").textContent = `saved as ${file.name}`;
+    $("#cp-x-save-hint").textContent = navigator.canShare?.({ files: [file] }) ? "save to this device, or share it" : "downloads the file";
+    const way = await saveFile(file, { title: "save PDF", shareTitle: c.title });
+    if (way === "share") $("#cp-x-save-hint").textContent = "shared";
+    else if (way === "device") { stamp($("#cp-x-save")); $("#cp-x-save-hint").textContent = `saved as ${file.name}`; }
   }));
   $("#cp-x-scores").addEventListener("click", (e) => {
     const b = e.currentTarget;
