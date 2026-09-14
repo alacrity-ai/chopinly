@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition } from "../js/lib/compose/model.js";
-import { place, setClef } from "../js/lib/compose/engine.js";
+import { place, setClef, setKey, setTime } from "../js/lib/compose/engine.js";
 import { layoutComposition, SYS_H, TOP_PAD } from "../js/lib/compose/layout.js";
 import { slotAt, thingAt, ticksAt, xOfTicks, barAt } from "../js/lib/compose/hit.js";
 import { PPQ } from "../js/lib/compose/ticks.js";
@@ -115,4 +115,16 @@ test("a clef change on beat 3 draws a small clef before that beat's column; head
   const N = layoutComposition(e, { unit: 12, width: 900 });
   const sysOf = (bar) => N.systems.findIndex((s) => s.bars.some((b) => b.index === bar));
   if (sysOf(6) > 0 && sysOf(6) !== sysOf(5)) { const prev = N.systems[sysOf(6) - 1]; assert.ok(prev.courtesyLead?.clef, "courtesy clef"); assert.equal(prev.courtesyLead.staves[0].clef.glyph, "cClef"); }
+});
+
+test("courtesy key / time / clef at a system end sit on the staff: the staff lines run past the last barline under them and stay inside the width", () => {
+  let d = setKey(fresh(), 6, 3); d = setTime(d, 6, { beats: 6, unit: 8 }).doc; d = setClef(d, 6, 0, "alto");
+  const L = layoutComposition(d, { unit: 12, width: 1024 });
+  const sysOf = (bar) => L.systems.findIndex((s) => s.bars.some((b) => b.index === bar));
+  assert.ok(sysOf(6) > 0 && sysOf(6) !== sysOf(5), "bar 7 opens a new system");
+  const prev = L.systems[sysOf(6) - 1], last = prev.barlines[prev.barlines.length - 1].x, c = prev.courtesyLead;
+  assert.ok(c && c.clef && c.key && c.time, "all three courtesies");
+  assert.ok(prev.endX > c.timeX + 2.5, `staff runs under the courtesy time (${prev.endX} > ${c.timeX + 2.5})`);
+  assert.ok(prev.endX > last && prev.endX * 12 <= 1024, `end ${prev.endX} within the width`);
+  for (const s of L.systems) if (!s.courtesyLead) assert.equal(s.endX, null);
 });
