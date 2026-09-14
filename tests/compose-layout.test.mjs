@@ -81,3 +81,21 @@ test("packing: narrow widths give more systems; the last system is not stretched
   assert.ok(wide.systems[wide.systems.length - 1].scale <= 1.25 + 1e-9);
   for (const s of narrow.systems) for (const b of s.barlines) assert.ok(b.x * 12 <= 360 + 1, "a bar ran off the page");
 });
+
+test("lasso: a polygon around two heads selects exactly them; things() lists heads and rests with anchors", async () => {
+  const { lasso, things, inside } = await import("../js/lib/compose/hit.js");
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
+  d = place(d, { bar: 0, staff: 0, ticks: PPQ, step: 6 }, Q).doc;
+  d = place(d, { bar: 0, staff: 0, ticks: 2 * PPQ, step: 8 }, Q).doc;
+  const L = layoutComposition(d, { unit: 12, width: 1024 });
+  const heads = things(L).filter((t) => t.type === "head");
+  assert.equal(heads.length, 3);
+  assert.ok(things(L).some((t) => t.type === "rest"));
+  const [a, b] = heads;
+  const poly = [{ x: a.x - 1, y: a.y - 1.5 }, { x: b.x + 1, y: b.y - 1.5 }, { x: b.x + 1, y: a.y + 1.5 }, { x: a.x - 1, y: a.y + 1.5 }];
+  const got = lasso(L, poly);
+  assert.deepEqual(got.map((t) => t.ev).sort(), [a.ev, b.ev].sort());
+  assert.equal(inside(poly, a.x, a.y), true);
+  assert.equal(inside(poly, heads[2].x, heads[2].y), false);
+  assert.deepEqual(lasso(L, poly.slice(0, 2)), []);
+});

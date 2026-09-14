@@ -12,9 +12,9 @@ const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push(`console: ${m.text()}`); });
 page.on("dialog", (d) => d.accept(d.type() === "prompt" ? d.defaultValue() : undefined));
-const step = async (name, f) => { try { await f(); console.log("ok  ", name); } catch (e) { console.log("FAIL", name, "—", e.message); await page.screenshot({ path: `${S}/fail-compose.png` }); throw e; } };
+const step = async (name, f) => { try { await f(); console.log("ok  ", name); } catch (e) { console.log("FAIL", name, "—", e.message); try { console.log("  toast:", await page.evaluate(() => document.querySelector(".lb-toast")?.textContent), "state:", JSON.stringify(await state())); } catch { /* no editor */ } await page.screenshot({ path: `${S}/fail-compose.png` }); throw e; } };
 const lb = (fn, ...args) => page.evaluate(async ([src, a]) => { const m = await import("/js/lib/logbook.js"); return (new Function("m", "a", src))(m, a); }, [`return (${fn})(m, a)`, args]);
-const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging }; });
+const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging, lassoing: s.lassoing }; });
 const kinds = (bar, staff = 0) => page.evaluate(([b, st]) => document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[st].voices[0].map((e) => `${e.kind === "rest" ? "r" : "n"}${e.dur.base}${e.dur.dots ? "." : ""}`).join(" "), [bar, staff]);
 const point = (place) => page.evaluate((p) => document.querySelector(".cp-editor").__editor.pointFor(p), place);
 const tapAt = async (place) => { const p = await point(place); await page.touchscreen.tap(Math.round(p.x), Math.round(p.y)); await page.waitForTimeout(80); };
@@ -137,6 +137,71 @@ await step("grab + drag: pen down on a head takes it, dragging up two steps re-p
   if ((await kinds(1)) !== "n4 r4 n4 r4") throw new Error("tap changed the bar");
   await page.click("[data-act=undo]"); await page.click("[data-act=undo]"); await page.click("[data-act=undo]"); // finger drag, placement, pen drag → bar 1 back to n4 r4 r2, bar 0 to B4
   if ((await kinds(1)) !== "n4 r4 r2" || (await pitchAt(0, 0)) !== "B4") throw new Error("undo chain: " + (await kinds(1)) + " " + (await pitchAt(0, 0)));
+});
+
+await step("lasso (Select mode): a pen stroke around two heads selects them; the cluster drags together; a palette tap retypes an all-notes selection (all or nothing); Rest turns selected notes into rests; a mixed selection is refused", async () => {
+  const S = (await state()).S;
+  const pen = (type, o) => synth(type, { pointerType: "pen", pointerId: 81, width: 1, height: 1, pressure: 0.5, ...o });
+  const pitchAt = (bar, i) => page.evaluate(([b, i]) => { const e = document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[0].voices[0][i]; return e.pitches?.map((p) => p.step + p.octave).join("+") ?? e.kind; }, [bar, i]);
+  await page.click("[data-act=select]");
+  if ((await state()).mode !== "select") throw new Error("not in select");
+  // bar 1 has n4 n4 n4 n4 (B4 C5 D5 E5); lasso the first two heads
+  const a = await point({ bar: 0, staff: 0, ticks: 0, step: 4 }), b = await point({ bar: 0, staff: 0, ticks: PPQ, step: 5 });
+  const x0 = a.x - 0.4 * S, x1 = b.x + 1.8 * S, yTop = Math.min(a.y, b.y) - 1.2 * S, yBot = Math.max(a.y, b.y) + 1.2 * S;
+  await pen("pointerdown", { clientX: x0, clientY: yTop });
+  await pen("pointermove", { clientX: x0 + 2, clientY: yTop + 1 }); // under the lasso threshold: nothing yet
+  if ((await state()).lassoing) throw new Error("lasso started too early");
+  for (const [x, y] of [[x1, yTop], [x1, yBot], [x0, yBot], [x0, yTop + 4]]) await pen("pointermove", { clientX: x, clientY: y });
+  if (!(await state()).lassoing) throw new Error("lasso did not start");
+  if (await page.evaluate(() => document.querySelector(".cp-lasso").hasAttribute("hidden"))) throw new Error("lasso path not drawn");
+  await pen("pointerup", { clientX: x0, clientY: yTop + 4 });
+  let s = await state();
+  if (s.selection.length !== 2) throw new Error("lasso selected " + JSON.stringify(s.selection));
+  if (!(await page.evaluate(() => document.querySelector(".cp-lasso").hasAttribute("hidden")))) throw new Error("lasso path still shown");
+  // cluster drag: pen down on the first selected head, up two steps → both move
+  const h = { x: a.x + 0.6 * S, y: a.y };
+  await pen("pointerdown", { clientX: h.x, clientY: h.y });
+  await pen("pointermove", { clientX: h.x, clientY: h.y - S });
+  await pen("pointerup", { clientX: h.x, clientY: h.y - S });
+  if ((await pitchAt(0, 0)) !== "D5" || (await pitchAt(0, 1)) !== "E5") throw new Error("cluster drag " + (await pitchAt(0, 0)) + " " + (await pitchAt(0, 1)));
+  s = await state();
+  if (s.selection.length !== 2 || s.mode !== "select") throw new Error("after cluster drag " + JSON.stringify(s));
+  await page.click("[data-act=undo]");
+  if ((await pitchAt(0, 0)) !== "B4" || (await pitchAt(0, 1)) !== "C5") throw new Error("undo cluster drag");
+  // retype the two selected quarters to halves: the third quarter is in the way → flash, nothing changes, still in Select
+  await page.click(".cp-dur[data-base='2']");
+  await page.waitForFunction(() => document.querySelector(".lb-toast.show")?.textContent.includes("too long"), null, { timeout: 3000 });
+  if ((await kinds(0)) !== "n4 n4 n4 n4") throw new Error("all-or-nothing broke: " + (await kinds(0)));
+  s = await state();
+  if (s.mode !== "select" || s.selection.length !== 2) throw new Error("state after a refused retype " + JSON.stringify(s));
+  // retype to eighths fits: both morph, the eighth is armed, Place mode
+  await page.click(".cp-dur[data-base='8']");
+  if ((await kinds(0)) !== "n8 r8 n8 r8 n4 n4") throw new Error("retype: " + (await kinds(0)));
+  s = await state();
+  if (s.mode !== "place" || s.armed.base !== 8 || s.selection.length !== 2) throw new Error("state after retype " + JSON.stringify(s));
+  // Rest with the two selected → rests of the same length; the rest toggle stays off
+  await page.click("[data-act=rest]");
+  if ((await kinds(0)) !== "r2 n4 n4") throw new Error("to rests: " + (await kinds(0)));
+  if ((await state()).armed.rest) throw new Error("the toggle flipped");
+  await page.click("[data-act=undo]"); await page.click("[data-act=undo]");
+  if ((await kinds(0)) !== "n4 n4 n4 n4") throw new Error("undo chain " + (await kinds(0)));
+  // a mixed lasso (a note + a rest in bar 2: n4 r4 r2) → palette refuses with a toast, nothing changes
+  await page.click("[data-act=select]");
+  const c = await point({ bar: 1, staff: 0, ticks: 0, step: 6 }), r = await point({ bar: 1, staff: 0, ticks: PPQ, step: 4 });
+  const lx0 = c.x - 0.4 * S, lx1 = r.x + 2.2 * S, ly0 = c.y - 2.5 * S, ly1 = r.y + 2.5 * S;
+  await pen("pointerdown", { clientX: lx0, clientY: ly0 });
+  for (const [x, y] of [[lx1, ly0], [lx1, ly1], [lx0, ly1], [lx0, ly0 + 4]]) await pen("pointermove", { clientX: x, clientY: y });
+  await pen("pointerup", { clientX: lx0, clientY: ly0 + 4 });
+  s = await state();
+  if (s.selection.length < 2 || s.selection.every((k) => k.includes(":"))) throw new Error("mixed lasso " + JSON.stringify(s.selection));
+  await page.click(".cp-dur[data-base='2']");
+  await page.waitForFunction(() => document.querySelector(".lb-toast.show")?.textContent.includes("pick notes"), null, { timeout: 3000 });
+  if ((await kinds(1)) !== "n4 r4 r2") throw new Error("mixed retype changed the bar");
+  // a plain tap on empty staff in Select clears; back to Place with the quarter
+  await pen("pointerdown", { clientX: lx0, clientY: ly0 }); await pen("pointerup", { clientX: lx0, clientY: ly0 });
+  if ((await state()).selection.length !== 0) throw new Error("tap did not clear");
+  await page.click(".cp-dur[data-base='4']");
+  if ((await state()).mode !== "place") throw new Error("not back in place");
 });
 
 await step("Rest toggle: a rest placed into a bar with notes leaves the bar adding up", async () => {

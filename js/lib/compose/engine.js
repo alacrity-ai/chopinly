@@ -6,7 +6,7 @@ import { ticks, capacity, splitRest, grid } from "./ticks.js";
 import { clone, restEvent, noteEvent, newMeasure, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, DEFAULT_BARS } from "./model.js";
 import { parsePitch, keyAlterations, CLEFS } from "../music.js";
 
-export class Nudge extends Error { constructor(msg) { super(msg); this.name = "Nudge"; } }
+export class Nudge extends Error { constructor(msg, { bar = null } = {}) { super(msg); this.name = "Nudge"; this.bar = bar; } }
 
 const LETTERS = ["C", "D", "E", "F", "G", "A", "B"];
 
@@ -36,25 +36,85 @@ export const STEP_MIN = -10, STEP_MAX = 18;
  * (single-pitch moves), so a selection can follow it.
  */
 export function setPitch(doc, items, delta) {
-  if (!delta) return { doc, pi: items[0]?.pi ?? null };
+  if (!delta) return { doc, pi: items[0]?.pi ?? null, moved: items.map((it) => ({ ev: it.ev, pi: it.pi ?? null })) };
   const d = clone(doc);
+  const byEv = new Map();
+  for (const it of items) { if (!byEv.has(it.ev)) byEv.set(it.ev, new Set()); byEv.get(it.ev).add(it.pi === undefined || it.pi === null ? "*" : it.pi); }
+  const moved = [];
   let movedPi = null;
-  for (const it of items) {
-    const f = find(d, it.ev);
+  for (const [evId, pis] of byEv) {
+    const f = find(d, evId);
     if (!f || f.ev.kind !== "note") continue;
     const clef = clefAt(d, f.bar, f.staff), key = keyAt(d, f.bar);
-    const targets = it.pi !== undefined && it.pi !== null ? [f.ev.pitches[it.pi]] : [...f.ev.pitches];
+    const targets = pis.has("*") ? [...f.ev.pitches] : [...pis].map((i) => f.ev.pitches[i]).filter(Boolean);
     for (const p of targets) {
       const step = stepOf(p, clef) + delta;
-      if (step < STEP_MIN || step > STEP_MAX) throw new Nudge("off the staff");
+      if (step < STEP_MIN || step > STEP_MAX) throw new Nudge("off the staff", { bar: f.bar });
       const np = pitchFromStep(step, clef, key);
-      if (f.ev.pitches.some((q) => q !== p && q.step === np.step && q.octave === np.octave)) throw new Nudge("that note is already in the chord");
       p.step = np.step; p.alter = np.alter; p.octave = np.octave;
     }
+    const seen = new Set();
+    for (const q of f.ev.pitches) { const k = q.step + q.octave; if (seen.has(k)) throw new Nudge("that note is already in the chord", { bar: f.bar }); seen.add(k); }
     f.ev.pitches.sort((a, b) => diatonicOf(a) - diatonicOf(b));
-    if (targets.length === 1) movedPi = f.ev.pitches.indexOf(targets[0]);
+    for (const p of targets) moved.push({ ev: evId, pi: f.ev.pitches.indexOf(p) });
+    if (targets.length === 1 && byEv.size === 1) movedPi = f.ev.pitches.indexOf(targets[0]);
   }
-  return { doc: d, pi: movedPi };
+  return { doc: d, pi: movedPi, moved };
+}
+
+/**
+ * Retype events to a duration (docs/COMPOSE_DESIGN.md §7.1). Shorter → the
+ * difference becomes rests after it; longer → consumes the rests that follow
+ * it in the bar. All or nothing: if any event cannot fit, the Nudge names the
+ * bar and the document is untouched. Rests are not retyped (they are the gaps).
+ */
+export function retype(doc, evIds, dur) {
+  const d = clone(doc);
+  const bars = new Set();
+  const found = evIds.map((id) => find(d, id)).filter(Boolean);
+  if (found.some((f) => f.ev.kind !== "note")) throw new Nudge("pick notes to retype");
+  // left to right within a bar so an earlier note's growth is seen by the next
+  found.sort((a, b) => a.bar - b.bar || a.staff - b.staff || a.index - b.index);
+  for (const f of found) {
+    const voice = d.measures[f.bar].staves[f.staff].voices[f.voice];
+    const idx = voice.indexOf(f.ev);
+    const ev = voice[idx];
+    const time = timeAt(d, f.bar);
+    const oldLen = ticks(ev.dur), newLen = ticks(dur);
+    const start = onsets(voice)[idx].start;
+    ev.dur = { base: dur.base, dots: dur.dots ?? 0, ...(dur.tuplet ? { tuplet: dur.tuplet } : {}) };
+    if (newLen < oldLen) {
+      voice.splice(idx + 1, 0, ...splitRest(oldLen - newLen, start + newLen, time).map(restEvent));
+    } else if (newLen > oldLen) {
+      let need = newLen - oldLen, k = idx + 1, got = 0;
+      while (got < need) {
+        const nx = voice[k];
+        if (!nx || nx.kind !== "rest") throw new Nudge("too long for this bar", { bar: f.bar });
+        got += ticks(nx.dur); voice.splice(k, 1);
+      }
+      if (got > need) voice.splice(idx + 1, 0, ...splitRest(got - need, start + newLen, time).map(restEvent));
+    }
+    bars.add(f.bar);
+  }
+  for (const bar of bars) normalizeBar(d, bar);
+  return d;
+}
+
+/** Notes → rests of the same length (a rest has no pitch to become a note). */
+export function toRests(doc, evIds) {
+  const d = clone(doc);
+  const bars = new Set();
+  for (const id of evIds) {
+    const f = find(d, id);
+    if (!f || f.ev.kind !== "note") continue;
+    const voice = d.measures[f.bar].staves[f.staff].voices[f.voice];
+    const r = restEvent(f.ev.dur); r.id = f.ev.id;
+    voice[voice.indexOf(f.ev)] = r;
+    bars.add(f.bar);
+  }
+  if (!bars.size) return doc;
+  for (const bar of bars) normalizeBar(d, bar);
+  return d;
 }
 
 /** Onsets of a voice: [{ ev, start, len }]. */
@@ -102,11 +162,11 @@ export function snap(doc, { bar, staff, ticks: t }, armed) {
   while (i0 > 0 && os[i0 - 1].ev.kind === "rest") i0--;
   while (i1 < os.length - 1 && os[i1 + 1].ev.kind === "rest") i1++;
   const runStart = os[i0].start, runEnd = os[i1].start + os[i1].len;
-  if (runEnd - runStart < dur) throw new Nudge("no room in this bar");
+  if (runEnd - runStart < dur) throw new Nudge("no room in this bar", { bar });
   const g = grid(armed), cands = [];
   for (let k = Math.ceil(runStart / g) * g; k <= runEnd - dur; k += g) cands.push(k);
   if (runStart <= runEnd - dur && !cands.includes(runStart)) cands.push(runStart);
-  if (!cands.length) throw new Nudge("no room in this bar");
+  if (!cands.length) throw new Nudge("no room in this bar", { bar });
   const onset = cands.reduce((best, c) => (Math.abs(c - tt) < Math.abs(best - tt) ? c : best), cands[0]);
   return { onset, joins: null, runStart, runEnd };
 }
@@ -123,7 +183,7 @@ export function place(doc, slot, armed) {
   const time = timeAt(d, bar), key = keyAt(d, bar), clef = clefAt(d, bar, staff);
   const voice = d.measures[bar].staves[staff].voices[0];
   if (s.joins) {
-    if (armed.rest) throw new Nudge("that beat already has a note");
+    if (armed.rest) throw new Nudge("that beat already has a note", { bar });
     const ev = voice.find((e) => e.id === s.joins.id);
     const p = pitchFromStep(step, clef, key);
     if (ev.pitches.some((q) => q.step === p.step && q.octave === p.octave)) return { doc, ev, action: "same" };

@@ -76,7 +76,8 @@ export function renderComposition(container, L) {
   const overlay = el("svg", { class: "cp-overlay", viewBox: `0 0 ${L.width} ${L.height}`, width: L.width, height: L.height, style: `font-size:${fs}px` });
   const flash = el("rect", { class: "cp-flash", x: 0, y: 0, width: 0, height: 0, hidden: "" });
   const ghost = el("g", { class: "cp-ghost", hidden: "" });
-  overlay.append(flash, ghost);
+  const lassoEl = el("polyline", { class: "cp-lasso", points: "", hidden: "" });
+  overlay.append(flash, ghost, lassoEl);
   container.replaceChildren(svg, overlay);
 
   return {
@@ -101,6 +102,12 @@ export function renderComposition(container, L) {
         ghost.append(glyph(spec.x, spec.y, headGlyph(spec.base), "glyph head"));
       }
       ghost.removeAttribute("hidden");
+    },
+    /** The lasso path while it is drawn (points in S), or null to hide. */
+    showLasso(points) {
+      if (!points) { lassoEl.setAttribute("hidden", ""); return; }
+      lassoEl.setAttribute("points", points.map((p) => `${px(p.x)},${px(p.y)}`).join(" "));
+      lassoEl.removeAttribute("hidden");
     },
     /** Flash a bar (system-local rect) for a refused edit. */
     flashBar(hbar, sys) {

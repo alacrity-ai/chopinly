@@ -57,3 +57,24 @@ export function thingAt(L, x, y) {
   }
   return best;
 }
+
+/** Every selectable drawn thing with its anchor point (in S): heads, rests (later: marks). */
+export function things(L) {
+  const out = [];
+  for (const d of L.drawn) {
+    if (d.rest) { out.push({ type: "rest", ev: d.id, bar: d.bar, staff: d.staff, x: d.x + 0.7, y: d.y }); continue; }
+    for (const h of d.heads) out.push({ type: "head", ev: d.id, pi: h.pi, bar: d.bar, staff: d.staff, x: h.x + d.headW / 2, y: h.y });
+  }
+  return out;
+}
+/** Ray-casting point-in-polygon; poly is [{ x, y }, …]. */
+export function inside(poly, x, y) {
+  let on = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) on = !on;
+  }
+  return on;
+}
+/** The things a closed lasso (points in S) encloses. */
+export const lasso = (L, poly) => (poly.length < 3 ? [] : things(L).filter((t) => inside(poly, t.x, t.y)));
