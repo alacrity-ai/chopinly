@@ -4,6 +4,26 @@
 import { G, timeDigit, tupletDigit, restGlyph, headGlyph, flagGlyph, artGlyph } from "../staff/glyphs.js";
 
 const NS = "http://www.w3.org/2000/svg";
+// A Bravura glyph's origin is its left side bearing, not its middle: a mark placed at a head's
+// centre would sit half its width to the right. Each mark glyph's ink is measured once (canvas,
+// 1000 px) and the text is slid so the ink's centre lands on the point — the same rule the rail
+// buttons use vertically. Before the font has loaded the measurement would be of the fallback
+// font, so nothing is cached until Bravura is in and the caller centres the advance box instead.
+const INK = new Map();
+let meter = null;
+/** Ink centre of a glyph string, in em from its origin (positive = right); null when it cannot be measured yet. */
+export function inkCentre(ch) {
+  if (INK.has(ch)) return INK.get(ch);
+  if (typeof document === "undefined" || !document.fonts?.check?.('1em "Bravura"')) return null;
+  meter ??= document.createElement("canvas").getContext("2d");
+  if (!meter) return null;
+  meter.font = '1000px "Bravura"';
+  const m = meter.measureText(ch);
+  if (!("actualBoundingBoxLeft" in m)) return null;
+  const c = (m.actualBoundingBoxRight - m.actualBoundingBoxLeft) / 2000;
+  INK.set(ch, c);
+  return c;
+}
 function el(name, attrs, text) {
   const node = document.createElementNS(NS, name);
   for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
@@ -102,7 +122,12 @@ export function renderComposition(container, L) {
     const b = Math.max(0.55, Math.min(1.35, len / 4)) * sgn, b2 = b - 0.26 * sgn, cx = Math.min(len * 0.3, 2.5);
     svg.append(el("path", { class: "cp-tie", d: `M${px(x1)},${px(y1)} C${px(x1 + cx)},${px(y1 + b)} ${px(x2 - cx)},${px(y2 + b)} ${px(x2)},${px(y2)} C${px(x2 - cx)},${px(y2 + b2)} ${px(x1 + cx)},${px(y1 + b2)} ${px(x1)},${px(y1)} Z` }));
   }
-  for (const m of L.marks) svg.append(glyph(m.x, m.y, artGlyph(m.mark, m.above), "glyph cp-art"));
+  for (const m of L.marks) { // m.x is the head's centre; the glyph's ink is centred on it (advance-centred until Bravura is in)
+    const ch = artGlyph(m.mark, m.above), c = inkCentre(ch);
+    const t = glyph(c === null ? m.x : m.x - c * 4, m.y, ch, "glyph cp-art"); // font-size is 4 S, so an em is 4 units
+    if (c === null) t.setAttribute("text-anchor", "middle");
+    svg.append(t);
+  }
   for (const gl of L.glisses) {
     const g = el("g", { class: "cp-gliss" });
     g.append(el("line", { x1: px(gl.x1), y1: px(gl.y1), x2: px(gl.x2), y2: px(gl.y2), class: "cp-gliss-line" }));
