@@ -799,6 +799,18 @@ await step("export: File ▾ → Export PDF opens the sheet with a page-1 previe
   if (nPages !== (await pagesOf())) throw new Error(`the PDF has ${nPages} pages, the sheet promised ${await pagesOf()}`);
   if (!/\/BaseFont \/Fraunces-Regular/.test(txt) || !/\/Subtype \/Form/.test(txt) || /\/Subtype \/Image/.test(txt)) throw new Error("not the vector PDF we make");
   await page.screenshot({ path: `${S}/cp-19-export.png` });
+  // where a share sheet exists (an iPad), Save PDF asks first: Save to device → the download; Share… → navigator.share with the file
+  await page.evaluate(() => { navigator.canShare = () => true; navigator.share = async (d) => { window.__shared = d.files?.[0]?.name ?? null; }; });
+  await page.click("#cp-x-save");
+  await page.waitForSelector(".cp-saveway-wrap #cp-x-way-share", { timeout: 20000 });
+  await page.click("#cp-x-way-share");
+  await page.waitForFunction(() => document.querySelector("#cp-x-save-hint")?.textContent === "shared", null, { timeout: 10000 });
+  if (!/\.pdf$/.test(await page.evaluate(() => window.__shared))) throw new Error("share did not get the file: " + (await page.evaluate(() => window.__shared)));
+  await page.waitForFunction(() => !document.querySelector(".cp-saveway-wrap"), null, { timeout: 3000 });
+  const [dl2] = await Promise.all([page.waitForEvent("download", { timeout: 20000 }), (async () => { await page.click("#cp-x-save"); await page.waitForSelector(".cp-saveway-wrap #cp-x-way-device", { timeout: 20000 }); await page.click("#cp-x-way-device"); })()]);
+  if (!/\.pdf$/.test(dl2.suggestedFilename())) throw new Error("save to device: " + dl2.suggestedFilename());
+  await page.waitForFunction(() => !document.querySelector(".cp-saveway-wrap"), null, { timeout: 3000 });
+  await page.evaluate(() => { delete navigator.canShare; delete navigator.share; });
   // Add to Scores
   await page.click("#cp-x-scores");
   await page.waitForFunction(() => document.querySelector("#cp-x-scores-label")?.textContent === "Open in Scores", null, { timeout: 20000 });
