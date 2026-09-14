@@ -403,21 +403,21 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
   for (const e of exprs) {
     const x0 = e.x, where = hbarOf.get(e.bar);
     if (!where) continue;
-    const { si, hb } = where, x = xOfTicks(hb, x0.at), base = { id: x0.id, staff: x0.staff, bar: e.bar, at: x0.at };
-    if (x0.kind === "dyn") { dynamics.push({ ...base, x: x + 0.59, y: exprLine(si, x0.staff, under(x0.staff, e.abs, e.abs + 1)), dyn: x0.value, system: si }); continue; }
+    const { si, hb } = where, x = xOfTicks(hb, x0.at), base = { id: x0.id, staff: x0.staff, bar: e.bar, at: x0.at }, lift = (x0.dy ?? 0) / 2; // `dy` staff steps up off the automatic line (a step is half a space)
+    if (x0.kind === "dyn") { dynamics.push({ ...base, x: x + 0.59, y: exprLine(si, x0.staff, under(x0.staff, e.abs, e.abs + 1)) - lift, dyn: x0.value, system: si }); continue; }
     if (x0.kind === "text") {
       const items = under(x0.staff, e.abs, e.abs + 1);
-      texts.push({ ...base, x, y: Math.min(systems[si].staffTop[x0.staff] - 2.3, ...items.map((d) => aboveOf(d) - 1.3)), text: x0.value, system: si });
+      texts.push({ ...base, x, y: Math.min(systems[si].staffTop[x0.staff] - 2.3, ...items.map((d) => aboveOf(d) - 1.3)) - lift, text: x0.value, system: si });
       continue;
     }
     const to = hbarOf.get(x0.end.bar);
     if (!to) continue;
     const x1 = x + (dynAt.has(`${x0.staff}:${e.abs}`) ? 2.3 : 0), xe = xOfTicks(to.hb, x0.end.at), x2 = xe + (dynAt.has(`${x0.staff}:${e.absEnd}`) ? -0.7 : 1.18); // a dynamic's ink is centred 0.59 (half a black head) right of the slot, where a note's head centre is
     const hp = { ...base, kind: x0.dir, end: x0.end };
-    if (to.si === si) { hairpins.push({ ...hp, x1, x2, y: exprLine(si, x0.staff, under(x0.staff, e.abs, e.absEnd)), system: si }); continue; }
+    if (to.si === si) { hairpins.push({ ...hp, x1, x2, y: exprLine(si, x0.staff, under(x0.staff, e.abs, e.absEnd)) - lift, system: si }); continue; }
     for (let k = si; k <= to.si; k++) { // open at every break: out of the first system, through any middle one, into the last
       const endX = systems[k].barlines[systems[k].barlines.length - 1].x - 0.3, startX = hit.systems[k].bars[0].bodyX0 + 0.3;
-      hairpins.push({ ...hp, x1: k === si ? x1 : startX, x2: k === to.si ? x2 : endX, y: exprLine(k, x0.staff, under(x0.staff, e.abs, e.absEnd, k)), system: k, half: k === si ? "out" : k === to.si ? "in" : "both" });
+      hairpins.push({ ...hp, x1: k === si ? x1 : startX, x2: k === to.si ? x2 : endX, y: exprLine(k, x0.staff, under(x0.staff, e.abs, e.absEnd, k)) - lift, system: k, half: k === si ? "out" : k === to.si ? "in" : "both" });
     }
   }
   // -- rolled chords: a vertical wiggle left of everything the chord owns (flipped heads, accidentals), a space past the outer heads --

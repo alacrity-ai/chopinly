@@ -44,7 +44,7 @@ measures[b] = {
     { id, kind: "dyn",     staff, at, value: "mf" },          // pp p mp mf f ff
     { id, kind: "text",    staff, at, value: "rit." },        // ≤ 40 characters, whitespace collapsed
     { id, kind: "hairpin", staff, at, dir: "cresc" | "dim", end: { bar, at } },
-  ],
+  ],                                                // any of them may carry dy: ±1…20 staff steps up off its automatic line (v92)
 }
 ```
 
@@ -103,6 +103,7 @@ Every op clones, returns the new document, and throws a `Nudge` on refusal
 | `addHairpin(doc, { staff, bar, at, dir, end: { bar, at } })` → `{ doc, id }` | Places one; refuses `end ≤ start`; removes overlapping hairpins on the staff. |
 | `moveExpressions(doc, ids, delta)` | Slides every named expression by `delta` ticks (any sign), each landing on its destination bar's grid (a hairpin: both ends). Refuses when any would leave the piece ("as far as it goes") — nothing moves. Arriving ones own their slot / range like a fresh placement. |
 | `moveHairpinEnd(doc, id, which: "start" \| "end", { bar, at })` | Re-anchors one end; refuses a collapsed span. |
+| `nudgeExpressionY(doc, ids, delta)` (v92) | Lifts the named marks by `delta` staff steps (positive = up) off the line the layout gives them — `x.dy`, clamped at ±20 with a Nudge, absent at 0; a hairpin moves whole. |
 | `setExpressionValue(doc, ids, value)` | Retypes the named dynamics (a dynamic name) or texts (a string); a mixed list is refused. |
 | `removeExpressions(doc, ids)` | Drops them; unknown ids are ignored; nothing matched → the same document. |
 | `findExpression(doc, id)` → `{ bar, index, x }` or null | Lookup by id. |
@@ -133,6 +134,9 @@ After `drawn` is built, every expression is placed from `expressionsOf(doc)`:
   span covers the slot (any voice); a hairpin takes the max over its whole
   span, per system half. Text sits above: `min(staff top − 2.3, highest thing
   − 1.3 − ornament room)` over the things sounding at its slot.
+- **`dy`** (v92) then lifts the mark by half a space per step — every half of a
+  split hairpin alike — so two hairpins or a dynamic and its hairpin can be
+  lined up exactly (the quantum is one staff step, 6 px at the default zoom).
 - A hairpin across a system break becomes two open halves (`half: "out"` /
   `"in"`) as before, with `x2` at the system's last barline and `x1` at the
   next system's first bar body.
@@ -202,11 +206,15 @@ mouse / finger down on one grabs it. The drag is horizontal: `grabMove` maps
 the pointer to a slot with `exprSlot`, computes the delta in absolute ticks
 from the grabbed thing's original slot, and previews `moveExpressions(base,
 ids, delta)` — an all-expressions selection travels as a cluster. A handle
-(`hairpin-start` / `hairpin-end`) previews `moveHairpinEnd`. A refused step
+(`hairpin-start` / `hairpin-end`) previews `moveHairpinEnd`, sideways only. The
+drag is two-dimensional for a mark (v92): its vertical travel, in whole staff
+steps, previews `nudgeExpressionY` on top of the horizontal move, each axis
+holding at its last good value when refused. A refused step
 holds at the last good one; release commits base → preview as one undo step;
 a clean tap on a selected expression deselects it, as for a note. ← / → on an
 expression-only selection nudge one slot (`moveExpressions` by the grabbed
-bar's grid); a refused nudge nudges back with the sentence.
+bar's grid); a refused nudge nudges back with the sentence; ↑ / ↓ nudge one staff step up /
+down (v92).
 
 ### 6.4 The rail
 
@@ -287,6 +295,10 @@ Where the code differs from, or sharpens, the text above:
   measures and the version together; the editor upgrades on open and on a
   remote version; `validate` accepts v1 / v2 (marks on notes) and refuses the
   old fields only on v3.
+- **v92 (Leif, after v91: "let me freely adjust their Y offset … quantized"):**
+  `x.dy` in whole staff steps on every kind — dynamics included, since they
+  share the expression line with hairpins and could not be lined up otherwise;
+  ±20 steps; a drag moves in both axes, ↑ / ↓ nudge, handles stay sideways.
 - **Removed:** `dynamic`, `hairpin`, `hairpinEnd`, `cleanHairpins`,
   `exprText` from engine.js; `DYNAMICS` / `HAIRPINS` now live in model.js
   (re-exported by the engine).

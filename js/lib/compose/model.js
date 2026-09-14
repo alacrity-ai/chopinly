@@ -9,6 +9,8 @@ export const TEXT_MAX = 40;
 export const MAX_VOICES = 4;
 /** How far a rest may be dragged from its automatic place, in staff steps (`ev.restY`). */
 export const REST_Y_MAX = 12;
+/** How far an expression (dynamic, text, hairpin) may be nudged off its automatic line, in staff steps (`x.dy`, positive = up). */
+export const EXPR_Y_MAX = 20;
 export const DEFAULT_BARS = 8;
 export const DEFAULT_TEMPO = 100, MIN_TEMPO = 20, MAX_TEMPO = 300;
 /** The playback tempo of a document (older documents carry none). */
@@ -102,6 +104,7 @@ export function validate(doc) {
     let prev = null;
     for (const x of m.expressions ?? []) {
       if (!x.id || !(x.staff >= 0 && x.staff < m.staves.length) || !Number.isInteger(x.at) || x.at < 0 || x.at >= cap || x.at % grid) throw new Error(`bar ${bi + 1}: ${x.kind ?? "expression"} ${x.id} off the grid`);
+      if (x.dy !== undefined && (!Number.isInteger(x.dy) || x.dy === 0 || Math.abs(x.dy) > EXPR_Y_MAX)) throw new Error(`bar ${bi + 1}: ${x.id}: dy must be a whole number of steps within ±${EXPR_Y_MAX} (absent when 0)`);
       if (x.kind === "dyn") { if (!DYNAMICS.includes(x.value)) throw new Error(`bar ${bi + 1}: ${x.id} is not a dynamic`); }
       else if (x.kind === "text") { if (typeof x.value !== "string" || !x.value.trim() || x.value.length > TEXT_MAX) throw new Error(`bar ${bi + 1}: ${x.id} text`); }
       else if (x.kind === "hairpin") {

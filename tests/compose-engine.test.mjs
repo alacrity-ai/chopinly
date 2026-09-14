@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition, newMeasure, validate, timeAt, isEmptyBar, evTicks } from "../js/lib/compose/model.js";
-import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar, setPitch, stepOf, retype, dot, tie, tuplet, accidental, clipFrom, paste, toRests, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, slurEnd, decompose, addExpression, addHairpin, moveExpressions, moveHairpinEnd, setExpressionValue, removeExpressions, findExpression, expressionsOf, exprSlot, slotOfAbs, nextSlot, upgrade } from "../js/lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar, setPitch, stepOf, retype, dot, tie, tuplet, accidental, clipFrom, paste, toRests, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, slurEnd, decompose, addExpression, addHairpin, moveExpressions, moveHairpinEnd, setExpressionValue, removeExpressions, findExpression, expressionsOf, exprSlot, slotOfAbs, nextSlot, upgrade, nudgeExpressionY } from "../js/lib/compose/engine.js";
 import { capacity, PPQ, groupSize, exprGrid } from "../js/lib/compose/ticks.js";
 const Qt = PPQ;
 import { createHistory } from "../js/lib/compose/history.js";
@@ -624,6 +624,30 @@ test("expressions: moving slides by ticks across bars (a hairpin: both ends), la
   d = moveExpressions(d, [dy.id], -(cap + 3 * g - 5 * g));
   assert.deepEqual(d.measures[0].expressions.filter((x) => x.kind === "dyn").map((x) => [x.at, x.value]), [[5 * g, "ff"]]);
   assert.ok(validate(d));
+});
+
+test("expressions: a vertical nudge lifts a mark off its automatic line by whole staff steps (`dy`, positive = up), clamps at ±20 with a sentence and no change, clears at 0, survives a move and a metre change", () => {
+  let d = fresh();
+  const g = exprGrid(timeAt(d, 0));
+  const dy = addExpression(d, { kind: "dyn", staff: 0, bar: 0, at: 0, value: "p" }); d = dy.doc;
+  const hp = addHairpin(d, { staff: 0, bar: 0, at: 2 * g, dir: "cresc", end: { bar: 1, at: 0 } }); d = hp.doc;
+  d = nudgeExpressionY(d, [dy.id, hp.id], -3);
+  assert.deepEqual([findExpression(d, dy.id).x.dy, findExpression(d, hp.id).x.dy], [-3, -3]);
+  d = nudgeExpressionY(d, [dy.id], 3);
+  assert.equal(findExpression(d, dy.id).x.dy, undefined, "back on the line: the field goes");
+  assert.equal(nudgeExpressionY(d, [dy.id], 0), d);
+  assert.throws(() => nudgeExpressionY(d, [hp.id], -18), /as low as it goes/);
+  assert.equal(findExpression(d, hp.id).x.dy, -3, "a refused nudge changed nothing");
+  assert.throws(() => nudgeExpressionY(d, [hp.id], 1.5), /whole steps/);
+  assert.throws(() => nudgeExpressionY(d, ["nope"], 1), /pick the marks/);
+  d = nudgeExpressionY(d, [hp.id], 23);
+  assert.equal(findExpression(d, hp.id).x.dy, 20);
+  assert.ok(validate(d));
+  d = moveExpressions(d, [hp.id], 2 * g);
+  assert.equal(findExpression(d, hp.id).x.dy, 20, "a move keeps the lift");
+  const t = setTime(d, 0, { beats: 3, unit: 4 }).doc;
+  assert.equal(findExpression(t, hp.id).x.dy, 20, "a metre change keeps the lift");
+  assert.throws(() => { const w = structuredClone(d); w.measures[0].expressions[0].dy = 0; validate(w); }, /absent when 0/);
 });
 
 test("expressions: a v2 document is upgraded — every note-attached mark lands on its note's onset, a start / stop pair becomes one hairpin, halves alone are dropped, the old fields go; v3 is returned as it is", () => {
