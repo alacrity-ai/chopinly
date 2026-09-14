@@ -499,8 +499,7 @@ As built (the text below replaced the plan on 2026-09-14; the spike that decided
   spaces with a readout in staff mm + page count; page, margins, header; a live **page-1
   preview** = the screen's own SVG at the print S inside a page-shaped SVG with the header as
   text; choices in `ws.compose.export`. Two columns from 720 px so the actions stay above the
-  fold on an iPad on its side. *Save PDF* → `navigator.share({ files })` where `canShare` says so,
-  else an `<a download>`; *Add to Scores* → `importFile(file, { title, composer, tags, replace })`.
+  fold on an iPad on its side. *Save PDF* → where a share sheet exists a small choice, **Save to device** (an `<a download>` → Downloads / Files) or **Share…** (`navigator.share({ files })`), else the download straight away (v89 — Leif: the share sheet alone did not save); *Add to Scores* → `importFile(file, { title, composer, tags, replace })`.
 - **Add to Scores semantics.** The composition remembers `scoreId`; the first send creates a
   score (title, composer, tags + `compose`, thumbnail, page cache like any upload); a later send
   of changed bytes **replaces the linked score's file in place** (`updateScore` now takes
