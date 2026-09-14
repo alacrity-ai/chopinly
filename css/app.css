@@ -2126,10 +2126,13 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-key[aria-pressed="true"] small { color: inherit; }
 .cp-time { flex-direction: column; gap: 0; line-height: 0.95; font-size: 0.95rem; }
 .cp-time-custom { grid-column: span 2; font-size: 0.9rem; }
-.cp-clef, .cp-clef-more { padding: 0 0.45rem; }
-.cp-clef .cp-glyph-sm, .cp-clef-more .cp-glyph-sm { font-size: 1.4rem; }
-.cp-clef small, .cp-clef-more small { position: absolute; left: 0; right: 0; bottom: 0.22rem; text-align: center; font-size: 0.58rem; line-height: 1; letter-spacing: 0.01em; color: var(--fg-dim); }
-.cp-clef small ~ *, .cp-clef:has(small) .cp-glyph, .cp-clef-more .cp-glyph { transform: translateY(calc(var(--dy, -0.4rem) - 0.3rem)); }
+.cp-clef-grid { grid-template-columns: repeat(4, auto); }
+.cp-clef { min-width: 4.2rem; padding: 0 0.45rem; }
+.cp-clef .cp-glyph-sm { font-size: 1.4rem; transform: translateY(calc(var(--dy, -0.4rem) - 0.3rem)); }
+.cp-clef small { position: absolute; left: 0; right: 0; bottom: 0.22rem; text-align: center; font-size: 0.58rem; line-height: 1; letter-spacing: 0.01em; color: var(--fg-dim); }
+.cp-clef[aria-pressed="true"] small { color: inherit; }
+.cp-clef-val { display: inline-flex; align-items: center; gap: 0.3rem; }
+.cp-clef-val .cp-glyph-xs { width: 1.1rem; }
 .cp-clef[aria-pressed="true"] small, .cp-clef-more.on small { color: inherit; }
 .cp-utility .cp-art-btn { min-width: 2.9rem; padding: 0 0.4rem; }
 .cp-utility .cp-gliss-btn { padding: 0 0.55rem; }
