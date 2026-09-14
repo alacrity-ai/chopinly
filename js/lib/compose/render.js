@@ -122,6 +122,12 @@ export function renderComposition(container, L) {
     const b = Math.max(0.55, Math.min(1.35, len / 4)) * sgn, b2 = b - 0.26 * sgn, cx = Math.min(len * 0.3, 2.5);
     svg.append(el("path", { class: "cp-tie", d: `M${px(x1)},${px(y1)} C${px(x1 + cx)},${px(y1 + b)} ${px(x2 - cx)},${px(y2 + b)} ${px(x2)},${px(y2)} C${px(x2 - cx)},${px(y2 + b2)} ${px(x1 + cx)},${px(y1 + b2)} ${px(x1)},${px(y1)} Z` }));
   }
+  for (const t of L.slurs) { // a tie's shape, arched by the layout's h and a touch thicker through the middle
+    const sgn = t.dir === "up" ? -1 : 1, len = Math.max(1, t.x2 - t.x1);
+    const x1 = t.x1, x2 = t.x2, y1 = t.y1, y2 = t.y2;
+    const b = t.h * sgn, b2 = b - 0.3 * sgn, cx = Math.min(len * 0.32, 4);
+    svg.append(el("path", { class: "cp-slur", d: `M${px(x1)},${px(y1)} C${px(x1 + cx)},${px(y1 + b)} ${px(x2 - cx)},${px(y2 + b)} ${px(x2)},${px(y2)} C${px(x2 - cx)},${px(y2 + b2)} ${px(x1 + cx)},${px(y1 + b2)} ${px(x1)},${px(y1)} Z` }));
+  }
   for (const m of L.marks) { // m.x is the head's centre; the glyph's ink is centred on it (advance-centred until Bravura is in)
     const ch = artGlyph(m.mark, m.above), c = inkCentre(ch);
     const t = glyph(c === null ? m.x : m.x - c * 4, m.y, ch, "glyph cp-art"); // font-size is 4 S, so an em is 4 units

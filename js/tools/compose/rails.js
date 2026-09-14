@@ -130,6 +130,7 @@ export function buildRails(host, { title, onAction }) {
       </span>
       <span class="cp-sep" aria-hidden="true"></span>
       ${["fermata", "staccato", "accent", "tenuto"].map((m) => `<button type="button" class="cp-btn cp-sq cp-art-btn" data-act="art" data-mark="${m}" aria-label="${MARK_NAMES[m] ?? m}"><span class="cp-glyph">${artGlyph(m, true)}</span></button>`).join("")}
+      <button type="button" class="cp-btn cp-sq cp-slur-btn" data-act="slur" aria-label="slur — from the first selected note to the last (one note: to the next)" disabled><span class="cp-slur-pic" aria-hidden="true"></span></button>
       <span class="cp-sep" aria-hidden="true"></span>
       ${["trill", "mordent", "lowerMordent", "turn"].map((m) => `<button type="button" class="cp-btn cp-sq cp-art-btn" data-act="art" data-mark="${m}" aria-label="${MARK_NAMES[m] ?? m}"><span class="cp-glyph">${artGlyph(m, true)}</span></button>`).join("")}
       <span class="cp-sep" aria-hidden="true"></span>
@@ -209,7 +210,7 @@ export function buildRails(host, { title, onAction }) {
         host.querySelector(`.cp-rail-row[data-rail="${k}"]`).setAttribute("aria-checked", String(on));
       }
       if (shown) centreAll(); // a lane that was display:none had no metrics to measure
-      for (const b of host.querySelectorAll(".cp-art-btn, .cp-gliss-btn, .cp-arp-btn")) b.disabled = !hasSelection;
+      for (const b of host.querySelectorAll(".cp-art-btn, .cp-gliss-btn, .cp-arp-btn, .cp-slur-btn")) b.disabled = !hasSelection;
       // the armed change (key / time / clef waiting for a tap) shows on its picker and its button
       const key = pending?.kind === "key" ? KEYS.find((k) => k.fifths === pending.value) : null;
       host.querySelector("#cp-key-val").textContent = key ? `${key.major} / ${key.minor}m` : "";

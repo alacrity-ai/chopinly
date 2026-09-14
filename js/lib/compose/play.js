@@ -17,10 +17,13 @@ export function timeline(doc) {
   const { starts, total } = barStarts(doc);
   const notes = [];
   const open = new Map(); // "staff:midi" → the note still sounding through a tie
+  const depth = []; // open slurs per staff: notes under a slur play legato (no air before the next note); the slur's last note breathes
   for (let b = 0; b < doc.measures.length; b++) {
     doc.measures[b].staves.forEach((s, staff) => {
       for (const o of onsets(s.voices[0])) {
         if (o.ev.kind !== "note") continue;
+        for (const x of o.ev.slurs ?? []) depth[staff] = Math.max(0, (depth[staff] ?? 0) + (x.at === "start" ? 1 : -1));
+        const legato = (depth[staff] ?? 0) > 0;
         const at = starts[b] + o.start;
         // a rolled chord: its pitches enter one after another (up = low to high, down = high to low) and end together
         const roll = o.ev.arp && o.ev.pitches.length > 1 ? Math.min(ROLL_MAX, Math.floor(o.len / (4 * o.ev.pitches.length))) : 0;
@@ -30,7 +33,7 @@ export function timeline(doc) {
           const held = open.get(k);
           const starts = p.tie === "start" || p.tie === "both";
           if (held && held.at + held.len === at) { held.len += o.len; if (!starts) open.delete(k); continue; }
-          const n = { at: at + lag, len: o.len - lag, midi, staff };
+          const n = { at: at + lag, len: o.len - lag, midi, staff, ...(legato ? { legato: true } : {}) };
           notes.push(n);
           if (starts) open.set(k, n); else open.delete(k);
         }
@@ -63,7 +66,7 @@ export function createPlayer({ getAudio, getDoc, getTempo, onTick, onEnd }) {
     for (const n of tl.notes) {
       if (n.at + n.len <= fromTicks) continue;
       evs.push({ t: Math.max(fromTicks, n.at), on: true, midi: n.midi, late: n.at < fromTicks });
-      evs.push({ t: n.at + n.len * GATE, on: false, midi: n.midi });
+      evs.push({ t: n.at + n.len * (n.legato ? 1 : GATE), on: false, midi: n.midi });
     }
     evs.sort((a, b) => a.t - b.t || (a.on ? 1 : 0) - (b.on ? 1 : 0));
     queue = evs.filter((e) => !(e.on && e.late)); // a note already sounding at the start is not re-struck

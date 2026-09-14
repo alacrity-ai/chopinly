@@ -507,6 +507,13 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   await page.click("[data-act=gliss]");
   if ((await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures[0].staves[0].voices[0][0].gliss)) !== "start") throw new Error("gliss not set");
   if ((await page.locator(".cp-svg .cp-gliss").count()) !== 1) throw new Error("gliss not drawn");
+  // slur: one selected note → a curve to the staff's next note; the same again clears it (the selection is still the first note)
+  await page.click("[data-act=slur]");
+  const slurred = await page.evaluate(() => { const v = document.querySelector(".cp-editor").__editor.state.doc.measures[0].staves[0].voices[0]; return { n: document.querySelectorAll(".cp-svg .cp-slur").length, marks: v.filter((e) => e.slurs).map((e) => e.slurs.map((x) => x.at).join()) }; });
+  if (slurred.n !== 1 || slurred.marks.join("|") !== "start|stop") throw new Error("slur " + JSON.stringify(slurred));
+  await page.click("[data-act=slur]");
+  if ((await page.locator(".cp-svg .cp-slur").count()) !== 0) throw new Error("slur not cleared");
+  await page.click("[data-act=slur]"); // leave one on for the screenshot
   // the rolled-chord picker next to gliss.: pick "rolled upward" → the sign stands left of the note; the same pick again clears it
   await page.click("[data-pop=cp-arp-more]"); await page.click(".cp-arp-row[data-kind=up]");
   if ((await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures[0].staves[0].voices[0][0].arp)) !== "up") throw new Error("roll not set");

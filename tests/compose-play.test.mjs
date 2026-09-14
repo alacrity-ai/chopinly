@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition } from "../js/lib/compose/model.js";
-import { place, arpeggio } from "../js/lib/compose/engine.js";
+import { place, arpeggio, slur } from "../js/lib/compose/engine.js";
 import { timeline } from "../js/lib/compose/play.js";
 import { PPQ } from "../js/lib/compose/ticks.js";
 
@@ -55,4 +55,13 @@ test("a rolled chord plays its notes one after another — up from the bottom, d
   assert.deepEqual(down.map((n) => n.midi), [77, 74, 71]);
   const plain = timeline(arpeggio(d, [ev.id], "plain")).notes.slice(0, 3).sort((a, b) => a.at - b.at);
   assert.deepEqual(plain.map((n) => n.midi), [71, 74, 77], "a plain roll goes up");
+});
+
+test("notes under a slur are marked legato (the slur's last note is not)", () => {
+  let d = newComposition({ id: "l" });
+  for (let q = 0; q < 4; q++) d = place(d, { bar: 0, staff: 0, ticks: q * PPQ, step: 4 + q }, Q).doc;
+  const v = d.measures[0].staves[0].voices[0];
+  d = slur(d, [v[0].id, v[2].id]);
+  const n = timeline(d).notes.slice(0, 4);
+  assert.deepEqual(n.map((x) => !!x.legato), [true, true, false, false]);
 });

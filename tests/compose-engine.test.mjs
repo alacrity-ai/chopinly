@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition, validate, timeAt, isEmptyBar, evTicks } from "../js/lib/compose/model.js";
-import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar, setPitch, stepOf, retype, dot, tie, tuplet, accidental, clipFrom, paste, toRests, setKey, setTime, setClef, articulate, gliss, arpeggio, decompose } from "../js/lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar, setPitch, stepOf, retype, dot, tie, tuplet, accidental, clipFrom, paste, toRests, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, slurEnd, decompose } from "../js/lib/compose/engine.js";
 import { capacity, PPQ, groupSize } from "../js/lib/compose/ticks.js";
 const Qt = PPQ;
 import { createHistory } from "../js/lib/compose/history.js";
@@ -508,6 +508,33 @@ test("setTime: 4/4 → 3/4 at bar 3 of a full eight bars re-cuts into 3/4 bars, 
   const back = setTime(v, 3, { beats: 4, unit: 4 });
   assert.equal(back.doc.measures[3].time, undefined);
   validate(back.doc);
+});
+
+test("slur: first to last selected note (one note: to the next note, over rests), the same span again removes it, slurs nest and share ends, ends die with their notes", () => {
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
+  d = place(d, { bar: 0, staff: 0, ticks: Qt, step: 5 }, Q).doc;
+  d = place(d, { bar: 0, staff: 0, ticks: 3 * Qt, step: 6 }, Q).doc;   // a rest sits between b and c
+  const [a, b, rest, c] = bar1(d);
+  const at = (ev) => (find(d, ev.id).ev.slurs ?? []).map((x) => x.at).join();
+  assert.equal(rest.kind, "rest");
+  d = slur(d, [c.id, a.id]);                                            // order of selection is irrelevant
+  assert.deepEqual([at(a), at(b), at(c)], ["start", "", "stop"]);
+  const id1 = find(d, a.id).ev.slurs[0].id;
+  assert.equal(slurEnd(d, 0, find(d, a.id).ev, id1), find(d, c.id).ev);
+  d = slur(d, [b.id]);                                                  // one note: to the next note, skipping the rest — nested, sharing the end
+  assert.deepEqual([at(b), at(c)], ["start", "stop,stop"]);
+  const id2 = find(d, b.id).ev.slurs[0].id;
+  assert.equal(slurEnd(d, 0, find(d, b.id).ev, id2), find(d, c.id).ev);
+  assert.equal(slurEnd(d, 0, find(d, a.id).ev, id1), find(d, c.id).ev, "the outer one still has its end");
+  d = slur(d, [b.id, c.id]);                                            // exactly that slur again → off; the outer survives
+  assert.deepEqual([at(a), at(b), at(c)], ["start", "", "stop"]);
+  assert.throws(() => slur(d, [c.id]), /needs a note after/);
+  assert.throws(() => slur(d, [rest.id]), /pick the notes/);
+  d = remove(d, [{ ev: c.id }]);                                        // the end goes → the start is dropped
+  assert.equal(find(d, a.id).ev.slurs, undefined);
+  d = slur(d, [a.id, b.id]);
+  d = toRests(d, [a.id]);                                               // a rest carries no slur, and the orphaned stop goes
+  assert.equal(find(d, b.id).ev.slurs, undefined);
 });
 
 test("arpeggio: one roll per note, set / switch / clear on the selection, notes only", () => {
