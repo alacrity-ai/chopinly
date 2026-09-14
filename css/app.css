@@ -2114,6 +2114,7 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-ghost .stem { fill: var(--fg); }
 .cp-ghost .sline { stroke: var(--staff-line); stroke-width: 1.1; }
 .cp-flash { fill: var(--red); opacity: 0; transition: opacity 90ms; }
+.cp-lasso { fill: color-mix(in srgb, var(--accent) 10%, transparent); stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 6 4; stroke-linejoin: round; }
 .cp-flash.on { opacity: 0.22; }
 .cp-svg .cp-ev .halo { fill: transparent; }
 .cp-svg .cp-ev.sel .head, .cp-svg .cp-ev.sel .rest, .cp-svg .cp-ev.sel .stem, .cp-svg .cp-ev.sel .head-part, .cp-svg .cp-head-g.sel .head, .cp-svg .cp-head-g.sel .head-part { fill: var(--hi); }

@@ -9,14 +9,14 @@ import { toast } from "../logbook/util.js";
 import { haptic } from "../logbook/motion.js";
 import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
-import { slotAt, thingAt, xOfTicks, barAt } from "../../lib/compose/hit.js";
-import { place, remove, snap, trimBars, find, setPitch, Nudge } from "../../lib/compose/engine.js";
+import { slotAt, thingAt, xOfTicks, barAt, lasso } from "../../lib/compose/hit.js";
+import { place, remove, snap, trimBars, find, setPitch, retype, toRests, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { clefAt, keyAt } from "../../lib/compose/model.js";
 import { buildRails, MAIN_BASES, MORE_BASES, durName } from "./rails.js";
 
-const TAP_MS = 300, TAP_PX = 10, PALM_PX = 40, S_MIN = 8, S_MAX = 22, SAVE_MS = 300, DRAG_MS = 700;
+const TAP_MS = 300, TAP_PX = 10, PALM_PX = 40, S_MIN = 8, S_MAX = 22, SAVE_MS = 300, LASSO_PX = 6;
 const KEY_BASE = { 1: 64, 2: 32, 3: 16, 4: 8, 5: 4, 6: 2, 7: 1 };
 
 export function openEditor({ id, ctx, onClose }) {
@@ -103,8 +103,17 @@ export function openEditor({ id, ctx, onClose }) {
       haptic(6);
     } catch (e) {
       if (!(e instanceof Nudge)) throw e;
-      nudge(e.message, slot.bar);
+      nudge(e.message, e.bar ?? slot.bar);
     }
+  }
+  /** The selection as engine items and as event ids; whether every selected thing is a notehead / a note. */
+  const selItems = () => [...selection].map((k) => { const [ev, pi] = k.split(":"); return pi === undefined ? { ev } : { ev, pi: Number(pi) }; });
+  const selEvIds = () => [...new Set(selItems().map((it) => it.ev))];
+  const allHeads = () => selection.size > 0 && [...selection].every((k) => k.includes(":"));
+  const allNotes = () => selection.size > 0 && selEvIds().every((id) => find(doc, id)?.ev.kind === "note");
+  /** After undo / redo: keep whatever is still there (a note that came back stays selected). */
+  function pruneSelection() {
+    for (const k of [...selection]) { const [ev, pi] = k.split(":"); const f = find(doc, ev); if (!f || (pi !== undefined && (f.ev.kind !== "note" || Number(pi) >= f.ev.pitches.length))) selection.delete(k); }
   }
   function nudge(msg, bar) {
     toast(msg); haptic(20);
@@ -122,11 +131,14 @@ export function openEditor({ id, ctx, onClose }) {
   // --- grab + drag: pen / mouse / one finger down on a notehead takes it at once; vertical
   // movement re-pitches by staff step (sounding each), release commits. The mode is untouched:
   // in Place mode the armed duration stays armed and the next tap elsewhere still places.
-  let drag = null; // { id, type, thing, wasSelected, y0, delta, base, preview, pi }
+  let drag = null; // { id, type, thing, items, cluster, wasSelected, y0, delta, base, preview, keys, t }
   function grabStart(e, thing) {
     const wasSelected = selection.has(keyOf(thing));
-    select(thing, { toggle: false });
-    drag = { id: e.pointerId, type: e.pointerType, thing, wasSelected, y0: e.clientY, delta: 0, base: doc, preview: doc, pi: thing.pi, t: performance.now() };
+    // a grabbed head that belongs to an all-noteheads selection takes the whole cluster with it
+    const cluster = wasSelected && allHeads() && selection.size > 1;
+    if (!cluster) select(thing, { toggle: false });
+    const items = cluster ? selItems() : [{ ev: thing.ev, pi: thing.pi }];
+    drag = { id: e.pointerId, type: e.pointerType, thing, items, cluster, wasSelected, y0: e.clientY, delta: 0, base: doc, preview: doc, keys: [...selection], keys0: [...selection], t: performance.now() };
     R.showGhost(null);
     try { view.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
   }
@@ -135,30 +147,56 @@ export function openEditor({ id, ctx, onClose }) {
     const delta = Math.round((drag.y0 - e.clientY) / (S / 2));
     if (delta === drag.delta) return;
     try {
-      const r = setPitch(drag.base, [{ ev: drag.thing.ev, pi: drag.thing.pi }], delta);
-      drag.delta = delta; drag.preview = r.doc; drag.pi = r.pi ?? drag.thing.pi;
+      const r = setPitch(drag.base, drag.items, delta);
+      drag.delta = delta; drag.preview = r.doc; drag.keys = r.moved.map((m) => `${m.ev}:${m.pi}`);
       doc = r.doc;
-      selection.clear(); selection.add(`${drag.thing.ev}:${drag.pi}`);
+      selection.clear(); for (const k of drag.keys) selection.add(k);
       layout();
-      const f = find(doc, drag.thing.ev);
-      if (f) sound.play([f.ev.pitches[drag.pi]], 180);
+      const pitches = r.moved.slice(0, 8).map((m) => find(doc, m.ev)?.ev.pitches[m.pi]).filter(Boolean);
+      sound.play(pitches, 180);
       haptic(3);
-    } catch (err) { if (!(err instanceof Nudge)) throw err; /* stay on the last good step */ }
+    } catch (err) { if (!(err instanceof Nudge)) throw err; /* the cluster holds at the last good step */ }
   }
   function grabEnd(e, { cancel = false } = {}) {
     if (!drag || drag.id !== e.pointerId) return;
     const g = drag; drag = null;
     if (cancel || g.delta === 0) {
       doc = g.base;
-      if (g.delta !== 0) layout();
-      // a clean tap on an already-selected note deselects it (the toggle a tap always had)
-      if (!cancel && g.wasSelected && performance.now() - g.t <= TAP_MS) { selection.clear(); R.setSelection(selection); sync(); }
+      if (g.delta !== 0) { selection.clear(); for (const k of (g.cluster ? g.keys0 ?? g.keys : [keyOf(g.thing)])) selection.add(k); layout(); }
+      // a clean tap on an already-selected single note deselects it (the toggle a tap always had)
+      if (!cancel && g.wasSelected && !g.cluster && performance.now() - g.t <= TAP_MS) { selection.clear(); R.setSelection(selection); sync(); }
       return;
     }
     doc = g.base;                         // commit records base → preview as one step
     commit(g.preview);
-    selection.clear(); selection.add(`${g.thing.ev}:${g.pi}`); R.setSelection(selection); sync();
+    selection.clear(); for (const k of g.keys) selection.add(k); R.setSelection(selection); sync();
     haptic(8);
+  }
+
+  // --- lasso (Select mode): pointer down on empty staff, move a few px, and a freehand
+  // path grows under the tip; lifting closes it and selects everything inside.
+  let lassoState = null; // { id, type, x0, y0, pts, active }
+  function lassoStart(e) {
+    const { x, y } = toS(e.clientX, e.clientY);
+    lassoState = { id: e.pointerId, type: e.pointerType, x0: e.clientX, y0: e.clientY, pts: [{ x, y }], active: false };
+    try { view.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
+  }
+  function lassoMove(e) {
+    if (!lassoState || lassoState.id !== e.pointerId) return;
+    if (!lassoState.active && Math.hypot(e.clientX - lassoState.x0, e.clientY - lassoState.y0) < LASSO_PX) return;
+    lassoState.active = true;
+    lassoState.pts.push(toS(e.clientX, e.clientY));
+    R.showLasso(lassoState.pts);
+  }
+  function lassoEnd(e, { cancel = false } = {}) {
+    if (!lassoState || lassoState.id !== e.pointerId) return;
+    const l = lassoState; lassoState = null;
+    R.showLasso(null);
+    if (cancel) return;
+    if (!l.active) { if (selection.size) { selection.clear(); R.setSelection(selection); sync(); } return; } // a plain tap on empty staff
+    selection.clear();
+    for (const t of lasso(L, l.pts)) selection.add(keyOf(t));
+    R.setSelection(selection); sync(); haptic(selection.size ? 6 : 0);
   }
   function deleteSelection() {
     if (!selection.size) return;
@@ -183,8 +221,10 @@ export function openEditor({ id, ctx, onClose }) {
       if (drag?.type === "touch") { grabEnd({ pointerId: drag.id }, { cancel: true }); return; } // a second finger lets go
       if (gesture?.type === "touch") gesture.valid = false; // a second finger spoils the first
       if (!valid) { if (gesture?.type !== "touch") return; gesture = { id: e.pointerId, type: "touch", valid: false }; return; }
+      if (lassoState?.type === "touch") { lassoEnd({ pointerId: lassoState.id }, { cancel: true }); return; } // a second finger lets go
       const head = headUnder(e);
       if (head) { gesture = null; grabStart(e, head); return; }
+      if (mode === "select") { gesture = null; lassoStart(e); return; }
       gesture = { id: e.pointerId, type: "touch", x: e.clientX, y: e.clientY, t: performance.now(), valid: true };
       ghostAt(e.clientX, e.clientY);
       return;
@@ -192,11 +232,13 @@ export function openEditor({ id, ctx, onClose }) {
     if (e.button && e.button !== 0) return;
     const head = headUnder(e);
     if (head) { gesture = null; grabStart(e, head); return; }
+    if (mode === "select") { gesture = null; lassoStart(e); return; }
     gesture = { id: e.pointerId, type: e.pointerType, x: e.clientX, y: e.clientY, t: performance.now(), valid: true };
   });
   view.addEventListener("pointermove", (e) => {
     if (mode === "scrub") { onScrubMove(e); return; }
     if (drag) { grabMove(e); return; }
+    if (lassoState) { lassoMove(e); return; }
     if (e.pointerType === "touch") { if (gesture?.id === e.pointerId && gesture.valid && Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > TAP_PX) { gesture.valid = false; R?.showGhost(null); } return; }
     if (!gesture || gesture.id !== e.pointerId) ghostAt(e.clientX, e.clientY); // hover
     else if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > TAP_PX) { gesture.valid = false; R?.showGhost(null); }
@@ -204,6 +246,7 @@ export function openEditor({ id, ctx, onClose }) {
   const up = (e) => {
     if (mode === "scrub") { onScrubUp(e); return; }
     if (drag?.id === e.pointerId) { if (e.pointerType === "touch") touches.delete(e.pointerId); grabEnd(e, { cancel: e.type === "pointercancel" }); return; }
+    if (lassoState?.id === e.pointerId) { if (e.pointerType === "touch") touches.delete(e.pointerId); lassoEnd(e, { cancel: e.type === "pointercancel" }); return; }
     if (e.pointerType === "touch") {
       touches.delete(e.pointerId);
       if (gesture?.id === e.pointerId) {
@@ -271,25 +314,42 @@ export function openEditor({ id, ctx, onClose }) {
   function act(name, arg) {
     switch (name) {
       case "back": close(); return;
-      case "undo": if (history.canUndo) { doc = history.undo(); dirty = true; selection.clear(); layout(); flush(); } return;
-      case "redo": if (history.canRedo) { doc = history.redo(); dirty = true; selection.clear(); layout(); flush(); } return;
+      case "undo": if (history.canUndo) { doc = history.undo(); dirty = true; pruneSelection(); layout(); flush(); } return;
+      case "redo": if (history.canRedo) { doc = history.redo(); dirty = true; pruneSelection(); layout(); flush(); } return;
       case "select": setMode(mode === "select" ? "place" : "select"); return;
       case "scrub": setMode(mode === "scrub" ? "place" : "scrub"); return;
       case "delete": deleteSelection(); return;
       case "zoom-in": setZoom(S + 2); return;
       case "zoom-out": setZoom(S - 2); return;
       case "dur":
+        if (selection.size) { // selection first, then the button: retype every selected note, and arm that duration
+          if (!allNotes()) { toast("pick notes to retype"); return; }
+          try { commit(retype(doc, selEvIds(), { base: arg, dots: 0 })); haptic(8); }
+          catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); return; }
+          armed = { ...armed, base: arg }; store.set("armed", { base: armed.base, rest: armed.rest });
+          if (mode !== "place") setMode("place"); else sync();
+          return;
+        }
         if (mode === "place" && armed.base === arg) { setMode("select"); return; } // tap the armed one again → nothing armed
         armed = { ...armed, base: arg }; store.set("armed", { base: armed.base, rest: armed.rest });
         if (mode !== "place") setMode("place"); else sync();
         return;
-      case "rest": armed = { ...armed, rest: !armed.rest }; store.set("armed", { base: armed.base, rest: armed.rest }); if (mode !== "place") setMode("place"); else sync(); return;
+      case "rest":
+        if (selection.size) { // the selected notes become rests of the same length; the toggle itself is untouched
+          if (!allNotes()) { toast("pick notes to turn into rests"); return; }
+          const ids = selEvIds();
+          commit(toRests(doc, ids));
+          selection.clear(); for (const id of ids) selection.add(id); R.setSelection(selection); sync(); haptic(8);
+          return;
+        }
+        armed = { ...armed, rest: !armed.rest }; store.set("armed", { base: armed.base, rest: armed.rest }); if (mode !== "place") setMode("place"); else sync(); return;
       default: return;
     }
   }
   function setMode(next) {
     if (mode === next) return;
     if (drag) grabEnd({ pointerId: drag.id }, { cancel: true });
+    if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true });
     mode = next; R?.showGhost(null);
     if (mode === "scrub") { gesture = null; } else { cancelAnimationFrame(scrub?.inertia); scrub = null; }
     sync();
@@ -299,7 +359,7 @@ export function openEditor({ id, ctx, onClose }) {
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); act(e.shiftKey ? "redo" : "undo"); return; }
     if (mod) return;
-    if (e.key === "Escape") { if (mode === "place" && selection.size) { selection.clear(); R.setSelection(selection); sync(); } else setMode("select"); return; }
+    if (e.key === "Escape") { if (selection.size) { selection.clear(); R.setSelection(selection); sync(); } else setMode(mode === "select" ? "place" : "select"); return; }
     if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelection(); return; }
     if (KEY_BASE[e.key]) { act("dur", KEY_BASE[e.key]); return; }
     const k = e.key.toLowerCase();
@@ -334,7 +394,7 @@ export function openEditor({ id, ctx, onClose }) {
   const api = {
     id, close,
     /** For tests: the live state. */
-    get state() { return { mode, armed, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, doc }; },
+    get state() { return { mode, armed, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, doc }; },
     /** For tests: the client point of a musical place. */
     pointFor({ bar, staff, ticks, step }) {
       const { sys, bar: hb } = barAt(L, bar);

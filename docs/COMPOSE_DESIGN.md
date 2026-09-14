@@ -49,8 +49,8 @@ the ergonomics can be judged before anything deeper is built.
 | Rests | Rest on + eighth armed = an eighth rest. Deleting anything leaves rests behind. A bar's rests are always drawn in standard groupings. |
 | Chords | Tap a different pitch at an existing note's slot: the pitch joins the chord. Same duration for the whole chord. |
 | Select | Tap a note to select it (a rest or a chord's stem too, in Select mode). Drag over notes (Select mode) for a range; tap more to add. Tap empty staff to clear. |
-| Re-pitch | Drag a selected note up or down: it moves by staff step, sounding each new pitch. Horizontal drags are ignored. Arrow keys do the same. |
-| Retype | With a selection, tap a duration: the selection becomes that duration (and it is the armed duration now). Too long for the bar → the bar flashes, nothing changes. |
+| Re-pitch | Drag a selected note up or down: it moves by staff step, sounding each new pitch. Horizontal drags are ignored. Arrow keys do the same. **A cluster:** when every selected thing is a notehead, grabbing any one of them drags them all by the same steps, sounding the moving cluster; if one would collide or run off the staff the whole cluster holds. |
+| Retype | With a selection, tap a duration: every selected note becomes that duration (and it is the armed duration now, Place mode). All or nothing: if any one cannot fit, that bar flashes and nothing changes anywhere. A selection holding rests (or marks) is refused with a hint — rests are the gaps, not things to retype. **Rest** with a selection turns the selected notes into rests of the same length and leaves the toggle itself alone. |
 | Dot · tie · tuplet | Apply to the whole selection; tap again to remove. Tie needs a same-pitch neighbour (or two selected). Tuplet defaults to a triplet; hold for duplet / quintuplet / sextuplet / septuplet. |
 | Bars | A new empty bar appears when the last one gets its first note. Trailing empty bars beyond one are trimmed on export. |
 | Key · time · clef | Insert a change at any bar from the utility rail; it holds until the next change. Cautionary accidentals and courtesy signatures follow standard practice. |
@@ -341,7 +341,7 @@ rows; the utility / expression rails become sheets.
 | mode | what a pointer does |
 |---|---|
 | **Place** (default; any duration armed) | tap on staff → `place`; **pointer down on a notehead grabs it at once** (selected, and a vertical drag re-pitches by staff step, sounding each; release commits; a clean tap on an already-selected note lets it go) — the mode and the armed duration are untouched, so the next tap elsewhere still places; a rest (or a chord's stem) is where the next note goes, so a tap there places; long-press → marquee (Select mode for this gesture) |
-| **Select** (armed duration cleared) | tap → select / toggle; the same grab-and-drag on a notehead; drag on empty staff → marquee over notes |
+| **Select** (armed duration cleared) | tap → select / toggle; the same grab-and-drag on a notehead; **pointer down on empty staff that moves more than a few px becomes a lasso** — a freehand path drawn under the tip; lifting closes it and selects everything whose anchor lies inside (noteheads one by one, rests, later marks), replacing the selection; a down that never moves is a tap that clears |
 | **Scrub** | one finger / pen → pan; two fingers → zoom; nothing selects or places |
 
 Tapping the armed duration again in the palette clears it (→ Select). Esc → Select.
@@ -373,7 +373,7 @@ carries the accidental, then the button clears.
 A set of ids: pitch ids (`event.id:index`) and event ids (rests, and whole
 chords via the stem). Rendered as a class on the SVG groups (brass fill + halo,
 as the sight-singing *current* state). Selection survives re-render (ids are
-stable). Keyboard: ←/→ move to the previous / next event in the staff, ↑/↓
+stable) and undo / redo (whatever still exists stays selected). Keyboard: ←/→ move to the previous / next event in the staff, ↑/↓
 re-pitch, Shift+←/→ extend, Delete / Backspace remove, Cmd/Ctrl+Z / Shift+Z
 undo / redo, `1`–`7` = 64th … whole (the MuseScore mapping), `.` dot, `r` rest,
 `t` tie, `s` Scrub, `v` Select, `Esc` clear.

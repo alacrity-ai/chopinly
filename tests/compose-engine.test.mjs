@@ -173,3 +173,47 @@ test("setPitch: moves by staff step spelled from the key; a chord re-sorts and t
   assert.deepEqual(find(both, ev3.id).ev.pitches.map((p) => p.step + p.octave), ["C5", "E5"]);
   validate(both);
 });
+
+test("retype: shorter leaves rests, longer eats the rests that follow, a note in the way nudges the whole set and nothing changes; rests are refused", async () => {
+  const { retype, toRests } = await import("../js/lib/compose/engine.js");
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
+  const ev = d.measures[0].staves[0].voices[0][0];
+  assert.equal(kinds(retype(d, [ev.id], H), 0), "n2 r2");
+  assert.equal(kinds(retype(d, [ev.id], E), 0), "n8 r8 r4 r2");
+  assert.equal(kinds(retype(d, [ev.id], W), 0), "n1");
+  d = place(d, { bar: 0, staff: 0, ticks: Qt + 10, step: 4 }, Q).doc; // n4 n4 r2
+  const [a, b] = d.measures[0].staves[0].voices[0];
+  assert.throws(() => retype(d, [a.id], H), Nudge); // b is in the way
+  assert.equal(kinds(retype(d, [b.id], H), 0), "n4 n2 r4");
+  assert.equal(kinds(retype(d, [a.id, b.id], E), 0), "n8 r8 n8 r8 r2");
+  const before = JSON.stringify(d);
+  assert.throws(() => retype(d, [a.id, b.id], H), (e) => e instanceof Nudge && e.bar === 0); // a cannot grow: all or nothing
+  assert.equal(JSON.stringify(d), before);
+  const rest = d.measures[0].staves[0].voices[0][2];
+  assert.throws(() => retype(d, [a.id, rest.id], H), Nudge);
+  // dots via retype
+  assert.equal(kinds(retype(d, [b.id], { base: 4, dots: 1 }), 0), "n4 n4. r8 r4");
+  // toRests
+  assert.equal(kinds(toRests(d, [a.id, b.id]), 0), "r1");
+  assert.equal(toRests(d, [rest.id]), d);
+  validate(retype(d, [a.id, b.id], E));
+});
+
+test("setPitch moves a cluster together: two pitches of one chord step up as a pair without a false collision; a real collision nudges", () => {
+  let c = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
+  c = place(c, { bar: 0, staff: 0, ticks: 10, step: 5 }, Q).doc; // B4 + C5
+  const ev = c.measures[0].staves[0].voices[0][0];
+  const r = setPitch(c, [{ ev: ev.id, pi: 0 }, { ev: ev.id, pi: 1 }], 1);
+  assert.deepEqual(find(r.doc, ev.id).ev.pitches.map((p) => p.step + p.octave), ["C5", "D5"]);
+  assert.deepEqual(r.moved.map((m) => m.pi).sort(), [0, 1]);
+  c = place(c, { bar: 0, staff: 0, ticks: 10, step: 8 }, Q).doc; // + F5
+  const ev2 = c.measures[0].staves[0].voices[0][0];
+  assert.throws(() => setPitch(c, [{ ev: ev2.id, pi: 1 }], 3), Nudge); // C5 → F5 collides
+  // a cluster across two events
+  let e = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
+  e = place(e, { bar: 0, staff: 1, ticks: 0, step: 4 }, Q).doc;
+  const [x] = e.measures[0].staves[0].voices[0], [y] = e.measures[0].staves[1].voices[0];
+  const m = setPitch(e, [{ ev: x.id, pi: 0 }, { ev: y.id, pi: 0 }], -2).doc;
+  assert.equal(find(m, x.id).ev.pitches[0].step + find(m, x.id).ev.pitches[0].octave, "G4");
+  assert.equal(find(m, y.id).ev.pitches[0].step + find(m, y.id).ev.pitches[0].octave, "B2");
+});
