@@ -3,6 +3,9 @@ import { ticks, capacity } from "./ticks.js";
 
 export const SCHEMA = 1;
 export const DEFAULT_BARS = 8;
+export const DEFAULT_TEMPO = 100, MIN_TEMPO = 20, MAX_TEMPO = 300;
+/** The playback tempo of a document (older documents carry none). */
+export const tempoOf = (doc) => Math.max(MIN_TEMPO, Math.min(MAX_TEMPO, Math.round(doc.tempo ?? DEFAULT_TEMPO)));
 
 let seq = 0;
 /** Short unique ids for events and pitches — unique within a session, which is all a document needs. */
@@ -22,7 +25,7 @@ export function newComposition({ id, title = "Untitled", composer = "", now = Da
   measures[0].key = { fifths: 0 };
   measures[0].time = { beats: 4, unit: 4 };
   measures[0].clefs = { 0: "treble", 1: "bass" };
-  return { id, v: SCHEMA, title, composer, createdAt: now, updatedAt: now, openedAt: now, parts: [{ id: "p1", name: "Piano", staves: 2 }], measures };
+  return { id, v: SCHEMA, title, composer, createdAt: now, updatedAt: now, openedAt: now, tempo: DEFAULT_TEMPO, parts: [{ id: "p1", name: "Piano", staves: 2 }], measures };
 }
 
 export const clone = (doc) => structuredClone(doc);

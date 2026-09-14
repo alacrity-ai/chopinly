@@ -2102,6 +2102,18 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-more[hidden] { display: none; }
 .cp-more { position: absolute; top: calc(100% + 0.3rem); left: 0; z-index: 3; display: flex; gap: 0.3rem; padding: 0.3rem; background: var(--bg-panel); border: 1px solid var(--bg-edge); border-radius: 0.7rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); }
 .cp-tie-pic { display: inline-block; width: 1.2rem; height: 0.55rem; border: 2px solid currentColor; border-top: none; border-radius: 0 0 0.6rem 0.6rem; }
+.cp-transport { gap: 0.3rem; }
+.cp-play .cp-pause-ic, .cp-play[aria-pressed="true"] .cp-play-ic { display: none; }
+.cp-play[aria-pressed="true"] .cp-pause-ic { display: inline-flex; }
+.cp-pos-wrap { flex: 1; min-width: 8rem; display: flex; flex-direction: column; justify-content: center; gap: 0.1rem; padding: 0 0.4rem; }
+.cp-pos { width: 100%; margin: 0; height: 1.4rem; accent-color: var(--accent); cursor: pointer; touch-action: none; }
+.cp-pos-read { font: 500 0.7rem var(--sans); color: var(--fg-dim); text-align: center; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
+.cp-tempo { display: inline-flex; align-items: center; gap: 0.25rem; }
+.cp-tempo-mark { display: inline-flex; align-items: center; gap: 0.15rem; color: var(--fg-dim); font: 500 0.85rem var(--sans); padding-right: 0.1rem; }
+.cp-glyph-xs { font-size: 1rem; transform: translateY(-0.18rem); }
+.cp-tempo-btn { min-width: 2.1rem; font-size: 1.15rem; }
+.cp-bpm { min-width: 3.2rem; font: 600 0.95rem var(--sans); font-variant-numeric: tabular-nums; }
+.cp-playhead { stroke: var(--accent); stroke-width: 2; stroke-linecap: round; opacity: 0.85; }
 .cp-title { flex: 1; min-width: 4rem; text-align: center; font-family: var(--serif); font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-dim); }
 .cp-view { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; touch-action: none; overscroll-behavior: contain; cursor: crosshair; }
 .cp-view[data-mode="scrub"] { cursor: grab; }
@@ -2124,6 +2136,8 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 @media (max-width: 480px) {
   .cp-btn { min-width: 2.2rem; height: 2.3rem; padding: 0 0.35rem; }
   .cp-title { display: none; }
+  .cp-pos-wrap { min-width: 6rem; }
+  .cp-tempo-mark { display: none; }
   .cp-mode { font-size: 0.78rem; }
 }
 @media (prefers-reduced-motion: reduce) { .cp-flash { transition: none; } }

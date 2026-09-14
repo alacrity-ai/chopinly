@@ -269,6 +269,45 @@ await step("clipboard: lasso two notes → copy → paste arms a cursor with a p
   if ((await state()).mode !== "place") throw new Error("not back in place");
 });
 
+await step("transport: play moves the playhead and the rail's readout, pause holds it, a bar forward / back and stop seek, the slider seeks, tempo − / + and Space work", async () => {
+  const st = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { playing: s.playing, position: s.position, tempo: s.tempo }; });
+  if ((await page.locator(".cp-transport .cp-btn").count()) < 6) throw new Error("transport rail missing");
+  await page.click("[data-act=play]");
+  await page.waitForTimeout(400);
+  let s = await st();
+  if (!s.playing || !(s.position > 0)) throw new Error("not playing " + JSON.stringify(s));
+  if (await page.locator(".cp-playhead[hidden]").count()) throw new Error("playhead hidden while playing");
+  if ((await page.locator("[data-act=play]").getAttribute("aria-pressed")) !== "true") throw new Error("play button not pressed");
+  await page.screenshot({ path: `${S}/cp-13-playing.png` });
+  await page.click("[data-act=play]");
+  const paused = await st();
+  await page.waitForTimeout(150);
+  s = await st();
+  if (s.playing || s.position !== paused.position || !(s.position > 0)) throw new Error("pause " + JSON.stringify([paused, s]));
+  await page.click("[data-act=ff]");
+  s = await st();
+  if (s.position % (4 * PPQ) !== 0 || !(s.position > paused.position)) throw new Error("ff " + JSON.stringify(s));
+  const read = await page.locator("#cp-pos-read").textContent();
+  if (!/^bar \d+ of \d+$/.test(read)) throw new Error("readout " + read);
+  await page.click("[data-act=rew]");
+  if ((await st()).position !== s.position - 4 * PPQ) throw new Error("rew");
+  await page.click("[data-act=stop]");
+  if ((await st()).position !== 0) throw new Error("stop");
+  if (!(await page.locator(".cp-playhead[hidden]").count())) throw new Error("playhead shown at rest on bar 1");
+  await page.evaluate(() => { const r = document.querySelector("#cp-pos"); r.value = String(3 * 4 * 6720); r.dispatchEvent(new Event("input", { bubbles: true })); });
+  if ((await st()).position !== 3 * 4 * PPQ) throw new Error("slider seek");
+  if ((await page.locator("#cp-pos-read").textContent()) !== `bar 4 of ${(await state()).bars}`) throw new Error("readout after seek " + (await page.locator("#cp-pos-read").textContent()));
+  const t0 = (await st()).tempo;
+  await page.click("[data-act=tempo-up]"); await page.click("[data-act=tempo-up]"); await page.click("[data-act=tempo-down]");
+  s = await st();
+  if (s.tempo !== t0 + 1 || (await page.locator("#cp-bpm").textContent()) !== String(t0 + 1)) throw new Error("tempo " + JSON.stringify(s));
+  await page.keyboard.press("Space"); await page.waitForTimeout(120);
+  if (!(await st()).playing) throw new Error("Space did not play");
+  await page.keyboard.press("Space");
+  if ((await st()).playing) throw new Error("Space did not pause");
+  await page.click("[data-act=stop]");
+});
+
 await step("Rest toggle: a rest placed into a bar with notes leaves the bar adding up", async () => {
   await page.click("[data-act=rest]");
   if (!(await state()).armed.rest) throw new Error("rest not on");
@@ -321,6 +360,7 @@ await step("reload restores the composition, the zoom and the armed duration", a
   const s = await state();
   if (!(s.bars === 9 && s.S === 16 && s.armed.base === 4)) throw new Error(JSON.stringify(s));
   if ((await kinds(0)) !== "n4 n4 n4 n4") throw new Error("lost: " + (await kinds(0)));
+  if ((await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.tempo)) !== 101) throw new Error("tempo not restored");
 });
 
 await step("back → the list shows the composition with its bar count; sight singing still renders", async () => {

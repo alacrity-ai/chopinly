@@ -589,7 +589,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     if (!c?.id || composition(c.id)) throw new Error("bad composition");
     c.updatedAt = now(); doc.compositions.push(c); save(); return c;
   }
-  /** Replace a composition's content (measures / title / composer / openedAt). Not synced yet, so no pending mark. */
+  /** Replace a composition's content (measures / title / composer / openedAt / tempo). Not synced yet, so no pending mark. */
   function updateComposition(id, patch = {}) {
     const c = composition(id);
     if (!c) throw new Error(`no composition ${id}`);
@@ -597,6 +597,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     if ("composer" in patch) c.composer = cleanComposer(patch.composer);
     if ("measures" in patch) c.measures = patch.measures;
     if ("openedAt" in patch) c.openedAt = patch.openedAt;
+    if ("tempo" in patch) c.tempo = patch.tempo;
     c.updatedAt = now(); save(); return c;
   }
   function removeComposition(id) {

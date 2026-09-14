@@ -19,19 +19,21 @@ export function createPiano(getAudio, { a4 = 440, volume = 0.7 } = {}) {
     return context;
   }
 
-  function damp(vc, tail) {
-    const t = vc.context.currentTime;
+  function damp(vc, tail, when = null) {
+    const now = vc.context.currentTime, t = Math.max(now, when ?? 0);
     vc.env.gain.cancelScheduledValues(t);
-    vc.env.gain.setValueAtTime(Math.max(vc.env.gain.value, 0.0001), t);
-    vc.env.gain.exponentialRampToValueAtTime(0.0001, t + tail);
+    if (t > now + 0.005) vc.env.gain.setTargetAtTime(0.0001, t, tail / 3); // a scheduled release starts from wherever the envelope is at t
+    else { vc.env.gain.setValueAtTime(Math.max(vc.env.gain.value, 0.0001), t); vc.env.gain.exponentialRampToValueAtTime(0.0001, t + tail); }
     for (const o of vc.oscs) { try { o.stop(t + tail + 0.05); } catch { /* already stopped */ } }
   }
 
-  function noteOn(midi, velocity = 0.8) {
+  /** Sound a note now, or at `when` on the audio clock (a sequencer schedules ahead). */
+  function noteOn(midi, velocity = 0.8, when = null) {
     const context = bus();
-    if (voices.has(midi)) { damp(voices.get(midi), 0.03); voices.delete(midi); }
-    if (voices.size >= MAX_VOICES) { const [oldest] = voices.keys(); damp(voices.get(oldest), 0.08); voices.delete(oldest); }
-    const f = midiToFreq(midi, opts.a4), t = context.currentTime, v = Math.max(0.05, Math.min(1, velocity));
+    const t = Math.max(context.currentTime, when ?? 0);
+    if (voices.has(midi)) { damp(voices.get(midi), 0.03, t); voices.delete(midi); }
+    if (voices.size >= MAX_VOICES) { const [oldest] = voices.keys(); damp(voices.get(oldest), 0.08, t); voices.delete(oldest); }
+    const f = midiToFreq(midi, opts.a4), v = Math.max(0.05, Math.min(1, velocity));
     // low notes ring longer than high ones
     const decay = 1.0 + Math.max(0, 84 - midi) * 0.045;
     const env = context.createGain();
@@ -55,11 +57,11 @@ export function createPiano(getAudio, { a4 = 440, volume = 0.7 } = {}) {
     voices.set(midi, { midi, oscs, env, lp, context });
   }
 
-  function noteOff(midi) {
+  function noteOff(midi, when = null) {
     const vc = voices.get(midi);
     if (!vc) return;
     voices.delete(midi);
-    if (sustain) ringing.add(vc); else damp(vc, 0.16);
+    if (sustain) ringing.add(vc); else damp(vc, 0.16, when);
   }
 
   function setSustain(on) {
