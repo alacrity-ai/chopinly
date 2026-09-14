@@ -10,14 +10,16 @@ import { haptic } from "../logbook/motion.js";
 import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt, lasso } from "../../lib/compose/hit.js";
-import { place, remove, snap, trimBars, find, setPitch, retype, toRests, Nudge } from "../../lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
-import { clefAt, keyAt } from "../../lib/compose/model.js";
+import { clefAt } from "../../lib/compose/model.js";
+import { ticks as ticksOf } from "../../lib/compose/ticks.js";
 import { buildRails, MAIN_BASES, MORE_BASES, durName } from "./rails.js";
 
 const TAP_MS = 300, TAP_PX = 10, PALM_PX = 40, S_MIN = 8, S_MAX = 22, SAVE_MS = 300, LASSO_PX = 6;
 const KEY_BASE = { 1: 64, 2: 32, 3: 16, 4: 8, 5: 4, 6: 2, 7: 1 };
+let clipboard = null; // the copied phrase — lives for the session, so it can travel between compositions
 
 export function openEditor({ id, ctx, onClose }) {
   const c = logbook.composition(id);
@@ -30,7 +32,7 @@ export function openEditor({ id, ctx, onClose }) {
   let armed = { base: MAIN_BASES.includes(savedArm?.base) || MORE_BASES.includes(savedArm?.base) ? savedArm.base : 4, dots: 0, rest: !!savedArm?.rest };
   let mode = "place";                 // "place" | "select" | "scrub"
   const selection = new Set();        // "ev" | "ev:pi"
-  let L = null, R = null, closed = false, saveTimer = 0, dirty = false;
+  let L = null, R = null, closed = false, saveTimer = 0, dirty = false, pasting = false;
   const sound = createSound(getAudio);
 
   const el = document.createElement("div");
@@ -53,8 +55,8 @@ export function openEditor({ id, ctx, onClose }) {
     sync();
   }
   function sync() {
-    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0 });
-    view.dataset.mode = mode;
+    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting });
+    view.dataset.mode = mode; view.classList.toggle("pasting", pasting);
   }
   function commit(next) {
     if (next === doc) return;
@@ -69,7 +71,34 @@ export function openEditor({ id, ctx, onClose }) {
   const stepY = (sys, staff, step) => sys.staves[staff].topY + (8 - step) / 2;
 
   // --- ghost -----------------------------------------------------------------
+  /** Where a paste would land for a client point: { bar, ticks (snapped), staff } or null. */
+  function pasteTarget(clientX, clientY) {
+    if (!clipboard || !L) return null;
+    const { x, y } = toS(clientX, clientY);
+    const slot = slotAt(L, x, y);
+    if (!slot) return null;
+    const g = ticksOf(clipboard.events[0].dur);
+    const cap = barAt(L, slot.bar).bar.cap;
+    return { bar: slot.bar, ticks: Math.max(0, Math.min(cap - 1, Math.round(slot.ticks / g) * g)), staff: Math.max(0, Math.min(L.nStaves - clipboard.staves, slot.staff)) };
+  }
+  /** The phrase as ghost notes at a target, using the columns that exist today (good enough to see where it lands). */
+  function pasteGhost(target) {
+    const A0 = barStarts(doc).starts[target.bar] + target.ticks;
+    const out = [];
+    for (const e of clipboard.events) {
+      const loc = locate(doc, A0 + e.offset);
+      if (!loc) continue;
+      const hb = barAt(L, loc.bar);
+      if (!hb) continue;
+      const staff = target.staff + e.dStaff, x = xOfTicks(hb.bar, loc.ticks);
+      if (e.kind === "rest") { out.push({ x, y: stepY(hb.sys, staff, e.dur.base <= 1 ? 6 : 4), base: e.dur.base, rest: true }); continue; }
+      const clef = clefAt(doc, loc.bar, staff);
+      for (const p of e.pitches) { const st = stepOf(p, clef); out.push({ x, y: stepY(hb.sys, staff, st), base: e.dur.base, rest: false, stem: false }); }
+    }
+    return out;
+  }
   function ghostAt(clientX, clientY) {
+    if (pasting) { const t = pasteTarget(clientX, clientY); return R.showGhost(t ? pasteGhost(t) : null); }
     if (mode !== "place" || !L) return R?.showGhost(null);
     const { x, y } = toS(clientX, clientY);
     const slot = slotAt(L, x, y);
@@ -88,6 +117,7 @@ export function openEditor({ id, ctx, onClose }) {
   // --- a tap -----------------------------------------------------------------
   function tapAt(clientX, clientY) {
     if (!L) return;
+    if (pasting) { dropAt(clientX, clientY); return; }
     const { x, y } = toS(clientX, clientY);
     const thing = thingAt(L, x, y);
     // In Place mode a rest (and a chord's stem) is where the next note goes; only a notehead selects.
@@ -114,6 +144,31 @@ export function openEditor({ id, ctx, onClose }) {
   /** After undo / redo: keep whatever is still there (a note that came back stays selected). */
   function pruneSelection() {
     for (const k of [...selection]) { const [ev, pi] = k.split(":"); const f = find(doc, ev); if (!f || (pi !== undefined && (f.ev.kind !== "note" || Number(pi) >= f.ev.pitches.length))) selection.delete(k); }
+  }
+  // --- clipboard: copy / cut take the selection as a phrase; paste arms a cursor and a tap drops it ---
+  function copySelection() {
+    if (!selection.size) return;
+    clipboard = clipFrom(doc, selItems());
+    toast(`copied ${clipboard.events.length === 1 ? "one note" : `${clipboard.events.length} things`} — tap paste, then tap where it goes`);
+    haptic(6); sync();
+  }
+  function cutSelection() { if (!selection.size) return; copySelection(); deleteSelection(); }
+  function setPasting(on) {
+    pasting = !!on && !!clipboard;
+    if (pasting) { if (drag) grabEnd({ pointerId: drag.id }, { cancel: true }); if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true }); if (mode === "scrub") setMode("place"); }
+    R?.showGhost(null); sync();
+  }
+  function dropAt(clientX, clientY) {
+    const t = pasteTarget(clientX, clientY);
+    if (!t) return;
+    try {
+      const r = paste(doc, clipboard, t);
+      commit(r.doc);
+      selection.clear(); for (const k of r.keys) selection.add(k); R.setSelection(selection);
+      pasting = false; sync(); haptic(10);
+      const notes = r.keys.filter((k) => k.includes(":")).slice(0, 6).map((k) => { const [ev, pi] = k.split(":"); return find(doc, ev)?.ev.pitches[Number(pi)]; }).filter(Boolean);
+      sound.play(notes, 260);
+    } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar ?? t.bar); }
   }
   function nudge(msg, bar) {
     toast(msg); haptic(20);
@@ -222,17 +277,17 @@ export function openEditor({ id, ctx, onClose }) {
       if (gesture?.type === "touch") gesture.valid = false; // a second finger spoils the first
       if (!valid) { if (gesture?.type !== "touch") return; gesture = { id: e.pointerId, type: "touch", valid: false }; return; }
       if (lassoState?.type === "touch") { lassoEnd({ pointerId: lassoState.id }, { cancel: true }); return; } // a second finger lets go
-      const head = headUnder(e);
+      const head = pasting ? null : headUnder(e);
       if (head) { gesture = null; grabStart(e, head); return; }
-      if (mode === "select") { gesture = null; lassoStart(e); return; }
+      if (mode === "select" && !pasting) { gesture = null; lassoStart(e); return; }
       gesture = { id: e.pointerId, type: "touch", x: e.clientX, y: e.clientY, t: performance.now(), valid: true };
       ghostAt(e.clientX, e.clientY);
       return;
     }
     if (e.button && e.button !== 0) return;
-    const head = headUnder(e);
+    const head = pasting ? null : headUnder(e);
     if (head) { gesture = null; grabStart(e, head); return; }
-    if (mode === "select") { gesture = null; lassoStart(e); return; }
+    if (mode === "select" && !pasting) { gesture = null; lassoStart(e); return; }
     gesture = { id: e.pointerId, type: e.pointerType, x: e.clientX, y: e.clientY, t: performance.now(), valid: true };
   });
   view.addEventListener("pointermove", (e) => {
@@ -319,6 +374,9 @@ export function openEditor({ id, ctx, onClose }) {
       case "select": setMode(mode === "select" ? "place" : "select"); return;
       case "scrub": setMode(mode === "scrub" ? "place" : "scrub"); return;
       case "delete": deleteSelection(); return;
+      case "copy": copySelection(); return;
+      case "cut": cutSelection(); return;
+      case "paste": setPasting(!pasting); if (pasting) toast("tap where the phrase goes"); return;
       case "zoom-in": setZoom(S + 2); return;
       case "zoom-out": setZoom(S - 2); return;
       case "dur":
@@ -350,6 +408,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (mode === next) return;
     if (drag) grabEnd({ pointerId: drag.id }, { cancel: true });
     if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true });
+    if (next === "scrub" && pasting) { pasting = false; }
     mode = next; R?.showGhost(null);
     if (mode === "scrub") { gesture = null; } else { cancelAnimationFrame(scrub?.inertia); scrub = null; }
     sync();
@@ -358,7 +417,11 @@ export function openEditor({ id, ctx, onClose }) {
     if (closed || e.target.matches("input, textarea, [contenteditable]") || document.querySelector(".lb-sheet-wrap")) return;
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); act(e.shiftKey ? "redo" : "undo"); return; }
+    if (mod && e.key.toLowerCase() === "c") { e.preventDefault(); copySelection(); return; }
+    if (mod && e.key.toLowerCase() === "x") { e.preventDefault(); cutSelection(); return; }
+    if (mod && e.key.toLowerCase() === "v") { e.preventDefault(); if (clipboard) { setPasting(true); toast("tap where the phrase goes"); } return; }
     if (mod) return;
+    if (e.key === "Escape" && pasting) { setPasting(false); return; }
     if (e.key === "Escape") { if (selection.size) { selection.clear(); R.setSelection(selection); sync(); } else setMode(mode === "select" ? "place" : "select"); return; }
     if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelection(); return; }
     if (KEY_BASE[e.key]) { act("dur", KEY_BASE[e.key]); return; }
@@ -394,7 +457,7 @@ export function openEditor({ id, ctx, onClose }) {
   const api = {
     id, close,
     /** For tests: the live state. */
-    get state() { return { mode, armed, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, doc }; },
+    get state() { return { mode, armed, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, doc }; },
     /** For tests: the client point of a musical place. */
     pointFor({ bar, staff, ticks, step }) {
       const { sys, bar: hb } = barAt(L, bar);

@@ -14,7 +14,7 @@ page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resourc
 page.on("dialog", (d) => d.accept(d.type() === "prompt" ? d.defaultValue() : undefined));
 const step = async (name, f) => { try { await f(); console.log("ok  ", name); } catch (e) { console.log("FAIL", name, "—", e.message); try { console.log("  toast:", await page.evaluate(() => document.querySelector(".lb-toast")?.textContent), "state:", JSON.stringify(await state())); } catch { /* no editor */ } await page.screenshot({ path: `${S}/fail-compose.png` }); throw e; } };
 const lb = (fn, ...args) => page.evaluate(async ([src, a]) => { const m = await import("/js/lib/logbook.js"); return (new Function("m", "a", src))(m, a); }, [`return (${fn})(m, a)`, args]);
-const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging, lassoing: s.lassoing }; });
+const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging, lassoing: s.lassoing, pasting: s.pasting, hasClip: s.hasClip }; });
 const kinds = (bar, staff = 0) => page.evaluate(([b, st]) => document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[st].voices[0].map((e) => `${e.kind === "rest" ? "r" : "n"}${e.dur.base}${e.dur.dots ? "." : ""}`).join(" "), [bar, staff]);
 const point = (place) => page.evaluate((p) => document.querySelector(".cp-editor").__editor.pointFor(p), place);
 const tapAt = async (place) => { const p = await point(place); await page.touchscreen.tap(Math.round(p.x), Math.round(p.y)); await page.waitForTimeout(80); };
@@ -200,6 +200,71 @@ await step("lasso (Select mode): a pen stroke around two heads selects them; the
   // a plain tap on empty staff in Select clears; back to Place with the quarter
   await pen("pointerdown", { clientX: lx0, clientY: ly0 }); await pen("pointerup", { clientX: lx0, clientY: ly0 });
   if ((await state()).selection.length !== 0) throw new Error("tap did not clear");
+  await page.click(".cp-dur[data-base='4']");
+  if ((await state()).mode !== "place") throw new Error("not back in place");
+});
+
+await step("clipboard: lasso two notes → copy → paste arms a cursor with a phrase ghost → tap drops it (selected, overwriting) → cut empties the source → a barline straddle is refused and the cursor stays armed → Escape disarms", async () => {
+  const S = (await state()).S;
+  const pen = (type, o) => synth(type, { pointerType: "pen", pointerId: 91, width: 1, height: 1, pressure: 0.5, ...o });
+  // bar 1 = n4 n4 n4 n4 (B4 C5 D5 E5): lasso the first two
+  await page.click("[data-act=select]");
+  const a = await point({ bar: 0, staff: 0, ticks: 0, step: 4 }), b = await point({ bar: 0, staff: 0, ticks: PPQ, step: 5 });
+  const x0 = a.x - 0.4 * S, x1 = b.x + 1.8 * S, yTop = Math.min(a.y, b.y) - 1.2 * S, yBot = Math.max(a.y, b.y) + 1.2 * S;
+  await pen("pointerdown", { clientX: x0, clientY: yTop });
+  for (const [x, y] of [[x1, yTop], [x1, yBot], [x0, yBot], [x0, yTop + 4]]) await pen("pointermove", { clientX: x, clientY: y });
+  await pen("pointerup", { clientX: x0, clientY: yTop + 4 });
+  if ((await state()).selection.length !== 2) throw new Error("lasso");
+  if (!(await page.evaluate(() => document.querySelector("[data-act=paste]").disabled))) throw new Error("paste enabled with an empty clipboard");
+  await page.click("[data-act=copy]");
+  let s = await state();
+  if (!s.hasClip || s.pasting) throw new Error("copy " + JSON.stringify(s));
+  await page.click("[data-act=paste]");
+  s = await state();
+  if (!s.pasting) throw new Error("paste did not arm");
+  // hover: the phrase ghost follows the pen (two heads)
+  const t = await point({ bar: 3, staff: 0, ticks: 100, step: 4 });
+  await pen("pointermove", { clientX: t.x, clientY: t.y });
+  const ghostHeads = await page.evaluate(() => document.querySelector(".cp-ghost").hasAttribute("hidden") ? 0 : document.querySelectorAll(".cp-ghost .head").length);
+  if (ghostHeads !== 2) throw new Error("phrase ghost heads " + ghostHeads);
+  // drop at bar 4 beat 1 (a tap, via touch — the same tap rule as placing)
+  await page.touchscreen.tap(Math.round(t.x), Math.round(t.y)); await page.waitForTimeout(80);
+  if ((await kinds(3)) !== "n4 n4 r2") throw new Error("drop: " + (await kinds(3)));
+  s = await state();
+  if (s.pasting || s.selection.length !== 2) throw new Error("after drop " + JSON.stringify(s));
+  const pitches = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures[3].staves[0].voices[0].filter((e) => e.kind === "note").map((e) => e.pitches[0].step + e.pitches[0].octave).join(" "));
+  if (pitches !== "B4 C5") throw new Error("pasted pitches " + pitches);
+  // cut the pasted pair: the bar empties, the clipboard holds the pair
+  await page.click("[data-act=cut]");
+  if ((await kinds(3)) !== "r1") throw new Error("cut: " + (await kinds(3)));
+  if (!(await state()).hasClip) throw new Error("clip lost on cut");
+  // paste again onto the bass staff of bar 5 — the phrase lands there, the treble is untouched
+  await page.click("[data-act=paste]");
+  const u = await point({ bar: 4, staff: 1, ticks: 100, step: 4 });
+  await page.touchscreen.tap(Math.round(u.x), Math.round(u.y)); await page.waitForTimeout(80);
+  if ((await kinds(4, 1)) !== "n4 n4 r2" || (await kinds(4, 0)) !== "r1") throw new Error("bass paste: " + (await kinds(4, 1)) + " / " + (await kinds(4, 0)));
+  // a barline straddle: make bar 2's quarter a half (lasso it, palette half), copy it, drop it on beat 4 of bar 6 → toast, nothing changes, still armed; Escape disarms
+  const c = await point({ bar: 1, staff: 0, ticks: 0, step: 6 });
+  const cx0 = c.x - 0.4 * S, cx1 = c.x + 1.8 * S, cy0 = c.y - 1.2 * S, cy1 = c.y + 1.2 * S;
+  await pen("pointerdown", { clientX: cx0, clientY: cy0 });
+  for (const [x, y] of [[cx1, cy0], [cx1, cy1], [cx0, cy1], [cx0, cy0 + 4]]) await pen("pointermove", { clientX: x, clientY: y });
+  await pen("pointerup", { clientX: cx0, clientY: cy0 + 4 });
+  if ((await state()).selection.length !== 1) throw new Error("lasso one");
+  await page.click(".cp-dur[data-base='2']");
+  if ((await kinds(1)) !== "n2 r2") throw new Error("half: " + (await kinds(1)));
+  await page.click("[data-act=copy]");
+  await page.click("[data-act=paste]");
+  const v = await point({ bar: 5, staff: 0, ticks: 3 * PPQ + 100, step: 4 });
+  await page.touchscreen.tap(Math.round(v.x), Math.round(v.y)); await page.waitForTimeout(80);
+  await page.waitForFunction(() => document.querySelector(".lb-toast.show")?.textContent.includes("barline"), null, { timeout: 3000 });
+  if ((await kinds(5)) !== "r1") throw new Error("straddle changed the bar");
+  if (!(await state()).pasting) throw new Error("cursor disarmed on a refusal");
+  await page.keyboard.press("Escape");
+  if ((await state()).pasting) throw new Error("Escape did not disarm");
+  // tidy: undo the retype and the bass paste; back to Place with the quarter
+  await page.click("[data-act=undo]"); await page.click("[data-act=undo]");
+  if ((await kinds(1)) !== "n4 r4 r2" || (await kinds(4, 1)) !== "r1") throw new Error("undo chain " + (await kinds(1)) + " / " + (await kinds(4, 1)));
+  await page.keyboard.press("Escape");
   await page.click(".cp-dur[data-base='4']");
   if ((await state()).mode !== "place") throw new Error("not back in place");
 });

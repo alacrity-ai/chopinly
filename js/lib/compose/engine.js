@@ -3,7 +3,7 @@
 // the new document; a refused edit throws Nudge(sentence) and the document is
 // untouched. Pure — node-testable.
 import { ticks, capacity, splitRest, grid } from "./ticks.js";
-import { clone, restEvent, noteEvent, newMeasure, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, DEFAULT_BARS } from "./model.js";
+import { clone, restEvent, noteEvent, newMeasure, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, DEFAULT_BARS, eid } from "./model.js";
 import { parsePitch, keyAlterations, CLEFS } from "../music.js";
 
 export class Nudge extends Error { constructor(msg, { bar = null } = {}) { super(msg); this.name = "Nudge"; this.bar = bar; } }
@@ -263,4 +263,96 @@ export function trimBars(doc) {
   const keep = Math.max(DEFAULT_BARS, last + 2);
   if (d.measures.length > keep) d.measures.length = keep;
   return d;
+}
+
+// --- clipboard: a phrase relative to its own origin (docs/COMPOSE_DESIGN.md §7.1) ---
+
+/** Absolute tick at which each bar starts, plus the total. */
+export function barStarts(doc) {
+  const out = [];
+  let t = 0;
+  for (let b = 0; b < doc.measures.length; b++) { out.push(t); t += capacity(timeAt(doc, b)); }
+  return { starts: out, total: t };
+}
+/** Bar index + local tick for an absolute tick (the last bar is not open-ended: past the end → null). */
+export function locate(doc, abs) {
+  const { starts } = barStarts(doc);
+  for (let b = starts.length - 1; b >= 0; b--) if (abs >= starts[b]) { const cap = capacity(timeAt(doc, b)); return abs < starts[b] + cap ? { bar: b, ticks: abs - starts[b], cap } : null; }
+  return null;
+}
+
+/**
+ * The selection as a phrase: items [{ ev, pi? }] → { events: [{ dStaff, offset,
+ * kind, dur, pitches? }], span, staves }. Offsets count from the earliest
+ * selected onset; staves from the topmost selected staff. A chord with only
+ * some pitches selected copies just those.
+ */
+export function clipFrom(doc, items) {
+  const { starts } = barStarts(doc);
+  const byEv = new Map();
+  for (const it of items) { if (!byEv.has(it.ev)) byEv.set(it.ev, new Set()); byEv.get(it.ev).add(it.pi === undefined || it.pi === null ? "*" : it.pi); }
+  const raw = [];
+  for (const [evId, pis] of byEv) {
+    const f = find(doc, evId);
+    if (!f) continue;
+    const voice = doc.measures[f.bar].staves[f.staff].voices[f.voice];
+    const abs = starts[f.bar] + onsets(voice)[f.index].start;
+    const ev = f.ev;
+    const pitches = ev.kind === "note" ? (pis.has("*") ? ev.pitches : ev.pitches.filter((_, i) => pis.has(i))).map((p) => ({ ...p })) : null;
+    raw.push({ abs, staff: f.staff, kind: ev.kind, dur: { ...ev.dur }, pitches, len: evTicks(ev) });
+  }
+  if (!raw.length) return null;
+  const origin = Math.min(...raw.map((r) => r.abs)), top = Math.min(...raw.map((r) => r.staff));
+  const events = raw.sort((a, b) => a.abs - b.abs || a.staff - b.staff).map((r) => ({ dStaff: r.staff - top, offset: r.abs - origin, kind: r.kind, dur: r.dur, pitches: r.pitches, len: r.len }));
+  return { events, span: Math.max(...raw.map((r) => r.abs + r.len)) - origin, staves: Math.max(...events.map((e) => e.dStaff)) + 1 };
+}
+
+/**
+ * Drop a phrase at { bar, ticks, staff } (staff = where the phrase's top staff
+ * lands; clamped so every staff of the phrase exists). The region the phrase
+ * covers is cleared first — anything overlapping it goes — then the phrase is
+ * written, and bars are appended if it runs past the end. An event that would
+ * straddle a barline refuses the whole drop. Returns { doc, keys } with the
+ * selection keys of what was pasted.
+ */
+export function paste(doc, clip, { bar, ticks: t, staff = 0 }) {
+  if (!clip?.events.length) throw new Nudge("nothing to paste");
+  const d = clone(doc);
+  const nStaves = d.parts[0].staves;
+  const top = Math.max(0, Math.min(nStaves - clip.staves, staff));
+  const A0 = barStarts(d).starts[bar] + Math.max(0, Math.round(t));
+  // make room: append bars until the whole span fits
+  while (barStarts(d).total < A0 + clip.span) appendBar(d);
+  const placed = []; // { bar, staff, start, ev }
+  for (const e of clip.events) {
+    const loc = locate(d, A0 + e.offset);
+    if (!loc) throw new Nudge("that runs off the end", { bar: d.measures.length - 1 });
+    if (loc.ticks + e.len > loc.cap) throw new Nudge("that would cross a barline", { bar: loc.bar });
+    const ev = e.kind === "rest" ? restEvent(e.dur) : { id: eid(), kind: "note", dur: { ...e.dur }, pitches: e.pitches.map((p) => ({ ...p })) };
+    placed.push({ bar: loc.bar, staff: top + e.dStaff, start: loc.ticks, ev });
+  }
+  // rebuild every touched (bar, staff): keep what lies outside the region, drop what overlaps it, add the phrase, fill the gaps
+  const touched = new Map();
+  for (const p of placed) { const k = `${p.bar}:${p.staff}`; if (!touched.has(k)) touched.set(k, []); touched.get(k).push(p); }
+  const { starts } = barStarts(d);
+  for (const [k, items] of touched) {
+    const [b, st] = k.split(":").map(Number);
+    const time = timeAt(d, b), cap = capacity(time);
+    const r0 = Math.max(0, A0 - starts[b]), r1 = Math.min(cap, A0 + clip.span - starts[b]);
+    const voice = d.measures[b].staves[st].voices[0];
+    const keep = onsets(voice).filter((o) => o.start + o.len <= r0 || o.start >= r1).map((o) => ({ start: o.start, len: o.len, ev: o.ev }));
+    const all = [...keep, ...items.map((p) => ({ start: p.start, len: evTicks(p.ev), ev: p.ev }))].sort((a, b2) => a.start - b2.start);
+    const out = [];
+    let pos = 0;
+    for (const x of all) {
+      if (x.start < pos) throw new Nudge("those overlap", { bar: b });
+      if (x.start > pos) out.push(...splitRest(x.start - pos, pos, time).map(restEvent));
+      out.push(x.ev); pos = x.start + x.len;
+    }
+    if (pos < cap) out.push(...splitRest(cap - pos, pos, time).map(restEvent));
+    d.measures[b].staves[st].voices[0] = out;
+    normalizeBar(d, b);
+  }
+  const keys = placed.flatMap((p) => (p.ev.kind === "note" ? p.ev.pitches.map((_, i) => `${p.ev.id}:${i}`) : [p.ev.id]));
+  return { doc: d, keys };
 }
