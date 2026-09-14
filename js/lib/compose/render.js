@@ -13,6 +13,16 @@ function el(name, attrs, text) {
 
 export function renderComposition(container, L) {
   const S = L.S, px = (v) => (v * S).toFixed(2), fs = 4 * S;
+  const glyphOf = (x, y, ch, cls = "glyph") => el("text", { x: px(x), y: px(y), class: cls }, ch);
+  /** The nodes of one ghost note / rest. */
+  const ghostNodes = (spec) => {
+    if (spec.rest) return [glyphOf(spec.x, spec.y, restGlyph(spec.base), "glyph rest")];
+    const out = [], headW = spec.base <= 1 ? 1.7 : 1.18;
+    if (spec.base >= 2 && spec.stem !== false) { const up = spec.stemUp, sx = up ? spec.x + headW - 0.07 : spec.x + 0.07; out.push(el("rect", { x: px(sx - 0.065), y: px(up ? spec.y - 3.5 : spec.y), width: px(0.13), height: px(3.5), class: "stem" })); }
+    for (const ly of spec.ledgers ?? []) out.push(el("line", { x1: px(spec.x - 0.35), y1: px(ly), x2: px(spec.x + headW + 0.35), y2: px(ly), class: "sline" }));
+    out.push(glyphOf(spec.x, spec.y, headGlyph(spec.base), "glyph head"));
+    return out;
+  };
   const svg = el("svg", { class: "cp-svg staff-svg", viewBox: `0 0 ${L.width} ${L.height}`, width: L.width, height: L.height, style: `font-size:${fs}px` });
   const glyph = (x, y, ch, cls = "glyph") => el("text", { x: px(x), y: px(y), class: cls }, ch);
 
@@ -90,17 +100,12 @@ export function renderComposition(container, L) {
         for (const hg of g.querySelectorAll(".cp-head-g")) hg.classList.toggle("sel", whole || ids.has(`${id}:${hg.dataset.pi}`));
       }
     },
-    /** { x, y, base, rest, stemUp } in S, or null to hide. */
+    /** { x, y, base, rest, stemUp } in S, an array of them (a phrase), or null to hide. */
     showGhost(spec) {
       if (!spec) { ghost.setAttribute("hidden", ""); return; }
       ghost.replaceChildren();
-      if (spec.rest) ghost.append(glyph(spec.x, spec.y, restGlyph(spec.base), "glyph rest"));
-      else {
-        const headW = spec.base <= 1 ? 1.7 : 1.18;
-        if (spec.base >= 2) { const up = spec.stemUp, sx = up ? spec.x + headW - 0.07 : spec.x + 0.07; ghost.append(el("rect", { x: px(sx - 0.065), y: px(up ? spec.y - 3.5 : spec.y), width: px(0.13), height: px(3.5), class: "stem" })); }
-        for (const ly of spec.ledgers ?? []) ghost.append(el("line", { x1: px(spec.x - 0.35), y1: px(ly), x2: px(spec.x + headW + 0.35), y2: px(ly), class: "sline" }));
-        ghost.append(glyph(spec.x, spec.y, headGlyph(spec.base), "glyph head"));
-      }
+      if (Array.isArray(spec)) { for (const g of spec) ghost.append(...ghostNodes(g)); ghost.removeAttribute("hidden"); return; }
+      ghost.append(...ghostNodes(spec));
       ghost.removeAttribute("hidden");
     },
     /** The lasso path while it is drawn (points in S), or null to hide. */

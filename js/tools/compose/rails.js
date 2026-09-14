@@ -20,6 +20,9 @@ export function buildRails(host, { title, onAction }) {
       <button type="button" class="cp-btn cp-mode" data-act="scrub" aria-pressed="false">Scrub</button>
       <span class="cp-sep" aria-hidden="true"></span>
       <button type="button" class="cp-btn" data-act="delete" aria-label="delete the selection" disabled>${icon("trash")}</button>
+      <button type="button" class="cp-btn" data-act="copy" aria-label="copy the selection" disabled>${icon("copy")}</button>
+      <button type="button" class="cp-btn" data-act="cut" aria-label="cut the selection" disabled>${icon("cut")}</button>
+      <button type="button" class="cp-btn" data-act="paste" aria-label="paste — then tap where it goes" aria-pressed="false" disabled>${icon("paste")}</button>
       <span class="cp-title" id="cp-title">${esc(title)}</span>
       <button type="button" class="cp-btn cp-zoom" data-act="zoom-out" aria-label="smaller">&minus;</button>
       <button type="button" class="cp-btn cp-zoom" data-act="zoom-in" aria-label="bigger">+</button>
@@ -56,7 +59,7 @@ export function buildRails(host, { title, onAction }) {
 
   return {
     /** Reflect the editor's state: { armed, mode, canUndo, canRedo, hasSelection, title }. */
-    update({ armed, mode, canUndo, canRedo, hasSelection, title }) {
+    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, title }) {
       for (const b of host.querySelectorAll(".cp-dur")) b.setAttribute("aria-pressed", String(mode === "place" && Number(b.dataset.base) === armed.base));
       const moreOn = mode === "place" && MORE_BASES.includes(armed.base);
       moreBtn.classList.toggle("on", moreOn);
@@ -68,6 +71,10 @@ export function buildRails(host, { title, onAction }) {
       host.querySelector("[data-act=undo]").disabled = !canUndo;
       host.querySelector("[data-act=redo]").disabled = !canRedo;
       host.querySelector("[data-act=delete]").disabled = !hasSelection;
+      host.querySelector("[data-act=copy]").disabled = !hasSelection;
+      host.querySelector("[data-act=cut]").disabled = !hasSelection;
+      const pasteBtn = host.querySelector("[data-act=paste]");
+      pasteBtn.disabled = !hasClip; pasteBtn.setAttribute("aria-pressed", String(pasting));
       if (title !== undefined) host.querySelector("#cp-title").textContent = title;
     },
   };

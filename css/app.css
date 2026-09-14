@@ -2106,6 +2106,7 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-view { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; touch-action: none; overscroll-behavior: contain; cursor: crosshair; }
 .cp-view[data-mode="scrub"] { cursor: grab; }
 .cp-view[data-mode="select"] { cursor: default; }
+.cp-view.pasting { cursor: copy; }
 .cp-sheet { position: relative; padding: 0.5rem 0 8rem; }
 .cp-svg { display: block; }
 .cp-overlay { position: absolute; left: 0; top: 0.5rem; pointer-events: none; }
