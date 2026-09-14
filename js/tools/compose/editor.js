@@ -19,6 +19,7 @@ import { ticks as ticksOf, capacity, groupSize } from "../../lib/compose/ticks.j
 import { CLEFS } from "../../lib/music.js";
 import { buildRails, MAIN_BASES, MORE_BASES, KEYS, RAILS, DEFAULT_RAILS, durName, tupletName } from "./rails.js";
 import { openCompositionDetails } from "./details.js";
+import { openExportSheet } from "./exportsheet.js";
 
 const TAP_MS = 300, TAP_PX = 10, PALM_PX = 40, S_MIN = 8, S_MAX = 22, SAVE_MS = 300, LASSO_PX = 6;
 const KEY_BASE = { 1: 64, 2: 32, 3: 16, 4: 8, 5: 4, 6: 2, 7: 1 };
@@ -515,6 +516,11 @@ export function openEditor({ id, ctx, onClose }) {
       case "details": { // title · composer · tags in the shared modal; the header follows a rename, a delete leaves the editor
         flush();
         openCompositionDetails(id).then((r) => { if (closed) return; if (r.deleted) { close(); return; } if (r.saved) { title = r.saved.title; composer = r.saved.composer ?? ""; held = logbook.composition(id); el.setAttribute("aria-label", heading()); sync(); } });
+        return;
+      }
+      case "export-pdf": case "save-pdf": { // the export sheet: size, page, margins, header, preview → Save PDF / Add to Scores (WSHED-121)
+        flush();
+        openExportSheet({ id, doc, primary: name });
         return;
       }
       case "undo": if (history.canUndo) { doc = history.undo(); dirty = true; pruneSelection(); layout(); flush(); } return;

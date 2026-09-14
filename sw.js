@@ -1,6 +1,6 @@
 // Network-first, cache-fallback. Installable + fully offline, but never serves
 // a stale shell when the network is up (see docs/DESIGN.md §5).
-const CACHE = "chopinly-v87";
+const CACHE = "chopinly-v88";
 const SHELL = [
   "/app",
   "/css/app.css",
@@ -65,6 +65,10 @@ const SHELL = [
   "/js/lib/compose/layout.js",
   "/js/lib/compose/hit.js",
   "/js/lib/compose/render.js",
+  "/js/lib/compose/paint.js",
+  "/js/lib/compose/export/bravura.js",
+  "/js/lib/compose/export/pdf.js",
+  "/js/lib/compose/export/pdflib.js",
   "/js/lib/compose/sound.js",
   "/js/lib/compose/play.js",
   "/js/tools/compose/index.js",
@@ -74,6 +78,7 @@ const SHELL = [
   "/js/tools/shared/catalog.js",
   "/js/tools/compose/rails.js",
   "/js/tools/compose/editor.js",
+  "/js/tools/compose/exportsheet.js",
   "/vendor/pdfjs/pdf.mjs",
   "/vendor/pdfjs/pdf.worker.mjs",
   "/vendor/pdfjs/standard_fonts/FoxitDingbats.pfb",
@@ -128,6 +133,10 @@ const SHELL = [
   "/js/tools/sightsinging/corpus/book3.js",
   "/js/tools/sightsinging/corpus/book4.js",
   "/js/tools/sightsinging/corpus/book5.js",
+  "/vendor/pdflib/pdf-lib.min.js",
+  "/vendor/pdflib/fontkit.umd.min.js",
+  "/fonts/Fraunces-Regular.ttf",
+  "/fonts/Fraunces-Italic.ttf",
   "/fonts/Bravura.woff2",
   "/fonts/fraunces-roman.woff2",
   "/fonts/fraunces-italic.woff2",

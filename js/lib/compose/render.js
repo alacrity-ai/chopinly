@@ -1,7 +1,9 @@
-// Layout → SVG (docs/COMPOSE_DESIGN.md §9). Bravura glyphs as <text>, geometry
-// as primitives, one <svg> for the score plus a separate overlay for the ghost
-// and the bar flash so pointer moves never touch the score's DOM.
-import { G, timeDigit, tupletDigit, restGlyph, headGlyph, flagGlyph, artGlyph, dynGlyph } from "../staff/glyphs.js";
+// Layout → SVG (docs/COMPOSE_DESIGN.md §9). The ink itself is described once in paint.js
+// (shared with the PDF export); this file is the SVG painter — Bravura glyphs as <text>,
+// geometry as primitives — plus a separate overlay for the ghost and the bar flash so
+// pointer moves never touch the score's DOM.
+import { G, restGlyph, headGlyph } from "../staff/glyphs.js";
+import { paintScore } from "./paint.js";
 
 const NS = "http://www.w3.org/2000/svg";
 // A Bravura glyph's origin is its left side bearing, not its middle: a mark placed at a head's
@@ -31,10 +33,52 @@ function el(name, attrs, text) {
   return node;
 }
 
+/** The screen painter: paint.js calls → SVG nodes, appended as they come; groups nest. */
+class SvgPainter {
+  constructor(L) {
+    this.S = L.S; this.fs = 4 * L.S;
+    this.svg = el("svg", { class: "cp-svg staff-svg", viewBox: `0 0 ${L.width} ${L.height}`, width: L.width, height: L.height, style: `font-size:${this.fs}px` });
+    this.stack = []; this.groups = new Map();
+  }
+  px(v) { return (v * this.S).toFixed(2); }
+  get parent() { return this.stack[this.stack.length - 1] ?? this.svg; }
+  add(node) { this.parent.append(node); return node; }
+  group(cls, data = {}) {
+    const attrs = { class: cls };
+    for (const [k, v] of Object.entries(data)) attrs[`data-${k}`] = v;
+    const g = this.add(el("g", attrs));
+    if (data.ev !== undefined) this.groups.set(data.ev, g);
+    this.stack.push(g);
+  }
+  end() { this.stack.pop(); }
+  line(x1, y1, x2, y2, cls) { this.add(el("line", { x1: this.px(x1), y1: this.px(y1), x2: this.px(x2), y2: this.px(y2), class: cls })); }
+  rect(x, y, w, h, cls) { this.add(el("rect", { x: this.px(x), y: this.px(y), width: this.px(w), height: this.px(h), class: cls })); }
+  polygon(points, cls) { this.add(el("polygon", { points: points.map(([x, y]) => `${this.px(x)},${this.px(y)}`).join(" "), class: cls })); }
+  polyline(points, cls) { this.add(el("polyline", { class: cls, points: points.map(([x, y]) => `${this.px(x)},${this.px(y)}`).join(" ") })); }
+  path(segs, cls) { this.add(el("path", { class: cls, d: segs.map(([c, ...n]) => c + n.map((v, i) => (i % 2 ? "," : i ? " " : "") + this.px(v)).join("")).join(" ") })); }
+  circle(cx, cy, r, cls) { this.add(el("circle", { cx: this.px(cx), cy: this.px(cy), r: this.px(r), class: cls })); }
+  glyph(x, y, ch, cls, { scale, anchor, rotate, centre, data } = {}) {
+    let ax = x, anch = anchor;
+    if (centre) { const c = inkCentre(ch); if (c === null) anch = "middle"; else ax = x - c * 4; } // font-size is 4 S, so an em is 4 units (advance-centred until Bravura is in)
+    const attrs = { x: this.px(ax), y: this.px(y), class: cls };
+    if (scale !== undefined) attrs.style = `font-size:${(scale * this.fs).toFixed(1)}px`;
+    if (anch) attrs["text-anchor"] = anch;
+    if (rotate) attrs.transform = `rotate(${rotate[0]} ${this.px(rotate[1])} ${this.px(rotate[2])})`;
+    for (const [k, v] of Object.entries(data ?? {})) attrs[`data-${k}`] = v;
+    this.add(el("text", attrs, ch));
+  }
+  text(x, y, str, cls, { size, anchor, rotate } = {}) {
+    const attrs = { x: this.px(x), y: this.px(y), class: cls };
+    if (anchor) attrs["text-anchor"] = anchor;
+    if (rotate) attrs.transform = `rotate(${rotate[0]} ${this.px(rotate[1])} ${this.px(rotate[2])})`;
+    attrs.style = `font-size:${(this.S * size).toFixed(1)}px`;
+    this.add(el("text", attrs, str));
+  }
+}
+
 export function renderComposition(container, L) {
   const S = L.S, px = (v) => (v * S).toFixed(2), fs = 4 * S;
   const glyphOf = (x, y, ch, cls = "glyph") => el("text", { x: px(x), y: px(y), class: cls }, ch);
-  const vcls = (vi) => (vi ? ` cp-v${vi + 1}` : ""); // voices 2–4 tint on screen (skin tokens --voice-2..4); voice 1 is ink
   /** The nodes of one ghost note / rest. */
   const ghostNodes = (spec) => {
     if (spec.glyph) { const gg = glyphOf(spec.x, spec.y, G[spec.glyph], "glyph"); if (spec.small) gg.setAttribute("style", `font-size:${(fs * 0.8).toFixed(1)}px`); return [gg]; }
@@ -46,136 +90,10 @@ export function renderComposition(container, L) {
     for (let i = 0; i < (spec.dots ?? 0); i++) out.push(glyphOf(spec.x + headW + 0.4 + i * 0.7, spec.onLine ? spec.y - 0.5 : spec.y, G.dot, "glyph head-part"));
     return out;
   };
-  const svg = el("svg", { class: "cp-svg staff-svg", viewBox: `0 0 ${L.width} ${L.height}`, width: L.width, height: L.height, style: `font-size:${fs}px` });
-  const glyph = (x, y, ch, cls = "glyph") => el("text", { x: px(x), y: px(y), class: cls }, ch);
-
-  for (const sys of L.systems) {
-    const lastBar = sys.endX ?? sys.barlines[sys.barlines.length - 1].x;
-    const g = el("g", { class: "cp-sys" });
-    // staff lines
-    for (const topY of sys.staffTop) for (let i = 0; i < 5; i++) g.append(el("line", { x1: px(1.0), y1: px(topY + i), x2: px(lastBar), y2: px(topY + i), class: "sline" }));
-    // brace + the system's left barline joining the staves
-    const t0 = sys.staffTop[0], t1 = sys.staffTop[sys.staffTop.length - 1] + 4;
-    g.append(el("rect", { x: px(1.0 - 0.065), y: px(t0), width: px(0.13), height: px(t1 - t0), class: "sline-bar" }));
-    if (sys.staffTop.length > 1) g.append(el("text", { x: px(0.85), y: px(t1), class: "glyph cp-brace", style: `font-size:${((t1 - t0) / 4 * fs).toFixed(1)}px`, "text-anchor": "end" }, G.brace));
-    // leading symbols per bar
-    for (const lead of sys.leading) {
-      lead.staves.forEach((st, si) => {
-        const topY = st.topY;
-        if (lead.clef) { const clefStep = (st.clef.line - 1) * 2; const c = glyph(lead.x + 0.2, topY + (8 - clefStep) / 2, G[st.clef.glyph]); if (lead.small) c.setAttribute("style", `font-size:${(fs * 0.8).toFixed(1)}px`); g.append(c); }
-        if (lead.key) st.keysig.forEach((k, i) => g.append(glyph(lead.keyX + i * 1.15, topY + (8 - k.step) / 2, G[k.acc])));
-        if (lead.time) { const b = sys.bars[sys.leading.indexOf(lead)]; g.append(glyph(lead.timeX, topY + 1, timeDigit(b.time.beats))); g.append(glyph(lead.timeX, topY + 3, timeDigit(b.time.unit))); }
-      });
-    }
-    // courtesy key / time at the system's end when the next system opens with a change
-    if (sys.courtesyLead) {
-      const c = sys.courtesyLead;
-      c.staves.forEach((st) => {
-        if (st.clef) { const cg = glyph(c.x + 0.15, st.clef.y, G[st.clef.glyph], "glyph cp-courtesy"); cg.setAttribute("style", `font-size:${(fs * 0.8).toFixed(1)}px`); g.append(cg); }
-        st.keysig.forEach((k, i) => g.append(glyph(c.keyX + i * 1.15, st.topY + (8 - k.step) / 2, G[k.acc], "glyph cp-courtesy")));
-        if (c.time) { g.append(glyph(c.timeX, st.topY + 1, timeDigit(c.beats), "glyph cp-courtesy")); g.append(glyph(c.timeX, st.topY + 3, timeDigit(c.unit), "glyph cp-courtesy")); }
-      });
-    }
-    // barlines spanning both staves
-    for (const bl of sys.barlines) {
-      g.append(el("rect", { x: px(bl.x - (bl.final ? 0.9 : 0.065)), y: px(t0), width: px(0.13), height: px(t1 - t0), class: "sline-bar" }));
-      if (bl.final) g.append(el("rect", { x: px(bl.x - 0.45), y: px(t0), width: px(0.5), height: px(t1 - t0), class: "sline-bar" }));
-    }
-    svg.append(g);
-  }
-  // clef changes inside a bar (small, before the beat they take effect on)
-  for (const c of L.clefs) { const cg = glyph(c.x, c.y, G[c.glyph], "glyph cp-clef-change"); cg.setAttribute("style", `font-size:${(fs * 0.8).toFixed(1)}px`); cg.dataset.bar = c.bar; cg.dataset.staff = c.staff; svg.append(cg); }
-  // beams (under the notes); a cross-staff beam runs between the staves
-  for (const b of L.beams) {
-    const t = b.dir === "up" ? b.t : -b.t;
-    svg.append(el("polygon", { points: `${px(b.x1)},${px(b.y1)} ${px(b.x2)},${px(b.y2)} ${px(b.x2)},${px(b.y2 + t)} ${px(b.x1)},${px(b.y1 + t)}`, class: `beam${vcls(b.voice)}` }));
-  }
-  // notes + rests
-  const groups = new Map();
-  for (const d of L.drawn) {
-    const g = el("g", { class: `cp-ev note${vcls(d.voice)}${d.hidden ? " cp-hidden" : ""}`, "data-ev": d.id, "data-bar": d.bar, "data-staff": d.staff, "data-voice": d.voice });
-    if (d.rest) { // a hidden rest is drawn faint on screen so it can still be picked and shown again; paper leaves it out
-      g.append(glyph(d.x, d.y, restGlyph(d.base), "glyph rest"));
-      for (let i = 0; i < (d.dots ?? 0); i++) g.append(glyph(d.x + 1.5 + i * 0.7, d.y - 0.5, G.dot, "glyph head-part"));
-    } else {
-      for (const l of d.ledgers) svg.append(el("line", { x1: px(l.x - 0.35), y1: px(l.y), x2: px(l.x + d.headW + 0.35), y2: px(l.y), class: "sline" }));
-      if (d.stem) {
-        g.append(el("rect", { x: px(d.stemX - 0.065), y: px(Math.min(d.stemFromY, d.stemTipY)), width: px(0.13), height: px(Math.abs(d.stemFromY - d.stemTipY)), class: "stem" }));
-        if (d.beams >= 1 && !d.beamed) g.append(glyph(d.stemX - 0.065, d.stemTipY, flagGlyph(d.base, d.stem === "up"), "glyph head-part"));
-      }
-      for (const h of d.heads) {
-        const hg = el("g", { class: "cp-head-g", "data-pi": h.pi });
-        hg.append(el("circle", { cx: px(h.x + d.headW / 2), cy: px(h.y), r: px(1.4), class: "halo" }));
-        if (h.acc !== null && h.acc !== undefined) hg.append(glyph(h.accX ?? (Math.min(h.x, d.x) - 1.35 - h.accCol * 1.15), h.y, G[h.acc], "glyph head-part"));
-        if (!h.shared) hg.append(glyph(h.x, h.y, headGlyph(d.base), "glyph head cp-head")); // a unison shared with the other voice: one head, two stems
-        for (let i = 0; i < (d.dots ?? 0); i++) hg.append(glyph(Math.max(h.x, d.x) + d.headW + 0.4 + i * 0.7, h.step % 2 === 0 ? h.y - 0.5 : h.y, G.dot, "glyph head-part"));
-        g.append(hg);
-      }
-    }
-    svg.append(g);
-    groups.set(d.id, g);
-  }
-
-  // ties (a tapered filled curve) and tuplet brackets + digits
-  for (const t of L.ties) {
-    const sgn = t.dir === "up" ? -1 : 1, len = Math.max(0.6, t.x2 - t.x1);
-    const x1 = t.x1 + 0.12, x2 = t.x2 - 0.12, y1 = t.y1 + 0.62 * sgn, y2 = t.y2 + 0.62 * sgn;
-    const b = Math.max(0.55, Math.min(1.35, len / 4)) * sgn, b2 = b - 0.26 * sgn, cx = Math.min(len * 0.3, 2.5);
-    svg.append(el("path", { class: `cp-tie${vcls(t.voice)}`, d: `M${px(x1)},${px(y1)} C${px(x1 + cx)},${px(y1 + b)} ${px(x2 - cx)},${px(y2 + b)} ${px(x2)},${px(y2)} C${px(x2 - cx)},${px(y2 + b2)} ${px(x1 + cx)},${px(y1 + b2)} ${px(x1)},${px(y1)} Z` }));
-  }
-  for (const t of L.slurs) { // a tie's shape, arched by the layout's h and a touch thicker through the middle
-    const sgn = t.dir === "up" ? -1 : 1, len = Math.max(1, t.x2 - t.x1);
-    const x1 = t.x1, x2 = t.x2, y1 = t.y1, y2 = t.y2;
-    const b = t.h * sgn, b2 = b - 0.3 * sgn, cx = Math.min(len * 0.32, 4);
-    svg.append(el("path", { class: `cp-slur${vcls(t.voice)}`, d: `M${px(x1)},${px(y1)} C${px(x1 + cx)},${px(y1 + b)} ${px(x2 - cx)},${px(y2 + b)} ${px(x2)},${px(y2)} C${px(x2 - cx)},${px(y2 + b2)} ${px(x1 + cx)},${px(y1 + b2)} ${px(x1)},${px(y1)} Z` }));
-  }
-  for (const m of L.marks) { // m.x is the head's centre; the glyph's ink is centred on it (advance-centred until Bravura is in)
-    const ch = artGlyph(m.mark, m.above), c = inkCentre(ch);
-    const t = glyph(c === null ? m.x : m.x - c * 4, m.y, ch, "glyph cp-art"); // font-size is 4 S, so an em is 4 units
-    if (c === null) t.setAttribute("text-anchor", "middle");
-    svg.append(t);
-  }
-  // a roll: wiggle segments (each 1.02 S long, ink 0.48 S wide beside the baseline) rotated to run along the chord, an arrowhead segment (2.06 S) for up / down.
-  // rotate(−90) runs the text upward from the bottom point with its ink to the left of the anchor; rotate(+90) runs it downward with the ink to the right.
-  for (const a of L.arps) {
-    const arrow = a.kind !== "plain", span = a.y1 - a.y2;
-    const n = Math.max(2, Math.ceil((span - (arrow ? 2.06 : 0)) / 1.02));
-    const down = a.kind === "down";
-    const text = (down ? G.wiggleArpDown : G.wiggleArpUp).repeat(n) + (a.kind === "up" ? G.wiggleArpUpArrow : down ? G.wiggleArpDownArrow : "");
-    const ax = a.x + (down ? -0.24 : 0.24), ay = down ? a.y2 : a.y1;
-    svg.append(el("text", { x: px(ax), y: px(ay), class: "glyph cp-arp", transform: `rotate(${down ? 90 : -90} ${px(ax)} ${px(ay)})` }, text));
-  }
-  for (const dy of L.dynamics) { // ink-centred under the note like a mark
-    const ch = dynGlyph(dy.dyn), c = inkCentre(ch);
-    const t = glyph(c === null ? dy.x : dy.x - c * 4, dy.y, ch, "glyph cp-dyn");
-    if (c === null) t.setAttribute("text-anchor", "middle");
-    svg.append(t);
-  }
-  for (const hp of L.hairpins) { // two lines meeting at the closed end; a split hairpin stays open at the break
-    const o = 0.55, cresc = hp.kind === "cresc";
-    let a1 = cresc ? 0 : o, a2 = cresc ? o : 0; // half-opening at x1 / x2
-    if (hp.half === "out") { if (cresc) a2 = o * 0.55; else a2 = o * 0.45; }
-    if (hp.half === "in") { if (cresc) a1 = o * 0.55; else a1 = o * 0.45; }
-    svg.append(el("path", { class: "cp-hairpin", d: `M${px(hp.x1)},${px(hp.y - a1)} L${px(hp.x2)},${px(hp.y - a2)} M${px(hp.x1)},${px(hp.y + a1)} L${px(hp.x2)},${px(hp.y + a2)}` }));
-  }
-  for (const tx of L.texts) svg.append(el("text", { x: px(tx.x), y: px(tx.y), class: "cp-expr-text", style: `font-size:${(S * 1.15).toFixed(1)}px` }, tx.text));
-  for (const gl of L.glisses) {
-    const g = el("g", { class: "cp-gliss" });
-    g.append(el("line", { x1: px(gl.x1), y1: px(gl.y1), x2: px(gl.x2), y2: px(gl.y2), class: "cp-gliss-line" }));
-    const ang = (Math.atan2(gl.y2 - gl.y1, gl.x2 - gl.x1) * 180) / Math.PI, mx = (gl.x1 + gl.x2) / 2, my = (gl.y1 + gl.y2) / 2;
-    g.append(el("text", { x: px(mx), y: px(my - 0.35), class: "cp-gliss-text", "text-anchor": "middle", transform: `rotate(${ang.toFixed(1)} ${px(mx)} ${px(my)})`, style: `font-size:${(S * 1.05).toFixed(1)}px` }, "gliss."));
-    svg.append(g);
-  }
-  for (const t of L.tuplets) {
-    const g = el("g", { class: "cp-tuplet" });
-    const mid = (t.x1 + t.x2) / 2, hook = t.above ? 0.8 : -0.8;
-    if (t.bracket) {
-      g.append(el("polyline", { class: "cp-tuplet-line", points: `${px(t.x1)},${px(t.y + hook)} ${px(t.x1)},${px(t.y)} ${px(mid - 1.0)},${px(t.y)}` }));
-      g.append(el("polyline", { class: "cp-tuplet-line", points: `${px(mid + 1.0)},${px(t.y)} ${px(t.x2)},${px(t.y)} ${px(t.x2)},${px(t.y + hook)}` }));
-    }
-    g.append(el("text", { x: px(mid), y: px(t.y + 0.55), class: "glyph cp-tuplet-digit", "text-anchor": "middle" }, tupletDigit(t.n)));
-    svg.append(g);
-  }
+  const vcls = (vi) => (vi ? ` cp-v${vi + 1}` : "");
+  const painter = new SvgPainter(L);
+  paintScore(L, painter);
+  const { svg, groups } = painter;
 
   // overlay: ghost + bar flash
   const overlay = el("svg", { class: "cp-overlay", viewBox: `0 0 ${L.width} ${L.height}`, width: L.width, height: L.height, style: `font-size:${fs}px` });

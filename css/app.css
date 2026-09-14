@@ -2233,7 +2233,7 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-svg .cp-brace { fill: var(--fg); }
 .cp-svg .cp-tie, .cp-svg .cp-slur { fill: var(--fg); }
 .cp-svg .cp-tuplet-line { fill: none; stroke: var(--fg); stroke-width: 1.2; stroke-linecap: square; }
-.cp-svg .cp-tuplet-digit { font-size: 0.62em; fill: var(--fg); }
+.cp-svg .cp-tuplet-digit { fill: var(--fg); } /* its size (0.62 em) comes from paint.js, like every other glyph's */
 .cp-svg .cp-art, .cp-svg .cp-courtesy { fill: var(--fg); }
 .cp-svg .cp-gliss-line { stroke: var(--fg); stroke-width: 1.4; stroke-linecap: round; }
 .cp-svg .cp-dyn { fill: var(--fg); }
@@ -2260,3 +2260,35 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
   .cp-sep { height: 1.8rem; margin: 0 0.15rem; }
 }
 @media (prefers-reduced-motion: reduce) { .cp-flash { transition: none; } }
+
+/* --- Compose: the export sheet (WSHED-121) ------------------------------------------- */
+.lb-sheet-wrap.cp-export-wrap .lb-sheet { max-width: 40rem; margin: 0 auto; }
+.cp-export-grid { display: flex; flex-direction: column; gap: 0.7rem; }
+.cp-export-controls { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+.cp-export-preview { display: flex; justify-content: center; padding: 0.25rem 0 0.2rem; }
+.cp-paper { --fg: #151515; --staff-line: #2a2a2a; --voice-2: #151515; --voice-3: #151515; --voice-4: #151515; width: min(100%, 15rem); border-radius: 2px; box-shadow: 0 8px 26px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(0, 0, 0, 0.25); overflow: hidden; }
+.cp-paper .cp-page { display: block; width: 100%; height: auto; }
+.cp-paper .cp-page-bg { fill: #fff; }
+.cp-paper .cp-page-text { font-family: var(--serif); fill: #151515; }
+.cp-paper .cp-page-text.it { font-style: italic; }
+.cp-paper .cp-svg text { fill: var(--fg); }
+.cp-paper .cp-hidden { display: none; }
+.cp-export-row { display: flex; align-items: center; gap: 0.8rem; min-height: 2.6rem; }
+.cp-export-label { flex: 0 0 4.2rem; color: var(--fg-dim); font-size: 0.85rem; }
+.cp-export-seg { display: inline-flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+.cp-export-seg .cp-btn { height: 2.5rem; min-width: 2.5rem; }
+.cp-export-size output { min-width: 10.5rem; text-align: center; font-variant-numeric: tabular-nums; font-size: 0.92rem; }
+.cp-seg { text-transform: capitalize; }
+.cp-export-toggle { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.92rem; cursor: pointer; }
+.cp-export-toggle input { width: 1.15rem; height: 1.15rem; accent-color: var(--accent); }
+.cp-export-actions { margin: 0.35rem 0 0; }
+.cp-export-actions .cp-export-primary b { color: var(--accent); }
+.cp-export-actions button[disabled] { opacity: 0.55; cursor: progress; }
+/* wide (an iPad on its side, a desk): the page beside the controls, so the two ways out stay above the fold */
+@media (min-width: 720px) {
+  .lb-sheet-wrap.cp-export-wrap .lb-sheet { width: min(92vw, 48rem); max-width: 48rem; }
+  .cp-export-grid { flex-direction: row; align-items: flex-start; gap: 1.4rem; }
+  .cp-export-preview { flex: 0 0 17rem; padding: 0; }
+  .cp-paper { width: 17rem; }
+  .cp-export-controls { flex: 1 1 auto; }
+}

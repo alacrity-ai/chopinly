@@ -90,30 +90,37 @@ function ensureThumb(id) {
 
 /**
  * Import one file: parse, hash, store, register. Resolves to
- * { score, existing: bool } — `existing` when the same bytes were already here.
+ * { score, existing: bool, replaced: bool } — `existing` when the same bytes were already here.
  * The thumbnail and (for big files) the first pages' cache render afterwards
- * in the background.
+ * in the background. `title` / `composer` / `tags` override what the PDF says (Compose sends
+ * its own identity); `replace` is a score id whose file the new bytes take over in place —
+ * its bookmarks, brushes and goal link stay, its rendered pages are dropped (WSHED-121).
  */
-export async function importFile(file) {
+export async function importFile(file, { title = null, composer = null, tags = null, replace = null } = {}) {
   if (file.size > MAX_FILE_BYTES) throw new Error(`${file.name} is over 60 MB — Chopinly keeps scores under that`);
   if (file.type && file.type !== "application/pdf" && !/\.pdf$/i.test(file.name)) throw new Error(`${file.name} isn't a PDF`);
   const hash = await sha256(file);
   const dup = hash ? logbook.scoreByHash(hash) : null;
   if (dup) {
     if (!scoreStore.has(dup.id)) { await scoreStore.put(dup.id, file, { sha256: hash }); ensureThumb(dup.id); } // the row was here, the file was not (another device's score, or one in the cloud)
-    return { score: dup, existing: true };
+    return { score: dup, existing: true, replaced: false };
   }
   const doc = await openPdf(file);
   const pages = doc.pages, info = doc.info;
-  const id = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const target = replace ? logbook.score(replace) : null;
+  const id = target?.id ?? (globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
+  if (target) await scoreStore.delPages(id); // the old rendering (thumbnail included) is of the old file
   await scoreStore.put(id, file, { sha256: hash });
-  const score = logbook.addScore({ id, title: info.title || stripExt(file.name) || "untitled score", composer: looksLikeName(info.author) ? info.author : "", pages, size: file.size, sha256: hash });
+  const ident = { title: title ?? (info.title || stripExt(file.name) || "untitled score"), composer: composer ?? (looksLikeName(info.author) ? info.author : "") };
+  const score = target
+    ? logbook.updateScore(id, { ...ident, ...(tags ? { tags } : {}), pages, size: file.size, sha256: hash })
+    : logbook.addScore({ id, ...ident, tags: tags ?? [], pages, size: file.size, sha256: hash });
   (async () => {
     try { await storeThumb(doc, id); } catch { /* no thumbnail, no harm */ }
     doc.close();
     listenersEmit();
   })();
-  return { score, existing: false };
+  return { score, existing: false, replaced: !!target };
 }
 const libListeners = new Set();
 const listenersEmit = () => { for (const fn of libListeners) fn(); };

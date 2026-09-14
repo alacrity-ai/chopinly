@@ -60,7 +60,7 @@ the ergonomics can be judged before anything deeper is built.
 | Key · time · clef | Pick the change on the utility rail, then tap where it goes (key and time: a bar; clef: a staff and a beat); it holds until the next change. Cautionary accidentals and courtesy signatures follow standard practice. |
 | Pan | Finger pans, pinch zooms, nothing places (called *Pan* since v81 — the slider on the transport rail is what scrubs). Leave Pan and the score is pinned again. A mouse wheel always scrolls (a desk has no palm). |
 | Keep | Every edit is saved on this device at once. With an account, compositions sync through the logbook like everything else (v81, no plan needed — see §8.5e); P3 lets a composition be *practiced* like a score. |
-| Export | A vector PDF, Letter or A4, staff size and margins as sliders, title and composer at the top. *Add to Scores* drops the PDF into the library in one tap. MusicXML follows for the Sibelius round-trip; MIDI after. |
+| Export | **v88:** a vector PDF, Letter or A4, staff size − / + (1.4–2.5 mm), margins, header, a live page-1 preview. *Add to Scores* drops the PDF into the library in one tap and later sends replace it in place. MusicXML follows for the Sibelius round-trip (WSHED-119); MIDI after. |
 
 Not in the MVP: more than one voice per staff, more than two staves, cross-staff
 beams, lyrics, chord symbols, repeats and endings, playback with tempo, MusicXML
@@ -467,25 +467,50 @@ The rails are 3.4 rem tall (2.8 rem under 480 px), buttons and icons scale with 
 
 ## 10. Export (`export/`, P4)
 
-### 10.1 PDF
+### 10.1 PDF — landed v88 (WSHED-121)
 
-- Vendored `pdf-lib` (MIT) + `@pdf-lib/fontkit` (MIT) as ES modules under
-  `vendor/pdflib/`, imported only when the export sheet opens; `fonts/Bravura.otf`
-  (OFL) fetched then and embedded subset.
-- The exporter re-runs `layout()` at the print S (staff space in mm × 72 / 25.4
-  pt) for the printable width, pages the systems (a system never splits), draws
-  the title / composer header on page 1 and page numbers from page 2, then walks
-  the layout's primitives directly (not the screen SVG): `line`, `rect`,
-  `polygon` → `drawLine` / `drawRectangle` / path; ties and hairpins → SVG path
-  strings via `drawSvgPath`; Bravura glyphs and text → `drawText` with the
-  embedded fonts. Vector throughout.
-- Controls in the export sheet: page size (Letter / A4), staff space (1.6 · 1.8
-  · 2.0 · 2.2 mm), margins (narrow / normal / wide), header on/off; a live
-  preview of page 1 as the same SVG scaled.
-- *Save* hands the bytes to the share sheet / download; *Add to Scores* stores
-  the PDF through `js/lib/scores/store.js` + `logbook.addScore` with the
-  composition's title, composer and a `compose` tag, so the piece can be read
-  and practiced in Scores at once.
+As built (the text below replaced the plan on 2026-09-14; the spike that decided it is on the card):
+
+- **One description of the ink, two painters.** `js/lib/compose/paint.js` holds the drawing
+  logic that used to live in `render.js` as painter calls (`line`, `rect`, `polygon`, `path`,
+  `glyph`, `text`, `group`); `render.js` is the SVG painter (byte-identical output to before
+  the split, checked on a feature-complete piece at two zooms) and `export/pdf.js` the PDF
+  painter. Screen and paper cannot drift.
+- **Bravura is not embedded — its outlines are baked.** `dev/bake-bravura.mjs` reads the
+  OTF with fontkit at dev time and writes `export/bravura.js` (85 glyphs, 57 KB: every glyph
+  `glyphs.js` names plus the time and tuplet digits, outlines in font units). The PDF painter
+  draws each glyph as a **form XObject** (one per glyph per document) placed with a matrix, so a
+  page of a thousand heads costs a thousand `Do`s, not a thousand outlines. Why: pdf-lib embeds a
+  whole OTF mislabelled as TrueType, and MuPDF rejects fontkit's CFF subset of Bravura; outlines
+  render everywhere and no music font ships at all.
+- **Words are Fraunces, embedded as subsets** through vendored **pdf-lib 1.17.1 + @pdf-lib/fontkit
+  1.1.1** (the self-contained UMD builds under `vendor/pdflib/`, loaded with `<script>` by
+  `export/pdflib.js` the first time the sheet opens; `dev/vendor-pdflib.mjs` re-vendors). The
+  faces are the **static** TrueType instances `fonts/Fraunces-Regular.ttf` / `-Italic.ttf`
+  (OFL): fontkit's subsetter throws on the variable woff2 the screen uses. Diacritics survive.
+- **Pages.** `planPages` re-runs `layoutComposition` at the print S (staff space in pt, from
+  1.4–2.5 mm) for the printable width (Letter 612×792 or A4 595×842 pt, margins 10 / 15 / 20 mm),
+  then pages the systems greedily — a system never splits; page 1 keeps 66 pt for the title
+  block, later pages 22 pt for the running head (title · page number). The PDF painter routes
+  every primitive to its page by the system band its y falls in. Trailing empty bars are trimmed
+  first (`trimBars`); an empty piece prints its eight bars. Hidden rests and halos are skipped,
+  voice tints are ink. `pdf.save({ useObjectStreams: false })`.
+- **The sheet** (`js/tools/compose/exportsheet.js`): size − / + through the eight staff
+  spaces with a readout in staff mm + page count; page, margins, header; a live **page-1
+  preview** = the screen's own SVG at the print S inside a page-shaped SVG with the header as
+  text; choices in `ws.compose.export`. Two columns from 720 px so the actions stay above the
+  fold on an iPad on its side. *Save PDF* → `navigator.share({ files })` where `canShare` says so,
+  else an `<a download>`; *Add to Scores* → `importFile(file, { title, composer, tags, replace })`.
+- **Add to Scores semantics.** The composition remembers `scoreId`; the first send creates a
+  score (title, composer, tags + `compose`, thumbnail, page cache like any upload); a later send
+  of changed bytes **replaces the linked score's file in place** (`updateScore` now takes
+  `pages` / `size` / `sha256`; the rendered pages are dropped, the thumbnail re-rendered;
+  bookmarks, brushes and the goal link stay; the cloud copy shows as not-yet-uploaded because
+  its hash no longer matches). Unchanged bytes hit the hash dedupe and reopen the same score.
+- **Tests:** `tests/compose-export.test.mjs` renders real PDFs in node (the UMD bundles through
+  `dev/lib/umd.mjs`): page counts per size and page, never-split, header room, fonts embedded,
+  XObjects, hidden rests skipped; the E2E exports, downloads, adds to Scores, opens the reader
+  and measures ink, then re-sends to prove replace-in-place.
 
 ### 10.2 MusicXML (P4)
 
