@@ -2,8 +2,8 @@
 // clones the document, changes it, re-normalises the touched bar and returns
 // the new document; a refused edit throws Nudge(sentence) and the document is
 // untouched. Pure — node-testable.
-import { groupSize, ticks, capacity, splitRest, fromTicks } from "./ticks.js";
-import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, MAX_VOICES, REST_Y_MAX, DEFAULT_BARS, eid } from "./model.js";
+import { groupSize, ticks, capacity, splitRest, fromTicks, exprGrid } from "./ticks.js";
+import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, MAX_VOICES, REST_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, HAIRPINS, TEXT_MAX, eid } from "./model.js";
 import { parsePitch, keyAlterations, CLEFS } from "../music.js";
 
 export class Nudge extends Error { constructor(msg, { bar = null } = {}) { super(msg); this.name = "Nudge"; this.bar = bar; } }
@@ -265,7 +265,7 @@ export function nextEvent(doc, f) {
   if (i >= 0 && i + 1 < voice.length) return voice[i + 1];
   return doc.measures[f.bar + 1]?.staves[f.staff].voices[f.voice]?.[0] ?? null;
 }
-/** The next note of `f`'s voice anywhere later in the piece (rests and silent bars skipped) — what a one-note slur or hairpin reaches for. */
+/** The next note of `f`'s voice anywhere later in the piece (rests and silent bars skipped) — what a one-note slur reaches for. */
 export function nextNote(doc, f) {
   const seq = seqOf(doc, f.staff, f.voice);
   for (let k = seq.indexOf(f.ev) + 1; k < seq.length; k++) if (seq[k].kind === "note") return seq[k];
@@ -298,7 +298,7 @@ export function cleanTies(doc) {
       }
     }
   }
-  cleanSlurs(doc); cleanHairpins(doc); // slurs and hairpins are re-derived with the ties, so every edit path keeps them whole
+  cleanSlurs(doc); // slurs are re-derived with the ties, so every edit path keeps them whole
   return doc;
 }
 
@@ -597,6 +597,7 @@ export function trimBars(doc) {
   const d = clone(doc);
   let last = d.measures.length - 1;
   while (last > 0 && isEmptyBar(d.measures[last])) last--;
+  for (const e of expressionsOf(d)) last = Math.max(last, e.bar, e.x.kind === "hairpin" ? e.x.end.bar : 0); // a bar a mark sits in, or a hairpin ends in, is used
   const keep = Math.max(DEFAULT_BARS, last + 2);
   if (d.measures.length > keep) d.measures.length = keep;
   return d;
@@ -791,12 +792,18 @@ export function setTime(doc, bar, time) {
     if (at === 0) { nb.clefs = { ...(nb.clefs ?? {}), [staff]: clef }; return; }
     nb.clefChanges = [...(nb.clefChanges ?? []).filter((c) => !(c.staff === staff && c.at === at)), { staff, at, clef }].sort((a, b) => a.at - b.at || a.staff - b.staff);
   };
+  // an expression follows its tick into the new bars; a hairpin end inside the stretch likewise, one past it shifts with the bar count
+  const gridNew = exprGrid(time);
+  const mapSlot = (abs) => { const nb = Math.min(nNew - 1, Math.floor(abs / capNew)), local = Math.min(capNew - gridNew, abs - nb * capNew); return { bar: nb, at: local - (local % gridNew) }; };
+  const mapEnd = (e) => (e.bar >= bar && e.bar < end ? (({ bar: b2, at }) => ({ bar: bar + b2, at }))(mapSlot((e.bar - bar) * capOld + e.at)) : e.bar >= end ? { bar: e.bar + nNew - nOld, at: e.at } : e);
   oldBars.forEach((m, k) => {
     const nb = fresh[Math.min(nNew - 1, Math.floor((k * capOld) / capNew))];
     if (m.key) nb.key = m.key;
     for (const [st, clef] of Object.entries(m.clefs ?? {})) putClef(k * capOld, Number(st), clef);
     for (const c of m.clefChanges ?? []) putClef(k * capOld + c.at, c.staff, c.clef);
+    for (const x of m.expressions ?? []) { const s2 = mapSlot(k * capOld + x.at), tb = fresh[s2.bar]; tb.expressions = [...(tb.expressions ?? []), { ...x, at: s2.at, ...(x.kind === "hairpin" ? { end: mapEnd(x.end) } : {}) }]; }
   });
+  d.measures.forEach((m, b) => { if (b < bar || b >= end) for (const x of m.expressions ?? []) if (x.kind === "hairpin") x.end = mapEnd(x.end); });
   const prevT = bar > 0 ? timeAt(doc, bar - 1) : null;
   if (!prevT || prevT.beats !== time.beats || prevT.unit !== time.unit) fresh[0].time = { beats: time.beats, unit: time.unit }; // back to the metre before it: the stretch simply rejoins it
   if (bar === 0) { fresh[0].key ??= oldBars[0].key; fresh[0].clefs ??= oldBars[0].clefs; }
@@ -859,6 +866,7 @@ export function setTime(doc, bar, time) {
   d.measures.splice(bar, nOld, ...fresh);
   for (let b = bar; b < bar + nNew; b++) normalizeBar(d, b);
   cleanTies(d);
+  cleanExpressions(d);
   ensureTrailingBar(d);
   return { doc: d, before: nOld, after: nNew };
 }
@@ -876,79 +884,214 @@ export function articulate(doc, evIds, mark) {
   }
   return d;
 }
-/** Dynamics, softest to loudest. */
-export const DYNAMICS = ["pp", "p", "mp", "mf", "f", "ff"];
-/** Set a dynamic on the selected notes (one per note); every note already has that one → off. */
-export function dynamic(doc, evIds, mark) {
-  if (!DYNAMICS.includes(mark)) throw new Nudge("no such dynamic");
-  const d = clone(doc);
-  const notes = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "note").map((f) => f.ev);
-  if (!notes.length) throw new Nudge("pick the notes for the dynamic");
-  const all = notes.every((e) => e.dyn === mark);
-  for (const e of notes) { if (all) delete e.dyn; else e.dyn = mark; }
-  return d;
+// --- expressions (docs/COMPOSE_EXPRESSIONS_DESIGN.md §2): dynamics, hairpins and text on the half-beat slots of a bar ---
+export { DYNAMICS, HAIRPINS };
+const exprsOf = (m) => m.expressions ?? [];
+const exprOrder = (a, b) => a.at - b.at || a.staff - b.staff || a.kind.localeCompare(b.kind);
+const setExprs = (m, list) => { if (list.length) m.expressions = list.sort(exprOrder); else delete m.expressions; };
+const cleanText = (str) => String(str ?? "").replace(/\s+/g, " ").trim().slice(0, TEXT_MAX);
+/** The nearest slot to a tick of a bar; the tail of the last slot rolls into the next bar (the last bar clamps to its last slot). */
+export function exprSlot(doc, bar, t) {
+  const time = timeAt(doc, bar), g = exprGrid(time), cap = capacity(time);
+  let at = Math.round(t / g) * g;
+  if (at >= cap) { if (bar + 1 < doc.measures.length) return { bar: bar + 1, at: 0 }; at = cap - g; }
+  return { bar, at: Math.max(0, at) };
 }
-export const HAIRPINS = ["cresc", "dim"];
-/**
- * A hairpin from the earliest selected note of a staff to the latest (one note: to the staff's next
- * note): `ev.hairpin` = "cresc-start" | "cresc-stop" | "dim-start" | "dim-stop". Hairpins do not nest,
- * so matching is positional (`hairpinEnd`) and `cleanHairpins` drops any half left by an edit.
- * The same span with the same kind again removes it.
- */
-export function hairpin(doc, evIds, kind) {
-  if (!HAIRPINS.includes(kind)) throw new Nudge("no such hairpin");
-  const d = clone(doc);
-  const fs = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "note");
-  if (!fs.length) throw new Nudge("pick the notes for the hairpin");
-  for (const list of byLine(fs).values()) {
-    const a = list[0].ev;
-    let b = list[list.length - 1].ev;
-    if (b === a) b = nextNote(d, list[0]);
-    if (!b || b.kind !== "note") throw new Nudge("a hairpin needs a note after it", { bar: list[0].bar });
-    if (a.hairpin === `${kind}-start` && hairpinEnd(d, list[0].staff, list[0].voice, a) === b) { delete a.hairpin; delete b.hairpin; }
-    else { // the new span owns its range: any hairpin marker inside it goes (hairpins never nest)
-      const seq = seqOf(d, list[0].staff, list[0].voice);
-      for (let k = seq.indexOf(a); k <= seq.indexOf(b); k++) delete seq[k].hairpin;
-      a.hairpin = `${kind}-start`; b.hairpin = `${kind}-stop`;
-    }
-  }
-  cleanHairpins(d);
-  return d;
+/** The slot at or before an absolute tick, or null past the end. */
+export function slotOfAbs(doc, abs) {
+  const loc = locate(doc, abs);
+  if (!loc) return null;
+  const g = exprGrid(timeAt(doc, loc.bar));
+  return { bar: loc.bar, at: loc.ticks - (loc.ticks % g) };
 }
-/** The note the hairpin starting at `ev` ends on: the first matching stop in its voice before any other start, or null. */
-export function hairpinEnd(doc, staff, voice, ev) {
-  if (!ev.hairpin?.endsWith("-start")) return null;
-  const kind = ev.hairpin.slice(0, -6);
-  const seq = seqOf(doc, staff, voice);
-  for (let k = seq.indexOf(ev) + 1; k < seq.length; k++) {
-    if (seq[k].hairpin === `${kind}-stop`) return seq[k];
-    if (seq[k].hairpin?.endsWith("-start")) return null;
-  }
+/** The slot after one, or null at the very end. */
+export function nextSlot(doc, { bar, at }) {
+  const time = timeAt(doc, bar), g = exprGrid(time);
+  if (at + g < capacity(time)) return { bar, at: at + g };
+  return bar + 1 < doc.measures.length ? { bar: bar + 1, at: 0 } : null;
+}
+/** Every expression with absolute ticks (`abs`, and `absEnd` for a hairpin), in time order. */
+export function expressionsOf(doc) {
+  const { starts } = barStarts(doc);
+  const out = [];
+  doc.measures.forEach((m, bar) => { for (const x of exprsOf(m)) out.push({ bar, x, abs: starts[bar] + x.at, ...(x.kind === "hairpin" ? { absEnd: starts[x.end.bar] + x.end.at } : {}) }); });
+  return out.sort((a, b) => a.abs - b.abs || a.x.staff - b.x.staff);
+}
+export function findExpression(doc, id) {
+  for (let bar = 0; bar < doc.measures.length; bar++) { const index = exprsOf(doc.measures[bar]).findIndex((x) => x.id === id); if (index >= 0) return { bar, index, x: doc.measures[bar].expressions[index] }; }
   return null;
 }
-/** Re-derive every hairpin: rests carry none; a start without its stop (before another start) and a stop without its start are dropped. */
-export function cleanHairpins(doc) {
-  const nStaves = doc.parts[0].staves;
-  for (let staff = 0; staff < nStaves; staff++) for (let voice = 0; voice < MAX_VOICES; voice++) {
-    const seq = seqOf(doc, staff, voice);
-    let open = null;
-    for (const e of seq) {
-      if (!e.hairpin) continue;
-      if (e.kind !== "note") { delete e.hairpin; continue; }
-      if (e.hairpin.endsWith("-start")) { if (open) delete open.hairpin; open = e; continue; }
-      if (open && e.hairpin === `${open.hairpin.slice(0, -6)}-stop`) open = null; else delete e.hairpin;
+const onGrid = (doc, bar, at) => Number.isInteger(at) && at >= 0 && at < capacity(timeAt(doc, bar)) && at % exprGrid(timeAt(doc, bar)) === 0;
+/** Write an expression into a bar with the ownership rules: a dynamic / text takes its staff's slot, a hairpin takes its staff's range (in place, on a clone). */
+function putExpr(d, x, bar) {
+  const m = d.measures[bar];
+  let list = exprsOf(m).filter((o) => o.id !== x.id);
+  if (x.kind === "hairpin") {
+    const { starts } = barStarts(d), a = starts[bar] + x.at, b = starts[x.end.bar] + x.end.at;
+    d.measures.forEach((om, ob) => { const kept = exprsOf(om).filter((o) => !(o.kind === "hairpin" && o.staff === x.staff && o.id !== x.id && starts[ob] + o.at < b && starts[o.end.bar] + o.end.at > a)); if (kept.length !== exprsOf(om).length) setExprs(om, kept); });
+    list = exprsOf(m).filter((o) => o.id !== x.id);
+  } else list = list.filter((o) => !(o.kind === x.kind && o.staff === x.staff && o.at === x.at));
+  setExprs(m, [...list, x]);
+}
+/** Place a dynamic or a text on a slot of a staff → { doc, id }; the same kind already on that slot is replaced. */
+export function addExpression(doc, { kind, staff, bar, at, value }) {
+  if (kind !== "dyn" && kind !== "text") throw new Nudge("no such mark");
+  if (!doc.measures[bar] || !(staff >= 0 && staff < doc.parts[0].staves)) throw new Nudge("nowhere to put it");
+  if (!onGrid(doc, bar, at)) throw new Nudge("that's off the grid", { bar });
+  if (kind === "dyn" && !DYNAMICS.includes(value)) throw new Nudge("no such dynamic");
+  const v = kind === "text" ? cleanText(value) : value;
+  if (kind === "text" && !v) throw new Nudge("say what the text is");
+  const d = clone(doc), id = eid();
+  putExpr(d, { id, kind, staff, at, value: v }, bar);
+  return { doc: d, id };
+}
+/** Place a hairpin from a slot to a later one on a staff → { doc, id }; hairpins it overlaps on that staff go. */
+export function addHairpin(doc, { staff, bar, at, dir, end }) {
+  if (!HAIRPINS.includes(dir)) throw new Nudge("no such hairpin");
+  if (!doc.measures[bar] || !doc.measures[end?.bar] || !(staff >= 0 && staff < doc.parts[0].staves)) throw new Nudge("nowhere to put it");
+  if (!onGrid(doc, bar, at) || !onGrid(doc, end.bar, end.at)) throw new Nudge("that's off the grid", { bar });
+  const { starts } = barStarts(doc);
+  if (starts[end.bar] + end.at <= starts[bar] + at) throw new Nudge("a hairpin needs to end after it starts", { bar: end.bar });
+  const d = clone(doc), id = eid();
+  putExpr(d, { id, kind: "hairpin", staff, at, dir, end: { bar: end.bar, at: end.at } }, bar);
+  return { doc: d, id };
+}
+/** Drop the named expressions (unknown ids ignored; nothing matched → the same document). */
+export function removeExpressions(doc, ids) {
+  const want = new Set(ids);
+  if (![...want].some((id) => findExpression(doc, id))) return doc;
+  const d = clone(doc);
+  for (const m of d.measures) { const kept = exprsOf(m).filter((x) => !want.has(x.id)); if (kept.length !== exprsOf(m).length) setExprs(m, kept); }
+  return d;
+}
+/**
+ * Slide the named expressions by `delta` ticks (a hairpin: both ends), each landing on its destination
+ * bar's grid. Refuses — moving nothing — when any would leave the piece.
+ */
+export function moveExpressions(doc, ids, delta) {
+  if (!Number.isInteger(delta)) throw new Nudge("move by whole ticks");
+  const found = [...new Set(ids)].map((id) => findExpression(doc, id)).filter(Boolean);
+  if (!found.length) throw new Nudge("pick the marks to move");
+  if (delta === 0) return doc;
+  const d = clone(doc);
+  const { starts, total } = barStarts(d);
+  const moved = [];
+  for (const f of found) {
+    const x = d.measures[f.bar].expressions[f.index];
+    const abs = starts[f.bar] + x.at + delta;
+    if (abs < 0 || abs >= total) throw new Nudge(delta < 0 ? "as far left as it goes" : "as far right as it goes", { bar: f.bar });
+    const slot = slotOfAbs(d, abs);
+    const next = { ...x, at: slot.at };
+    if (x.kind === "hairpin") {
+      const absEnd = starts[x.end.bar] + x.end.at + delta;
+      if (absEnd < 0 || absEnd >= total) throw new Nudge(delta < 0 ? "as far left as it goes" : "as far right as it goes", { bar: f.bar });
+      const es = slotOfAbs(d, absEnd);
+      if (starts[es.bar] + es.at <= starts[slot.bar] + slot.at) throw new Nudge("that hairpin can't go there", { bar: slot.bar });
+      next.end = es;
     }
-    if (open) delete open.hairpin;
+    moved.push({ x: next, bar: slot.bar });
   }
+  for (const m of d.measures) { const kept = exprsOf(m).filter((x) => !found.some((f) => f.x.id === x.id)); if (kept.length !== exprsOf(m).length) setExprs(m, kept); }
+  for (const mv of moved) putExpr(d, mv.x, mv.bar);
+  return d;
+}
+/** Re-anchor one end of a hairpin (`which` = "start" | "end") to a slot; a collapsed span is refused. */
+export function moveHairpinEnd(doc, id, which, { bar, at }) {
+  const f = findExpression(doc, id);
+  if (!f || f.x.kind !== "hairpin") throw new Nudge("pick the hairpin to stretch");
+  if (!doc.measures[bar] || !onGrid(doc, bar, at)) throw new Nudge("that's off the grid", { bar });
+  const start = which === "start" ? { bar, at } : { bar: f.bar, at: f.x.at }, end = which === "end" ? { bar, at } : f.x.end;
+  if (start.bar === f.bar && start.at === f.x.at && end.bar === f.x.end.bar && end.at === f.x.end.at) return doc;
+  const { starts } = barStarts(doc);
+  if (starts[end.bar] + end.at <= starts[start.bar] + start.at) throw new Nudge("a hairpin needs to end after it starts", { bar });
+  const d = clone(doc);
+  setExprs(d.measures[f.bar], exprsOf(d.measures[f.bar]).filter((x) => x.id !== id));
+  putExpr(d, { ...f.x, at: start.at, end: { bar: end.bar, at: end.at } }, start.bar);
+  return d;
+}
+/** Retype the named dynamics (to a dynamic) or texts (to a string); a mixed list is refused; nothing to change → the same document. */
+export function setExpressionValue(doc, ids, value) {
+  const found = [...new Set(ids)].map((id) => findExpression(doc, id)).filter(Boolean);
+  if (!found.length) throw new Nudge("pick the marks to change");
+  const kind = found[0].x.kind;
+  if (kind === "hairpin" || found.some((f) => f.x.kind !== kind)) throw new Nudge("pick dynamics or texts, not both");
+  const v = kind === "text" ? cleanText(value) : value;
+  if (kind === "dyn" && !DYNAMICS.includes(v)) throw new Nudge("no such dynamic");
+  if (kind === "text" && !v) throw new Nudge("say what the text is");
+  if (found.every((f) => f.x.value === v)) return doc;
+  const d = clone(doc);
+  for (const f of found) d.measures[f.bar].expressions[f.index].value = v;
+  return d;
+}
+/**
+ * Re-derive the list after bars changed (in place): what is off its bar's grid snaps down, what is past its
+ * capacity or ends in a bar that is gone is dropped, a collapsed hairpin goes, a later duplicate wins a
+ * slot, an overlapping later hairpin goes, and every list is sorted.
+ */
+export function cleanExpressions(doc) {
+  const n = doc.measures.length;
+  doc.measures.forEach((m, bar) => {
+    if (!m.expressions) return;
+    const time = timeAt(doc, bar), g = exprGrid(time), cap = capacity(time);
+    const out = new Map(); // "kind:staff:at" → the latest entry (hairpins keyed by id)
+    for (const x of m.expressions) {
+      if (!(x.staff >= 0 && x.staff < m.staves.length) || !Number.isInteger(x.at) || x.at < 0) continue;
+      const at = x.at - (x.at % g);
+      if (at >= cap) continue;
+      const y = { ...x, at };
+      if (x.kind === "hairpin") {
+        if (!(x.end?.bar >= 0 && x.end.bar < n)) continue;
+        const et = timeAt(doc, x.end.bar), eg = exprGrid(et), ecap = capacity(et);
+        let ea = x.end.at - (x.end.at % eg); if (ea >= ecap) ea = ecap - eg;
+        if (x.end.bar < bar || (x.end.bar === bar && ea <= at)) continue;
+        y.end = { bar: x.end.bar, at: ea };
+        out.set(`h:${x.id}`, y);
+      } else out.set(`${x.kind}:${x.staff}:${at}`, y);
+    }
+    setExprs(m, [...out.values()]);
+  });
+  // hairpins on a staff never overlap: the earlier keeps its range
+  const spans = expressionsOf(doc).filter((e) => e.x.kind === "hairpin").sort((a, b) => a.x.staff - b.x.staff || a.abs - b.abs);
+  const drop = new Set();
+  for (let i = 1, keep = spans[0]; i < spans.length; i++) { const s = spans[i]; if (keep && s.x.staff === keep.x.staff && s.abs < keep.absEnd) drop.add(s.x.id); else keep = s; }
+  if (drop.size) for (const m of doc.measures) if (m.expressions) setExprs(m, m.expressions.filter((x) => !drop.has(x.id)));
   return doc;
 }
-/** Expression text (rit., a tempo, dolce…) on the earliest selected event; an empty string clears it. */
-export function exprText(doc, evIds, str) {
+/**
+ * A v1 / v2 document → v3: every note's dynamic, text and hairpin half becomes an expression at the
+ * note's onset (snapped down to the grid); a start / stop pair becomes one hairpin, a half alone is
+ * dropped; the old fields go. A v3 document comes back as it is (the same object).
+ */
+export function upgrade(doc) {
+  if (doc.v === SCHEMA) return doc;
   const d = clone(doc);
-  const fs = [...new Set(evIds)].map((id) => find(d, id)).filter(Boolean).sort((a, b) => a.bar - b.bar || a.staff - b.staff || a.index - b.index);
-  if (!fs.length) throw new Nudge("pick where the text goes");
-  const t = String(str ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
-  if (t) fs[0].ev.text = t; else delete fs[0].ev.text;
+  const { starts } = barStarts(d);
+  const nStaves = d.parts[0].staves;
+  const add = (bar, x) => { d.measures[bar].expressions = [...exprsOf(d.measures[bar]), x]; };
+  for (let staff = 0; staff < nStaves; staff++) for (let vi = 0; vi < MAX_VOICES; vi++) {
+    const seq = [];
+    d.measures.forEach((m, b) => { const v = m.staves[staff].voices[vi]; if (v) for (const o of onsets(v)) seq.push({ ev: o.ev, abs: starts[b] + o.start }); });
+    let open = null;
+    for (const { ev, abs } of seq) {
+      const slot = slotOfAbs(d, abs);
+      if (slot) {
+        if (ev.kind === "note" && DYNAMICS.includes(ev.dyn)) add(slot.bar, { id: eid(), kind: "dyn", staff, at: slot.at, value: ev.dyn });
+        const t = cleanText(ev.text);
+        if (t) add(slot.bar, { id: eid(), kind: "text", staff, at: slot.at, value: t });
+        if (ev.kind === "note" && typeof ev.hairpin === "string") {
+          if (ev.hairpin.endsWith("-start")) open = { dir: ev.hairpin.slice(0, -6), slot };
+          else if (open && ev.hairpin === `${open.dir}-stop`) {
+            const end = open.slot.bar === slot.bar && slot.at <= open.slot.at ? nextSlot(d, open.slot) : slot;
+            if (end && HAIRPINS.includes(open.dir)) add(open.slot.bar, { id: eid(), kind: "hairpin", staff, at: open.slot.at, dir: open.dir, end });
+            open = null;
+          }
+        }
+      }
+      delete ev.dyn; delete ev.hairpin; delete ev.text;
+    }
+  }
+  d.v = SCHEMA;
+  cleanExpressions(d);
   return d;
 }
 /** The rolled-chord signs: a plain wiggle, or one with an arrowhead saying which way the roll goes. */

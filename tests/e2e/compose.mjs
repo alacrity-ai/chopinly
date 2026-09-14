@@ -15,7 +15,7 @@ page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resourc
 page.on("dialog", (d) => d.accept(d.type() === "prompt" ? d.defaultValue() : undefined));
 const step = async (name, f) => { try { await f(); console.log("ok  ", name); } catch (e) { console.log("FAIL", name, "—", e.message); try { console.log("  toast:", await page.evaluate(() => document.querySelector(".lb-toast")?.textContent), "state:", JSON.stringify(await state())); } catch { /* no editor */ } await page.screenshot({ path: `${S}/fail-compose.png` }); throw e; } };
 const lb = (fn, ...args) => page.evaluate(async ([src, a]) => { const m = await import("/js/lib/logbook.js"); return (new Function("m", "a", src))(m, a); }, [`return (${fn})(m, a)`, args]);
-const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, voice: s.voice, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging, lassoing: s.lassoing, pasting: s.pasting, hasClip: s.hasClip }; });
+const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, voice: s.voice, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging, lassoing: s.lassoing, pasting: s.pasting, hasClip: s.hasClip, pending: s.pending }; });
 /** Every visible icon/glyph button (.cp-sq) is one exact square per rail height: the header's own, the lanes' shared one. */
 const squares = () => page.evaluate(() => {
   const out = { header: new Set(), lanes: new Set(), n: 0, bad: [] };
@@ -555,30 +555,75 @@ await step("palm safety: a wide touch contact and a second simultaneous finger p
   if ((await kinds(4)) !== "n4 r4 r2") throw new Error("the pen did not place: " + (await kinds(4)));
 });
 
-await step("expression rail (via Rails ▾): f under the selected note, a crescendo to the next note, rit. from the text menu above it; the rail's buttons are squares too", async () => {
+await step("expressions (WSHED-122, via Rails ▾): f arms and a tap puts it on beat 1; a crescendo takes three taps (button, beat 2, bar 2 beat 1); rit. from the text menu lands on the & of 3; in Select mode the dynamic selects, drags a slot right, ← nudges it back, Delete removes it and undo restores it; a selected hairpin shows two handles; typed text arms without firing shortcuts; Escape cancels a half-placed hairpin; the buttons stay squares", async () => {
   await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=expression]"); await page.click("[data-pop=cp-rails-more]");
   if (await page.locator("#cp-expression").isHidden()) throw new Error("expression rail did not open");
-  await page.click("[data-act=select]");
+  if ((await state()).mode !== "place") await page.keyboard.press("v");
   await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
-  await tapAt({ bar: 0, staff: 0, ticks: 0, step: 4 });
-  if ((await state()).selection.length !== 1) throw new Error("no selection for the dynamic");
+  const exprs = (b) => page.evaluate((b) => (document.querySelector(".cp-editor").__editor.state.doc.measures[b].expressions ?? []).map((x) => [x.kind, x.staff, x.at, x.value ?? x.dir, x.end ? `${x.end.bar}:${x.end.at}` : null]), b);
+  const drawnExprs = () => page.evaluate(() => ({ dyn: document.querySelectorAll(".cp-svg .cp-expr[data-kind=dyn]").length, hp: document.querySelectorAll(".cp-svg .cp-expr[data-kind=hairpin]").length, text: [...document.querySelectorAll(".cp-svg .cp-expr[data-kind=text]")].map((t) => t.textContent) }));
+  // f: the button arms, the tap on beat 1 places (a note sits there — the mark still lands on the slot)
   await page.click(".cp-dyn-btn[data-dyn=f]");
+  if ((await state()).pending?.kind !== "dyn" || (await page.getAttribute(".cp-dyn-btn[data-dyn=f]", "aria-pressed")) !== "true") throw new Error("f did not arm");
+  await tapAt({ bar: 0, staff: 0, ticks: 300, step: 4 });
+  if (JSON.stringify(await exprs(0)) !== JSON.stringify([["dyn", 0, 0, "f", null]]) || (await state()).pending) throw new Error("f not placed: " + JSON.stringify(await exprs(0)));
+  // crescendo: the button, where it starts (beat 2), where it ends (bar 2 beat 1)
   await page.click("[data-act=hairpin][data-kind=cresc]");
+  await tapAt({ bar: 0, staff: 0, ticks: PPQ + 300, step: 4 });
+  const half = (await state()).pending;
+  if (half?.kind !== "hairpin" || !half.start || half.start.at !== PPQ) throw new Error("hairpin start not taken: " + JSON.stringify(half));
+  await tapAt({ bar: 1, staff: 0, ticks: 300, step: 4 });
+  if (!(await exprs(0)).some((x) => x[0] === "hairpin" && x[2] === PPQ && x[4] === "1:0") || (await state()).pending) throw new Error("hairpin not placed: " + JSON.stringify(await exprs(0)));
+  // rit. from the text menu → the & of 3
   await page.click("[data-pop=cp-text-more]"); await page.click(".cp-chip[data-text='rit.']");
-  const ex = await page.evaluate(() => { const v = document.querySelector(".cp-editor").__editor.state.doc.measures[0].staves[0].voices[0]; return { dyn: v[0].dyn, hp: [v[0].hairpin, v[1].hairpin], text: v[0].text, drawn: [document.querySelectorAll(".cp-svg .cp-dyn").length, document.querySelectorAll(".cp-svg .cp-hairpin").length, document.querySelector(".cp-svg .cp-expr-text")?.textContent] }; });
-  if (ex.dyn !== "f" || ex.hp.join() !== "cresc-start,cresc-stop" || ex.text !== "rit." || ex.drawn.join() !== "1,1,rit.") throw new Error("expression " + JSON.stringify(ex));
-  // typed text through the box, Enter sets it; the typed letters must not fire shortcuts (r = rest)
+  if ((await state()).pending?.value !== "rit.") throw new Error("rit. did not arm");
+  await tapAt({ bar: 0, staff: 0, ticks: 2.5 * PPQ + 200, step: 4 });
+  if (!(await exprs(0)).some((x) => x[0] === "text" && x[2] === 2.5 * PPQ && x[3] === "rit.")) throw new Error("rit. not placed: " + JSON.stringify(await exprs(0)));
+  const drawn = await drawnExprs();
+  if (drawn.dyn !== 1 || drawn.hp !== 1 || drawn.text.join() !== "rit.") throw new Error("drawn " + JSON.stringify(drawn));
+  await page.screenshot({ path: `${S}/cp-16-expression.png` });
+  // Select mode: a mouse click on the dynamic selects it; dragging it a slot right moves it in time; ← nudges it back; Delete removes it; undo restores it
+  await page.click("[data-act=select]");
+  const at = (kind) => page.evaluate((kind) => { const ed = document.querySelector(".cp-editor").__editor, L = ed.layout, r = document.querySelector(".cp-svg").getBoundingClientRect(); const it = kind === "dyn" ? L.dynamics[0] : kind === "text" ? L.texts[0] : L.hairpins[0]; const x = kind === "hairpin" ? (it.x1 + it.x2) / 2 : kind === "text" ? it.x + 0.5 : it.x, y = kind === "dyn" ? it.y - 0.3 : kind === "text" ? it.y - 0.4 : it.y; return { x: r.left + x * L.S, y: r.top + y * L.S, id: it.id }; }, kind);
+  const dyn = await at("dyn");
+  await page.mouse.click(dyn.x, dyn.y);
+  if ((await state()).selection.join() !== dyn.id) throw new Error("dynamic not selected: " + JSON.stringify(await state()));
+  const slotW = (await point({ bar: 0, staff: 0, ticks: PPQ / 2, step: 4 })).x - (await point({ bar: 0, staff: 0, ticks: 0, step: 4 })).x;
+  await page.mouse.move(dyn.x, dyn.y); await page.mouse.down(); await page.mouse.move(dyn.x + slotW, dyn.y, { steps: 6 }); await page.mouse.up();
+  if ((await exprs(0)).find((x) => x[0] === "dyn")?.[2] !== PPQ / 2) throw new Error("drag did not move the dynamic: " + JSON.stringify(await exprs(0)));
+  await page.keyboard.press("ArrowLeft");
+  if ((await exprs(0)).find((x) => x[0] === "dyn")?.[2] !== 0) throw new Error("← did not nudge it back: " + JSON.stringify(await exprs(0)));
+  await page.keyboard.press("Delete");
+  if ((await exprs(0)).some((x) => x[0] === "dyn") || (await drawnExprs()).dyn !== 0) throw new Error("Delete left the dynamic");
+  await page.keyboard.press("Control+z");
+  if (!(await exprs(0)).some((x) => x[0] === "dyn") || (await drawnExprs()).dyn !== 1) throw new Error("undo did not bring the dynamic back");
+  // a selected hairpin shows its two end handles
+  const hp = await at("hairpin");
+  await page.mouse.click(hp.x, hp.y);
+  const handles = await page.evaluate(() => ({ sel: document.querySelector(".cp-editor").__editor.state.selection, n: document.querySelector(".cp-overlay .cp-handles").hidden ? 0 : document.querySelectorAll(".cp-overlay .cp-handle").length }));
+  if (handles.sel.join() !== hp.id || handles.n !== 2) throw new Error("hairpin handles " + JSON.stringify(handles));
+  await page.screenshot({ path: `${S}/cp-16b-expression-select.png` });
+  // typed text arms (Enter sets it); the typed letters must not fire shortcuts (r = rest); Escape disarms
+  await page.keyboard.press("Escape");
   await page.click("[data-pop=cp-text-more]"); await page.fill("#cp-text-in", "con brio"); await page.press("#cp-text-in", "Enter");
-  const typed = await page.evaluate(() => ({ text: document.querySelector(".cp-editor").__editor.state.doc.measures[0].staves[0].voices[0][0].text, rest: document.querySelector(".cp-editor").__editor.state.armed.rest }));
-  if (typed.text !== "con brio" || typed.rest) throw new Error("typed text " + JSON.stringify(typed));
+  const typed = await state();
+  if (typed.pending?.kind !== "text" || typed.pending.value !== "con brio" || typed.armed.rest) throw new Error("typed text " + JSON.stringify(typed.pending));
+  if ((await page.textContent("#cp-text-lbl")) !== "con brio") throw new Error("the text button does not show the armed words");
+  await page.keyboard.press("Escape");
+  if ((await state()).pending) throw new Error("Escape did not disarm the text");
+  // Escape after the first tap of a hairpin cancels it whole
+  await page.click("[data-act=hairpin][data-kind=dim]"); await tapAt({ bar: 2, staff: 0, ticks: 300, step: 4 });
+  if (!(await state()).pending?.start) throw new Error("dim start not taken");
+  await page.keyboard.press("Escape");
+  if ((await state()).pending || (await exprs(2)).length) throw new Error("Escape did not cancel the half-placed hairpin");
   const sq = await squares();
   if (sq.bad.length || sq.lanes.length !== 1) throw new Error("square buttons with the expression rail: " + JSON.stringify(sq));
-  await page.screenshot({ path: `${S}/cp-16-expression.png` });
-  await page.click(".cp-dyn-btn[data-dyn=f]"); await page.click("[data-act=hairpin][data-kind=cresc]");
-  await page.click("[data-pop=cp-text-more]"); await page.click(".cp-text-menu [data-act=text][data-text='']");
-  if ((await page.evaluate(() => document.querySelectorAll(".cp-svg .cp-dyn, .cp-svg .cp-hairpin, .cp-svg .cp-expr-text").length)) !== 0) throw new Error("expression not cleared");
+  // tidy: select and delete each mark, so later steps see the bar as before
+  if ((await state()).mode !== "select") await page.click("[data-act=select]");
+  for (const kind of ["hairpin", "text", "dyn"]) { const p = await at(kind); await page.mouse.click(p.x, p.y); if (!(await state()).selection.length) throw new Error(`${kind} did not select for deletion`); await page.keyboard.press("Delete"); }
+  if ((await page.evaluate(() => document.querySelectorAll(".cp-svg .cp-expr").length)) !== 0) throw new Error("expressions not cleared");
   await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=expression]"); await page.click("[data-pop=cp-rails-more]");
-  await page.keyboard.press("Escape"); await page.keyboard.press("v");
+  await page.keyboard.press("Escape"); if ((await state()).mode === "select") await page.keyboard.press("v");
 });
 
 await step("voices: the switcher writes into voice 2 (padded, tinted, stems down) beside voice 1; selecting a head makes its voice active; a move onto a sounding voice is refused, to a free one lands; Ctrl-N switches; the voice ▾ menu (swap, hide rest); Ctrl-Shift-↑ crosses a note to the upper staff; the Notes rail stays on one line", async () => {

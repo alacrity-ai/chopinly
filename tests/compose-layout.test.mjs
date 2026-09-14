@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition } from "../js/lib/compose/model.js";
-import { place, setClef, setKey, setTime, articulate, arpeggio, accidental, slur, dynamic, hairpin, exprText, MARKS } from "../js/lib/compose/engine.js";
+import { place, setClef, setKey, setTime, articulate, arpeggio, accidental, slur, addExpression, addHairpin, MARKS } from "../js/lib/compose/engine.js";
+import { things } from "../js/lib/compose/hit.js";
 import { layoutComposition, SYS_H, TOP_PAD } from "../js/lib/compose/layout.js";
 import { slotAt, thingAt, ticksAt, xOfTicks, barAt } from "../js/lib/compose/hit.js";
 import { PPQ } from "../js/lib/compose/ticks.js";
@@ -192,31 +193,55 @@ test("a slur arches on the head side (stems up → below, any stem down → abov
   assert.ok(L2.slurs[0].system === 0 && L2.slurs[1].system === 1);
 });
 
-test("expression: dynamics sit under the staff below the note, a hairpin runs between its notes on that line (split open at a break), text sits above", () => {
+test("expressions (WSHED-122): a dynamic sits on the staff's expression line under its slot (with or without a note there), a hairpin runs between its slots clearing what sounds inside, text sits above; the hit tables find them and a selected hairpin's handles", () => {
   const A = { base: 4, dots: 0, rest: false, tuplet: null, alter: null };
   let d = newComposition({ id: "x", now: 1 });
   for (let q = 0; q < 4; q++) d = place(d, { bar: 0, staff: 0, ticks: q * PPQ, step: q === 1 ? -4 : 4 }, A).doc; // the second note hangs low
-  const v = d.measures[0].staves[0].voices[0];
-  d = dynamic(d, [v[0].id], "f"); d = hairpin(d, [v[0].id, v[3].id], "cresc"); d = exprText(d, [v[2].id], "rit.");
+  const g = PPQ / 2;
+  d = addExpression(d, { kind: "dyn", staff: 0, bar: 0, at: 0, value: "f" }).doc;
+  d = addExpression(d, { kind: "dyn", staff: 0, bar: 1, at: 3 * g, value: "pp" }).doc;           // the & of 2 of an empty bar
+  const hp = addHairpin(d, { staff: 0, bar: 0, at: 0, dir: "cresc", end: { bar: 0, at: 6 * g } }); d = hp.doc;
+  d = addExpression(d, { kind: "text", staff: 0, bar: 0, at: 4 * g, value: "rit." }).doc;
   const L = layoutComposition(d, { unit: 10, width: 900 });
   const bot = L.systems[0].staffTop[0] + 4, top = L.systems[0].staffTop[0];
-  assert.equal(L.dynamics.length, 1); assert.equal(L.dynamics[0].dyn, "f");
+  const v = d.measures[0].staves[0].voices[0], hb0 = L.hit.systems[0].bars[0], hb1 = L.hit.systems[0].bars[1];
+  assert.deepEqual(L.dynamics.map((x) => [x.dyn, x.bar, x.at]), [["f", 0, 0], ["pp", 1, 3 * g]]);
+  const first = L.drawn.find((x) => x.id === v[0].id);
+  assert.ok(Math.abs(L.dynamics[0].x - (first.x + first.headW / 2)) < 0.05, "under the head of the note on its slot");
   assert.ok(L.dynamics[0].y >= bot + 2.6, "below the staff");
+  assert.ok(Math.abs(L.dynamics[1].x - (xOfTicks(hb1, 3 * g) + 0.59)) < 1e-9 && L.dynamics[1].x > hb1.x0 && L.dynamics[1].x < hb1.x1, "between the empty bar's columns, on its slot");
+  assert.equal(L.dynamics[1].y, bot + 2.6, "nothing under it: the line itself");
   assert.equal(L.hairpins.length, 1);
-  const hp = L.hairpins[0], low = L.drawn.find((x) => x.id === v[1].id);
-  assert.equal(hp.kind, "cresc");
-  assert.ok(hp.x1 > L.dynamics[0].x, "starts after the dynamic");
-  assert.ok(hp.x2 > L.drawn.find((x) => x.id === v[3].id).x, "reaches its last note");
-  assert.ok(hp.y > low.botY + 1, "clears the low note in the span");
-  assert.equal(L.texts.length, 1); assert.equal(L.texts[0].text, "rit.");
+  const h = L.hairpins[0], low = L.drawn.find((x) => x.id === v[1].id);
+  assert.equal(h.kind, "cresc"); assert.equal(h.id, hp.id);
+  assert.ok(h.x1 > L.dynamics[0].x, "starts after the dynamic on its slot");
+  assert.ok(h.x2 > L.drawn.find((x) => x.id === v[3].id).x, "reaches its end slot");
+  assert.ok(h.y > low.botY + 1, "clears the low note in the span");
+  assert.equal(L.texts.length, 1); assert.equal(L.texts[0].text, "rit."); assert.ok(Math.abs(L.texts[0].x - xOfTicks(hb0, 4 * g)) < 1e-9);
   assert.ok(L.texts[0].y < top - 2, "above the staff");
-  // across a system break: two open halves
+  // hit: the things and the taps
+  const ts = things(L).filter((t) => t.type !== "head" && t.type !== "rest");
+  assert.deepEqual(ts.map((t) => t.type), ["dyn", "dyn", "text", "hairpin"]);
+  assert.equal(thingAt(L, L.dynamics[0].x, L.dynamics[0].y - 0.3)?.ev, L.dynamics[0].id, "a tap on the dynamic");
+  assert.equal(thingAt(L, L.texts[0].x + 0.5, L.texts[0].y - 0.4)?.type, "text");
+  assert.equal(thingAt(L, (h.x1 + h.x2) / 2, h.y)?.type, "hairpin", "a tap on the hairpin's body");
+  assert.equal(thingAt(L, h.x2, h.y)?.type, "hairpin", "its end is the body until it is selected");
+  assert.equal(thingAt(L, h.x2, h.y, new Set([hp.id]))?.type, "hairpin-end", "selected: its end is a handle");
+  assert.equal(thingAt(L, h.x1, h.y, new Set([hp.id]))?.type, "hairpin-start");
+  assert.equal(thingAt(L, first.x + first.headW / 2, first.heads[0].y)?.type, "head", "a head wins over the dynamic below it");
+  // across a system break: open halves, one thing
   let e = newComposition({ id: "x2", now: 1 });
   for (let bar = 0; bar < 8; bar++) for (let q = 0; q < 4; q++) e = place(e, { bar, staff: 0, ticks: q * PPQ, step: 4 }, A).doc;
   const L1 = layoutComposition(e, { unit: 12, width: 700 }), b1 = L1.hit.systems[1].bars[0].index;
-  e = hairpin(e, [e.measures[b1 - 1].staves[0].voices[0][2].id, e.measures[b1].staves[0].voices[0][1].id], "dim");
+  e = addHairpin(e, { staff: 0, bar: b1 - 1, at: 4 * g, dir: "dim", end: { bar: b1, at: 2 * g } }).doc;
   const L2 = layoutComposition(e, { unit: 12, width: 700 });
-  assert.deepEqual(L2.hairpins.map((h) => [h.half, h.system]), [["out", 0], ["in", 1]]);
+  assert.deepEqual(L2.hairpins.map((x) => [x.half, x.system]), [["out", 0], ["in", 1]]);
+  assert.equal(things(L2).filter((t) => t.type === "hairpin").length, 1);
+  assert.equal(thingAt(L2, L2.hairpins[0].x2, L2.hairpins[0].y, new Set([L2.hairpins[0].id]))?.type, "hairpin", "the open end at the break is no handle");
+  assert.equal(thingAt(L2, L2.hairpins[1].x2, L2.hairpins[1].y, new Set([L2.hairpins[0].id]))?.type, "hairpin-end");
+  // the ghost helpers agree with the placed marks
+  assert.equal(L.exprLine(0, 0, 0, 1), L.dynamics[0].y);
+  assert.equal(L.textLine(0, 0, 4 * g), L.texts[0].y);
 });
 
 test("golden: a piece that never uses a second voice lays out exactly as it did before multi-voice landed (every value the old engraver produced)", async () => {

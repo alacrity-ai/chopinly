@@ -108,15 +108,18 @@ export function paintScore(L, p) {
     const ax = a.x + (down ? -0.24 : 0.24), ay = down ? a.y2 : a.y1;
     p.glyph(ax, ay, text, "glyph cp-arp", { rotate: [down ? 90 : -90, ax, ay] });
   }
-  for (const dy of L.dynamics) p.glyph(dy.x, dy.y, dynGlyph(dy.dyn), "glyph cp-dyn", { centre: true }); // ink-centred under the note like a mark
-  for (const hp of L.hairpins) { // two lines meeting at the closed end; a split hairpin stays open at the break
+  // expressions: each in its own selectable group (`data-ev` is the selection key, like an event's; `data-kind` says which)
+  for (const dy of L.dynamics) { p.group("cp-expr", { ev: dy.id, kind: "dyn" }); p.glyph(dy.x, dy.y, dynGlyph(dy.dyn), "glyph cp-dyn", { centre: true }); p.end(); } // ink-centred on the slot like a mark
+  for (const hp of L.hairpins) { // two lines meeting at the closed end; a hairpin over a system break stays open at the break
     const o = 0.55, cresc = hp.kind === "cresc";
     let a1 = cresc ? 0 : o, a2 = cresc ? o : 0; // half-opening at x1 / x2
-    if (hp.half === "out") { if (cresc) a2 = o * 0.55; else a2 = o * 0.45; }
-    if (hp.half === "in") { if (cresc) a1 = o * 0.55; else a1 = o * 0.45; }
+    if (hp.half === "out" || hp.half === "both") a2 = o * (cresc ? 0.55 : 0.45);
+    if (hp.half === "in" || hp.half === "both") a1 = o * (cresc ? 0.55 : 0.45);
+    p.group("cp-expr", { ev: hp.id, kind: "hairpin" });
     p.path([["M", hp.x1, hp.y - a1], ["L", hp.x2, hp.y - a2], ["M", hp.x1, hp.y + a1], ["L", hp.x2, hp.y + a2]], "cp-hairpin");
+    p.end();
   }
-  for (const tx of L.texts) p.text(tx.x, tx.y, tx.text, "cp-expr-text", { size: 1.15 });
+  for (const tx of L.texts) { p.group("cp-expr", { ev: tx.id, kind: "text" }); p.text(tx.x, tx.y, tx.text, "cp-expr-text", { size: 1.15 }); p.end(); }
   for (const gl of L.glisses) {
     p.group("cp-gliss");
     p.line(gl.x1, gl.y1, gl.x2, gl.y2, "cp-gliss-line");

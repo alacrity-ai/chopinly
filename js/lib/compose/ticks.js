@@ -21,6 +21,8 @@ export function ticks({ base, dots = 0, tuplet = null }) {
 
 /** Ticks in a bar of this time signature. */
 export const capacity = ({ beats, unit }) => (beats * WHOLE) / unit;
+/** The expression grid (docs/COMPOSE_EXPRESSIONS_DESIGN.md §1): half of the metre's unit — an eighth in 4/4 and 3/4, a sixteenth in 6/8. */
+export const exprGrid = ({ unit }) => WHOLE / unit / 2;
 
 /** Beat-group size in ticks: what beams and rests may not cross (whole-bar rests excepted). */
 export function groupSize(time) {
