@@ -1,7 +1,7 @@
 // Layout → SVG (docs/COMPOSE_DESIGN.md §9). Bravura glyphs as <text>, geometry
 // as primitives, one <svg> for the score plus a separate overlay for the ghost
 // and the bar flash so pointer moves never touch the score's DOM.
-import { G, timeDigit, tupletDigit, restGlyph, headGlyph, flagGlyph, artGlyph } from "../staff/glyphs.js";
+import { G, timeDigit, tupletDigit, restGlyph, headGlyph, flagGlyph, artGlyph, dynGlyph } from "../staff/glyphs.js";
 
 const NS = "http://www.w3.org/2000/svg";
 // A Bravura glyph's origin is its left side bearing, not its middle: a mark placed at a head's
@@ -144,6 +144,20 @@ export function renderComposition(container, L) {
     const ax = a.x + (down ? -0.24 : 0.24), ay = down ? a.y2 : a.y1;
     svg.append(el("text", { x: px(ax), y: px(ay), class: "glyph cp-arp", transform: `rotate(${down ? 90 : -90} ${px(ax)} ${px(ay)})` }, text));
   }
+  for (const dy of L.dynamics) { // ink-centred under the note like a mark
+    const ch = dynGlyph(dy.dyn), c = inkCentre(ch);
+    const t = glyph(c === null ? dy.x : dy.x - c * 4, dy.y, ch, "glyph cp-dyn");
+    if (c === null) t.setAttribute("text-anchor", "middle");
+    svg.append(t);
+  }
+  for (const hp of L.hairpins) { // two lines meeting at the closed end; a split hairpin stays open at the break
+    const o = 0.55, cresc = hp.kind === "cresc";
+    let a1 = cresc ? 0 : o, a2 = cresc ? o : 0; // half-opening at x1 / x2
+    if (hp.half === "out") { if (cresc) a2 = o * 0.55; else a2 = o * 0.45; }
+    if (hp.half === "in") { if (cresc) a1 = o * 0.55; else a1 = o * 0.45; }
+    svg.append(el("path", { class: "cp-hairpin", d: `M${px(hp.x1)},${px(hp.y - a1)} L${px(hp.x2)},${px(hp.y - a2)} M${px(hp.x1)},${px(hp.y + a1)} L${px(hp.x2)},${px(hp.y + a2)}` }));
+  }
+  for (const tx of L.texts) svg.append(el("text", { x: px(tx.x), y: px(tx.y), class: "cp-expr-text", style: `font-size:${(S * 1.15).toFixed(1)}px` }, tx.text));
   for (const gl of L.glisses) {
     const g = el("g", { class: "cp-gliss" });
     g.append(el("line", { x1: px(gl.x1), y1: px(gl.y1), x2: px(gl.x2), y2: px(gl.y2), class: "cp-gliss-line" }));

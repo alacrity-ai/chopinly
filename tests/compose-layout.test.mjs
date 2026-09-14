@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition } from "../js/lib/compose/model.js";
-import { place, setClef, setKey, setTime, articulate, arpeggio, accidental, slur, MARKS } from "../js/lib/compose/engine.js";
+import { place, setClef, setKey, setTime, articulate, arpeggio, accidental, slur, dynamic, hairpin, exprText, MARKS } from "../js/lib/compose/engine.js";
 import { layoutComposition, SYS_H, TOP_PAD } from "../js/lib/compose/layout.js";
 import { slotAt, thingAt, ticksAt, xOfTicks, barAt } from "../js/lib/compose/hit.js";
 import { PPQ } from "../js/lib/compose/ticks.js";
@@ -190,4 +190,31 @@ test("a slur arches on the head side (stems up → below, any stem down → abov
   const L2 = layoutComposition(e, { unit: 12, width: 700 });
   assert.deepEqual(L2.slurs.map((x) => x.half), ["out", "in"]);
   assert.ok(L2.slurs[0].system === 0 && L2.slurs[1].system === 1);
+});
+
+test("expression: dynamics sit under the staff below the note, a hairpin runs between its notes on that line (split open at a break), text sits above", () => {
+  const A = { base: 4, dots: 0, rest: false, tuplet: null, alter: null };
+  let d = newComposition({ id: "x", now: 1 });
+  for (let q = 0; q < 4; q++) d = place(d, { bar: 0, staff: 0, ticks: q * PPQ, step: q === 1 ? -4 : 4 }, A).doc; // the second note hangs low
+  const v = d.measures[0].staves[0].voices[0];
+  d = dynamic(d, [v[0].id], "f"); d = hairpin(d, [v[0].id, v[3].id], "cresc"); d = exprText(d, [v[2].id], "rit.");
+  const L = layoutComposition(d, { unit: 10, width: 900 });
+  const bot = L.systems[0].staffTop[0] + 4, top = L.systems[0].staffTop[0];
+  assert.equal(L.dynamics.length, 1); assert.equal(L.dynamics[0].dyn, "f");
+  assert.ok(L.dynamics[0].y >= bot + 2.6, "below the staff");
+  assert.equal(L.hairpins.length, 1);
+  const hp = L.hairpins[0], low = L.drawn.find((x) => x.id === v[1].id);
+  assert.equal(hp.kind, "cresc");
+  assert.ok(hp.x1 > L.dynamics[0].x, "starts after the dynamic");
+  assert.ok(hp.x2 > L.drawn.find((x) => x.id === v[3].id).x, "reaches its last note");
+  assert.ok(hp.y > low.botY + 1, "clears the low note in the span");
+  assert.equal(L.texts.length, 1); assert.equal(L.texts[0].text, "rit.");
+  assert.ok(L.texts[0].y < top - 2, "above the staff");
+  // across a system break: two open halves
+  let e = newComposition({ id: "x2", now: 1 });
+  for (let bar = 0; bar < 8; bar++) for (let q = 0; q < 4; q++) e = place(e, { bar, staff: 0, ticks: q * PPQ, step: 4 }, A).doc;
+  const L1 = layoutComposition(e, { unit: 12, width: 700 }), b1 = L1.hit.systems[1].bars[0].index;
+  e = hairpin(e, [e.measures[b1 - 1].staves[0].voices[0][2].id, e.measures[b1].staves[0].voices[0][1].id], "dim");
+  const L2 = layoutComposition(e, { unit: 12, width: 700 });
+  assert.deepEqual(L2.hairpins.map((h) => [h.half, h.system]), [["out", 0], ["in", 1]]);
 });

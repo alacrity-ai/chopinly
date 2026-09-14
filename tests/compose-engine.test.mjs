@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition, validate, timeAt, isEmptyBar, evTicks } from "../js/lib/compose/model.js";
-import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar, setPitch, stepOf, retype, dot, tie, tuplet, accidental, clipFrom, paste, toRests, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, slurEnd, decompose } from "../js/lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar, setPitch, stepOf, retype, dot, tie, tuplet, accidental, clipFrom, paste, toRests, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, slurEnd, dynamic, hairpin, hairpinEnd, exprText, decompose } from "../js/lib/compose/engine.js";
 import { capacity, PPQ, groupSize } from "../js/lib/compose/ticks.js";
 const Qt = PPQ;
 import { createHistory } from "../js/lib/compose/history.js";
@@ -535,6 +535,42 @@ test("slur: first to last selected note (one note: to the next note, over rests)
   d = slur(d, [a.id, b.id]);
   d = toRests(d, [a.id]);                                               // a rest carries no slur, and the orphaned stop goes
   assert.equal(find(d, b.id).ev.slurs, undefined);
+});
+
+test("expression: a dynamic per note (toggle), hairpins first→last (one note: to the next) that never dangle, text on the earliest event", () => {
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
+  d = place(d, { bar: 0, staff: 0, ticks: Qt, step: 5 }, Q).doc;
+  d = place(d, { bar: 0, staff: 0, ticks: 2 * Qt, step: 6 }, Q).doc;
+  const [a, b, c, rest] = bar1(d);
+  d = dynamic(d, [a.id, b.id], "f");
+  assert.deepEqual([find(d, a.id).ev.dyn, find(d, b.id).ev.dyn], ["f", "f"]);
+  d = dynamic(d, [a.id], "pp");                              // a different one replaces
+  assert.equal(find(d, a.id).ev.dyn, "pp");
+  d = dynamic(d, [a.id, b.id], "f");                         // not all f → all f; again → off
+  d = dynamic(d, [a.id, b.id], "f");
+  assert.deepEqual([find(d, a.id).ev.dyn, find(d, b.id).ev.dyn], [undefined, undefined]);
+  assert.throws(() => dynamic(d, [rest.id], "f"), /pick the notes/);
+  assert.throws(() => dynamic(d, [a.id], "fff"), Nudge);
+  d = hairpin(d, [c.id, a.id], "cresc");                     // selection order irrelevant
+  assert.deepEqual([find(d, a.id).ev.hairpin, find(d, c.id).ev.hairpin], ["cresc-start", "cresc-stop"]);
+  assert.equal(hairpinEnd(d, 0, find(d, a.id).ev), find(d, c.id).ev);
+  d = hairpin(d, [a.id, c.id], "cresc");                     // same span, same kind → off
+  assert.equal(find(d, a.id).ev.hairpin, undefined);
+  d = hairpin(d, [b.id], "dim");                             // one note → to the next note
+  assert.deepEqual([find(d, b.id).ev.hairpin, find(d, c.id).ev.hairpin], ["dim-start", "dim-stop"]);
+  d = hairpin(d, [a.id, c.id], "cresc");                     // a new start before an open one drops the open one's start; its stop is then orphaned and dropped
+  assert.deepEqual([find(d, a.id).ev.hairpin, find(d, b.id).ev.hairpin, find(d, c.id).ev.hairpin], ["cresc-start", undefined, "cresc-stop"]);
+  assert.throws(() => hairpin(d, [c.id], "cresc"), /needs a note after/);
+  d = remove(d, [{ ev: c.id }]);                             // the stop goes → the start goes
+  assert.equal(find(d, a.id).ev.hairpin, undefined);
+  d = exprText(d, [b.id, a.id], "  rit.  ");
+  assert.equal(find(d, a.id).ev.text, "rit.", "the earliest selected event carries the text");
+  assert.equal(find(d, b.id).ev.text, undefined);
+  d = exprText(d, [a.id], "");
+  assert.equal(find(d, a.id).ev.text, undefined);
+  const r2 = bar1(d).find((e) => e.kind === "rest");      // the bar was re-normalised by the remove: fetch the rest afresh
+  d = exprText(d, [r2.id], "a tempo");
+  assert.equal(find(d, r2.id).ev.text, "a tempo", "a rest can carry text");
 });
 
 test("arpeggio: one roll per note, set / switch / clear on the selection, notes only", () => {

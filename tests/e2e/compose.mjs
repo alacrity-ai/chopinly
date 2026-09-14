@@ -413,7 +413,7 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   if ((await page.locator("#cp-file-more .cp-menu-row:disabled").count()) < 4) throw new Error("file menu placeholders");
   await page.click("[data-pop=cp-file-more]");
   await page.click("[data-pop=cp-rails-more]");
-  if ((await page.locator("#cp-rails-more .cp-rail-row").count()) !== 4) throw new Error("rail rows");
+  if ((await page.locator("#cp-rails-more .cp-rail-row").count()) !== 5) throw new Error("rail rows"); // controls · transport · notes · utility · expression
   await page.click(".cp-rail-row[data-rail=transport]");
   if (!(await page.locator(".cp-transport").isHidden()) || (await page.locator("#cp-rails-more").isHidden())) throw new Error("transport should hide and the menu stay open");
   await page.click(".cp-rail-row[data-rail=transport]");
@@ -552,6 +552,32 @@ await step("palm safety: a wide touch contact and a second simultaneous finger p
   await synth("pointerup", { ...base, pointerType: "pen", pointerId: 41, width: 1, height: 1 });
   await page.waitForTimeout(50);
   if ((await kinds(4)) !== "n4 r4 r2") throw new Error("the pen did not place: " + (await kinds(4)));
+});
+
+await step("expression rail (via Rails ▾): f under the selected note, a crescendo to the next note, rit. from the text menu above it; the rail's buttons are squares too", async () => {
+  await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=expression]"); await page.click("[data-pop=cp-rails-more]");
+  if (await page.locator("#cp-expression").isHidden()) throw new Error("expression rail did not open");
+  await page.click("[data-act=select]");
+  await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
+  await tapAt({ bar: 0, staff: 0, ticks: 0, step: 4 });
+  if ((await state()).selection.length !== 1) throw new Error("no selection for the dynamic");
+  await page.click(".cp-dyn-btn[data-dyn=f]");
+  await page.click("[data-act=hairpin][data-kind=cresc]");
+  await page.click("[data-pop=cp-text-more]"); await page.click(".cp-chip[data-text='rit.']");
+  const ex = await page.evaluate(() => { const v = document.querySelector(".cp-editor").__editor.state.doc.measures[0].staves[0].voices[0]; return { dyn: v[0].dyn, hp: [v[0].hairpin, v[1].hairpin], text: v[0].text, drawn: [document.querySelectorAll(".cp-svg .cp-dyn").length, document.querySelectorAll(".cp-svg .cp-hairpin").length, document.querySelector(".cp-svg .cp-expr-text")?.textContent] }; });
+  if (ex.dyn !== "f" || ex.hp.join() !== "cresc-start,cresc-stop" || ex.text !== "rit." || ex.drawn.join() !== "1,1,rit.") throw new Error("expression " + JSON.stringify(ex));
+  // typed text through the box, Enter sets it; the typed letters must not fire shortcuts (r = rest)
+  await page.click("[data-pop=cp-text-more]"); await page.fill("#cp-text-in", "con brio"); await page.press("#cp-text-in", "Enter");
+  const typed = await page.evaluate(() => ({ text: document.querySelector(".cp-editor").__editor.state.doc.measures[0].staves[0].voices[0][0].text, rest: document.querySelector(".cp-editor").__editor.state.armed.rest }));
+  if (typed.text !== "con brio" || typed.rest) throw new Error("typed text " + JSON.stringify(typed));
+  const sq = await squares();
+  if (sq.bad.length || sq.lanes.length !== 1) throw new Error("square buttons with the expression rail: " + JSON.stringify(sq));
+  await page.screenshot({ path: `${S}/cp-16-expression.png` });
+  await page.click(".cp-dyn-btn[data-dyn=f]"); await page.click("[data-act=hairpin][data-kind=cresc]");
+  await page.click("[data-pop=cp-text-more]"); await page.click(".cp-text-menu [data-act=text][data-text='']");
+  if ((await page.evaluate(() => document.querySelectorAll(".cp-svg .cp-dyn, .cp-svg .cp-hairpin, .cp-svg .cp-expr-text").length)) !== 0) throw new Error("expression not cleared");
+  await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=expression]"); await page.click("[data-pop=cp-rails-more]");
+  await page.keyboard.press("Escape"); await page.keyboard.press("v");
 });
 
 await step("Pan scrolls and places nothing; leaving Pan pins the score again; zoom buttons change S", async () => {
