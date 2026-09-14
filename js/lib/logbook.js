@@ -94,7 +94,7 @@ const uuid = () =>
 export const norm = (s) => String(s ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
 
 function emptyDoc() {
-  return { schemaVersion: SCHEMA_VERSION, goals: [], segments: [], notes: [], takes: [], scores: [], marks: [], ink: [], brushes: [], deleted: [], pending: [] };
+  return { schemaVersion: SCHEMA_VERSION, goals: [], segments: [], notes: [], takes: [], scores: [], marks: [], ink: [], brushes: [], compositions: [], deleted: [], pending: [] };
 }
 
 // --- migration ---------------------------------------------------------------
@@ -581,6 +581,30 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     return brushes();
   }
 
+  // --- compositions (WSHED-114 P0): Compose documents, local only until P3 puts them in KINDS ---
+  const compositions = () => [...doc.compositions].sort((a, b) => (b.openedAt ?? 0) - (a.openedAt ?? 0));
+  const composition = (id) => doc.compositions.find((c) => c.id === id) ?? null;
+  /** Register a composition document (built by js/lib/compose/model.js). */
+  function addComposition(c) {
+    if (!c?.id || composition(c.id)) throw new Error("bad composition");
+    c.updatedAt = now(); doc.compositions.push(c); save(); return c;
+  }
+  /** Replace a composition's content (measures / title / composer / openedAt). Not synced yet, so no pending mark. */
+  function updateComposition(id, patch = {}) {
+    const c = composition(id);
+    if (!c) throw new Error(`no composition ${id}`);
+    if ("title" in patch) { const t = cleanTitle(patch.title); if (!t) throw new Error("a composition needs a title"); c.title = t; }
+    if ("composer" in patch) c.composer = cleanComposer(patch.composer);
+    if ("measures" in patch) c.measures = patch.measures;
+    if ("openedAt" in patch) c.openedAt = patch.openedAt;
+    c.updatedAt = now(); save(); return c;
+  }
+  function removeComposition(id) {
+    const before = doc.compositions.length;
+    doc.compositions = doc.compositions.filter((c) => c.id !== id);
+    if (doc.compositions.length !== before) save();
+  }
+
   // --- other tools writing in -----------------------------------------------
   /**
    * A finished lesson run (sight singing, ear training). With a goal running
@@ -807,6 +831,8 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     scores, score, scoreByHash, scoreForGoal, placeForGoal, addScore, updateScore, touchScore, removeScore, marks, markAt, marksForGoal, addMark, updateMark, removeMark,
     // ink + brushes
     inkFor, inkPages, setInk, brushes, brush, addBrush, updateBrush, removeBrush, reorderBrushes, resetBrushes,
+    // compositions
+    compositions, composition, addComposition, updateComposition, removeComposition,
     // other tools
     addAuto,
     // sync

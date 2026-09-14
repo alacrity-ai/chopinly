@@ -4,17 +4,18 @@
 // groups the navbar dropdown; a rule is drawn between groups. Menu order is
 // list order: the Logbook first, then the instruments, then the recorder
 // (neither an instrument nor a lesson — its own group), the scores library
-// (its own group too), then training.
+// (its own group too) with Compose beside it, then training.
 import metronome from "./tools/metronome/index.js";
 import pitchpipe from "./tools/pitchpipe/index.js";
 import tuner from "./tools/tuner/index.js";
 import keyboard from "./tools/keyboard/index.js";
 import recorder from "./tools/recorder/index.js";
 import scores from "./tools/scores/index.js";
+import compose from "./tools/compose/index.js";
 import sightsinging from "./tools/sightsinging/index.js";
 import eartraining from "./tools/eartraining/index.js";
 import logbook from "./tools/logbook/index.js";
 
-export const TOOLS = [logbook, metronome, keyboard, pitchpipe, tuner, recorder, scores, sightsinging, eartraining];
+export const TOOLS = [logbook, metronome, keyboard, pitchpipe, tuner, recorder, scores, compose, sightsinging, eartraining];
 /** What a first-time visitor lands on (the last-used tool is restored otherwise). */
 export const DEFAULT_TOOL = metronome;

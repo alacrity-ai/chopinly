@@ -2078,3 +2078,50 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .sc-br-formacts .lb-modal-save { margin-left: auto; }
 .sc-reader.inking .sc-stage { cursor: crosshair; }
 @media (max-width: 480px) { .sc-inkbar { gap: 0.2rem; } .sc-ink-btn { width: 2.3rem; height: 2.3rem; } }
+
+/* --- Compose (WSHED-114 P0): rails on top, the score below, palm-safe ------- */
+.cp-thumb { width: 2.6rem; height: 2.6rem; }
+.cp-editor { position: fixed; inset: 0; z-index: 45; background: var(--bg); color: var(--fg); display: flex; flex-direction: column; overscroll-behavior: contain; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+.cp-rails { flex: none; display: flex; flex-direction: column; gap: 0.3rem; padding: calc(0.35rem + env(safe-area-inset-top, 0)) 0.5rem 0.4rem; background: var(--bg-panel); border-bottom: 1px solid var(--bg-edge); }
+.cp-rail { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
+.cp-sep { width: 1px; height: 1.6rem; background: var(--bg-edge); margin: 0 0.15rem; }
+.cp-btn { position: relative; overflow: hidden; min-width: 2.5rem; height: 2.5rem; padding: 0 0.5rem; border-radius: 0.6rem; border: 1px solid var(--bg-edge); background: var(--bg-raised); color: var(--fg); display: inline-flex; align-items: center; justify-content: center; gap: 0.2rem; font: 500 0.85rem var(--sans); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cp-btn .ic { width: 1.2rem; height: 1.2rem; }
+.cp-btn:active { background: var(--bg-chip-on); }
+.cp-btn[aria-pressed="true"], .cp-btn.on { color: var(--fg-on-accent); background: var(--accent); border-color: var(--accent); }
+.cp-btn:disabled { opacity: 0.35; cursor: default; }
+.cp-btn small { font-size: 0.7rem; margin-left: -0.1rem; }
+.cp-zoom { font-size: 1.15rem; min-width: 2.2rem; }
+.cp-glyph { font-family: "Bravura"; font-size: 1.5rem; line-height: 1; transform: translateY(-0.28rem); pointer-events: none; }
+.cp-btn > * { pointer-events: none; }
+.cp-glyph-sm { font-size: 1.15rem; }
+.cp-glyph-rest { font-size: 1.35rem; transform: translateY(-0.1rem); }
+.cp-rest .cp-rest-word { font-size: 0.75rem; }
+.cp-dur-more.on .cp-glyph { color: var(--fg-on-accent); }
+.cp-more-wrap { position: relative; display: inline-flex; }
+.cp-more[hidden] { display: none; }
+.cp-more { position: absolute; top: calc(100% + 0.3rem); left: 0; z-index: 3; display: flex; gap: 0.3rem; padding: 0.3rem; background: var(--bg-panel); border: 1px solid var(--bg-edge); border-radius: 0.7rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); }
+.cp-tie-pic { display: inline-block; width: 1.2rem; height: 0.55rem; border: 2px solid currentColor; border-top: none; border-radius: 0 0 0.6rem 0.6rem; }
+.cp-title { flex: 1; min-width: 4rem; text-align: center; font-family: var(--serif); font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-dim); }
+.cp-view { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; touch-action: none; overscroll-behavior: contain; cursor: crosshair; }
+.cp-view[data-mode="scrub"] { cursor: grab; }
+.cp-view[data-mode="select"] { cursor: default; }
+.cp-sheet { position: relative; padding: 0.5rem 0 8rem; }
+.cp-svg { display: block; }
+.cp-overlay { position: absolute; left: 0; top: 0.5rem; pointer-events: none; }
+.cp-overlay text { font-family: "Bravura"; fill: var(--fg); }
+.cp-ghost .glyph, .cp-ghost .stem, .cp-ghost .sline { opacity: 0.42; }
+.cp-ghost .stem { fill: var(--fg); }
+.cp-ghost .sline { stroke: var(--staff-line); stroke-width: 1.1; }
+.cp-flash { fill: var(--red); opacity: 0; transition: opacity 90ms; }
+.cp-flash.on { opacity: 0.22; }
+.cp-svg .cp-ev .halo { fill: transparent; }
+.cp-svg .cp-ev.sel .head, .cp-svg .cp-ev.sel .rest, .cp-svg .cp-ev.sel .stem, .cp-svg .cp-ev.sel .head-part, .cp-svg .cp-head-g.sel .head, .cp-svg .cp-head-g.sel .head-part { fill: var(--hi); }
+.cp-svg .cp-head-g.sel .halo { fill: color-mix(in srgb, var(--hi) 22%, transparent); }
+.cp-svg .cp-brace { fill: var(--fg); }
+@media (max-width: 480px) {
+  .cp-btn { min-width: 2.2rem; height: 2.3rem; padding: 0 0.35rem; }
+  .cp-title { display: none; }
+  .cp-mode { font-size: 0.78rem; }
+}
+@media (prefers-reduced-motion: reduce) { .cp-flash { transition: none; } }

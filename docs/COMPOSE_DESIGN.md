@@ -48,7 +48,7 @@ the ergonomics can be judged before anything deeper is built.
 | Place | Arm a duration, tap a staff: the note lands on the nearest line or space at the nearest slot of that duration. A ghost follows the stylus before the tap. The note sounds as it lands. |
 | Rests | Rest on + eighth armed = an eighth rest. Deleting anything leaves rests behind. A bar's rests are always drawn in standard groupings. |
 | Chords | Tap a different pitch at an existing note's slot: the pitch joins the chord. Same duration for the whole chord. |
-| Select | Tap a note or rest to select it. Drag over notes (Select mode) for a range; tap more to add. Tap a chord's stem to select the chord. Tap empty staff to clear. |
+| Select | Tap a note to select it (a rest or a chord's stem too, in Select mode). Drag over notes (Select mode) for a range; tap more to add. Tap empty staff to clear. |
 | Re-pitch | Drag a selected note up or down: it moves by staff step, sounding each new pitch. Horizontal drags are ignored. Arrow keys do the same. |
 | Retype | With a selection, tap a duration: the selection becomes that duration (and it is the armed duration now). Too long for the bar → the bar flashes, nothing changes. |
 | Dot · tie · tuplet | Apply to the whole selection; tap again to remove. Tie needs a same-pitch neighbour (or two selected). Tuplet defaults to a triplet; hold for duplet / quintuplet / sextuplet / septuplet. |
@@ -67,7 +67,7 @@ import, parts, sharing.
 | Question | Decision | Why |
 |---|---|---|
 | Engraver | **Our own**, in `js/lib/compose/`, reusing `js/lib/music.js` (pitch, keys, clefs, steps) and the Bravura glyph table extracted from the sight-singing staff into `js/lib/staff/glyphs.js`. Not VexFlow. | The sight-singing staff already proves the approach: SMuFL glyphs as SVG text, geometry as primitives, one unit S. VexFlow would add a 700 KB dependency to vendor, a second coordinate system, and an SVG we do not control — which matters because the PDF exporter (§10) walks our SVG subset. The layout in `js/lib/staff/layout.js` stays the sight-singing renderer; Compose gets a grand-staff engraver rather than bolting chords, two staves and beam groups onto a single-melody layout. |
-| Time base | **Ticks, 960 per quarter.** A duration is `{ base, dots, tuplet }` (`base` = 1 whole … 64); `ticks()` resolves it. | Integers for every value the palette can make: a 64th is 60, a triplet eighth 320, a septuplet sixteenth ≈ 137 — the only non-integer case is 7-tuplets of 32nds and finer, which the palette cannot produce (§7.2 keeps a guard). Sixteenth-units, as the sight-singing staff uses, cannot express 32nds or tuplets. |
+| Time base | **Ticks, 6720 per quarter** (960 × 7). A duration is `{ base, dots, tuplet }` (`base` = 1 whole … 64); `ticks()` resolves it. | Integers for every value the palette can make: dots to two and tuplets 2 / 3 / 5 / 6 / 7 down to the 64th (a 64th is 420, a triplet eighth 2240, a septuplet sixteenth 960). 960 alone cannot divide by 7, so septuplets would have needed rounding — which breaks the bar-adds-up invariant. Sixteenth-units, as the sight-singing staff uses, cannot express 32nds or tuplets. |
 | Rests | **Explicit events** in the model, normalised after every edit into standard groupings. | The layout, the tap grid, MusicXML and MIDI all need rests as things. Deriving them from gaps at render time makes every consumer re-derive the same rules. The engine owns the invariant instead: `normalize(measure)` merges and splits rests into the fewest standard rests aligned to beats. |
 | Tap → slot | Inside a rest, the tap snaps to the **grid of the armed duration** (a whole rest with an eighth armed offers eight slots). On an existing note's slot, the tap **joins the chord**; on that note's own head, it **selects**. | Onset-only snapping would make a note on the "and" of one impossible until an eighth rest already sat there. The armed grid is exactly what the musician means. The ghost shows the snap so nothing surprises. |
 | Palette on a selection | **Acts on the selection and becomes the armed value.** Quarter selected, tap half: it is a half now, and the next placement is a half. To arm without editing, tap empty staff first (clears the selection). | Leif asked for a call. This is the Dorico / Sibelius convention, and it makes every rail button obey principle 4. The alternative — palette never touches a selection — forces a second "change duration" control that does the same thing. |
@@ -196,15 +196,16 @@ than that refuses to back up with a sentence, like ink.
 
 ## 5. Ticks and durations (`ticks.js`)
 
-- `PPQ = 960`. `ticks({ base, dots, tuplet })` = `(3840 / base) × (2 − 2^−dots)
-  × (tuplet ? in / n : 1)`; `base 0` = 7680.
-- `capacity({ beats, unit })` = `beats × 3840 / unit`.
-- `beatGroups(time)` → the beam / rest grouping boundaries: simple metres group
-  by the beat unit; compound (`unit 8`, `beats % 3 === 0`) group by dotted
-  quarters; `2/2` by halves. A beam never crosses a group; a rest never spans
-  one except the whole-bar rest.
+- `PPQ = 6720` (`WHOLE = 26880`). `ticks({ base, dots, tuplet })` = `(WHOLE / base) ×
+  (2 − 2^−dots) × (tuplet ? in / n : 1)`; `base 0` = 2 × WHOLE.
+- `capacity({ beats, unit })` = `beats × WHOLE / unit`.
+- `beatGroups(time)` → the beam grouping boundaries: simple metres group by
+  the beat unit; compound (`beats % 3 === 0`, `beats > 3`) group by dotted
+  beats; `2/2` by halves. A beam never crosses a group.
 - `splitRest(ticks, at, time)` → the standard rest run for a gap starting at
-  `at`: aligned to the grid, longest first, never crossing a beat group.
+  `at`: each rest starts on a multiple of its own size (a half rest on beat 3,
+  never on beat 2), longest first; in compound metres a rest also stays inside
+  its dotted group. A gap that is the whole bar is one whole rest in any metre.
 - `grid(armed, time)` → the slot size the tap snaps to inside a rest.
 
 ## 6. Layout (`layout.js`)
@@ -312,9 +313,9 @@ as a flash + toast and never records. `normalize` runs on every touched bar.
 
 ### 7.2 Guards
 
-Durations the palette cannot make (tuplets finer than a 32nd, dots beyond two)
-are refused at the engine with a Nudge, so the model never holds a non-integer
-tick count.
+Durations the palette cannot make (dots beyond two, tuplet ratios outside 2 / 3 /
+5 / 6 / 7) are refused at the engine with a Nudge, so the model never holds a
+non-integer tick count; `ticks()` throws on any non-integer as a last guard.
 
 ## 8. The editor (`editor.js`, `rails.js`)
 
@@ -339,7 +340,7 @@ rows; the utility / expression rails become sheets.
 
 | mode | what a pointer does |
 |---|---|
-| **Place** (default; any duration armed) | tap on staff → `place`; tap on a notehead → select it; tap on a rest → select it; drag from a selected notehead → re-pitch; long-press → marquee (Select mode for this gesture) |
+| **Place** (default; any duration armed) | tap on staff → `place`; tap on a notehead → select it; a rest (or a chord's stem) is where the next note goes, so a tap there places; drag from a selected notehead → re-pitch; long-press → marquee (Select mode for this gesture) |
 | **Select** (armed duration cleared) | tap → select / toggle; drag → marquee over notes; drag from a selected notehead → re-pitch |
 | **Scrub** | one finger / pen → pan; two fingers → zoom; nothing selects or places |
 
@@ -428,14 +429,14 @@ document and the per-device zoom. Undo history is per open editor, not saved.
 ### 10.2 MusicXML (P4)
 
 `doc → MusicXML 4.0 part-wise`: one `<part>` with `<staves>2</staves>`,
-`<divisions>960</divisions>`, attributes on change bars, `<chord/>`, `<tie>` +
+`<divisions>6720</divisions>`, attributes on change bars, `<chord/>`, `<tie>` +
 `<tied>`, `<time-modification>` + `<tuplet>`, `<articulations>`, `<ornaments>`,
 `<glissando>`, `<dynamics>`, `<wedge>`, `<words>`. Because the model is shaped
 after MusicXML this is a serialiser, not a translation. Import is out of scope.
 
 ### 10.3 MIDI (follow-up)
 
-Type-1 SMF, one track per staff, ticks at `PPQ 960`, ties merged, fixed velocity
+Type-1 SMF, one track per staff, ticks at `PPQ 6720`, ties merged, fixed velocity
 per dynamic, no tempo map beyond a default 100 bpm. A follow-up card, not the MVP.
 
 ## 11. Logbook integration
