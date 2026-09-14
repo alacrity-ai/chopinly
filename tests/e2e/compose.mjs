@@ -427,9 +427,9 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   await page.click("[data-act=undo]");
   if ((await st()).bars !== barsBefore || (await meta(2)).time !== null) throw new Error("undo of the time change");
   // clef: tenor armed → tap beat 3 of bar 5 on the lower staff; the small clef draws there and the lower staff stays in tenor after
-  await page.click(".cp-clef[data-clef='tenor']");
+  await page.click("[data-pop=cp-clef-more]"); await page.click(".cp-clef[data-clef='tenor']");
   if ((await st()).pending?.kind !== "clef" || (await st()).pending.value !== "tenor") throw new Error("clef not armed " + JSON.stringify(await st()));
-  if ((await page.locator(".cp-clef[data-clef='tenor']").getAttribute("aria-pressed")) !== "true") throw new Error("clef button not lit while armed");
+  if ((await page.locator("[data-pop=cp-clef-more]").getAttribute("aria-pressed")) !== "true" || !(await page.locator("#cp-clef-val").textContent()).includes("tenor")) throw new Error("clef picker not lit while armed");
   await tapAt({ bar: 4, staff: 1, ticks: 2 * PPQ + 200, step: 4 });
   const m4 = await meta(4);
   if (JSON.stringify(m4.changes) !== JSON.stringify([{ staff: 1, at: 2 * PPQ, clef: "tenor" }])) throw new Error("clef change " + JSON.stringify(m4));
@@ -441,12 +441,12 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   await tapAt({ bar: 4, staff: 1, ticks: 2 * PPQ + 300, step: 4 });
   const a3 = await page.evaluate(() => { const v = document.querySelector(".cp-editor").__editor.state.doc.measures[4].staves[1].voices[0]; return v.filter((e) => e.kind === "note").map((e) => e.pitches[0].step + e.pitches[0].octave).join(); });
   if (!a3.includes("A3")) throw new Error("middle line after the tenor clef: " + a3);
-  // the armed clef tapped again → off; the rarer clefs sit behind ▾ and Esc cancels an armed one
-  await page.click(".cp-clef[data-clef='alto']"); await page.click(".cp-clef[data-clef='alto']");
-  if ((await st()).pending !== null) throw new Error("tapping the armed clef again should disarm");
+  // the armed clef picked again → off; all seven clefs sit in the menu; Esc cancels an armed one
+  await page.click("[data-pop=cp-clef-more]"); await page.click(".cp-clef[data-clef='alto']"); await page.click("[data-pop=cp-clef-more]"); await page.click(".cp-clef[data-clef='alto']");
+  if ((await st()).pending !== null) throw new Error("picking the armed clef again should disarm");
+  if ((await page.locator("#cp-clef-more .cp-clef").count()) !== 7) throw new Error("clef menu size");
   await page.click("[data-pop=cp-clef-more]"); await page.click(".cp-clef[data-clef='soprano']");
   if ((await st()).pending?.value !== "soprano") throw new Error("soprano not armed");
-  if (!(await page.locator(".cp-clef-more.on").count())) throw new Error("the ▾ button should show the armed soprano");
   await page.keyboard.press("Escape");
   if ((await st()).pending !== null) throw new Error("Esc did not cancel the armed clef");
   // staccato on a selection; gliss from the first note of bar 1 to the next

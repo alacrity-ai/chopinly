@@ -29,11 +29,9 @@ export function centreGlyph(span) {
 /** The fifteen keys, flats to sharps, with their major and relative minor names. */
 export const KEYS = [["C♭", "A♭"], ["G♭", "E♭"], ["D♭", "B♭"], ["A♭", "F"], ["E♭", "C"], ["B♭", "G"], ["F", "D"], ["C", "A"], ["G", "E"], ["D", "B"], ["A", "F♯"], ["E", "C♯"], ["B", "G♯"], ["F♯", "D♯"], ["C♯", "A♯"]].map(([major, minor], i) => ({ fifths: i - 7, major, minor }));
 export const TIMES = [[2, 4], [3, 4], [4, 4], [5, 4], [6, 8], [9, 8], [12, 8], [2, 2], [3, 8], [7, 8]];
-/** The clef palette: the four in daily use on the rail, the rest behind ▾. */
-export const MAIN_CLEFS = ["treble", "bass", "alto", "tenor"];
-export const MORE_CLEFS = ["soprano", "mezzo", "baritone"];
-const CLEF_LABEL = { treble: "", bass: "", alto: "alto", tenor: "tenor", soprano: "soprano", mezzo: "mezzo", baritone: "baritone" };
-const clefBtn = (c) => `<button type="button" class="cp-btn cp-clef" data-act="clef" data-clef="${c}" aria-pressed="false" aria-label="${c} clef — then tap the beat it starts on"><span class="cp-glyph cp-glyph-sm">${G[CLEFS[c].glyph]}</span>${CLEF_LABEL[c] ? `<small>${CLEF_LABEL[c]}</small>` : ""}</button>`;
+/** The clef menu, in staff order from the top down. */
+export const CLEF_NAMES = ["treble", "soprano", "mezzo", "alto", "tenor", "baritone", "bass"];
+const clefBtn = (c) => `<button type="button" class="cp-btn cp-clef" data-act="clef" data-clef="${c}" aria-pressed="false" aria-label="${c} clef — then tap the beat it starts on"><span class="cp-glyph cp-glyph-sm">${G[CLEFS[c].glyph]}</span><small>${c}</small></button>`;
 
 export function buildRails(host, { title, onAction }) {
   host.innerHTML = `
@@ -102,11 +100,9 @@ export function buildRails(host, { title, onAction }) {
         <button type="button" class="cp-btn cp-pick" data-pop="cp-time-more" aria-label="time signature — pick one, then tap the bar it starts at" aria-expanded="false" aria-pressed="false"><span class="cp-pick-label">Time</span><b class="cp-pick-val" id="cp-time-val"></b>&#9662;</button>
         <span class="cp-more cp-grid" id="cp-time-more" hidden>${TIMES.map((t) => `<button type="button" class="cp-btn cp-time" data-act="time" data-beats="${t[0]}" data-unit="${t[1]}" aria-pressed="false" aria-label="${t[0]} ${t[1]}"><b>${t[0]}</b><b>${t[1]}</b></button>`).join("")}<button type="button" class="cp-btn cp-time-custom" data-act="time" data-custom="1" aria-label="another time signature">other…</button></span>
       </span>
-      <span class="cp-sep" aria-hidden="true"></span>
-      ${MAIN_CLEFS.map(clefBtn).join("")}
       <span class="cp-more-wrap">
-        <button type="button" class="cp-btn cp-clef-more" data-pop="cp-clef-more" aria-label="more clefs" aria-expanded="false"><span class="cp-glyph cp-glyph-sm" id="cp-clef-more-glyph">${G.cClef}</span><small id="cp-clef-more-word">more &#9662;</small></button>
-        <span class="cp-more" id="cp-clef-more" hidden>${MORE_CLEFS.map(clefBtn).join("")}</span>
+        <button type="button" class="cp-btn cp-pick" data-pop="cp-clef-more" aria-label="clef — pick one, then tap the beat it starts on" aria-expanded="false" aria-pressed="false"><span class="cp-pick-label">Clef</span><span class="cp-pick-val cp-clef-val" id="cp-clef-val"></span>&#9662;</button>
+        <span class="cp-more cp-grid cp-clef-grid" id="cp-clef-more" hidden>${CLEF_NAMES.map(clefBtn).join("")}</span>
       </span>
       <span class="cp-sep" aria-hidden="true"></span>
       ${["fermata", "staccato", "accent", "tenuto"].map((m) => `<button type="button" class="cp-btn cp-art-btn" data-act="art" data-mark="${m}" aria-label="${m}"><span class="cp-glyph">${artGlyph(m, true)}</span></button>`).join("")}
@@ -192,11 +188,9 @@ export function buildRails(host, { title, onAction }) {
       for (const b of host.querySelectorAll(".cp-time")) b.setAttribute("aria-pressed", String(!!time && Number(b.dataset.beats) === time.beats && Number(b.dataset.unit) === time.unit));
       const clef = pending?.kind === "clef" ? pending.value : null;
       for (const b of host.querySelectorAll(".cp-clef")) b.setAttribute("aria-pressed", String(b.dataset.clef === clef));
-      const cmore = host.querySelector(".cp-clef-more"), cmOn = !!clef && MORE_CLEFS.includes(clef);
-      cmore.classList.toggle("on", cmOn);
-      const cg = host.querySelector("#cp-clef-more-glyph"), ct = G[CLEFS[cmOn ? clef : "soprano"].glyph];
-      if (cg.textContent !== ct) { cg.textContent = ct; centreGlyph(cg); }
-      host.querySelector("#cp-clef-more-word").textContent = `${cmOn ? clef : "more"} \u25BE`;
+      host.querySelector("[data-pop=cp-clef-more]").setAttribute("aria-pressed", String(!!clef));
+      const cv = host.querySelector("#cp-clef-val"), cvHtml = clef ? `<span class="cp-glyph cp-glyph-xs">${G[CLEFS[clef].glyph]}</span><b>${clef}</b>` : "";
+      if (cv.innerHTML !== cvHtml) { cv.innerHTML = cvHtml; for (const g of cv.querySelectorAll(".cp-glyph")) centreGlyph(g); }
       for (const b of host.querySelectorAll(".cp-dur")) b.setAttribute("aria-pressed", String(mode === "place" && Number(b.dataset.base) === armed.base));
       const dg = host.querySelector("#cp-dot-glyph"), dt = G.dot.repeat(Math.max(1, armed.dots || 1));
       if (dg.textContent !== dt) { dg.textContent = dt; centreGlyph(dg); }
