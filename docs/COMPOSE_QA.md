@@ -1,6 +1,6 @@
 # Compose — the iPad and phone checklist (WSHED-114)
 
-The automated suite (`tests/e2e/compose.mjs`, 27 steps in headless Chromium with an iPad user
+The automated suite (`tests/e2e/compose.mjs`, 25 steps in headless Chromium with an iPad user
 agent and touch) proves the mechanics on every release, and `npm test` the engine, layout, playback
 and both exports. These are the things only a real device tells you. Run on the iPad (Safari,
 installed to the home screen) with the Pencil, and on the phone; tick, or file the finding on the
