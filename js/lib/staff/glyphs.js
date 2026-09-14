@@ -19,6 +19,8 @@ export const G = {
   staccatoAbove: cp(0xe4a2), staccatoBelow: cp(0xe4a3), accentAbove: cp(0xe4a0), accentBelow: cp(0xe4a1),
   tenutoAbove: cp(0xe4a4), tenutoBelow: cp(0xe4a5), fermataAbove: cp(0xe4c0), fermataBelow: cp(0xe4c1),
   trill: cp(0xe566), mordent: cp(0xe56c), lowerMordent: cp(0xe56d), turn: cp(0xe567),
+  // rolled chords: the precomposed signs (buttons) and the wiggle segments + arrowheads a sign of any height is built from (rotated 90°)
+  arpeggio: cp(0xe63c), arpeggioUp: cp(0xe634), arpeggioDown: cp(0xe635), wiggleArpUp: cp(0xeaa9), wiggleArpDown: cp(0xeaaa), wiggleArpUpArrow: cp(0xeaad), wiggleArpDownArrow: cp(0xeaae),
   // palette pictures (SMuFL "metronome" notes: head + stem + flags in one glyph)
   metDblWhole: cp(0xeca0), metWhole: cp(0xeca2), metHalf: cp(0xeca3), metQuarter: cp(0xeca5),
   met8th: cp(0xeca7), met16th: cp(0xeca9), met32nd: cp(0xecab), met64th: cp(0xecad),

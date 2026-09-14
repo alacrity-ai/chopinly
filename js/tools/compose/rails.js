@@ -21,11 +21,13 @@ export function centreGlyph(span) {
   meter.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
   const m = meter.measureText(span.textContent);
   if (!("fontBoundingBoxAscent" in m) || !("actualBoundingBoxAscent" in m)) return;
-  // the box's centre sits (font ascent − font descent) / 2 above the baseline. A note's head is centred on the
-  // baseline, so a note puts its baseline there (the stem and flags rise above); anything else centres its ink,
-  // whose centre is (ink ascent − ink descent) / 2 above the baseline.
+  // The zero-height glyph box sits on the button's centre line with its baseline (font ascent − font descent) / 2
+  // above that line. A note's head is centred on the baseline, so a note slides down by just that much (the stem and
+  // flags rise above); anything else centres its ink, which sits (ink ascent − ink descent) / 2 above the baseline,
+  // so it slides down by that too. (v83: this term was subtracted — symmetric glyphs such as accidentals hid it, the
+  // ornaments sat up to 13 px high and the rolled-chord sign was clipped; measured on 4× screenshots.)
   const note = span.classList.contains("cp-glyph-note");
-  const dy = (m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) / 2 - (note ? 0 : (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2);
+  const dy = (m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) / 2 + (note ? 0 : (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2);
   span.style.setProperty("--dy", `${dy.toFixed(2)}px`);
 }
 
@@ -36,6 +38,8 @@ export const TIMES = [[2, 4], [3, 4], [4, 4], [5, 4], [6, 8], [9, 8], [12, 8], [
 export const CLEF_NAMES = ["treble", "soprano", "mezzo", "alto", "tenor", "baritone", "bass"];
 const clefBtn = (c) => `<button type="button" class="cp-btn cp-clef" data-act="clef" data-clef="${c}" aria-pressed="false" aria-label="${c} clef — then tap the beat it starts on"><span class="cp-glyph cp-glyph-sm">${G[CLEFS[c].glyph]}</span><small>${c}</small></button>`;
 
+/** The rolled-chord menu: the sign, its glyph, what the row says. */
+const ARP_ROWS = [["plain", G.arpeggio, "rolled"], ["up", G.arpeggioUp, "rolled upward"], ["down", G.arpeggioDown, "rolled downward"]];
 /** What the mark buttons say; a mark not listed reads as its id. */
 const MARK_NAMES = { lowerMordent: "lower mordent — the one with the line through it" };
 /** The rails a reader can show or hide, in order — the header that holds the menu is not one of them. */
@@ -130,6 +134,10 @@ export function buildRails(host, { title, onAction }) {
       ${["trill", "mordent", "lowerMordent", "turn"].map((m) => `<button type="button" class="cp-btn cp-sq cp-art-btn" data-act="art" data-mark="${m}" aria-label="${MARK_NAMES[m] ?? m}"><span class="cp-glyph">${artGlyph(m, true)}</span></button>`).join("")}
       <span class="cp-sep" aria-hidden="true"></span>
       <button type="button" class="cp-btn cp-gliss-btn" data-act="gliss" aria-label="glissando to the next note"><i>gliss.</i></button>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-arp-btn" data-pop="cp-arp-more" aria-label="rolled chord — pick the roll" aria-expanded="false" disabled><span class="cp-glyph cp-glyph-xs">${G.arpeggio}</span>&#9662;</button>
+        <span class="cp-more cp-menu" id="cp-arp-more" hidden>${ARP_ROWS.map(([kind, glyph, label]) => `<button type="button" class="cp-btn cp-menu-row cp-arp-row" data-act="arp" data-kind="${kind}"><span class="cp-glyph cp-glyph-xs">${glyph}</span><span>${label}</span></button>`).join("")}</span>
+      </span>
     </div>`;
   const moreBtn = host.querySelector(".cp-dur-more"), accMoreBtn = host.querySelector(".cp-acc-more");
   const tupMore = host.querySelector("#cp-tup-more"), tupBtn = host.querySelector(".cp-tuplet");
@@ -154,6 +162,7 @@ export function buildRails(host, { title, onAction }) {
     if (act === "time") { onAction("time", b.dataset.custom ? "custom" : { beats: Number(b.dataset.beats), unit: Number(b.dataset.unit) }); return; }
     if (act === "clef") { onAction("clef", b.dataset.clef); return; }
     if (act === "art") { onAction("art", b.dataset.mark); return; }
+    if (act === "arp") { onAction("arp", b.dataset.kind); return; }
     if (act === "acc") { onAction("acc", Number(b.dataset.alter)); return; }
     if (act === "tuplet") { onAction("tuplet", b.dataset.n ? Number(b.dataset.n) : undefined); return; }
     onAction(act);
@@ -200,7 +209,7 @@ export function buildRails(host, { title, onAction }) {
         host.querySelector(`.cp-rail-row[data-rail="${k}"]`).setAttribute("aria-checked", String(on));
       }
       if (shown) centreAll(); // a lane that was display:none had no metrics to measure
-      for (const b of host.querySelectorAll(".cp-art-btn, .cp-gliss-btn")) b.disabled = !hasSelection;
+      for (const b of host.querySelectorAll(".cp-art-btn, .cp-gliss-btn, .cp-arp-btn")) b.disabled = !hasSelection;
       // the armed change (key / time / clef waiting for a tap) shows on its picker and its button
       const key = pending?.kind === "key" ? KEYS.find((k) => k.fifths === pending.value) : null;
       host.querySelector("#cp-key-val").textContent = key ? `${key.major} / ${key.minor}m` : "";

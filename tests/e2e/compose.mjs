@@ -507,7 +507,14 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   await page.click("[data-act=gliss]");
   if ((await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures[0].staves[0].voices[0][0].gliss)) !== "start") throw new Error("gliss not set");
   if ((await page.locator(".cp-svg .cp-gliss").count()) !== 1) throw new Error("gliss not drawn");
+  // the rolled-chord picker next to gliss.: pick "rolled upward" → the sign stands left of the note; the same pick again clears it
+  await page.click("[data-pop=cp-arp-more]"); await page.click(".cp-arp-row[data-kind=up]");
+  if ((await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures[0].staves[0].voices[0][0].arp)) !== "up") throw new Error("roll not set");
+  const arp = await page.evaluate(() => { const ed = document.querySelector(".cp-editor").__editor, a = ed.layout.arps[0], d = ed.layout.drawn.find((x) => x.id === ed.state.doc.measures[0].staves[0].voices[0][0].id); return { n: document.querySelectorAll(".cp-svg .cp-arp").length, left: a && a.x < d.x, spans: a && a.y1 > d.botY && a.y2 < d.topY }; });
+  if (arp.n !== 1 || !arp.left || !arp.spans) throw new Error("roll sign " + JSON.stringify(arp));
   await page.screenshot({ path: `${S}/cp-15-utility.png` });
+  await page.click("[data-pop=cp-arp-more]"); await page.click(".cp-arp-row[data-kind=up]");
+  if ((await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures[0].staves[0].voices[0][0].arp)) !== undefined) throw new Error("roll not cleared");
   await page.click("[data-act=gliss]"); await page.click(".cp-art-btn[data-mark='staccato']"); await page.click(".cp-art-btn[data-mark='lowerMordent']");
   await page.keyboard.press("Escape"); await page.keyboard.press("v");
   await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=utility]"); await page.click("[data-pop=cp-rails-more]");

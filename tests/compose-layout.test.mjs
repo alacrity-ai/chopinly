@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition } from "../js/lib/compose/model.js";
-import { place, setClef, setKey, setTime, articulate, MARKS } from "../js/lib/compose/engine.js";
+import { place, setClef, setKey, setTime, articulate, arpeggio, accidental, MARKS } from "../js/lib/compose/engine.js";
 import { layoutComposition, SYS_H, TOP_PAD } from "../js/lib/compose/layout.js";
 import { slotAt, thingAt, ticksAt, xOfTicks, barAt } from "../js/lib/compose/hit.js";
 import { PPQ } from "../js/lib/compose/ticks.js";
@@ -140,4 +140,24 @@ test("the lower mordent (the one with the line through it) is a mark and lays ou
   const m = L.marks.find((x) => x.mark === "lowerMordent");
   assert.ok(m && m.above, "drawn above like the other ornaments");
   assert.ok(m.y < L.systems[0].staffTop[0], "above the top line");
+});
+
+test("a rolled chord gets a sign left of its accidentals spanning a space past its outer heads, and the column widens for it", () => {
+  const A = { base: 4, dots: 0, rest: false, tuplet: null, alter: null };
+  let d = newComposition({ id: "a", now: 1 });
+  d = place(d, { bar: 0, staff: 0, ticks: 0, step: 2 }, A).doc;
+  d = place(d, { bar: 0, staff: 0, ticks: 0, step: 8 }, A).doc;
+  const ev = d.measures[0].staves[0].voices[0][0];
+  d = accidental(d, [{ ev: ev.id, pi: 0 }], 1);                     // a sharp on the low note: the sign must stand left of it
+  const before = layoutComposition(d, { unit: 10, width: 900 });
+  assert.equal(before.arps.length, 0);
+  d = arpeggio(d, [ev.id], "up");
+  const L = layoutComposition(d, { unit: 10, width: 900 });
+  assert.equal(L.arps.length, 1);
+  const a = L.arps[0], dn = L.drawn.find((x) => x.id === ev.id);
+  assert.equal(a.kind, "up");
+  assert.ok(a.y1 > dn.botY && a.y2 < dn.topY, "spans past both outer heads");
+  const accX = Math.min(...dn.heads.map((h) => h.x)) - 1.35;
+  assert.ok(a.x < accX - 0.4, `left of the accidental (${a.x} vs ${accX})`);
+  assert.ok(dn.x > before.drawn.find((x) => x.id === ev.id).x + 1, "the chord moved right to make room for the sign");
 });
