@@ -181,7 +181,7 @@ Compose. Leif's verdict on the feel gates P1.
 can be written and corrected without the keyboard, and every button obeys
 "selection first, then the button".
 
-## Phase 2 — the utility rail (key / time / clef anywhere; articulations, ornaments, glissando) — LANDED v73 (WSHED-117, 2026-09-13)
+## Phase 2 — the utility rail (key / time / clef anywhere; articulations, ornaments, glissando) — LANDED v73 (WSHED-117, 2026-09-13); v74 re-cut the targeting to Leif's review: no target-bar control — pick a key / time / clef, then tap the bar (key, time) or the staff + beat (clef, any beat of the metre, `clefChanges`) it starts at
 
 **Goal:** the piece can change key, metre and clef at any bar; notes carry
 articulations and ornaments; chords can glissando.

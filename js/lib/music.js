@@ -50,9 +50,11 @@ export function keyAlterations(fifths) {
 export const CLEFS = {
   treble:  { glyph: "gClef", line: 2, bottom: "E4" },
   soprano: { glyph: "cClef", line: 1, bottom: "C4" },
+  mezzo:   { glyph: "cClef", line: 2, bottom: "A3" },
   alto:    { glyph: "cClef", line: 3, bottom: "F3" },
-  bass:    { glyph: "fClef", line: 4, bottom: "G2" },
   tenor:   { glyph: "cClef", line: 4, bottom: "D3" },
+  baritone:{ glyph: "fClef", line: 3, bottom: "B2" },
+  bass:    { glyph: "fClef", line: 4, bottom: "G2" },
 };
 
 /** Vertical step (half-spaces above line 1) of a pitch on a given clef. */
@@ -69,6 +71,8 @@ const KEYSIG_OCTAVES = {
   alto:    { sharp: ["F4", "C4", "G4", "D4", "A3", "E4", "B3"], flat: ["B3", "E4", "A3", "D4", "G3", "C4", "F3"] },
   soprano: { sharp: ["F4", "C5", "G4", "D5", "A4", "E4", "B4"], flat: ["B4", "E4", "A4", "D4", "G4", "C4", "F4"] },
   tenor:   { sharp: ["F3", "C4", "G3", "D4", "A3", "E4", "B3"], flat: ["B3", "E4", "A3", "D4", "G3", "C4", "F3"] },
+  mezzo:   { sharp: ["F4", "C4", "G4", "D4", "A4", "E4", "B4"], flat: ["B4", "E4", "A4", "D4", "G4", "C4", "F4"] },
+  baritone:{ sharp: ["F3", "C3", "G3", "D3", "A3", "E3", "B3"], flat: ["B3", "E3", "A3", "D3", "G3", "C3", "F3"] },
 };
 
 /** fifths + clef → [{ acc: 1|-1, step }] in drawing order */

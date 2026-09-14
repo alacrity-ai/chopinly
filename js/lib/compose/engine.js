@@ -2,7 +2,7 @@
 // clones the document, changes it, re-normalises the touched bar and returns
 // the new document; a refused edit throws Nudge(sentence) and the document is
 // untouched. Pure — node-testable.
-import { ticks, capacity, splitRest, fromTicks } from "./ticks.js";
+import { groupSize, ticks, capacity, splitRest, fromTicks } from "./ticks.js";
 import { clone, restEvent, noteEvent, durOf, newMeasure, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, DEFAULT_BARS, eid } from "./model.js";
 import { parsePitch, keyAlterations, CLEFS } from "../music.js";
 
@@ -80,7 +80,7 @@ export function setPitch(doc, items, delta) {
   for (const [evId, pis] of byEv) {
     const f = find(d, evId);
     if (!f || f.ev.kind !== "note") continue;
-    const clef = clefAt(d, f.bar, f.staff), key = keyAt(d, f.bar);
+    const clef = clefAt(d, f.bar, f.staff, onsetOf(d.measures[f.bar].staves[f.staff].voices[f.voice], f.ev)), key = keyAt(d, f.bar);
     const targets = pis.has("*") ? [...f.ev.pitches] : [...pis].map((i) => f.ev.pitches[i]).filter(Boolean);
     for (const p of targets) {
       const step = stepOf(p, clef) + delta;
@@ -315,6 +315,8 @@ export function onsets(voice) {
   let t = 0;
   return voice.map((ev) => { const len = evTicks(ev); const o = { ev, start: t, len }; t += len; return o; });
 }
+/** The tick inside its bar at which an event starts. */
+export const onsetOf = (voice, ev) => onsets(voice).find((o) => o.ev === ev)?.start ?? 0;
 
 /**
  * Re-split every run of plain rests in a bar into standard groupings; a tuplet
@@ -391,7 +393,7 @@ export function place(doc, slot, armed) {
   const d = clone(doc);
   const { bar, staff, step } = slot;
   const s = snap(d, slot, armed);
-  const time = timeAt(d, bar), key = keyAt(d, bar), clef = clefAt(d, bar, staff);
+  const time = timeAt(d, bar), key = keyAt(d, bar), clef = clefAt(d, bar, staff, s.onset);
   const voice = d.measures[bar].staves[staff].voices[0];
   const pitch = () => { const p = pitchFromStep(step, clef, key); if (armed.alter !== null && armed.alter !== undefined) spell(p, armed.alter, keyAlt(key, p.step)); return p; };
   if (s.joins) {
@@ -613,12 +615,23 @@ export function setKey(doc, bar, fifths) {
   else d.measures[bar].key = { fifths };
   return d;
 }
-/** A clef change for one staff at a bar; pitches are absolute, so nothing re-steps. */
-export function setClef(doc, bar, staff, clef) {
+/**
+ * A clef change for one staff on a beat of a bar (`at` in ticks, 0 = the
+ * barline; any beat of the metre — the dotted group in compound metres). It
+ * holds for that staff until the next change. Choosing the clef already in
+ * force there removes a change on that beat instead. Pitches are absolute,
+ * so nothing re-steps.
+ */
+export function setClef(doc, bar, staff, clef, at = 0) {
   if (!CLEFS[clef]) throw new Nudge("no such clef");
-  const d = clone(doc), m = d.measures[bar];
-  if (bar > 0 && clefAt(d, bar - 1, staff) === clef) { if (m.clefs) { delete m.clefs[staff]; if (!Object.keys(m.clefs).length) delete m.clefs; } }
-  else m.clefs = { ...(m.clefs ?? {}), [staff]: clef };
+  const d = clone(doc), m = d.measures[bar], time = timeAt(d, bar);
+  if (!Number.isInteger(at) || at < 0 || at >= capacity(time) || at % groupSize(time)) throw new Nudge("a clef change goes on a beat", { bar });
+  if (at === 0) { if (m.clefs) { delete m.clefs[staff]; if (!Object.keys(m.clefs).length) delete m.clefs; } }
+  else if (m.clefChanges) { m.clefChanges = m.clefChanges.filter((c) => !(c.staff === staff && c.at === at)); if (!m.clefChanges.length) delete m.clefChanges; }
+  const before = at > 0 ? clefAt(d, bar, staff, at - 1) : bar > 0 ? clefAt(d, bar - 1, staff, Infinity) : null;
+  if (before === clef) return d;
+  if (at === 0) m.clefs = { ...(m.clefs ?? {}), [staff]: clef };
+  else m.clefChanges = [...(m.clefChanges ?? []), { staff, at, clef }].sort((a, b) => a.at - b.at || a.staff - b.staff);
   return d;
 }
 /** A note's length as tied pieces: one plain / dotted value when it is one, else the fewest plain values longest first. */
@@ -658,8 +671,19 @@ export function setTime(doc, bar, time) {
   const nStaves = d.parts[0].staves;
   const fresh = Array.from({ length: nNew }, () => newMeasure(nStaves, time));
   const oldBars = d.measures.slice(bar, end);
-  // key / clef changes inside the stretch follow their tick
-  oldBars.forEach((m, k) => { const nb = fresh[Math.min(nNew - 1, Math.floor((k * capOld) / capNew))]; if (m.key) nb.key = m.key; if (m.clefs) nb.clefs = { ...(nb.clefs ?? {}), ...m.clefs }; });
+  // key / clef changes inside the stretch follow their tick (a clef lands on the beat of the new metre at or before it)
+  const beatNew = groupSize(time);
+  const putClef = (abs, staff, clef) => {
+    const nb = fresh[Math.min(nNew - 1, Math.floor(abs / capNew))], local = abs - Math.min(nNew - 1, Math.floor(abs / capNew)) * capNew, at = local - (local % beatNew);
+    if (at === 0) { nb.clefs = { ...(nb.clefs ?? {}), [staff]: clef }; return; }
+    nb.clefChanges = [...(nb.clefChanges ?? []).filter((c) => !(c.staff === staff && c.at === at)), { staff, at, clef }].sort((a, b) => a.at - b.at || a.staff - b.staff);
+  };
+  oldBars.forEach((m, k) => {
+    const nb = fresh[Math.min(nNew - 1, Math.floor((k * capOld) / capNew))];
+    if (m.key) nb.key = m.key;
+    for (const [st, clef] of Object.entries(m.clefs ?? {})) putClef(k * capOld, Number(st), clef);
+    for (const c of m.clefChanges ?? []) putClef(k * capOld + c.at, c.staff, c.clef);
+  });
   const prevT = bar > 0 ? timeAt(doc, bar - 1) : null;
   if (!prevT || prevT.beats !== time.beats || prevT.unit !== time.unit) fresh[0].time = { beats: time.beats, unit: time.unit }; // back to the metre before it: the stretch simply rejoins it
   if (bar === 0) { fresh[0].key ??= oldBars[0].key; fresh[0].clefs ??= oldBars[0].clefs; }

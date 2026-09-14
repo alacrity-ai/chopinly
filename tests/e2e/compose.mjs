@@ -386,34 +386,39 @@ await step("notation: dot a chord (both heads, one event), tie two same-pitch no
   await scrollTo(0); await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
 });
 
-await step("utility rail: key → G at bar 3 (signature + naturals later), time → 3/4 at bar 3 asks before spilling and re-flows, clef → treble on the lower staff at bar 5, staccato on a selection, gliss between two notes", async () => {
-  const st = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { cursorBar: s.cursorBar, open: s.utilityOpen, bars: s.bars, sel: s.selection.length }; });
-  const meta = (bar) => page.evaluate((b) => { const m = document.querySelector(".cp-editor").__editor.state.doc.measures[b]; return { key: m.key?.fifths ?? null, time: m.time ? `${m.time.beats}/${m.time.unit}` : null, clefs: m.clefs ?? null }; }, bar);
+await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 (asks before spilling, re-flows); tenor clef then tap beat 3 of bar 5 on the lower staff (holds from there); more clefs behind ▾; Esc cancels an armed change; staccato on a selection; gliss between two notes", async () => {
+  const st = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { pending: s.pending, open: s.utilityOpen, bars: s.bars, sel: s.selection.length }; });
+  const meta = (bar) => page.evaluate((b) => { const m = document.querySelector(".cp-editor").__editor.state.doc.measures[b]; return { key: m.key?.fifths ?? null, time: m.time ? `${m.time.beats}/${m.time.unit}` : null, clefs: m.clefs ?? null, changes: m.clefChanges ?? null }; }, bar);
   await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
   if ((await state()).mode !== "place") await page.keyboard.press("v");
   await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
   await page.click("[data-act=utility]");
   if (!(await st()).open || (await page.locator("#cp-utility").isHidden())) throw new Error("utility rail did not open");
-  // target bar follows the last tap; ‹ › adjust it
-  await tapAt({ bar: 2, staff: 0, ticks: 0, step: 4 });
-  if ((await st()).cursorBar !== 2) throw new Error("cursor bar " + JSON.stringify(await st()));
-  await page.click("[data-act=bar-next]"); await page.click("[data-act=bar-prev]");
-  if ((await page.locator("#cp-at-read").textContent()) !== "bar 3") throw new Error("readout " + (await page.locator("#cp-at-read").textContent()));
-  // key: G major from bar 3
+  if (await page.locator("[data-act=bar-prev], [data-act=bar-next], #cp-at-read").count()) throw new Error("the bar selector is still there");
+  // key: pick G major → the cursor is armed (picker shows it); tap bar 3 → the change lands there and the cursor clears
   await page.click("[data-pop=cp-key-more]");
   await page.click(".cp-key[data-fifths='1']");
-  if ((await meta(2)).key !== 1) throw new Error("key not set " + JSON.stringify(await meta(2)));
+  if ((await st()).pending?.kind !== "key" || (await st()).pending.value !== 1) throw new Error("key not armed " + JSON.stringify(await st()));
   if ((await page.locator("#cp-key-val").textContent()) !== "G / Em") throw new Error("key readout " + (await page.locator("#cp-key-val").textContent()));
+  if ((await page.locator("[data-pop=cp-key-more]").getAttribute("aria-pressed")) !== "true") throw new Error("key picker not lit while armed");
+  if ((await meta(2)).key !== null) throw new Error("key changed before the tap");
+  await tapAt({ bar: 2, staff: 0, ticks: PPQ + 300, step: 6 });
+  if ((await meta(2)).key !== 1) throw new Error("key not set by the tap " + JSON.stringify(await meta(2)));
+  if ((await st()).pending !== null) throw new Error("cursor still armed after the tap");
+  if ((await page.locator("#cp-key-val").textContent()) !== "") throw new Error("key readout should clear");
   // the F line in bar 3 now spells F♯ (spelling follows the key in force)
   await page.keyboard.press("5"); await page.keyboard.press("5"); // quarter (press twice: the first may un-arm)
   if ((await state()).armed.base !== 4 || (await state()).mode !== "place") { await page.keyboard.press("5"); }
   await tapAt({ bar: 2, staff: 0, ticks: PPQ + 300, step: 1 });
   const f = await page.evaluate(() => { const v = document.querySelector(".cp-editor").__editor.state.doc.measures[2].staves[0].voices[0]; return v.filter((e) => e.kind === "note").map((e) => e.pitches.map((p) => p.step + p.alter).join()).join(" "); });
   if (!f.includes("F1")) throw new Error("spelling in G major: " + f);
-  // time: 3/4 from bar 3 — the piece has content past bar 3, so it asks; accepted → bars re-flow
+  // time: 3/4 armed, tap bar 3 — the piece has content past bar 3, so it asks; accepted → bars re-flow
   const barsBefore = (await st()).bars;
   await page.click("[data-pop=cp-time-more]");
   await page.click(".cp-time[data-beats='3'][data-unit='4']");
+  if ((await st()).pending?.kind !== "time") throw new Error("time not armed");
+  if ((await page.locator("#cp-time-val").textContent()) !== "3/4") throw new Error("time readout");
+  await tapAt({ bar: 2, staff: 1, ticks: 2 * PPQ + 300, step: 4 });
   await page.waitForTimeout(150);
   if ((await meta(2)).time !== "3/4") throw new Error("time not set " + JSON.stringify(await meta(2)));
   if (!((await st()).bars > barsBefore)) throw new Error(`bars did not spill: ${barsBefore} → ${(await st()).bars}`);
@@ -421,12 +426,29 @@ await step("utility rail: key → G at bar 3 (signature + naturals later), time 
   if (sums.some((x) => { const [a, b] = x.split(":"); return a.split("/").some((v) => Number(v) !== Number(b)); })) throw new Error("bars do not add up after 3/4: " + sums.join(" "));
   await page.click("[data-act=undo]");
   if ((await st()).bars !== barsBefore || (await meta(2)).time !== null) throw new Error("undo of the time change");
-  // clef: lower staff → treble from bar 5
-  await page.click("[data-act=bar-next]"); await page.click("[data-act=bar-next]");
-  await page.click("[data-pop=cp-clef-more]");
-  await page.click(".cp-clef[data-staff='1'][data-clef='treble']");
-  if ((await meta(4)).clefs?.[1] !== "treble") throw new Error("clef not set " + JSON.stringify(await meta(4)));
-  if ((await page.locator(".cp-clef[data-staff='1'][data-clef='treble']").getAttribute("aria-pressed")) !== "true") throw new Error("clef picker not reflecting");
+  // clef: tenor armed → tap beat 3 of bar 5 on the lower staff; the small clef draws there and the lower staff stays in tenor after
+  await page.click(".cp-clef[data-clef='tenor']");
+  if ((await st()).pending?.kind !== "clef" || (await st()).pending.value !== "tenor") throw new Error("clef not armed " + JSON.stringify(await st()));
+  if ((await page.locator(".cp-clef[data-clef='tenor']").getAttribute("aria-pressed")) !== "true") throw new Error("clef button not lit while armed");
+  await tapAt({ bar: 4, staff: 1, ticks: 2 * PPQ + 200, step: 4 });
+  const m4 = await meta(4);
+  if (JSON.stringify(m4.changes) !== JSON.stringify([{ staff: 1, at: 2 * PPQ, clef: "tenor" }])) throw new Error("clef change " + JSON.stringify(m4));
+  if ((await st()).pending !== null) throw new Error("clef cursor still armed after the tap");
+  if ((await page.locator(".cp-svg .cp-clef-change").count()) !== 1) throw new Error("inline clef not drawn");
+  const later = await page.evaluate(async () => { const { clefAt } = await import("/js/lib/compose/model.js"); const d = document.querySelector(".cp-editor").__editor.state.doc; return [clefAt(d, 4, 1, 0), clefAt(d, 4, 1, 6720 * 2), clefAt(d, 6, 1), clefAt(d, 6, 0)]; });
+  if (later.join() !== "bass,tenor,tenor,treble") throw new Error("clef in force after the change: " + later.join());
+  // a note placed on that beat reads in tenor: the middle line is A3
+  await tapAt({ bar: 4, staff: 1, ticks: 2 * PPQ + 300, step: 4 });
+  const a3 = await page.evaluate(() => { const v = document.querySelector(".cp-editor").__editor.state.doc.measures[4].staves[1].voices[0]; return v.filter((e) => e.kind === "note").map((e) => e.pitches[0].step + e.pitches[0].octave).join(); });
+  if (!a3.includes("A3")) throw new Error("middle line after the tenor clef: " + a3);
+  // the armed clef tapped again → off; the rarer clefs sit behind ▾ and Esc cancels an armed one
+  await page.click(".cp-clef[data-clef='alto']"); await page.click(".cp-clef[data-clef='alto']");
+  if ((await st()).pending !== null) throw new Error("tapping the armed clef again should disarm");
+  await page.click("[data-pop=cp-clef-more]"); await page.click(".cp-clef[data-clef='soprano']");
+  if ((await st()).pending?.value !== "soprano") throw new Error("soprano not armed");
+  if (!(await page.locator(".cp-clef-more.on").count())) throw new Error("the ▾ button should show the armed soprano");
+  await page.keyboard.press("Escape");
+  if ((await st()).pending !== null) throw new Error("Esc did not cancel the armed clef");
   // staccato on a selection; gliss from the first note of bar 1 to the next
   await page.click("[data-act=select]");
   await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });

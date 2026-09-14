@@ -1,5 +1,5 @@
 // The composition document (docs/COMPOSE_DESIGN.md §4). Pure — node-testable.
-import { ticks, capacity, fromTicks, splitRest } from "./ticks.js";
+import { ticks, capacity, fromTicks, splitRest, groupSize } from "./ticks.js";
 
 export const SCHEMA = 1;
 export const DEFAULT_BARS = 8;
@@ -32,10 +32,24 @@ export function newComposition({ id, title = "Untitled", composer = "", now = Da
 
 export const clone = (doc) => structuredClone(doc);
 
-/** The time / key / clefs in force at a bar (bar 1 always carries all three). */
+/** The time / key in force at a bar (bar 1 always carries both). */
 export function timeAt(doc, bar) { for (let i = bar; i >= 0; i--) if (doc.measures[i].time) return doc.measures[i].time; throw new Error("no time signature"); }
 export function keyAt(doc, bar) { for (let i = bar; i >= 0; i--) if (doc.measures[i].key) return doc.measures[i].key; throw new Error("no key"); }
-export function clefAt(doc, bar, staff) { for (let i = bar; i >= 0; i--) { const c = doc.measures[i].clefs?.[staff]; if (c) return c; } throw new Error("no clef"); }
+/**
+ * The clef in force on a staff at a tick of a bar. A bar's `clefs[staff]` is a
+ * change at its barline; `clefChanges` [{ staff, at, clef }] (sorted by `at`)
+ * are changes on a beat inside it. Either holds until the next change.
+ */
+export function clefAt(doc, bar, staff, at = 0) {
+  for (let i = bar; i >= 0; i--) {
+    const m = doc.measures[i];
+    let found = null;
+    for (const c of m.clefChanges ?? []) if (c.staff === staff && (i < bar || c.at <= at)) found = c.clef;
+    if (found) return found;
+    if (m.clefs?.[staff]) return m.clefs[staff];
+  }
+  throw new Error("no clef");
+}
 
 /** Every event's ticks; a voice's total. */
 export const evTicks = (ev) => ticks(ev.dur);
@@ -50,8 +64,14 @@ export function validate(doc) {
   if (!m0.key || !m0.time || !m0.clefs) throw new Error("bar 1 must carry key, time and clefs");
   const ids = new Set();
   doc.measures.forEach((m, bi) => {
-    const cap = capacity(timeAt(doc, bi));
+    const cap = capacity(timeAt(doc, bi)), beat = groupSize(timeAt(doc, bi));
     if (m.staves.length !== doc.parts[0].staves) throw new Error(`bar ${bi + 1}: staff count`);
+    let lastAt = 0;
+    for (const c of m.clefChanges ?? []) {
+      if (!(c.staff >= 0 && c.staff < m.staves.length) || !Number.isInteger(c.at) || c.at <= 0 || c.at >= cap || c.at % beat || c.at < lastAt) throw new Error(`bar ${bi + 1}: clef change off the beat`);
+      if ((m.clefChanges ?? []).some((o) => o !== c && o.staff === c.staff && o.at === c.at)) throw new Error(`bar ${bi + 1}: two clefs on one beat`);
+      lastAt = c.at;
+    }
     m.staves.forEach((s, si) => s.voices.forEach((v, vi) => {
       const sum = voiceTicks(v);
       if (sum !== cap) throw new Error(`bar ${bi + 1} staff ${si} voice ${vi}: ${sum} ticks, bar holds ${cap}`);

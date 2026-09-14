@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition, validate, timeAt, isEmptyBar, evTicks } from "../js/lib/compose/model.js";
 import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar, setPitch, stepOf, retype, dot, tie, tuplet, accidental, clipFrom, paste, toRests, setKey, setTime, setClef, articulate, gliss, decompose } from "../js/lib/compose/engine.js";
-import { capacity, PPQ } from "../js/lib/compose/ticks.js";
+import { capacity, PPQ, groupSize } from "../js/lib/compose/ticks.js";
 const Qt = PPQ;
 import { createHistory } from "../js/lib/compose/history.js";
 
@@ -439,6 +439,25 @@ test("setKey / setClef: a change holds until the next one; the value already in 
   d = setClef(d, 4, 1, "bass"); assert.equal(d.measures[4].clefs, undefined);
   d = setClef(d, 6, 0, "tenor"); assert.equal(clefAt(d, 7, 0), "tenor");
   validate(d);
+  // on a beat inside a bar: tenor from beat 3 of bar 4 on the lower staff holds through every later bar
+  d = setClef(fresh(), 3, 1, "tenor", 2 * Qt);
+  assert.deepEqual(d.measures[3].clefChanges, [{ staff: 1, at: 2 * Qt, clef: "tenor" }]);
+  assert.equal(clefAt(d, 3, 1, 0), "bass"); assert.equal(clefAt(d, 3, 1, 2 * Qt - 1), "bass"); assert.equal(clefAt(d, 3, 1, 2 * Qt), "tenor"); assert.equal(clefAt(d, 4, 1), "tenor"); assert.equal(clefAt(d, 7, 1, 3 * Qt), "tenor"); assert.equal(clefAt(d, 3, 0, 2 * Qt), "treble");
+  validate(d);
+  // a note placed on that beat reads in the new clef; one before it in the old
+  let f = place(d, { bar: 3, staff: 1, ticks: 2 * Qt, step: 4 }, Q).doc;                       // middle line, tenor → A3
+  f = place(f, { bar: 3, staff: 1, ticks: 0, step: 4 }, Q).doc;                                // middle line, bass → D3
+  const notes = f.measures[3].staves[1].voices[0].filter((e) => e.kind === "note").map((e) => e.pitches[0].step + e.pitches[0].octave);
+  assert.deepEqual(notes, ["D3", "A3"]);
+  // the clef already in force on that beat removes the change; off the beat refuses; bass again at the barline after → an explicit change back
+  assert.equal(setClef(d, 3, 1, "bass", 2 * Qt).measures[3].clefChanges, undefined);
+  assert.throws(() => setClef(d, 3, 1, "alto", Qt / 2), Nudge);
+  const g = setClef(d, 4, 1, "bass");
+  assert.deepEqual(g.measures[4].clefs, { 1: "bass" }); assert.equal(clefAt(g, 5, 1), "bass");
+  // a time change carries a mid-bar clef to the beat that now holds its tick
+  const h = setTime(d, 2, { beats: 3, unit: 4 }).doc;                                          // ticks 3·4Q+2Q from bar 1 = 2·4Q + 2·3Q → bar 5, beat 1
+  assert.equal(h.measures[3].clefChanges, undefined); assert.deepEqual(h.measures[4].clefs, { 1: "tenor" });
+  validate(h);
   // a placed note keeps its pitch across a clef change, and the new bar's spelling follows the new key
   let e = place(setKey(fresh(), 1, 1), { bar: 1, staff: 0, ticks: 0, step: 1 }, Q).doc; // F line in G major → F#
   assert.equal(e.measures[1].staves[0].voices[0][0].pitches[0].alter, 1);
@@ -519,19 +538,20 @@ test("fuzz: 3,000 edits mixing time / key / clef changes with notes keep every i
   let d = fresh();
   const durs = [W, H, Q, E, { base: 16, dots: 0, rest: false }, { base: 4, dots: 1, rest: false }, { base: 8, dots: 0, rest: false, tuplet: 3 }];
   const times = [{ beats: 4, unit: 4 }, { beats: 3, unit: 4 }, { beats: 6, unit: 8 }, { beats: 2, unit: 2 }, { beats: 5, unit: 4 }, { beats: 7, unit: 8 }];
-  let timeChanges = 0, nudges = 0;
+  let timeChanges = 0, nudges = 0, clefChanges = 0;
   for (let i = 0; i < 3000; i++) {
     const x = rnd();
     try {
       if (x < 0.6) { const bar = Math.floor(rnd() * d.measures.length), cap = capacity(timeAt(d, bar)); d = place(d, { bar, staff: Math.floor(rnd() * 2), ticks: Math.floor(rnd() * cap), step: Math.floor(rnd() * 17) - 4 }, pick(durs)).doc; }
       else if (x < 0.75) { const r = setTime(d, Math.floor(rnd() * d.measures.length), pick(times)); d = r.doc; timeChanges++; }
       else if (x < 0.85) d = setKey(d, Math.floor(rnd() * d.measures.length), Math.floor(rnd() * 15) - 7);
-      else if (x < 0.92) d = setClef(d, Math.floor(rnd() * d.measures.length), Math.floor(rnd() * 2), pick(["treble", "bass", "alto", "tenor"]));
+      else if (x < 0.92) { const bar = Math.floor(rnd() * d.measures.length), beat = groupSize(timeAt(d, bar)), n = capacity(timeAt(d, bar)) / beat; d = setClef(d, bar, Math.floor(rnd() * 2), pick(["treble", "bass", "alto", "tenor", "baritone", "mezzo", "soprano"]), Math.floor(rnd() * n) * beat); clefChanges++; }
       else { const ns = d.measures.flatMap((m) => m.staves.flatMap((s) => s.voices[0].filter((e) => e.kind === "note"))); if (ns.length) d = articulate(d, [pick(ns).id], pick(["staccato", "fermata", "trill"])); }
     } catch (e) { if (!(e instanceof Nudge)) throw e; nudges++; }
     if (i % 100 === 0) validate(d);
     if (d.measures.length > 400) d = trimBars(d);
   }
   validate(d);
-  assert.ok(timeChanges > 100 && nudges >= 0, `${timeChanges} ${nudges}`);
+  assert.ok(timeChanges > 100 && clefChanges > 100 && nudges >= 0, `${timeChanges} ${clefChanges} ${nudges}`);
+  assert.ok(d.measures.some((m) => m.clefChanges?.length), "some clef changes sit inside bars");
 });
