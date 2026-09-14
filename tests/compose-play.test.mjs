@@ -24,7 +24,7 @@ test("timeline: a tied pitch sounds once for the combined length; the untied pit
   d = place(d, { bar: 0, staff: 0, ticks: PPQ, step: 4 }, Q).doc;          // B4 again
   d = place(d, { bar: 0, staff: 0, ticks: PPQ, step: 6 }, Q).doc;          // D5 again
   const v = d.measures[0].staves[0].voices[0];
-  v[0].pitches.find((p) => p.step === "B").tie = true;                     // tie the B only
+  v[0].pitches.find((p) => p.step === "B").tie = "start";                     // tie the B only
   const { notes } = timeline(d);
   assert.deepEqual(notes.map((n) => [n.at, n.len, n.midi]), [[0, 2 * PPQ, 71], [0, PPQ, 74], [PPQ, PPQ, 74]]);
 });
@@ -33,6 +33,6 @@ test("timeline: a tie with no matching next note is ignored; an empty score has 
   let d = newComposition({ id: "t3" });
   assert.deepEqual(timeline(d).notes, []);
   d = place(d, { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
-  d.measures[0].staves[0].voices[0][0].pitches[0].tie = true;
+  d.measures[0].staves[0].voices[0][0].pitches[0].tie = "start";
   assert.deepEqual(timeline(d).notes.map((n) => [n.at, n.len]), [[0, PPQ]]);
 });

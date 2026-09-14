@@ -10,13 +10,13 @@ import { haptic } from "../logbook/motion.js";
 import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt, lasso } from "../../lib/compose/hit.js";
-import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, Nudge } from "../../lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, dot, tie, tuplet, accidental, TUPLET_IN, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { createPlayer } from "../../lib/compose/play.js";
 import { clefAt, tempoOf, MIN_TEMPO, MAX_TEMPO } from "../../lib/compose/model.js";
 import { ticks as ticksOf } from "../../lib/compose/ticks.js";
-import { buildRails, MAIN_BASES, MORE_BASES, durName } from "./rails.js";
+import { buildRails, MAIN_BASES, MORE_BASES, durName, tupletName } from "./rails.js";
 
 const TAP_MS = 300, TAP_PX = 10, PALM_PX = 40, S_MIN = 8, S_MAX = 22, SAVE_MS = 300, LASSO_PX = 6;
 const KEY_BASE = { 1: 64, 2: 32, 3: 16, 4: 8, 5: 4, 6: 2, 7: 1 };
@@ -30,7 +30,10 @@ export function openEditor({ id, ctx, onClose }) {
   let doc = c;
   let S = Math.max(S_MIN, Math.min(S_MAX, store.get("zoom", 12)));
   const savedArm = store.get("armed", null);
-  let armed = { base: MAIN_BASES.includes(savedArm?.base) || MORE_BASES.includes(savedArm?.base) ? savedArm.base : 4, dots: 0, rest: !!savedArm?.rest };
+  // what the next tap places: base, dots and rest / tuplet persist; an accidental is one-shot
+  let armed = { base: MAIN_BASES.includes(savedArm?.base) || MORE_BASES.includes(savedArm?.base) ? savedArm.base : 4, dots: [0, 1, 2].includes(savedArm?.dots) ? savedArm.dots : 0, rest: !!savedArm?.rest, tuplet: TUPLET_IN[savedArm?.tuplet] ? savedArm.tuplet : null, alter: null };
+  let tupletN = TUPLET_IN[savedArm?.tupletN] ? savedArm.tupletN : (armed.tuplet ?? 3);
+  const saveArm = () => store.set("armed", { base: armed.base, dots: armed.dots, rest: armed.rest, tuplet: armed.tuplet, tupletN });
   let mode = "place";                 // "place" | "select" | "scrub"
   const selection = new Set();        // "ev" | "ev:pi"
   let L = null, R = null, closed = false, saveTimer = 0, dirty = false, pasting = false;
@@ -59,7 +62,7 @@ export function openEditor({ id, ctx, onClose }) {
     showPlayhead(player.position);
   }
   function sync() {
-    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting });
+    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN });
     view.dataset.mode = mode; view.classList.toggle("pasting", pasting);
     syncTransport();
   }
@@ -139,7 +142,7 @@ export function openEditor({ id, ctx, onClose }) {
       const gy = armed.rest ? stepY(sys, slot.staff, armed.base <= 1 ? 6 : 4) : stepY(sys, slot.staff, slot.step);
       const ledgers = [];
       if (!armed.rest) { for (let st = -2; st >= slot.step; st -= 2) ledgers.push(stepY(sys, slot.staff, st)); for (let st = 10; st <= slot.step; st += 2) ledgers.push(stepY(sys, slot.staff, st)); }
-      R.showGhost({ x: gx, y: gy, base: armed.base, rest: armed.rest, stemUp: slot.step < 4, ledgers });
+      R.showGhost({ x: gx, y: gy, base: armed.base, dots: armed.dots, onLine: slot.step % 2 === 0, rest: armed.rest, stemUp: slot.step < 4, ledgers });
     } catch (e) { if (!(e instanceof Nudge)) throw e; R.showGhost(null); }
   }
 
@@ -156,9 +159,10 @@ export function openEditor({ id, ctx, onClose }) {
     if (!slot) return;
     try {
       const r = place(doc, slot, armed);
-      if (r.action === "same") { select({ type: "head", ev: r.ev.id, pi: r.ev.pitches.findIndex((p) => p.step === r.ev.pitches[0].step) }); return; }
+      if (r.action === "same") { const want = stepOf(r.ev.pitches[0], clefAt(doc, slot.bar, slot.staff)); const pi = r.ev.pitches.findIndex((p) => stepOf(p, clefAt(doc, slot.bar, slot.staff)) === slot.step); select({ type: "head", ev: r.ev.id, pi: pi >= 0 ? pi : 0 }); void want; return; }
       commit(r.doc);
-      if (r.ev.kind === "note") sound.play(r.action === "chord" ? r.ev.pitches : r.ev.pitches, 260);
+      if (armed.alter !== null) { armed = { ...armed, alter: null }; sync(); } // an accidental carries once
+      if (r.ev.kind === "note") sound.play(r.ev.pitches, 260);
       haptic(6);
     } catch (e) {
       if (!(e instanceof Nudge)) throw e;
@@ -421,14 +425,51 @@ export function openEditor({ id, ctx, onClose }) {
           if (!allNotes()) { toast("pick notes to retype"); return; }
           try { commit(retype(doc, selEvIds(), { base: arg, dots: 0 })); haptic(8); }
           catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); return; }
-          armed = { ...armed, base: arg }; store.set("armed", { base: armed.base, rest: armed.rest });
+          armed = { ...armed, base: arg }; saveArm();
           if (mode !== "place") setMode("place"); else sync();
           return;
         }
         if (mode === "place" && armed.base === arg) { setMode("select"); return; } // tap the armed one again → nothing armed
-        armed = { ...armed, base: arg }; store.set("armed", { base: armed.base, rest: armed.rest });
+        armed = { ...armed, base: arg }; saveArm();
         if (mode !== "place") setMode("place"); else sync();
         return;
+      case "dot":
+        if (selection.size) { // dot every selected note (a chord dots as one); all dotted already → undot
+          if (!allNotes()) { toast("pick notes to dot"); return; }
+          const ids = selEvIds(), dots = ids.every((id) => find(doc, id).ev.dur.dots > 0) ? 0 : 1;
+          try { commit(dot(doc, ids, dots)); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+          return;
+        }
+        armed = { ...armed, dots: (armed.dots + 1) % 3 }; saveArm(); if (mode !== "place") setMode("place"); else sync();
+        toast(armed.dots === 0 ? "no dot" : armed.dots === 1 ? "dotted" : "double dotted");
+        return;
+      case "tie":
+        if (!selection.size) { toast("select a note, then tie it to the next"); return; }
+        try { commit(tie(doc, selItems())); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+        return;
+      case "tuplet": { // arg = n from the hold menu; a plain tap uses the current n
+        const n = arg ?? tupletN;
+        if (selection.size) {
+          try { const ids = selEvIds(); commit(tuplet(doc, ids, n)); selection.clear(); for (const id of ids) selection.add(id); R.setSelection(selection); sync(); haptic(8); }
+          catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+          tupletN = n; saveArm(); sync();
+          return;
+        }
+        const on = armed.tuplet && !arg ? null : n; // tap the armed tuplet again → off; picking a size arms it
+        tupletN = n; armed = { ...armed, tuplet: on }; saveArm();
+        if (mode !== "place") setMode("place"); else sync();
+        toast(on ? `${tupletName(on)} — each tap places a ${tupletName(on)} ${durName(armed.base)}` : "tuplet off");
+        return;
+      }
+      case "acc": { // arg = alter −2 … 2
+        if (selection.size) {
+          try { commit(accidental(doc, selItems(), arg)); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+          return;
+        }
+        armed = { ...armed, alter: armed.alter === arg ? null : arg };
+        if (mode !== "place") setMode("place"); else sync();
+        return;
+      }
       case "rest":
         if (selection.size) { // the selected notes become rests of the same length; the toggle itself is untouched
           if (!allNotes()) { toast("pick notes to turn into rests"); return; }
@@ -437,7 +478,7 @@ export function openEditor({ id, ctx, onClose }) {
           selection.clear(); for (const id of ids) selection.add(id); R.setSelection(selection); sync(); haptic(8);
           return;
         }
-        armed = { ...armed, rest: !armed.rest }; store.set("armed", { base: armed.base, rest: armed.rest }); if (mode !== "place") setMode("place"); else sync(); return;
+        armed = { ...armed, rest: !armed.rest }; saveArm(); if (mode !== "place") setMode("place"); else sync(); return;
       default: return;
     }
   }
@@ -464,6 +505,8 @@ export function openEditor({ id, ctx, onClose }) {
     if (e.key === "Escape") { if (selection.size) { selection.clear(); R.setSelection(selection); sync(); } else setMode(mode === "select" ? "place" : "select"); return; }
     if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelection(); return; }
     if (KEY_BASE[e.key]) { act("dur", KEY_BASE[e.key]); return; }
+    if (e.key === ".") { act("dot"); return; }
+    if (e.key === "t" || e.key === "T") { act("tie"); return; }
     const k = e.key.toLowerCase();
     if (k === "r") act("rest"); else if (k === "s") setMode(mode === "scrub" ? "place" : "scrub"); else if (k === "v") setMode(mode === "select" ? "place" : "select");
     else if (k === "=" || k === "+") act("zoom-in"); else if (k === "-") act("zoom-out");
@@ -499,6 +542,8 @@ export function openEditor({ id, ctx, onClose }) {
     id, close,
     /** For tests: the live state. */
     get state() { return { mode, armed, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, doc }; },
+    /** For tests: the current layout. */
+    get layout() { return L; },
     /** For tests: the client point of a musical place. */
     pointFor({ bar, staff, ticks, step }) {
       const { sys, bar: hb } = barAt(L, bar);

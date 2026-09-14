@@ -2109,6 +2109,10 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-more-wrap { position: relative; display: inline-flex; }
 .cp-more[hidden] { display: none; }
 .cp-more { position: absolute; top: calc(100% + 0.35rem); left: 0; z-index: 3; display: flex; gap: 0.35rem; padding: 0.35rem; background: var(--bg-panel); border: 1px solid var(--bg-edge); border-radius: 0.95rem; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38); }
+.cp-dot-glyph { font-size: 2.4rem; letter-spacing: 0.1em; }
+.cp-tuplet small, .cp-tup-n small { font-size: 0.95rem; }
+.cp-acc-more { padding: 0 0.55rem 0 0.6rem; gap: 0.15rem; }
+.cp-acc-more.on .cp-glyph { color: var(--fg-on-accent); }
 .cp-tie-pic { display: inline-block; width: 1.5rem; height: 0.65rem; border: 2.2px solid currentColor; border-top: none; border-radius: 0 0 0.75rem 0.75rem; }
 .cp-title { flex: 1; min-width: 4rem; text-align: center; font-family: var(--serif); font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-dim); padding: 0 0.5rem; }
 /* transport */
@@ -2151,6 +2155,9 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-svg .cp-ev.sel .head, .cp-svg .cp-ev.sel .rest, .cp-svg .cp-ev.sel .stem, .cp-svg .cp-ev.sel .head-part, .cp-svg .cp-head-g.sel .head, .cp-svg .cp-head-g.sel .head-part { fill: var(--hi); }
 .cp-svg .cp-head-g.sel .halo { fill: color-mix(in srgb, var(--hi) 22%, transparent); }
 .cp-svg .cp-brace { fill: var(--fg); }
+.cp-svg .cp-tie { fill: var(--fg); }
+.cp-svg .cp-tuplet-line { fill: none; stroke: var(--fg); stroke-width: 1.2; stroke-linecap: square; }
+.cp-svg .cp-tuplet-digit { font-size: 0.62em; fill: var(--fg); }
 @media (max-width: 480px) {
   .cp-rails { gap: 0.3rem; padding-left: 0.4rem; padding-right: 0.4rem; }
   .cp-rail { gap: 0.25rem; min-height: 2.8rem; }

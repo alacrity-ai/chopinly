@@ -394,6 +394,14 @@ a history snapshot and schedules a logbook save (debounced 300 ms; flushed on
 `pagehide`, on leaving the tool, and on undo/redo). Reopening restores the last
 document and the per-device zoom. Undo history is per open editor, not saved.
 
+### 8.5a Dots, ties, tuplets, accidentals as built (v72)
+
+- **Dot** cycles the armed dots 0 → 1 → 2 → 0; with a selection it dots every selected note (a chord is one event) and, when all are dotted already, undots. A dot is a retype, so it obeys the overflow rule.
+- **Tie** acts on the selection only (§2 rule): one note → the next same pitch in the staff, several → only between selected neighbours, all tied → untie. Ties are re-derived after every edit (`cleanTies`): a `start` survives only while the next event holds the same spelled pitch; the partner is `stop`; a tied-in pitch draws no accidental but sets the bar's accidental memory.
+- **Tuplet** with a selection wraps that run (rests included); its plain total must be n × a plain value; a duplet takes room from the rests after it. Tap the button to arm a tuplet of the shown size, hold for 2 / 3 / 5 / 6 / 7. With a tuplet armed, the first tap in plain rests opens a whole group (n units of the armed base, filled with tuplet rests); a tap inside any tuplet's rests takes that group's ratio whatever is armed. A group whose notes are all deleted dissolves into plain rests. Groups travel whole through the clipboard; a paste that lands on part of a group replaces the whole group.
+- **Accidentals** ♯ ♭ ♮ (𝄪 𝄫 behind the ▾) act on the selected pitches; without a selection they arm for the next placed pitch and clear after it (one-shot). Pressing the accidental a pitch already has takes it back to the key; an accidental the key already implies becomes a cautionary (`acc: "show"`), pressed again it hides. Chords stack accidentals into columns six steps apart.
+- Keys: `.` dot, `t` tie.
+
 ### 8.6 Transport (v70) and the rails' look (v71)
 
 A third rail sits between the control rail and the palette: **stop · a bar back · play/pause · a bar forward · position slider (bar N of M) · tempo (♩= − / +, hold to repeat, tap the number to type)**. `Space` toggles play, `Home` stops. Playback (`play.js`) turns the document into a timeline of absolute-tick notes (ties merge into one sounding note), sequences them 180 ms ahead on the audio clock through the piano voice, and a playhead line on the overlay follows; the view scrolls only when the playing system leaves it. The tempo is saved with the piece (`tempo`, default 100, 20–300) and is *not* an undoable edit. Editing while playing re-sequences from the current position.

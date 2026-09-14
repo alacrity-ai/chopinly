@@ -5,7 +5,7 @@
 import { keyAlterations, keySignatureGlyphs, CLEFS, staffStep } from "../music.js";
 import { ticks, capacity, groupSize } from "./ticks.js";
 import { timeAt, keyAt, clefAt } from "./model.js";
-import { onsets } from "./engine.js";
+import { onsets, diatonicOf, nextEvent } from "./engine.js";
 
 export const STAFF_GAP = 8;      // S between the treble's bottom line and the bass's top line
 export const SYS_GAP = 10;       // S between systems
@@ -40,7 +40,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     m.staves.forEach((s, si) => {
       for (const o of onsets(s.voices[0])) {
         if (!onsetMap.has(o.start)) onsetMap.set(o.start, { ticks: o.start, evs: [] });
-        onsetMap.get(o.start).evs.push({ staff: si, ev: o.ev, len: o.len });
+        onsetMap.get(o.start).evs.push({ staff: si, ev: o.ev, len: o.len, index: s.voices[0].indexOf(o.ev) });
       }
     });
     const cols = [...onsetMap.values()].sort((a, b) => a.ticks - b.ticks);
@@ -65,13 +65,24 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
         x.accs = x.ev.pitches.map((p) => {
           const k = p.step + p.octave, mem = memory[x.staff];
           const eff = mem.has(k) ? mem.get(k) : (keyAlt.get(p.step) ?? 0);
-          const show = p.acc === "show" ? true : p.acc === "hide" ? false : p.alter !== eff;
-          if (show || p.acc === "show") mem.set(k, p.alter);
+          const tiedIn = p.tie === "stop" || p.tie === "both";
+          const show = tiedIn ? false : p.acc === "show" ? true : p.acc === "hide" ? false : p.alter !== eff;
+          if (show || tiedIn || p.acc === "show") mem.set(k, p.alter);
           return show ? p.alter : null;
         });
-        if (x.accs.some((a) => a !== null)) acc = 1;
+        // stack: top down, each accidental takes the first column with nothing within six steps of it
+        const cols = [];
+        x.accCol = x.ev.pitches.map(() => 0);
+        const order = x.ev.pitches.map((p, pi) => ({ pi, dia: diatonicOf(p) })).sort((a, b2) => b2.dia - a.dia);
+        for (const o of order) {
+          if (x.accs[o.pi] === null) continue;
+          let col = 0;
+          while ((cols[col] ?? []).some((dia) => Math.abs(dia - o.dia) < 6)) col++;
+          (cols[col] ??= []).push(o.dia); x.accCol[o.pi] = col;
+        }
+        acc = Math.max(acc, cols.length);
       }
-      c.accPad = acc ? 1.4 : 0; c.dotPad = dot ? 0.9 : 0;
+      c.accPad = acc ? 1.4 + (acc - 1) * 1.15 : 0; c.dotPad = dot ? 0.9 : 0;
     }
   }
 
@@ -143,7 +154,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
           if (ev.ev.kind === "rest") {
             if (b.allRest[st]) { if (c.ticks === 0) drawn.push({ id: ev.ev.id, bar: b.index, staff: st, system: si, rest: true, whole: true, base: 1, dots: 0, x: (bodyStart + hbar.x1) / 2 - 0.85, y: yOfStep(st, 6) }); continue; }
             const base = ev.ev.dur.base;
-            drawn.push({ id: ev.ev.id, bar: b.index, staff: st, system: si, rest: true, base, dots: ev.ev.dur.dots, x, y: yOfStep(st, base <= 1 ? 6 : 4) });
+            drawn.push({ id: ev.ev.id, bar: b.index, staff: st, system: si, rest: true, base, dots: ev.ev.dur.dots, x, y: yOfStep(st, base <= 1 ? 6 : 4), ticks: c.ticks, tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index });
             continue;
           }
           const base = ev.ev.dur.base, kind = headKind(base), headW = HEAD_W[kind];
@@ -151,7 +162,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
           const steps = ev.ev.pitches.map((p) => staffStep({ letter: p.step, acc: 0, octave: p.octave, diatonic: p.octave * 7 + "CDEFGAB".indexOf(p.step) }, clef));
           const far = steps.reduce((m, s2) => (Math.abs(s2 - 4) > Math.abs(m - 4) ? s2 : m), steps[0]);
           const stem = hasStem(base) ? (far >= 4 ? "down" : "up") : null;
-          const d = { id: ev.ev.id, bar: b.index, staff: st, system: si, rest: false, base, dots: ev.ev.dur.dots, kind, headW, x, stem, ticks: c.ticks, group: Math.floor(c.ticks / groupSize(b.time)), heads: [], ledgers: [] };
+          const d = { id: ev.ev.id, bar: b.index, staff: st, system: si, rest: false, base, dots: ev.ev.dur.dots, kind, headW, x, stem, ticks: c.ticks, group: Math.floor(c.ticks / groupSize(b.time)), heads: [], ledgers: [], tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index, pitches: ev.ev.pitches };
           // heads: sorted by step; seconds flip to the other side of the stem
           const order = steps.map((s2, pi) => ({ step: s2, pi })).sort((a, b2) => a.step - b2.step);
           const walk = stem === "down" ? [...order].reverse() : order;
@@ -159,7 +170,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
           for (const h of walk) {
             const flip = prevStep !== null && Math.abs(h.step - prevStep) === 1 && !prevFlip;
             const hx = flip ? (stem === "down" ? x - headW : x + headW) : x;
-            d.heads.push({ pi: h.pi, step: h.step, x: hx, y: yOfStep(st, h.step), acc: ev.accs?.[h.pi] ?? null, flip });
+            d.heads.push({ pi: h.pi, step: h.step, x: hx, y: yOfStep(st, h.step), acc: ev.accs?.[h.pi] ?? null, accCol: ev.accCol?.[h.pi] ?? 0, flip, tie: ev.ev.pitches[h.pi].tie ?? null });
             prevStep = h.step; prevFlip = flip;
           }
           d.heads.sort((a, b2) => a.step - b2.step);
@@ -198,15 +209,56 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     const flush = () => { if (run.length >= 2) makeBeam(run, beams); run = []; };
     for (let k = 0; k < list.length; k++) {
       const d = list[k], prev = list[k - 1];
-      const contiguous = prev && prev.group === d.group && !restBetween(drawn, prev, d);
+      const contiguous = prev && prev.group === d.group && prev.tupletId === d.tupletId && !restBetween(drawn, prev, d);
       if (d.beams >= 1 && (run.length === 0 || contiguous)) run.push(d);
       else { flush(); if (d.beams >= 1) run.push(d); }
     }
     flush();
   }
 
+  // -- ties: from a head to the same pitch in the staff's next event; a system break makes two half ties --
+  const byId = new Map(drawn.map((d) => [d.id, d]));
+  for (const d of drawn) {
+    if (d.rest) continue;
+    const median = (d.heads[0].step + d.heads[d.heads.length - 1].step) / 2;
+    for (const h of d.heads) {
+      if (h.tie !== "start" && h.tie !== "both") continue;
+      const p = d.pitches[h.pi];
+      const nx = nextEvent(doc, { bar: d.bar, staff: d.staff, voice: 0, ev: doc.measures[d.bar].staves[d.staff].voices[0][d.index] });
+      const d2 = nx && byId.get(nx.id);
+      const h2 = d2 && !d2.rest ? d2.heads.find((g) => { const q = d2.pitches[g.pi]; return q.step === p.step && q.octave === p.octave && q.alter === p.alter; }) : null;
+      if (!h2) continue;
+      const dir = d.heads.length > 1 ? (h.step >= median ? "up" : "down") : d.stem ? (d.stem === "down" ? "up" : "down") : (h.step >= 4 ? "up" : "down");
+      if (d2.system === d.system) ties.push({ x1: h.x + d.headW, y1: h.y, x2: h2.x, y2: h2.y, dir, system: d.system });
+      else {
+        const endX = systems[d.system].barlines[systems[d.system].barlines.length - 1].x, startX = hit.systems[d2.system].bars[0].bodyX0;
+        ties.push({ x1: h.x + d.headW, y1: h.y, x2: endX - 0.3, y2: h.y, dir, system: d.system, half: "out" });
+        ties.push({ x1: startX + 0.3, y1: h2.y, x2: h2.x, y2: h2.y, dir, system: d2.system, half: "in" });
+      }
+    }
+  }
+  // -- tuplets: a bracket (unless one beamed run) and the digit over each group --
+  const tuplets = [];
+  const groups = new Map();
+  for (const d of drawn) { if (!d.tupletId) continue; const k = `${d.system}:${d.staff}:${d.tupletId}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(d); }
+  for (const list of groups.values()) {
+    list.sort((a, b) => a.ticks - b.ticks);
+    const notes = list.filter((d) => !d.rest);
+    const stems = notes.filter((d) => d.stem);
+    const above = !stems.length || stems.filter((d) => d.stem === "up").length >= stems.length / 2;
+    const first = list[0], last = list[list.length - 1];
+    const x1 = first.x - 0.3, x2 = last.x + (last.rest ? 1.5 : last.headW) + 0.3;
+    let y = above ? Infinity : -Infinity;
+    for (const d of list) {
+      const ext = d.rest ? [d.y - 1, d.y + 1] : [Math.min(d.topY, d.stem === "up" ? d.stemTipY : d.topY), Math.max(d.botY, d.stem === "down" ? d.stemTipY : d.botY)];
+      y = above ? Math.min(y, ext[0]) : Math.max(y, ext[1]);
+    }
+    y += above ? -1.3 : 1.3;
+    const bracket = !(notes.length === list.length && notes.every((d) => d.beamed && d.beamRun === notes[0].beamRun));
+    tuplets.push({ x1, x2, y, above, n: first.tupletN, bracket, system: first.system });
+  }
   const height = (TOP_PAD + systems.length * SYS_H - SYS_GAP + BOTTOM_PAD) * S;
-  return { S, unit: S, width, height, systems, drawn, beams, ties, hit, nStaves };
+  return { S, unit: S, width, height, systems, drawn, beams, ties, tuplets, hit, nStaves };
 }
 
 function restBetween(drawn, a, b) {
@@ -232,7 +284,7 @@ function makeBeam(run, beams) {
   let shift = 0;
   for (const d of run) { const need = dir === "up" ? (outer(d) - 2.75) - lineY(d.stemX) : lineY(d.stemX) - (outer(d) + 2.75); if (need < 0) shift = Math.max(shift, -need); }
   if (dir === "up") { y1 -= shift; y2 -= shift; } else { y1 += shift; y2 += shift; }
-  for (const d of run) { d.stemTipY = lineY(d.stemX); d.beamed = true; }
+  for (const d of run) { d.stemTipY = lineY(d.stemX); d.beamed = true; d.beamRun = beams.length; }
   const levels = Math.max(...run.map((d) => d.beams));
   const sgn = dir === "up" ? 1 : -1; // secondary beams sit toward the heads
   for (let lvl = 1; lvl <= levels; lvl++) {

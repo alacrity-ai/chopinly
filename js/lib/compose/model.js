@@ -1,5 +1,5 @@
 // The composition document (docs/COMPOSE_DESIGN.md §4). Pure — node-testable.
-import { ticks, capacity } from "./ticks.js";
+import { ticks, capacity, fromTicks } from "./ticks.js";
 
 export const SCHEMA = 1;
 export const DEFAULT_BARS = 8;
@@ -11,8 +11,10 @@ let seq = 0;
 /** Short unique ids for events and pitches — unique within a session, which is all a document needs. */
 export const eid = () => `e${Date.now().toString(36).slice(-4)}${(seq++).toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 
-export const restEvent = (dur) => ({ id: eid(), kind: "rest", dur: { base: dur.base, dots: dur.dots ?? 0 } });
-export const noteEvent = (dur, pitches) => ({ id: eid(), kind: "note", dur: { base: dur.base, dots: dur.dots ?? 0, ...(dur.tuplet ? { tuplet: dur.tuplet } : {}) }, pitches });
+/** A duration record: base, dots, and the tuplet ratio when there is one (never `undefined` keys). */
+export const durOf = (dur) => ({ base: dur.base, dots: dur.dots ?? 0, ...(dur.tuplet ? { tuplet: { n: dur.tuplet.n, in: dur.tuplet.in, id: dur.tuplet.id } } : {}) });
+export const restEvent = (dur) => ({ id: eid(), kind: "rest", dur: durOf(dur) });
+export const noteEvent = (dur, pitches) => ({ id: eid(), kind: "note", dur: durOf(dur), pitches });
 
 /** An empty bar for a time signature: one voice per staff, one whole rest (the whole-bar rest). */
 export function newMeasure(staves = 2) {
@@ -53,11 +55,17 @@ export function validate(doc) {
     m.staves.forEach((s, si) => s.voices.forEach((v, vi) => {
       const sum = voiceTicks(v);
       if (sum !== cap) throw new Error(`bar ${bi + 1} staff ${si} voice ${vi}: ${sum} ticks, bar holds ${cap}`);
-      for (const ev of v) {
+      const groups = new Map();
+      v.forEach((ev, i) => {
         if (ids.has(ev.id)) throw new Error(`duplicate event id ${ev.id}`);
         ids.add(ev.id);
         if (ev.kind === "note" && !(ev.pitches?.length > 0)) throw new Error(`note ${ev.id} without pitches`);
         if (ev.kind === "rest" && ev.pitches) throw new Error(`rest ${ev.id} with pitches`);
+        if (ev.dur.tuplet) { const g = groups.get(ev.dur.tuplet.id) ?? { n: ev.dur.tuplet.n, plain: 0, last: i - 1, notes: 0 }; if (g.last !== i - 1) throw new Error(`bar ${bi + 1}: tuplet ${ev.dur.tuplet.id} is not contiguous`); g.last = i; g.plain += ticks({ base: ev.dur.base, dots: ev.dur.dots }); if (ev.kind === "note") g.notes++; groups.set(ev.dur.tuplet.id, g); }
+      });
+      for (const [gid, g] of groups) {
+        if (!g.notes) throw new Error(`bar ${bi + 1}: tuplet ${gid} is all rests`);
+        if (!Number.isInteger(g.plain / g.n) || !fromTicks(g.plain / g.n)) throw new Error(`bar ${bi + 1}: tuplet ${gid} is not ${g.n} of a plain value`);
       }
     }));
   });

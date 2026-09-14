@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition, validate, timeAt, isEmptyBar, evTicks } from "../js/lib/compose/model.js";
-import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar, setPitch, stepOf } from "../js/lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar, setPitch, stepOf, retype, dot, tie, tuplet, accidental, clipFrom, paste, toRests } from "../js/lib/compose/engine.js";
 import { capacity, PPQ } from "../js/lib/compose/ticks.js";
 const Qt = PPQ;
 import { createHistory } from "../js/lib/compose/history.js";
@@ -216,4 +216,208 @@ test("setPitch moves a cluster together: two pitches of one chord step up as a p
   const m = setPitch(e, [{ ev: x.id, pi: 0 }, { ev: y.id, pi: 0 }], -2).doc;
   assert.equal(find(m, x.id).ev.pitches[0].step + find(m, x.id).ev.pitches[0].octave, "G4");
   assert.equal(find(m, y.id).ev.pitches[0].step + find(m, y.id).ev.pitches[0].octave, "B2");
+});
+
+// --- P1 (WSHED-116): dots, ties, tuplets, accidentals ---------------------
+const T = { base: 4, dots: 0, rest: false, tuplet: 3 };
+const fullKinds = (doc, bar, staff = 0) => doc.measures[bar].staves[staff].voices[0].map((e) => `${e.kind === "rest" ? "r" : "n"}${e.dur.base}${".".repeat(e.dur.dots)}${e.dur.tuplet ? `/${e.dur.tuplet.n}` : ""}`).join(" ");
+const bar1 = (d) => d.measures[0].staves[0].voices[0];
+
+test("dot: a quarter becomes a dotted quarter eating the following rest; undot gives it back; a chord dots as one event", () => {
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
+  d = place(d, { bar: 0, staff: 0, ticks: 0, step: 6 }, Q).doc; // chord
+  d = dot(d, [bar1(d)[0].id], 1);
+  assert.equal(fullKinds(d, 0), "n4. r8 r2");
+  assert.equal(bar1(d)[0].pitches.length, 2);
+  d = dot(d, [bar1(d)[0].id], 0);
+  assert.equal(fullKinds(d, 0), "n4 r4 r2");
+  validate(d);
+  // a dot that does not fit is refused whole
+  let e = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, W).doc;
+  assert.throws(() => dot(e, [bar1(e)[0].id], 1), Nudge);
+});
+
+test("tie: one note ties to the next same pitch (across the barline too); a chord ties what matches; tie again unties; no match nudges", () => {
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 3 * Qt, step: 4 }, Q).doc; // B4 on beat 4
+  d = place(d, { bar: 1, staff: 0, ticks: 0, step: 4 }, H).doc;               // B4 half in bar 2
+  d = place(d, { bar: 1, staff: 0, ticks: 0, step: 6 }, H).doc;               // + D5
+  const a = bar1(d)[bar1(d).length - 1], b = d.measures[1].staves[0].voices[0][0];
+  d = tie(d, [{ ev: a.id }]);
+  assert.equal(find(d, a.id).ev.pitches[0].tie, "start");
+  assert.equal(find(d, b.id).ev.pitches.find((p) => p.step === "B").tie, "stop");
+  assert.equal(find(d, b.id).ev.pitches.find((p) => p.step === "D").tie, undefined);
+  d = tie(d, [{ ev: a.id }]); // toggle off
+  assert.equal(find(d, a.id).ev.pitches[0].tie, undefined);
+  assert.equal(find(d, b.id).ev.pitches.find((p) => p.step === "B").tie, undefined);
+  // two adjacent selected: ties them, and not beyond
+  d = place(d, { bar: 1, staff: 0, ticks: 2 * Qt, step: 4 }, H).doc; // second B4 half in bar 2
+  const c = d.measures[1].staves[0].voices[0][1];
+  d = tie(d, [{ ev: a.id }, { ev: b.id }]);
+  assert.equal(find(d, a.id).ev.pitches[0].tie, "start");
+  assert.equal(find(d, b.id).ev.pitches.find((p) => p.step === "B").tie, "stop"); // b → c not tied: c was not selected
+  assert.equal(find(d, c.id).ev.pitches[0].tie, undefined);
+  // nothing tieable
+  let e = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
+  e = place(e, { bar: 0, staff: 0, ticks: Qt, step: 5 }, Q).doc;
+  assert.throws(() => tie(e, [{ ev: bar1(e)[0].id }]), /same pitch next/);
+  // moving the second note drops the tie; deleting it too
+  let f = tie(d, [{ ev: b.id }]); // b → c
+  assert.equal(find(f, b.id).ev.pitches.find((p) => p.step === "B").tie, "both");
+  f = setPitch(f, [{ ev: c.id, pi: 0 }], 1).doc;
+  assert.equal(find(f, b.id).ev.pitches.find((p) => p.step === "B").tie, "stop");
+  f = remove(f, [{ ev: b.id }]);
+  assert.equal(find(f, a.id).ev.pitches[0].tie, undefined);
+  validate(f);
+});
+
+test("tuplet: three eighths become a triplet and free an eighth rest; undo restores; bad totals and mixed groups nudge", () => {
+  let d = fresh();
+  for (let i = 0; i < 3; i++) d = place(d, { bar: 0, staff: 0, ticks: i * (Qt / 2), step: 4 + i }, E).doc;
+  assert.equal(fullKinds(d, 0), "n8 n8 n8 r8 r2");
+  const ids = bar1(d).slice(0, 3).map((e) => e.id);
+  d = tuplet(d, ids, 3);
+  assert.equal(fullKinds(d, 0), "n8/3 n8/3 n8/3 r4 r2");
+  validate(d);
+  const gid = bar1(d)[0].dur.tuplet.id;
+  assert.ok(bar1(d).slice(0, 3).every((e) => e.dur.tuplet.id === gid));
+  // retype inside the group keeps the ratio and fills with tuplet rests
+  let r = retype(d, [ids[1]], { base: 16, dots: 0 });
+  assert.equal(fullKinds(r, 0), "n8/3 n16/3 r16/3 n8/3 r4 r2");
+  validate(r);
+  // deleting every note of the group dissolves it into plain rests
+  let g = remove(d, ids.map((ev) => ({ ev })));
+  assert.equal(fullKinds(g, 0), "r1");
+  // undo the tuplet
+  d = tuplet(d, ids, 3);
+  assert.equal(fullKinds(d, 0), "n8 n8 n8 r8 r2");
+  // a quarter + eighth is a triplet of eighths (3 × eighth); quarter + quarter + eighth is not
+  let e = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
+  e = place(e, { bar: 0, staff: 0, ticks: Qt, step: 4 }, E).doc;
+  e = tuplet(e, bar1(e).slice(0, 2).map((x) => x.id), 3);
+  assert.equal(fullKinds(e, 0), "n4/3 n8/3 r4 r2");
+  let f = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
+  f = place(f, { bar: 0, staff: 0, ticks: Qt, step: 4 }, Q).doc;
+  f = place(f, { bar: 0, staff: 0, ticks: 2 * Qt, step: 4 }, E).doc;
+  assert.throws(() => tuplet(f, bar1(f).slice(0, 3).map((x) => x.id), 3), /don't make a tuplet/);
+  assert.throws(() => tuplet(f, [bar1(f)[0].id, bar1(f)[2].id], 3), /side by side/);
+});
+
+test("armed tuplet: the first tap opens a triplet group in a quarter's room, taps inside fill it, a plain eighth cannot enter it", () => {
+  const TE = { base: 8, dots: 0, rest: false, tuplet: 3 };
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, TE).doc;
+  assert.equal(fullKinds(d, 0), "n8/3 r4/3 r2. ".trim() === "" ? "" : fullKinds(d, 0));
+  assert.match(fullKinds(d, 0), /^n8\/3 r4\/3 r4 r2$/);
+  validate(d);
+  d = place(d, { bar: 0, staff: 0, ticks: 2240, step: 5 }, TE).doc;     // second slot, tuplet armed
+  assert.match(fullKinds(d, 0), /^n8\/3 n8\/3 r8\/3 r4 r2$/);
+  d = place(d, { bar: 0, staff: 0, ticks: 4480, step: 6 }, E).doc;      // third slot, plain eighth armed → takes the group's ratio
+  assert.match(fullKinds(d, 0), /^n8\/3 n8\/3 n8\/3 r4 r2$/);
+  validate(d);
+  const gid = bar1(d)[0].dur.tuplet.id;
+  assert.ok(bar1(d).slice(0, 3).every((e) => e.dur.tuplet.id === gid), "one group");
+  // a second triplet lands on beat 2, snapped to the quarter grid
+  d = place(d, { bar: 0, staff: 0, ticks: Qt + 900, step: 4 }, TE).doc;
+  assert.match(fullKinds(d, 0), /^n8\/3 n8\/3 n8\/3 n8\/3 r4\/3 r2$/);
+  // an armed triplet needs a quarter of room: a lone eighth rest refuses it
+  let e = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, { base: 2, dots: 1, rest: false }).doc; // dotted half → r4 left
+  e = place(e, { bar: 0, staff: 0, ticks: 3 * Qt, step: 4 }, E).doc;                                   // eighth on beat 4 → r8 left
+  assert.throws(() => place(e, { bar: 0, staff: 0, ticks: 3 * Qt + Qt / 2 + 10, step: 4 }, TE), /no room/);
+  validate(e);
+});
+
+test("accidental: sets the spelling, pressing it again returns to the key, a natural the key implies is a cautionary", () => {
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc; // B4 in C
+  const id = bar1(d)[0].id;
+  d = accidental(d, [{ ev: id, pi: 0 }], -1);
+  assert.deepEqual([find(d, id).ev.pitches[0].alter, find(d, id).ev.pitches[0].acc], [-1, undefined]);
+  assert.equal(midiOf(find(d, id).ev.pitches[0]), 70);
+  d = accidental(d, [{ ev: id, pi: 0 }], -1);                                // again → back to the key
+  assert.equal(find(d, id).ev.pitches[0].alter, 0);
+  d = accidental(d, [{ ev: id, pi: 0 }], 0);                                 // natural in C → cautionary
+  assert.deepEqual([find(d, id).ev.pitches[0].alter, find(d, id).ev.pitches[0].acc], [0, "show"]);
+  d = accidental(d, [{ ev: id, pi: 0 }], 0);                                 // again → hidden
+  assert.equal(find(d, id).ev.pitches[0].acc, undefined);
+  d = accidental(d, [{ ev: id }], 2);
+  assert.equal(midiOf(find(d, id).ev.pitches[0]), 73);
+  // armed accidental on placement, and on a pitch already there
+  let e = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, { ...Q, alter: 1 }).doc;
+  assert.equal(bar1(e)[0].pitches[0].alter, 1);
+  const r = place(e, { bar: 0, staff: 0, ticks: 0, step: 4 }, { ...Q, alter: -1 });
+  assert.equal(r.action, "alter");
+  assert.equal(bar1(r.doc)[0].pitches[0].alter, -1);
+  assert.equal(place(r.doc, { bar: 0, staff: 0, ticks: 0, step: 4 }, { ...Q, alter: -1 }).action, "same");
+  assert.throws(() => accidental(fresh(), [{ ev: "nope" }], 1), Nudge);
+});
+
+test("clipboard with a tuplet: the group travels whole and pastes with fresh ids; a paste into the last bar keeps an empty bar after it", () => {
+  let d = fresh();
+  for (let i = 0; i < 3; i++) d = place(d, { bar: 0, staff: 0, ticks: i * (Qt / 2), step: 4 }, E).doc;
+  d = tuplet(d, bar1(d).slice(0, 3).map((e) => e.id), 3);
+  const clip = clipFrom(d, [{ ev: bar1(d)[1].id, pi: 0 }]); // one note of the triplet selected
+  assert.equal(clip.events.length, 3);
+  assert.deepEqual(clip.events.map((e) => e.kind), ["rest", "note", "rest"]);
+  const last = d.measures.length - 1;
+  const r = paste(d, clip, { bar: last, ticks: 0, staff: 1 });
+  assert.equal(fullKinds(r.doc, last, 1), "r8/3 n8/3 r8/3 r4 r2");
+  assert.notEqual(r.doc.measures[last].staves[1].voices[0][0].dur.tuplet.id, bar1(d)[0].dur.tuplet.id);
+  assert.equal(r.doc.measures.length, last + 2, "a bar after the pasted one");
+  validate(r.doc);
+  // a paste over part of a tuplet drops the whole group; one that misses the beat grid is refused
+  let e = fresh();
+  for (let i = 0; i < 3; i++) e = place(e, { bar: 0, staff: 0, ticks: i * Qt, step: 4 }, Q).doc;
+  e = tuplet(e, bar1(e).slice(0, 3).map((x) => x.id), 3);                    // triplet quarters over beats 1–2
+  assert.equal(fullKinds(e, 0), "n4/3 n4/3 n4/3 r2");
+  e = place(e, { bar: 1, staff: 0, ticks: 0, step: 4 }, Q).doc;
+  const qc = clipFrom(e, [{ ev: e.measures[1].staves[0].voices[0][0].id }]);
+  const p = paste(e, qc, { bar: 0, ticks: Qt, staff: 0 }).doc;              // beat 2: inside the triplet's span
+  assert.equal(fullKinds(p, 0), "r4 n4 r2");
+  validate(p);
+  assert.throws(() => paste(e, qc, { bar: 0, ticks: 2240, staff: 0 }), /line up/);
+});
+
+test("duplet: two eighths in the time of three take the rest after them, or nudge when there is none", () => {
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, E).doc;
+  d = place(d, { bar: 0, staff: 0, ticks: Qt / 2, step: 5 }, E).doc;
+  d = tuplet(d, bar1(d).slice(0, 2).map((x) => x.id), 2);
+  assert.equal(fullKinds(d, 0), "n8/2 n8/2 r8 r2");
+  validate(d);
+  d = tuplet(d, bar1(d).slice(0, 2).map((x) => x.id), 2);                   // undo
+  assert.equal(fullKinds(d, 0), "n8 n8 r4 r2");
+  let e = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, { base: 2, dots: 1, rest: false }).doc;
+  e = place(e, { bar: 0, staff: 0, ticks: 3 * Qt, step: 4 }, E).doc;
+  e = place(e, { bar: 0, staff: 0, ticks: 3 * Qt + Qt / 2, step: 4 }, E).doc;
+  assert.throws(() => tuplet(e, bar1(e).slice(1, 3).map((x) => x.id), 2), /no room/);
+});
+
+test("fuzz: 8,000 random edits over every P1 op keep every invariant", () => {
+  let seed = 11;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const pick = (a) => a[Math.floor(rnd() * a.length)];
+  let d = fresh();
+  const durs = [W, H, Q, E, { base: 16, dots: 0, rest: false }, { base: 4, dots: 1, rest: false }, { base: 8, dots: 0, rest: true }, { base: 8, dots: 0, rest: false, tuplet: 3 }, { base: 16, dots: 0, rest: false, tuplet: 5 }, { base: 4, dots: 0, rest: false, tuplet: 3 }, { base: 8, dots: 0, rest: false, alter: 1 }, { base: 4, dots: 0, rest: false, alter: -1 }];
+  const counts = {};
+  const bump = (k) => { counts[k] = (counts[k] ?? 0) + 1; };
+  const notes = () => d.measures.flatMap((m) => m.staves.flatMap((s) => s.voices[0].filter((e) => e.kind === "note")));
+  const run = (k, fn) => { try { d = fn(); bump(k); } catch (e) { if (!(e instanceof Nudge)) throw e; bump("nudge"); } };
+  for (let i = 0; i < 8000; i++) {
+    const x = rnd(), ns = notes();
+    if (x < 0.45 || !ns.length) {
+      const bar = Math.floor(rnd() * d.measures.length), staff = Math.floor(rnd() * 2), cap = capacity(timeAt(d, bar));
+      run("place", () => place(d, { bar, staff, ticks: Math.floor(rnd() * cap), step: Math.floor(rnd() * 17) - 4 }, pick(durs)).doc);
+    } else if (x < 0.55) { const n = pick(ns); run("remove", () => remove(d, [{ ev: n.id, ...(n.pitches.length > 1 && rnd() < 0.5 ? { pi: 0 } : {}) }])); }
+    else if (x < 0.65) { const n = pick(ns); run("retype", () => retype(d, [n.id], pick([W, H, Q, E, { base: 16, dots: 0 }]))); }
+    else if (x < 0.72) { const n = pick(ns); run("dot", () => dot(d, [n.id], n.dur.dots ? 0 : pick([1, 2]))); }
+    else if (x < 0.80) { const n = pick(ns); run("tie", () => tie(d, [{ ev: n.id }])); }
+    else if (x < 0.88) {
+      const n = pick(ns), f = find(d, n.id), voice = d.measures[f.bar].staves[f.staff].voices[0];
+      const ids = voice.slice(f.index, f.index + pick([2, 3, 3, 5])).map((e) => e.id);
+      run("tuplet", () => tuplet(d, ids, pick([2, 3, 3, 5, 6, 7])));
+    }
+    else if (x < 0.94) { const n = pick(ns); run("accidental", () => accidental(d, [{ ev: n.id, pi: Math.floor(rnd() * n.pitches.length) }], pick([-2, -1, 0, 1, 2]))); }
+    else { const n = pick(ns); run("setPitch", () => setPitch(d, [{ ev: n.id }], pick([-2, -1, 1, 2, 7])).doc); if (rnd() < 0.3) run("toRests", () => toRests(d, [n.id])); }
+    if (i % 200 === 0) validate(d);
+  }
+  validate(d);
+  for (const k of ["place", "remove", "retype", "dot", "tie", "tuplet", "accidental", "setPitch"]) assert.ok(counts[k] > 20, `${k}: ${counts[k]}`);
+  assert.ok(d.measures.length < 200, "bars only grow when the last one is used");
 });
