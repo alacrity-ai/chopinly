@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { newComposition, validate, timeAt, isEmptyBar, evTicks } from "../js/lib/compose/model.js";
-import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar, setPitch, stepOf, retype, dot, tie, tuplet, accidental, clipFrom, paste, toRests, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, slurEnd, dynamic, hairpin, hairpinEnd, exprText, decompose } from "../js/lib/compose/engine.js";
-import { capacity, PPQ, groupSize } from "../js/lib/compose/ticks.js";
+import { newComposition, newMeasure, validate, timeAt, isEmptyBar, evTicks } from "../js/lib/compose/model.js";
+import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar, setPitch, stepOf, retype, dot, tie, tuplet, accidental, clipFrom, paste, toRests, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, slurEnd, decompose, addExpression, addHairpin, moveExpressions, moveHairpinEnd, setExpressionValue, removeExpressions, findExpression, expressionsOf, exprSlot, slotOfAbs, nextSlot, upgrade } from "../js/lib/compose/engine.js";
+import { capacity, PPQ, groupSize, exprGrid } from "../js/lib/compose/ticks.js";
 const Qt = PPQ;
 import { createHistory } from "../js/lib/compose/history.js";
 
@@ -537,40 +537,141 @@ test("slur: first to last selected note (one note: to the next note, over rests)
   assert.equal(find(d, b.id).ev.slurs, undefined);
 });
 
-test("expression: a dynamic per note (toggle), hairpins first→last (one note: to the next) that never dangle, text on the earliest event", () => {
+test("expressions (WSHED-122): a dynamic / text takes a half-beat slot of a staff (the same kind there is replaced), off-grid and bad values are refused, a hairpin owns its range and must end after it starts", () => {
   let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
-  d = place(d, { bar: 0, staff: 0, ticks: Qt, step: 5 }, Q).doc;
-  d = place(d, { bar: 0, staff: 0, ticks: 2 * Qt, step: 6 }, Q).doc;
-  const [a, b, c, rest] = bar1(d);
-  d = dynamic(d, [a.id, b.id], "f");
-  assert.deepEqual([find(d, a.id).ev.dyn, find(d, b.id).ev.dyn], ["f", "f"]);
-  d = dynamic(d, [a.id], "pp");                              // a different one replaces
-  assert.equal(find(d, a.id).ev.dyn, "pp");
-  d = dynamic(d, [a.id, b.id], "f");                         // not all f → all f; again → off
-  d = dynamic(d, [a.id, b.id], "f");
-  assert.deepEqual([find(d, a.id).ev.dyn, find(d, b.id).ev.dyn], [undefined, undefined]);
-  assert.throws(() => dynamic(d, [rest.id], "f"), /pick the notes/);
-  assert.throws(() => dynamic(d, [a.id], "fff"), Nudge);
-  d = hairpin(d, [c.id, a.id], "cresc");                     // selection order irrelevant
-  assert.deepEqual([find(d, a.id).ev.hairpin, find(d, c.id).ev.hairpin], ["cresc-start", "cresc-stop"]);
-  assert.equal(hairpinEnd(d, 0, 0, find(d, a.id).ev), find(d, c.id).ev);
-  d = hairpin(d, [a.id, c.id], "cresc");                     // same span, same kind → off
-  assert.equal(find(d, a.id).ev.hairpin, undefined);
-  d = hairpin(d, [b.id], "dim");                             // one note → to the next note
-  assert.deepEqual([find(d, b.id).ev.hairpin, find(d, c.id).ev.hairpin], ["dim-start", "dim-stop"]);
-  d = hairpin(d, [a.id, c.id], "cresc");                     // a new start before an open one drops the open one's start; its stop is then orphaned and dropped
-  assert.deepEqual([find(d, a.id).ev.hairpin, find(d, b.id).ev.hairpin, find(d, c.id).ev.hairpin], ["cresc-start", undefined, "cresc-stop"]);
-  assert.throws(() => hairpin(d, [c.id], "cresc"), /needs a note after/);
-  d = remove(d, [{ ev: c.id }]);                             // the stop goes → the start goes
-  assert.equal(find(d, a.id).ev.hairpin, undefined);
-  d = exprText(d, [b.id, a.id], "  rit.  ");
-  assert.equal(find(d, a.id).ev.text, "rit.", "the earliest selected event carries the text");
-  assert.equal(find(d, b.id).ev.text, undefined);
-  d = exprText(d, [a.id], "");
-  assert.equal(find(d, a.id).ev.text, undefined);
-  const r2 = bar1(d).find((e) => e.kind === "rest");      // the bar was re-normalised by the remove: fetch the rest afresh
-  d = exprText(d, [r2.id], "a tempo");
-  assert.equal(find(d, r2.id).ev.text, "a tempo", "a rest can carry text");
+  const g = exprGrid(timeAt(d, 0));
+  assert.equal(g, Qt / 2, "an eighth grid in 4/4");
+  let r = addExpression(d, { kind: "dyn", staff: 0, bar: 0, at: 0, value: "f" }); d = r.doc;
+  assert.deepEqual(d.measures[0].expressions.map((x) => [x.kind, x.at, x.value]), [["dyn", 0, "f"]]);
+  d = addExpression(d, { kind: "dyn", staff: 0, bar: 0, at: 0, value: "pp" }).doc;          // the same slot: replaced
+  d = addExpression(d, { kind: "dyn", staff: 1, bar: 0, at: 0, value: "mf" }).doc;          // the other staff keeps its own
+  d = addExpression(d, { kind: "text", staff: 0, bar: 0, at: 5 * g, value: "  rit.   qui " }).doc;
+  assert.deepEqual(d.measures[0].expressions.map((x) => [x.kind, x.staff, x.at, x.value]), [["dyn", 0, 0, "pp"], ["dyn", 1, 0, "mf"], ["text", 0, 5 * g, "rit. qui"]]);
+  assert.throws(() => addExpression(d, { kind: "dyn", staff: 0, bar: 0, at: g / 2, value: "f" }), /off the grid/);
+  assert.throws(() => addExpression(d, { kind: "dyn", staff: 0, bar: 0, at: 0, value: "fff" }), /no such dynamic/);
+  assert.throws(() => addExpression(d, { kind: "text", staff: 0, bar: 0, at: 0, value: "   " }), /say what/);
+  assert.throws(() => addExpression(d, { kind: "dyn", staff: 2, bar: 0, at: 0, value: "f" }), /nowhere/);
+  r = addHairpin(d, { staff: 0, bar: 0, at: 2 * g, dir: "cresc", end: { bar: 1, at: 0 } }); d = r.doc;
+  const hp = r.id;
+  assert.deepEqual(findExpression(d, hp).x, { id: hp, kind: "hairpin", staff: 0, at: 2 * g, dir: "cresc", end: { bar: 1, at: 0 } });
+  assert.throws(() => addHairpin(d, { staff: 0, bar: 0, at: 2 * g, dir: "dim", end: { bar: 0, at: 2 * g } }), /end after it starts/);
+  assert.throws(() => addHairpin(d, { staff: 0, bar: 1, at: 0, dir: "dim", end: { bar: 0, at: 4 * g } }), /end after it starts/);
+  d = addHairpin(d, { staff: 0, bar: 0, at: 6 * g, dir: "dim", end: { bar: 1, at: 4 * g } }).doc;  // overlaps the first on the same staff → the first goes
+  assert.equal(findExpression(d, hp), null);
+  assert.equal(expressionsOf(d).filter((e) => e.x.kind === "hairpin").length, 1);
+  d = addHairpin(d, { staff: 1, bar: 0, at: 6 * g, dir: "dim", end: { bar: 1, at: 4 * g } }).doc;  // the other staff may overlap freely
+  assert.equal(expressionsOf(d).filter((e) => e.x.kind === "hairpin").length, 2);
+  assert.ok(validate(d));
+  // removing notes leaves the marks; removing the marks leaves the notes
+  const a = bar1(d)[0];
+  d = remove(d, [{ ev: a.id }]);
+  assert.equal(d.measures[0].expressions.length, 5, "two dynamics, a text, two hairpins");
+  const before = d;
+  d = removeExpressions(d, ["nope"]);
+  assert.equal(d, before, "nothing matched → the same document");
+  d = removeExpressions(d, d.measures[0].expressions.filter((x) => x.kind === "dyn").map((x) => x.id));
+  assert.deepEqual(d.measures[0].expressions.map((x) => x.kind), ["text", "hairpin", "hairpin"], "sorted by slot: the text on the & of 3, the hairpins on beat 4");
+  assert.ok(validate(d));
+});
+
+test("expressions: exprSlot snaps to the nearest slot and rolls the tail of a bar into the next; the last bar clamps", () => {
+  const d = fresh(), g = exprGrid(timeAt(d, 0)), cap = capacity(timeAt(d, 0));
+  assert.deepEqual(exprSlot(d, 0, 0), { bar: 0, at: 0 });
+  assert.deepEqual(exprSlot(d, 0, g * 0.4), { bar: 0, at: 0 });
+  assert.deepEqual(exprSlot(d, 0, g * 0.6), { bar: 0, at: g });
+  assert.deepEqual(exprSlot(d, 0, cap - 1), { bar: 1, at: 0 });
+  assert.deepEqual(exprSlot(d, d.measures.length - 1, cap - 1), { bar: d.measures.length - 1, at: cap - g });
+  assert.deepEqual(slotOfAbs(d, cap + g + 5), { bar: 1, at: g });
+  assert.equal(slotOfAbs(d, cap * d.measures.length), null);
+  assert.deepEqual(nextSlot(d, { bar: 0, at: cap - g }), { bar: 1, at: 0 });
+  assert.equal(nextSlot(d, { bar: d.measures.length - 1, at: cap - g }), null);
+});
+
+test("expressions: moving slides by ticks across bars (a hairpin: both ends), lands on the grid, refuses to leave the piece and moves nothing then; a handle moves one end; retyping changes the value", () => {
+  let d = fresh();
+  const g = exprGrid(timeAt(d, 0)), cap = capacity(timeAt(d, 0));
+  const dy = addExpression(d, { kind: "dyn", staff: 0, bar: 0, at: 6 * g, value: "p" }); d = dy.doc;
+  const hp = addHairpin(d, { staff: 0, bar: 1, at: 0, dir: "cresc", end: { bar: 1, at: 4 * g } }); d = hp.doc;
+  const tx = addExpression(d, { kind: "text", staff: 0, bar: 2, at: 0, value: "dolce" }); d = tx.doc;
+  d = moveExpressions(d, [dy.id, hp.id], 3 * g);                                   // the dynamic crosses into bar 2, the hairpin shifts whole
+  assert.deepEqual([findExpression(d, dy.id).bar, findExpression(d, dy.id).x.at], [1, g]);
+  assert.deepEqual([findExpression(d, hp.id).x.at, findExpression(d, hp.id).x.end], [3 * g, { bar: 1, at: 7 * g }]);
+  assert.equal(moveExpressions(d, [dy.id], 0), d, "no move → the same document");
+  assert.throws(() => moveExpressions(d, [dy.id, hp.id], -(cap + 2 * g)), /as far left/);
+  assert.throws(() => moveExpressions(d, [tx.id], cap * 20), /as far right/);
+  assert.equal(findExpression(d, dy.id).x.at, g, "a refused move changed nothing");
+  assert.throws(() => moveExpressions(d, ["nope"], g), /pick the marks/);
+  d = moveExpressions(d, [tx.id], -g);                                             // back into bar 2's tail → bar 1's last slot
+  assert.deepEqual([findExpression(d, tx.id).bar, findExpression(d, tx.id).x.at], [1, cap - g]);
+  d = moveExpressions(d, [dy.id], 2 * g);                                          // onto the hairpin's start slot: fine, different kinds
+  assert.equal(findExpression(d, dy.id).x.at, 3 * g);
+  d = moveHairpinEnd(d, hp.id, "end", { bar: 2, at: 2 * g });
+  assert.deepEqual(findExpression(d, hp.id).x.end, { bar: 2, at: 2 * g });
+  d = moveHairpinEnd(d, hp.id, "start", { bar: 0, at: 4 * g });                    // the start may move into an earlier bar: the hairpin moves to that bar's list
+  assert.deepEqual([findExpression(d, hp.id).bar, findExpression(d, hp.id).x.at, findExpression(d, hp.id).x.end], [0, 4 * g, { bar: 2, at: 2 * g }]);
+  assert.throws(() => moveHairpinEnd(d, hp.id, "end", { bar: 0, at: 4 * g }), /end after it starts/);
+  assert.equal(moveHairpinEnd(d, hp.id, "end", { bar: 2, at: 2 * g }), d, "the same place → the same document");
+  d = setExpressionValue(d, [dy.id], "ff");
+  assert.equal(findExpression(d, dy.id).x.value, "ff");
+  assert.equal(setExpressionValue(d, [dy.id], "ff"), d);
+  assert.throws(() => setExpressionValue(d, [dy.id, tx.id], "f"), /not both/);
+  assert.throws(() => setExpressionValue(d, [hp.id], "f"), /not both/);
+  d = setExpressionValue(d, [tx.id], " a  tempo ");
+  assert.equal(findExpression(d, tx.id).x.value, "a tempo");
+  assert.ok(validate(d));
+  // a moved dynamic landing on another's slot owns it; a moved hairpin landing over another owns the range
+  d = addExpression(d, { kind: "dyn", staff: 0, bar: 0, at: 5 * g, value: "mp" }).doc;
+  d = moveExpressions(d, [dy.id], -(cap + 3 * g - 5 * g));
+  assert.deepEqual(d.measures[0].expressions.filter((x) => x.kind === "dyn").map((x) => [x.at, x.value]), [[5 * g, "ff"]]);
+  assert.ok(validate(d));
+});
+
+test("expressions: a v2 document is upgraded — every note-attached mark lands on its note's onset, a start / stop pair becomes one hairpin, halves alone are dropped, the old fields go; v3 is returned as it is", () => {
+  let d = fresh();
+  for (let q = 0; q < 4; q++) d = place(d, { bar: 0, staff: 0, ticks: q * Qt, step: 4 }, Q).doc;
+  d = place(d, { bar: 1, staff: 0, ticks: Qt, step: 4 }, Q).doc;
+  for (let i = 0; i < 3; i++) d = place(d, { bar: 1, staff: 1, ticks: i * (Qt / 2), step: 4 }, E).doc;
+  d = tuplet(d, d.measures[1].staves[1].voices[0].slice(0, 3).map((e) => e.id), 3); // a triplet: the second member's onset is off the grid
+  const v = bar1(d), v2 = d.measures[1].staves[0].voices[0], t = d.measures[1].staves[1].voices[0];
+  v[0].dyn = "p"; v[0].hairpin = "cresc-start"; v[3].hairpin = "cresc-stop"; v[1].text = "dolce"; v2[1].dyn = "ff"; v2[0].text = "a tempo"; // the rest before it carries text
+  v[2].hairpin = "dim-stop";                                                                 // a stop without its start
+  t[1].dyn = "mf"; t[2].hairpin = "dim-start";                                                // a start without its stop
+  d.v = 2;
+  assert.ok(validate(d), "a v2 document with marks on notes is valid");
+  const u = upgrade(d);
+  assert.equal(u.v, 3);
+  assert.deepEqual(u.measures[0].expressions.map((x) => [x.kind, x.staff, x.at, x.value ?? x.dir, x.end]), [["dyn", 0, 0, "p", undefined], ["hairpin", 0, 0, "cresc", { bar: 0, at: 3 * Qt }], ["text", 0, Qt, "dolce", undefined]]);
+  assert.deepEqual(u.measures[1].expressions.map((x) => [x.kind, x.staff, x.at, x.value]), [["text", 0, 0, "a tempo"], ["dyn", 1, 0, "mf"], ["dyn", 0, Qt, "ff"]], "the triplet's second member (a third of a quarter in) snaps down to beat 1");
+  for (const m of u.measures) for (const st of m.staves) for (const vv of st.voices) for (const e of vv ?? []) assert.ok(!("dyn" in e) && !("hairpin" in e) && !("text" in e), "the old fields are gone");
+  assert.ok(validate(u));
+  assert.equal(upgrade(u), u, "v3 comes back as the same object");
+  assert.throws(() => { const w = structuredClone(u); w.measures[0].staves[0].voices[0][0].dyn = "p"; validate(w); }, /keeps its marks in expressions/);
+  // a v1 document (no `v` bump needed beyond the marks) upgrades the same way
+  const one = fresh(); one.v = 1; one.measures[0].staves[0].voices[0][0].text = "slow";
+  assert.deepEqual(upgrade(one).measures[0].expressions.map((x) => [x.kind, x.at, x.value]), [["text", 0, "slow"]]);
+});
+
+test("expressions: a metre change carries them by tick (a hairpin's end too, one past the stretch shifts with the bars); trimming keeps a bar a mark sits in or a hairpin ends in", () => {
+  let d = fresh();
+  const g = exprGrid(timeAt(d, 0)), cap = capacity(timeAt(d, 0));
+  d = addExpression(d, { kind: "dyn", staff: 0, bar: 0, at: 0, value: "p" }).doc;
+  d = addExpression(d, { kind: "text", staff: 0, bar: 1, at: 6 * g, value: "rit." }).doc;      // beat 4 of bar 2 → abs 14 eighths
+  const hp = addHairpin(d, { staff: 0, bar: 0, at: 4 * g, dir: "cresc", end: { bar: 5, at: 2 * g } }); d = hp.doc; // ends past the stretch
+  const r = setTime(d, 0, { beats: 3, unit: 4 });                                              // 8 bars of 4/4 → 11 bars of 3/4 (the stretch is the whole piece)
+  const u = r.doc, cap3 = capacity({ beats: 3, unit: 4 });
+  assert.equal(u.measures.length, 11, "thirty-two quarters make eleven bars of three; the eleventh is empty, so none is appended");
+  const all = expressionsOf(u);
+  assert.deepEqual(all.map((e) => [e.x.kind, e.bar, e.x.at]), [["dyn", 0, 0], ["hairpin", 0, 4 * g], ["text", 2, 14 * g - 2 * cap3]]);
+  assert.equal(findExpression(u, hp.id).x.end.bar * cap3 + findExpression(u, hp.id).x.end.at, 5 * cap + 2 * g, "the end keeps its absolute tick");
+  assert.ok(validate(u));
+  // an expression in a trailing bar, or a hairpin ending there, keeps the bar through trimBars
+  let t = fresh();
+  for (let b = 8; b < 14; b++) t.measures.push(newMeasure(2));
+  t = addExpression(t, { kind: "dyn", staff: 0, bar: 11, at: 0, value: "p" }).doc;
+  assert.equal(trimBars(t).measures.length, 13, "the bar it sits in plus one");
+  t = addHairpin(t, { staff: 1, bar: 10, at: 0, dir: "dim", end: { bar: 12, at: 2 * g } }).doc;
+  assert.equal(trimBars(t).measures.length, 14, "the bar the hairpin ends in plus one");
+  assert.equal(trimBars(fresh()).measures.length, 8);
 });
 
 test("arpeggio: one roll per note, set / switch / clear on the selection, notes only", () => {
@@ -645,7 +746,7 @@ const vKinds = (doc, bar, staff, vi) => (doc.measures[bar].staves[staff].voices[
 
 test("voices are sparse per bar: a tap into voice 2 creates it with padding rests, only in that bar; deleting its last note removes it; voice 1 always stays; a v1 document validates as v2", () => {
   let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
-  assert.equal(SCHEMA, 2); assert.equal(d.v, 2);
+  assert.equal(SCHEMA, 3); assert.equal(d.v, 3);
   assert.equal(d.measures[0].staves[0].voices.length, 1);
   const r = place(d, { bar: 0, staff: 0, ticks: 100, step: 0, voice: 1 }, H);
   d = r.doc;
@@ -706,7 +807,7 @@ test("retype / dot / tuplet / accidental / setPitch act on a note in its own voi
   validate(e);
 });
 
-test("ties, slurs, hairpins and gliss pair within one voice: a tie needs the voice in the next bar, a one-note slur reaches the voice's next note across a silent bar", () => {
+test("ties, slurs and gliss pair within one voice: a tie needs the voice in the next bar, a one-note slur reaches the voice's next note across a silent bar", () => {
   let d = place(fresh(), { bar: 0, staff: 0, ticks: 3 * PPQ, step: 0, voice: 1 }, Q).doc;   // E4 in voice 2, beat 4
   d = place(d, { bar: 0, staff: 0, ticks: 3 * PPQ, step: 8 }, Q).doc;                        // F5 in voice 1 at the same onset
   d = place(d, { bar: 1, staff: 0, ticks: 0, step: 8 }, Q).doc;                              // voice 1 continues in bar 2
@@ -717,8 +818,6 @@ test("ties, slurs, hairpins and gliss pair within one voice: a tie needs the voi
   assert.throws(() => gliss(d, [v2a.id]), /needs a note after/);
   d = slur(d, [v2a.id]);                                                                       // one note → to the next note of its voice, across the silent bar
   assert.equal(slurEnd(d, 0, 1, find(d, v2a.id).ev, find(d, v2a.id).ev.slurs[0].id), find(d, v2b.id).ev);
-  d = hairpin(d, [v2a.id], "cresc");
-  assert.equal(hairpinEnd(d, 0, 1, find(d, v2a.id).ev), find(d, v2b.id).ev);
   validate(d);
   // with voice 2 in the next bar the tie holds, and only in voice 2
   d = place(d, { bar: 1, staff: 0, ticks: 0, step: 0, voice: 1 }, Q).doc;                    // E4 voice 2, bar 2 beat 1

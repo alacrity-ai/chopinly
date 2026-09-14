@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition } from "../js/lib/compose/model.js";
-import { place, arpeggio, slur, dynamic, hairpin, tie } from "../js/lib/compose/engine.js";
+import { place, arpeggio, slur, addExpression, addHairpin, tie } from "../js/lib/compose/engine.js";
 import { timeline, velocities } from "../js/lib/compose/play.js";
 import { PPQ } from "../js/lib/compose/ticks.js";
 
@@ -66,20 +66,26 @@ test("notes under a slur are marked legato (the slur's last note is not)", () =>
   assert.deepEqual(n.map((x) => !!x.legato), [true, true, false, false]);
 });
 
-test("velocity: mf until a dynamic is written; a hairpin ramps to the next dynamic, or a step when none follows", () => {
+test("velocity: mf until a dynamic is written; a dynamic on a slot applies from that tick (a note before it is untouched); a hairpin ramps to the next dynamic at or after its end, or a step when none follows", () => {
   let d = newComposition({ id: "v" });
   for (let q = 0; q < 8; q++) d = place(d, { bar: Math.floor(q / 4), staff: 0, ticks: (q % 4) * PPQ, step: 4 }, Q).doc;
   const ev = (i) => d.measures[Math.floor(i / 4)].staves[0].voices[0][i % 4];
   assert.ok(timeline(d).notes.every((n) => n.vel === 0.7));
-  d = dynamic(d, [ev(0).id], "p"); d = hairpin(d, [ev(1).id, ev(4).id], "cresc"); d = dynamic(d, [ev(4).id], "ff");
+  d = addExpression(d, { kind: "dyn", staff: 0, bar: 0, at: PPQ / 2, value: "p" }).doc;          // the & of 1: the first note is still mf
+  d = addHairpin(d, { staff: 0, bar: 0, at: PPQ, dir: "cresc", end: { bar: 1, at: 0 } }).doc;
+  d = addExpression(d, { kind: "dyn", staff: 0, bar: 1, at: 0, value: "ff" }).doc;
   const vel = [...Array(8)].map((_, i) => velocities(d).get(ev(i)));
-  assert.equal(vel[0], 0.45);
+  assert.equal(vel[0], 0.7, "before the dynamic's slot");
+  assert.equal(vel[1], 0.45, "the hairpin starts at p");
   assert.ok(vel[1] < vel[2] && vel[2] < vel[3] && vel[3] < vel[4], "ramps up through the hairpin: " + vel.join());
   assert.equal(vel[4], 0.95); assert.equal(vel[7], 0.95, "ff holds");
-  d = hairpin(d, [ev(5).id, ev(7).id], "dim");                 // no dynamic after → one step softer
+  d = addHairpin(d, { staff: 0, bar: 1, at: PPQ, dir: "dim", end: { bar: 1, at: 3 * PPQ } }).doc;   // no dynamic after → one step softer, held from the end
   const v2 = [...Array(8)].map((_, i) => velocities(d).get(ev(i)));
-  assert.ok(v2[7] < v2[5] && Math.abs(v2[7] - (0.95 - 0.12)) < 1e-9, "a step down: " + v2.join());
+  assert.ok(v2[6] < v2[5] && Math.abs(v2[7] - (0.95 - 0.12)) < 1e-9, "a step down: " + v2.join());
   assert.equal(timeline(d).notes.find((n) => n.at === 4 * PPQ).vel, 0.95, "the timeline carries it");
+  // a dynamic on the lower staff does not touch the upper
+  d = addExpression(d, { kind: "dyn", staff: 1, bar: 0, at: 0, value: "pp" }).doc;
+  assert.equal(velocities(d).get(ev(0)), 0.7);
 });
 
 test("voices: every voice sounds; a tie holds within its voice across a bar the voice is absent from; two voices on one pitch re-strike; slur legato is per voice", () => {

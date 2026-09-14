@@ -292,6 +292,38 @@ beams, editor-only tints (`--voice-2..4` per skin), the `1 2 3 4` switcher at th
 rail with auto-follow, hold for the voice menu, `⌘1–4`, `⌘⇧↑/↓`. §12 of the design lists the
 as-built differences. A golden layout fixture proves single-voice pieces are unchanged.
 
+## Phase 6 — expressions as first-class things — LANDED v91 (WSHED-122, 2026-09-14; design `COMPOSE_EXPRESSIONS_DESIGN.md`, as built in its §9)
+
+**Goal:** dynamics, hairpins and text stop being note attributes: they live on
+half-beat slots (`measure.expressions`, schema v3), are placed by an armed
+cursor (a hairpin by three taps), and are selectable, deletable and draggable
+in time. Leif's ask of 2026-09-14, design expressed back and agreed first.
+
+1. **Model.** `SCHEMA = 3`; `exprGrid(time)` in ticks.js; `validate` checks
+   the list (grid, staff, sorted, hairpin end after start, no duplicates / no
+   overlaps) and refuses the old event fields on v3.
+2. **Engine.** `upgrade` (v1 / v2 → v3), `exprSlot`, `addExpression`,
+   `addHairpin`, `moveExpressions`, `moveHairpinEnd`, `setExpressionValue`,
+   `removeExpressions`, `findExpression`, `expressionsOf`, `cleanExpressions`;
+   `setTime` carries by tick, `trimBars` keeps used bars; `dynamic`, `hairpin`,
+   `hairpinEnd`, `cleanHairpins`, `exprText` removed. Tests + the golden
+   builder moved to the new ops.
+3. **Layout + hit.** Expressions from the bar's list at the interpolated slot
+   x on the expression line; entries carry ids; `things` / `thingAt` find them
+   and a selected hairpin's handles.
+4. **Paint + render.** Selectable groups; `showHandles`; three ghost shapes.
+5. **Play.** `velocities` by time.
+6. **Editor + rails.** Pending kinds dyn / text / hairpin (three taps),
+   select / lasso / delete / horizontal drag / ← → / retype; buttons always
+   enabled (arm, or retype a same-kind selection).
+7. **Ship.** Docs as built (§9 of the expressions design, §4.1 / §6.7 / §8.5f
+   of the main design point here), `CACHE` + `VERSION` v91, ship loop,
+   production E2E, screenshots on WSHED-122.
+
+**Done when:** an `mf` can be tapped onto the & of 2 of an empty bar, dragged
+to bar 3, and deleted; a hairpin placed by three taps across a system break;
+an old piece opens with its marks in place.
+
 ## Follow-ups (cards after the MVP, not phases)
 
 - MIDI export (design §10.3).

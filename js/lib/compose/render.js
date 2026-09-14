@@ -2,7 +2,7 @@
 // (shared with the PDF export); this file is the SVG painter — Bravura glyphs as <text>,
 // geometry as primitives — plus a separate overlay for the ghost and the bar flash so
 // pointer moves never touch the score's DOM.
-import { G, restGlyph, headGlyph } from "../staff/glyphs.js";
+import { G, restGlyph, headGlyph, dynGlyph } from "../staff/glyphs.js";
 import { paintScore } from "./paint.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -47,7 +47,7 @@ class SvgPainter {
     const attrs = { class: cls };
     for (const [k, v] of Object.entries(data)) attrs[`data-${k}`] = v;
     const g = this.add(el("g", attrs));
-    if (data.ev !== undefined) this.groups.set(data.ev, g);
+    if (data.ev !== undefined) { if (!this.groups.has(data.ev)) this.groups.set(data.ev, []); this.groups.get(data.ev).push(g); } // one id may own several groups (a hairpin split over a break)
     this.stack.push(g);
   }
   end() { this.stack.pop(); }
@@ -81,6 +81,12 @@ export function renderComposition(container, L) {
   const glyphOf = (x, y, ch, cls = "glyph") => el("text", { x: px(x), y: px(y), class: cls }, ch);
   /** The nodes of one ghost note / rest. */
   const ghostNodes = (spec) => {
+    if (spec.dyn) { const c = inkCentre(dynGlyph(spec.dyn)); const t = glyphOf(c === null ? spec.x : spec.x - c * 4, spec.y, dynGlyph(spec.dyn), "glyph cp-dyn"); if (c === null) t.setAttribute("text-anchor", "middle"); return [t]; }
+    if (spec.text) return [el("text", { x: px(spec.x), y: px(spec.y), class: "cp-expr-text", style: `font-size:${(S * 1.15).toFixed(1)}px` }, spec.text)];
+    if (spec.hairpin) { // the rubber band from a placed start to the pointer: open at the far end while it is still being drawn
+      const o = 0.55, cresc = spec.hairpin === "cresc", a1 = cresc ? 0 : o, a2 = cresc ? o : 0, x1 = spec.x1, x2 = Math.max(spec.x1 + 0.5, spec.x2), y = spec.y;
+      return [el("path", { class: "cp-hairpin", d: `M${px(x1)},${px(y - a1)} L${px(x2)},${px(y - a2)} M${px(x1)},${px(y + a1)} L${px(x2)},${px(y + a2)}` })];
+    }
     if (spec.glyph) { const gg = glyphOf(spec.x, spec.y, G[spec.glyph], "glyph"); if (spec.small) gg.setAttribute("style", `font-size:${(fs * 0.8).toFixed(1)}px`); return [gg]; }
     if (spec.rest) { const out = [glyphOf(spec.x, spec.y, restGlyph(spec.base), "glyph rest")]; for (let i = 0; i < (spec.dots ?? 0); i++) out.push(glyphOf(spec.x + 1.5 + i * 0.7, spec.y - 0.5, G.dot, "glyph head-part")); return out; }
     const out = [], headW = spec.base <= 1 ? 1.7 : 1.18;
@@ -102,18 +108,25 @@ export function renderComposition(container, L) {
   const lassoEl = el("polyline", { class: "cp-lasso", points: "", hidden: "" });
   const playhead = el("line", { class: "cp-playhead", x1: 0, y1: 0, x2: 0, y2: 0, hidden: "" });
   const target = el("rect", { class: "cp-target", x: 0, y: 0, width: 0, height: 0, rx: px(0.6), hidden: "" });
-  overlay.append(flash, target, ghost, lassoEl, playhead);
+  const handles = el("g", { class: "cp-handles", hidden: "" });
+  overlay.append(flash, target, ghost, lassoEl, playhead, handles);
   container.replaceChildren(svg, overlay);
 
   return {
     svg, overlay,
     /** ids: Set of "ev" or "ev:pi" strings. */
     setSelection(ids) {
-      for (const [id, g] of groups) {
+      for (const [id, gs] of groups) for (const g of gs) {
         const whole = ids.has(id);
         g.classList.toggle("sel", whole);
         for (const hg of g.querySelectorAll(".cp-head-g")) hg.classList.toggle("sel", whole || ids.has(`${id}:${hg.dataset.pi}`));
       }
+    },
+    /** The end handles of a selected hairpin: [{ x, y }, …] in S, or null to hide. */
+    showHandles(points) {
+      if (!points?.length) { handles.setAttribute("hidden", ""); return; }
+      handles.replaceChildren(...points.map((p) => el("circle", { class: "cp-handle", cx: px(p.x), cy: px(p.y), r: px(0.55) })));
+      handles.removeAttribute("hidden");
     },
     /** { x, y, base, rest, stemUp, voice } in S, an array of them (a phrase), or null to hide. The ghost wears the active voice's colour. */
     showGhost(spec, voice = 0) {

@@ -42,8 +42,8 @@ export function barAt(L, bar, system = null) {
   for (const s of L.hit.systems) { if (system !== null && L.hit.systems.indexOf(s) !== system) continue; const b = s.bars.find((x) => x.index === bar); if (b) return { sys: s, bar: b }; }
   return null;
 }
-/** The head / rest / stem under a point, or null. */
-export function thingAt(L, x, y) {
+/** The head / rest / stem / expression under a point, or null; `handles` = ids of selected hairpins whose ends answer as handles. */
+export function thingAt(L, x, y, handles = new Set()) {
   let best = null, bd = Infinity;
   for (const d of L.drawn) {
     if (d.rest) {
@@ -57,16 +57,33 @@ export function thingAt(L, x, y) {
     }
     if (d.stem && d.heads.length > 1 && Math.abs(x - d.stemX) <= 0.45 && y >= Math.min(d.stemFromY, d.stemTipY) && y <= Math.max(d.stemFromY, d.stemTipY) && 0.5 < bd) { bd = 0.5; best = { type: "stem", ev: d.id, bar: d.bar, staff: d.staff, voice: d.voice }; }
   }
-  return best;
+  if (best) return best;
+  // expressions (docs/COMPOSE_EXPRESSIONS_DESIGN.md §4): after the notes, which are small and sit on the staff
+  for (const dy of L.dynamics) if (Math.abs(x - dy.x) <= 1.2 && Math.abs(y - dy.y + 0.3) <= 0.9) return { type: "dyn", ev: dy.id, bar: dy.bar, staff: dy.staff, x: dy.x, y: dy.y };
+  for (const tx of L.texts) if (x >= tx.x - 0.3 && x <= tx.x + 0.6 * tx.text.length && y >= tx.y - 1.1 && y <= tx.y + 0.3) return { type: "text", ev: tx.id, bar: tx.bar, staff: tx.staff, x: tx.x, y: tx.y };
+  for (const hp of L.hairpins) {
+    if (Math.abs(y - hp.y) > 0.9 || x < hp.x1 - 0.6 || x > hp.x2 + 0.6) continue;
+    const t = { type: "hairpin", ev: hp.id, bar: hp.bar, staff: hp.staff, x: (hp.x1 + hp.x2) / 2, y: hp.y };
+    if (handles.has(hp.id)) { // a selected hairpin: its real ends are handles (an open half has no handle at the break)
+      if (hp.half !== "in" && hp.half !== "both" && Math.abs(x - hp.x1) <= 1.0) return { ...t, type: "hairpin-start" };
+      if (hp.half !== "out" && hp.half !== "both" && Math.abs(x - hp.x2) <= 1.0) return { ...t, type: "hairpin-end" };
+    }
+    return t;
+  }
+  return null;
 }
 
-/** Every selectable drawn thing with its anchor point (in S): heads, rests (later: marks). */
+/** Every selectable drawn thing with its anchor point (in S): heads, rests, dynamics, texts, hairpins. */
 export function things(L) {
   const out = [];
   for (const d of L.drawn) {
     if (d.rest) { out.push({ type: "rest", ev: d.id, bar: d.bar, staff: d.staff, voice: d.voice, x: d.x + 0.7, y: d.y }); continue; }
     for (const h of d.heads) out.push({ type: "head", ev: d.id, pi: h.pi, bar: d.bar, staff: d.staff, voice: d.voice, x: h.x + d.headW / 2, y: h.y });
   }
+  for (const dy of L.dynamics) out.push({ type: "dyn", ev: dy.id, bar: dy.bar, staff: dy.staff, x: dy.x, y: dy.y - 0.3 });
+  for (const tx of L.texts) out.push({ type: "text", ev: tx.id, bar: tx.bar, staff: tx.staff, x: tx.x + 0.3 * tx.text.length, y: tx.y - 0.4 });
+  const seen = new Set();
+  for (const hp of L.hairpins) { if (seen.has(hp.id)) continue; seen.add(hp.id); out.push({ type: "hairpin", ev: hp.id, bar: hp.bar, staff: hp.staff, x: (hp.x1 + hp.x2) / 2, y: hp.y }); } // a split hairpin is one thing, anchored on its first half
   return out;
 }
 /** Ray-casting point-in-polygon; poly is [{ x, y }, …]. */

@@ -610,6 +610,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     if ("composer" in patch) { c.composer = cleanComposer(patch.composer); edited = true; }
     if ("tags" in patch) { c.tags = cleanTags(patch.tags); edited = true; }
     if ("measures" in patch) { c.measures = patch.measures; edited = true; }
+    if ("v" in patch) { c.v = patch.v; edited = true; } // the document schema (an upgrade rewrites the measures with it)
     if ("tempo" in patch) { c.tempo = patch.tempo; edited = true; }
     if ("scoreId" in patch) { if (patch.scoreId) c.scoreId = String(patch.scoreId); else delete c.scoreId; edited = true; } // the Scores copy this piece was sent to (WSHED-121)
     if ("openedAt" in patch) c.openedAt = patch.openedAt;

@@ -2,41 +2,44 @@
 // on / off events in ticks, sequenced on the audio clock through the piano
 // voice. `timeline` is pure — node-testable; `createPlayer` owns the clock.
 import { PPQ } from "./ticks.js";
-import { onsets, midiOf, barStarts, hairpinEnd } from "./engine.js";
+import { onsets, midiOf, barStarts, expressionsOf } from "./engine.js";
 import { createPiano } from "../keyboard/piano.js";
 
 const LOOKAHEAD_S = 0.18, TICK_MS = 45, GATE = 0.92;
 const ROLL_MAX = PPQ / 8;
 const VEL = { pp: 0.35, p: 0.45, mp: 0.58, mf: 0.7, f: 0.82, ff: 0.95 }, STEP = 0.12;
 /**
- * A velocity per note event: the dynamic in force on its staff (mf until one is written); under a
- * hairpin the notes ramp from the dynamic at its start to the next written one (else a step up / down).
+ * A velocity per note event (docs/COMPOSE_EXPRESSIONS_DESIGN.md §7): the dynamic in force on its staff at its
+ * tick (mf until one is written — a dynamic in any voice applies to the staff); inside a hairpin the notes ramp
+ * from the level at its start to the first dynamic written at or after its end (else a step up / down), and
+ * the level holds at that target from the end on.
  */
 export function velocities(doc) {
   const { starts } = barStarts(doc);
   const out = new Map();
-  doc.parts[0] && Array.from({ length: doc.parts[0].staves }, (_, staff) => {
-    const seq = []; // every voice's notes of the staff in time order: a dynamic in any voice applies to the staff
-    for (let b = 0; b < doc.measures.length; b++) doc.measures[b].staves[staff].voices.forEach((v, voice) => { if (v) for (const o of onsets(v)) if (o.ev.kind === "note") seq.push({ ev: o.ev, voice, at: starts[b] + o.start }); });
-    seq.sort((a, b) => a.at - b.at || a.voice - b.voice);
-    let cur = VEL.mf, ramp = null; // ramp: { from, to, t0, t1 }
-    for (let i = 0; i < seq.length; i++) {
-      const { ev, at } = seq[i];
-      if (ev.dyn) { cur = VEL[ev.dyn] ?? cur; ramp = null; }
-      let v = cur;
-      if (ramp && at <= ramp.t1) v = ramp.from + (ramp.to - ramp.from) * ((at - ramp.t0) / Math.max(1, ramp.t1 - ramp.t0));
-      if (ramp && at >= ramp.t1) { cur = ramp.to; v = ramp.to; ramp = null; }
-      if (ev.hairpin?.endsWith("-start")) {
-        const end = hairpinEnd(doc, staff, seq[i].voice, ev), j = end ? seq.findIndex((s) => s.ev === end) : -1;
-        if (j > i) {
-          const after = seq.slice(j).find((s) => s.ev.dyn)?.ev.dyn;
-          const to = after ? VEL[after] : Math.max(0.2, Math.min(1, cur + (ev.hairpin.startsWith("cresc") ? STEP : -STEP)));
-          ramp = { from: v, to, t0: at, t1: seq[j].at };
-        }
+  const exprs = expressionsOf(doc);
+  const levelAt = (ramp, t) => (t >= ramp.t1 ? ramp.to : ramp.from + (ramp.to - ramp.from) * ((t - ramp.t0) / Math.max(1, ramp.t1 - ramp.t0)));
+  for (let staff = 0; staff < (doc.parts[0]?.staves ?? 0); staff++) {
+    const notes = [];
+    for (let b = 0; b < doc.measures.length; b++) doc.measures[b].staves[staff].voices.forEach((v, voice) => { if (v) for (const o of onsets(v)) if (o.ev.kind === "note") notes.push({ ev: o.ev, voice, at: starts[b] + o.start }); });
+    notes.sort((a, b) => a.at - b.at || a.voice - b.voice);
+    const marks = exprs.filter((e) => e.x.staff === staff && e.x.kind !== "text"); // time order; a dynamic before a hairpin on the same slot
+    let cur = VEL.mf, ramp = null, mi = 0;
+    for (const n of notes) {
+      while (mi < marks.length && marks[mi].abs <= n.at) {
+        const e = marks[mi++];
+        if (ramp && e.abs >= ramp.t1) { cur = ramp.to; ramp = null; }
+        if (e.x.kind === "dyn") { cur = VEL[e.x.value] ?? cur; ramp = null; continue; }
+        const from = ramp ? levelAt(ramp, e.abs) : cur;
+        const after = marks.slice(mi).find((o) => o.x.kind === "dyn" && o.abs >= e.absEnd);
+        const to = after ? VEL[after.x.value] : Math.max(0.2, Math.min(1, from + (e.x.dir === "cresc" ? STEP : -STEP)));
+        ramp = { from, to, t0: e.abs, t1: e.absEnd };
       }
-      out.set(ev, v);
+      let v = cur;
+      if (ramp) { v = levelAt(ramp, n.at); if (n.at >= ramp.t1) { cur = ramp.to; ramp = null; } }
+      out.set(n.ev, v);
     }
-  });
+  }
   return out;
 } // a rolled chord staggers its notes by at most a 32nd each, never past a quarter of the chord // a note sounds for 92% of its length — a hair of air between repeated notes
 

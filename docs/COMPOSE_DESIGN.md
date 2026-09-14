@@ -133,7 +133,7 @@ node-tested; `js/tools/compose/*` is the UI. The merge rule stays in
 
 ## 4. Data model
 
-### 4.1 The composition (schema `v: 1`, logbook `compositions[]`)
+### 4.1 The composition (schema `v: 3` since v91 — v1 one voice per staff, v2 voices, v3 bar-level expressions; logbook `compositions[]`)
 
 ```js
 {
@@ -146,6 +146,9 @@ node-tested; `js/tools/compose/*` is the UI. The merge rule stays in
       time?: { beats: 4, unit: 4 },           // same
       clefs?: { 0: "treble", 1: "bass" },     // per staff index, same (a change at the barline)
       clefChanges?: [ { staff: 1, at: 13440, clef: "tenor" } ],  // changes on a beat inside the bar (ticks; sorted); either kind holds until the next
+      expressions?: [ { id, kind: "dyn", staff: 0, at: 3360, value: "mf" },              // v91 (WSHED-122, COMPOSE_EXPRESSIONS_DESIGN.md): dynamics, text and
+                      { id, kind: "text", staff: 0, at: 0, value: "rit." },              // hairpins live on half-beat slots of the bar, not on notes;
+                      { id, kind: "hairpin", staff: 0, at: 0, dir: "cresc", end: { bar: 2, at: 0 } } ],  // a hairpin sits on the bar of its start
       staves: [                               // one entry per staff of the (single) part
         { voices: [ [ /* events */ ] ] },
         { voices: [ [ /* events */ ] ] },
@@ -166,9 +169,7 @@ An **event** (one voice slot):
   gliss?: "start" | "stop",
   slurs?: [ { id, at: "start" | "stop" } ],                    // v84: a slur is the pair sharing an id; several may start or end here
   arp?: "plain" | "up" | "down",                                // v83: a rolled chord
-  dyn?: "pp" | "p" | "mp" | "mf" | "f" | "ff",                 // v85: one per note
-  hairpin?: "cresc-start" | "cresc-stop" | "dim-start" | "dim-stop",   // v85: positional pairs, never nested
-  text?: "rit.",                                                // v85: expression text over this event (a rest may carry it too)
+  // v85's dyn / hairpin / text on the event are gone since v91 (schema v3): see `expressions` on the bar; `upgrade()` lifts them
 }
 ```
 
@@ -190,6 +191,9 @@ An **event** (one voice slot):
 4. A tuplet's events are contiguous in one voice and sum to `n × unit`.
 5. Ties pair `start`/`stop` on the same spelled pitch in consecutive events of
    the same staff (across bars allowed).
+6. Expressions sit on their bar's half-beat grid, one dynamic / text per staff
+   and slot, hairpins on a staff never overlapping, a hairpin's end after its
+   start (COMPOSE_EXPRESSIONS_DESIGN.md §1.2).
 
 ### 4.3 Per-device settings (`ws.compose.*`)
 
@@ -282,14 +286,16 @@ line 4; others centred on the middle line; a dotted rest gets its dot.
   stubs across a system break (the sight-singing rule).
 - Glissando: a straight line head to head with *gliss.* along it.
 - Slurs (v84): a tie-shaped curve from the first note's head to the last's on the head side, control offset `h` from the span (1.2–3.2) raised to clear the heads and stem tips between (`arc` in layout.js); two halves across a system break.
-- Hairpins (v85): two lines from the start note (after its dynamic, if any) to
-  the stop note on the expression line — below the staff and below whatever the
-  span's notes own there (`exprLine`); a hairpin continues across a system
-  break as two open halves. Dynamics sit on the same line under their note,
-  ink-centred like a mark; text sits above the staff over the note's ornaments.
+- Hairpins (v85, re-based on slots in v91): two lines from the start slot
+  (after a dynamic on it, if any) to the end slot on the expression line —
+  below the staff and below whatever sounds inside the span (`exprLine`); a
+  hairpin continues across a system break as open halves. Dynamics sit on the
+  same line under their slot, ink-centred where a note's head centre would be;
+  text sits above the staff over what sounds at its slot. A slot with no
+  column of its own is interpolated between its neighbours (`xOfTicks`). See
+  COMPOSE_EXPRESSIONS_DESIGN.md §3.
 - Articulations sit at the notehead side opposite the stem (fermata always
-  above); ornaments above the staff; dynamics below the staff at the column,
-  text above at the column.
+  above); ornaments above the staff.
 
 ### 6.8 Hit tables
 
@@ -319,7 +325,8 @@ as a flash + toast and never records. `normalize` runs on every touched bar.
 | `tie(doc, ids)` | §2 tie rule; toggles off when already tied. |
 | `tuplet(doc, ids, n)` | Wraps the run: the events' total must be `n × unit`; rewrites their `dur.tuplet` and re-fills. Toggle off restores plain durations when they fit, else Nudge. |
 | `accidental(doc, pitchIds, alter)` | Sets `alter`; ♮ sets 0 with `acc: "show"` when the key would hide it. |
-| `articulate(doc, ids, art)` / `dynamic` / `hairpin` / `text` | Toggles the mark. |
+| `articulate(doc, ids, art)` | Toggles the mark. |
+| `addExpression` / `addHairpin` / `moveExpressions` / `moveHairpinEnd` / `setExpressionValue` / `removeExpressions` | v91: dynamics, text and hairpins on half-beat slots (COMPOSE_EXPRESSIONS_DESIGN.md §2). |
 | `slur(doc, ids)` / `cleanSlurs(doc)` / `slurEnd(doc, staff, ev, id)` | A slur from the earliest selected note to the latest (one: to the next note); id-paired entries; re-derived with the ties after every edit. |
 | `setKey / setTime(doc, bar, value)` | Writes the change on that bar; `setTime` re-normalises every following bar until the next change: content is kept, overflowing bars spill into new bars (the one place content moves — with a confirm sheet stating how many bars it touches). |
 | `setClef(doc, bar, staff, clef, at = 0)` | A clef change for one staff on a beat of a bar (`at` in ticks: 0 = the barline, else a beat of the metre — the dotted group in compound time). Holds for that staff until its next change; the clef already in force there removes the change on that beat; off the beat refuses. Pitches are absolute, so nothing re-steps. |
@@ -441,9 +448,9 @@ A composition carries the same identity as a score: `title`, `composer`, `tags` 
 - **Glyph centring corrected (v83):** `centreGlyph` had the ink term's sign wrong — a glyph whose ink sits above its baseline (every ornament, the fermata, the rolled-chord sign) was slid up by its half-height instead of down. Symmetric glyphs (accidentals, rests, heads) hid it; 4× screenshot measurement showed the trill 13 px high and the rolled-chord sign clipped. Every glyph button now measures within 0.5 px of its centre.
 - **Square buttons:** every icon- or glyph-only button carries `cp-sq` — one exact square (3.4 rem; 3 rem on the header; 2.8 rem at phone width) — so a rail reads as a grid; only the worded buttons (Select, Pan, rest, the pickers, *gliss.*) are wider.
 
-### 8.5f The expression rail (v85, WSHED-118)
+### 8.5f The expression rail (v85, WSHED-118; re-based on slots in v91, WSHED-122)
 
-A fifth lane in `RAILS` (off by default, a row in Rails ▾): **pp p mp mf f ff** (Bravura dynamics, one per note, the same again clears) · **crescendo / diminuendo** (earliest selected note to the latest; one note: to the next; the same span and kind again clears; a new start before an open one replaces it) · **text ▾** (a popover of suggestions — rit., a tempo, accel., rall., cresc., dim., dolce, espress., legato, rubato, cantabile, marcato — a box for your own, and *clear*; the earliest selected event carries it). The expression lane lives in `rails.js` with the others rather than a separate `expression.js`. Playback: a note's velocity is the dynamic in force on its staff (mf until one is written); under a hairpin the notes ramp to the next written dynamic, or one step up / down when none follows (`velocities` in play.js).
+A fifth lane in `RAILS` (off by default, a row in Rails ▾): **pp p mp mf f ff** · **crescendo / diminuendo** · **text ▾** (a popover of suggestions — rit., a tempo, accel., rall., cresc., dim., dolce, espress., legato, rubato, cantabile, marcato — and a box for your own). Since v91 the marks are first-class things on half-beat slots, placed by an armed cursor (a hairpin by three taps), selectable, deletable and draggable in time — the whole story is in [`COMPOSE_EXPRESSIONS_DESIGN.md`](COMPOSE_EXPRESSIONS_DESIGN.md). The lane lives in `rails.js` with the others. Playback: a note's velocity is the dynamic in force on its staff at its tick (mf until one is written); inside a hairpin the notes ramp to the next written dynamic, or one step up / down when none follows (`velocities` in play.js).
 
 ### 8.6 Transport (v70) and the rails' look (v71)
 

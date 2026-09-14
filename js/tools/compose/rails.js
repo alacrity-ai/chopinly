@@ -43,7 +43,7 @@ const ARP_ROWS = [["plain", G.arpeggio, "rolled"], ["up", G.arpeggioUp, "rolled 
 /** What the mark buttons say; a mark not listed reads as its id. */
 const MARK_NAMES = { lowerMordent: "lower mordent — the one with the line through it" };
 /** The rails a reader can show or hide, in order — the header that holds the menu is not one of them. */
-export const RAILS = [["control", "Controls"], ["transport", "Transport"], ["palette", "Notes"], ["utility", "Key · time · clef · marks"], ["expression", "Dynamics · hairpins · text"]];
+export const RAILS = [["control", "Controls"], ["transport", "Transport"], ["palette", "Notes"], ["utility", "Key · time · clef · marks"], ["expression", "Dynamics · hairpins · text"]]; // expression marks arm a cursor and land on half-beats (docs/COMPOSE_EXPRESSIONS_DESIGN.md)
 export const DEFAULT_RAILS = { control: true, transport: true, palette: true, utility: false, expression: false };
 /** Dynamics in rail order and the text suggestions (free typing too). */
 const DYNS = ["pp", "p", "mp", "mf", "f", "ff"];
@@ -151,17 +151,16 @@ export function buildRails(host, { title, onAction }) {
       </span>
     </div>
     <div class="cp-rail cp-expression" id="cp-expression" role="toolbar" aria-label="dynamics, hairpins and text" data-rail="expression" hidden>
-      ${DYNS.map((d) => `<button type="button" class="cp-btn cp-sq cp-expr-btn cp-dyn-btn" data-act="dyn" data-dyn="${d}" aria-label="${d}" disabled><span class="cp-glyph cp-glyph-dyn">${dynGlyph(d)}</span></button>`).join("")}
+      ${DYNS.map((d) => `<button type="button" class="cp-btn cp-sq cp-expr-btn cp-dyn-btn" data-act="dyn" data-dyn="${d}" aria-label="${d} — tap the beat it goes on" aria-pressed="false"><span class="cp-glyph cp-glyph-dyn">${dynGlyph(d)}</span></button>`).join("")}
       <span class="cp-sep" aria-hidden="true"></span>
-      <button type="button" class="cp-btn cp-sq cp-expr-btn" data-act="hairpin" data-kind="cresc" aria-label="crescendo — from the first selected note to the last (one note: to the next)" disabled><span class="cp-glyph cp-glyph-sm">${G.hairpinCresc}</span></button>
-      <button type="button" class="cp-btn cp-sq cp-expr-btn" data-act="hairpin" data-kind="dim" aria-label="diminuendo — from the first selected note to the last (one note: to the next)" disabled><span class="cp-glyph cp-glyph-sm">${G.hairpinDim}</span></button>
+      <button type="button" class="cp-btn cp-sq cp-expr-btn cp-hairpin-btn" data-act="hairpin" data-kind="cresc" aria-label="crescendo — tap where it starts, then where it ends" aria-pressed="false"><span class="cp-glyph cp-glyph-sm">${G.hairpinCresc}</span></button>
+      <button type="button" class="cp-btn cp-sq cp-expr-btn cp-hairpin-btn" data-act="hairpin" data-kind="dim" aria-label="diminuendo — tap where it starts, then where it ends" aria-pressed="false"><span class="cp-glyph cp-glyph-sm">${G.hairpinDim}</span></button>
       <span class="cp-sep" aria-hidden="true"></span>
       <span class="cp-more-wrap">
-        <button type="button" class="cp-btn cp-expr-btn cp-text-btn" data-pop="cp-text-more" aria-label="text — rit., a tempo, dolce… or your own, over the selected note" aria-expanded="false" disabled><i>text</i>&#9662;</button>
+        <button type="button" class="cp-btn cp-expr-btn cp-text-btn" data-pop="cp-text-more" aria-label="text — rit., a tempo, dolce… or your own: pick it, then tap the beat it goes over" aria-expanded="false" aria-pressed="false"><i id="cp-text-lbl">text</i>&#9662;</button>
         <span class="cp-more cp-menu cp-text-menu" id="cp-text-more" hidden>
           <span class="cp-text-chips">${TEXTS.map((t) => `<button type="button" class="cp-btn cp-chip" data-act="text" data-text="${t}"><i>${t}</i></button>`).join("")}</span>
           <span class="cp-text-row"><input class="cp-text-in" id="cp-text-in" type="text" maxlength="40" placeholder="your own…" aria-label="expression text"><button type="button" class="cp-btn cp-text-set" data-act="text-set">set</button></span>
-          <button type="button" class="cp-btn cp-menu-row" data-act="text" data-text=""><span>clear the text</span></button>
         </span>
       </span>
     </div>`;
@@ -192,7 +191,7 @@ export function buildRails(host, { title, onAction }) {
     if (act === "dyn") { onAction("dyn", b.dataset.dyn); return; }
     if (act === "hairpin") { onAction("hairpin", b.dataset.kind); return; }
     if (act === "text") { onAction("text", b.dataset.text ?? ""); return; }
-    if (act === "text-set") { const inp = host.querySelector("#cp-text-in"); onAction("text", inp.value); inp.value = ""; return; }
+    if (act === "text-set") { const inp = host.querySelector("#cp-text-in"); onAction("text", inp.value); inp.value = ""; inp.blur(); return; }
     if (act === "acc") { onAction("acc", Number(b.dataset.alter)); return; }
     if (act === "voice") { onAction("voice", Number(b.dataset.v)); return; }
     if (act === "cross") { onAction("cross", Number(b.dataset.dir)); return; }
@@ -207,7 +206,7 @@ export function buildRails(host, { title, onAction }) {
   hold(tupBtn, () => toggle(tupMore, tupBtn));
   // typing in the text box: Enter sets; the editor's shortcuts stay out of inputs
   { const inp = host.querySelector("#cp-text-in");
-    inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); closeMore(); onAction("text", inp.value); inp.value = ""; } else if (e.key === "Escape") { closeMore(); } });
+    inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); closeMore(); onAction("text", inp.value); inp.value = ""; inp.blur(); } else if (e.key === "Escape") { closeMore(); inp.blur(); } }); // the words are armed: focus leaves the box so the pen (and Escape) go to the staff
     inp.addEventListener("pointerdown", (e) => e.stopPropagation()); }
   const onDocDown = (e) => { if (![...host.querySelectorAll(".cp-more-wrap")].some((w) => w.contains(e.target))) closeMore(); };
   document.addEventListener("pointerdown", onDocDown);
@@ -256,7 +255,12 @@ export function buildRails(host, { title, onAction }) {
         host.querySelector(`.cp-rail-row[data-rail="${k}"]`).setAttribute("aria-checked", String(on));
       }
       if (shown) centreAll(); // a lane that was display:none had no metrics to measure
-      for (const b of host.querySelectorAll(".cp-art-btn, .cp-gliss-btn, .cp-arp-btn, .cp-slur-btn, .cp-expr-btn")) b.disabled = !hasSelection;
+      for (const b of host.querySelectorAll(".cp-art-btn, .cp-gliss-btn, .cp-arp-btn, .cp-slur-btn")) b.disabled = !hasSelection;
+      // the expression buttons always work: they arm a cursor (WSHED-122), or retype a selection of their own kind; the armed one is lit
+      for (const b of host.querySelectorAll(".cp-dyn-btn")) b.setAttribute("aria-pressed", String(pending?.kind === "dyn" && pending.value === b.dataset.dyn));
+      for (const b of host.querySelectorAll(".cp-hairpin-btn")) b.setAttribute("aria-pressed", String(pending?.kind === "hairpin" && pending.value === b.dataset.kind));
+      host.querySelector(".cp-text-btn").setAttribute("aria-pressed", String(pending?.kind === "text"));
+      { const lbl = host.querySelector("#cp-text-lbl"), want = pending?.kind === "text" ? pending.value : "text"; if (lbl.textContent !== want) lbl.textContent = want; }
       // the armed change (key / time / clef waiting for a tap) shows on its picker and its button
       const key = pending?.kind === "key" ? KEYS.find((k) => k.fifths === pending.value) : null;
       host.querySelector("#cp-key-val").textContent = key ? `${key.major} / ${key.minor}m` : "";

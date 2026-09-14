@@ -10,12 +10,12 @@ import { haptic } from "../logbook/motion.js";
 import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt, lasso } from "../../lib/compose/hit.js";
-import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, dynamic, hairpin, exprText, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, moveExpressions, moveHairpinEnd, setExpressionValue, removeExpressions, findExpression, exprSlot, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { createPlayer } from "../../lib/compose/play.js";
 import { clefAt, timeAt, tempoOf, usedVoices, MAX_VOICES, MIN_TEMPO, MAX_TEMPO } from "../../lib/compose/model.js";
-import { ticks as ticksOf, capacity, groupSize } from "../../lib/compose/ticks.js";
+import { ticks as ticksOf, capacity, groupSize, exprGrid, WHOLE } from "../../lib/compose/ticks.js";
 import { CLEFS } from "../../lib/music.js";
 import { buildRails, MAIN_BASES, MORE_BASES, KEYS, RAILS, DEFAULT_RAILS, durName, tupletName } from "./rails.js";
 import { openCompositionDetails } from "./details.js";
@@ -23,11 +23,13 @@ import { openExportSheet } from "./exportsheet.js";
 
 const TAP_MS = 300, TAP_PX = 10, PALM_PX = 40, S_MIN = 8, S_MAX = 22, SAVE_MS = 300, LASSO_PX = 6;
 const KEY_BASE = { 1: 64, 2: 32, 3: 16, 4: 8, 5: 4, 6: 2, 7: 1 };
+const EXPR_TYPES = new Set(["dyn", "text", "hairpin", "hairpin-start", "hairpin-end"]); // the selectable expressions and a selected hairpin's two handles
 let clipboard = null; // the copied phrase — lives for the session, so it can travel between compositions
 
 export function openEditor({ id, ctx, onClose }) {
-  const c = logbook.composition(id);
-  if (!c) { toast("that composition is gone"); onClose?.(); return null; }
+  const stored = logbook.composition(id);
+  if (!stored) { toast("that composition is gone"); onClose?.(); return null; }
+  const c = upgrade(stored); // a v1 / v2 piece: its note-attached marks become expressions (docs/COMPOSE_EXPRESSIONS_DESIGN.md §1.1)
   const { store, setRunning, getAudio } = ctx;
   const history = createHistory(c);
   let doc = c;
@@ -64,7 +66,7 @@ export function openEditor({ id, ctx, onClose }) {
   // change that arrived from another device (sync replaces the stored object; we mutate it in place)
   let saving = false, held = c, warnedBig = false;
   const put = (patch) => { saving = true; try { logbook.updateComposition(id, patch); } finally { saving = false; } held = logbook.composition(id); };
-  put({ openedAt: Date.now() });
+  put(c === stored ? { openedAt: Date.now() } : { openedAt: Date.now(), measures: c.measures, v: c.v });
   const offRemote = logbook.on(() => {
     if (closed || saving) return;
     const cur = logbook.composition(id);
@@ -74,7 +76,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (dirty) return;                                   // an edit is about to save and will outrank it
     if (drag) grabEnd({ pointerId: drag.id }, { cancel: true });
     if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true });
-    doc = history.push(cur); title = cur.title; composer = cur.composer ?? ""; tempo = tempoOf(cur);
+    doc = history.push(upgrade(cur)); title = cur.title; composer = cur.composer ?? ""; tempo = tempoOf(cur);
     selection.clear(); pending = null; pasting = false;
     el.setAttribute("aria-label", heading());
     layout(); player.refresh(); rails.transport({ bpm: tempo });
@@ -86,22 +88,31 @@ export function openEditor({ id, ctx, onClose }) {
   function layout() {
     L = layoutComposition(doc, { unit: S, width: width() });
     R = renderComposition(sheet, L);
-    R.setSelection(selection);
+    showSel();
     sync();
     showPlayhead(player.position);
   }
-  /** What the selection allows the voice menu to do. */
+  /** What the selection allows the voice menu and the expression rail to do. */
   function selFacts() {
-    const fs = selEvIds().map((id) => find(doc, id)).filter(Boolean);
+    const ids = selEvIds(), fs = ids.map((id) => find(doc, id)).filter(Boolean);
     const notes = fs.filter((f) => f.ev.kind === "note"), rests = fs.filter((f) => f.ev.kind === "rest");
+    const xs = ids.map((id) => findExpression(doc, id)).filter(Boolean), exprs = xs.length > 0 && xs.length === ids.length;
     const n = doc.parts[0].staves;
-    return { any: fs.length > 0, notes: notes.length > 0, rests: rests.length > 0, hidden: rests.length > 0 && rests.every((f) => f.ev.hidden), up: notes.some((f) => f.staff + (f.ev.cross ?? 0) - 1 >= 0 && Math.abs((f.ev.cross ?? 0) - 1) <= 1), down: notes.some((f) => f.staff + (f.ev.cross ?? 0) + 1 < n && Math.abs((f.ev.cross ?? 0) + 1) <= 1) };
+    return { any: fs.length > 0, exprs, dyns: exprs && xs.every((f) => f.x.kind === "dyn"), texts: exprs && xs.every((f) => f.x.kind === "text"), notes: notes.length > 0, rests: rests.length > 0, hidden: rests.length > 0 && rests.every((f) => f.ev.hidden), up: notes.some((f) => f.staff + (f.ev.cross ?? 0) - 1 >= 0 && Math.abs((f.ev.cross ?? 0) - 1) <= 1), down: notes.some((f) => f.staff + (f.ev.cross ?? 0) + 1 < n && Math.abs((f.ev.cross ?? 0) + 1) <= 1) };
   }
   function sync() {
     rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title: heading(), voice, used: usedVoices(doc), sel: selFacts() });
     view.dataset.mode = mode; view.classList.toggle("pasting", pasting); view.classList.toggle("arming", !!pending);
     syncTransport();
   }
+  /** The selection on the score, plus a selected hairpin's end handles on the overlay. */
+  function showSel() {
+    R.setSelection(selection);
+    const pts = [];
+    for (const hp of L.hairpins) { if (!selection.has(hp.id)) continue; if (hp.half !== "in" && hp.half !== "both") pts.push({ x: hp.x1, y: hp.y }); if (hp.half !== "out" && hp.half !== "both") pts.push({ x: hp.x2, y: hp.y }); }
+    R.showHandles(pts);
+  }
+  const selectedHairpins = () => new Set([...selection].filter((k) => L?.hairpins.some((hp) => hp.id === k)));
   function syncTransport() { rails.transport({ playing: player.playing, bpm: tempo, total: barStarts(doc).total, pos: player.position, bar: locate(doc, player.position)?.bar ?? doc.measures.length - 1, bars: doc.measures.length }); }
   function commit(next) {
     if (next === doc) return;
@@ -173,19 +184,36 @@ export function openEditor({ id, ctx, onClose }) {
   /** Which way the ghost's stem points: by the voice rule once the bar's staff holds (or is about to hold) more than one voice. */
   const ghostStemUp = (slot) => { const st = doc.measures[slot.bar].staves[slot.staff]; const nV = st.voices.filter(Boolean).length + (st.voices[voice] ? 0 : 1); return nV > 1 ? voice % 2 === 0 : slot.step < 4; };
   // --- an armed key / time / clef change: the tap says where it goes ---
-  /** Where a pending change would land for a client point: key / time → { bar }; clef → { bar, staff, at } on the nearest beat. */
+  /** Where a pending change would land for a client point: key / time → { bar }; clef → { bar, staff, at } on the nearest beat; an expression → { bar, staff, at } on the nearest half-beat slot. */
   function changeTarget(clientX, clientY) {
     if (!pending || !L) return null;
     const { x, y } = toS(clientX, clientY);
     const slot = slotAt(L, x, y);
     if (!slot) return null;
+    if (isExprPending()) { const s = exprSlot(doc, slot.bar, slot.ticks); return { bar: s.bar, at: s.at, staff: pending.start ? pending.start.staff : slot.staff }; }
     if (pending.kind !== "clef") return { bar: slot.bar };
     const time = timeAt(doc, slot.bar), beat = groupSize(time), cap = capacity(time);
     let bar = slot.bar, at = Math.round(slot.ticks / beat) * beat;
     if (at >= cap) { if (bar + 1 < doc.measures.length) { bar++; at = 0; } else at = cap - beat; } // the tail of the last beat means the next barline
     return { bar, staff: slot.staff, at };
   }
+  const isExprPending = () => pending && (pending.kind === "dyn" || pending.kind === "text" || pending.kind === "hairpin");
+  const absOf = (bar, at) => barStarts(doc).starts[bar] + at;
+  /** "beat 2" / "the & of 2" of a bar, for toasts. */
+  const slotName = (bar, at) => { const beat = WHOLE / timeAt(doc, bar).unit, n = Math.floor(at / beat) + 1; return `${at % beat ? `the & of ${n}` : `beat ${n}`} of bar ${bar + 1}`; };
   function changeGhost(t) {
+    if (isExprPending()) { // the mark where it would land: on the staff's expression line under the slot (text above); a hairpin being drawn is a band from its start to the pen
+      R.showTarget(null);
+      const hb = barAt(L, t.bar);
+      if (!hb) return R.showGhost(null);
+      const si = L.hit.systems.indexOf(hb.sys), x = xOfTicks(hb.bar, t.at), abs = absOf(t.bar, t.at);
+      if (pending.kind === "dyn") return R.showGhost({ dyn: pending.value, x: x + 0.59, y: L.exprLine(si, t.staff, abs, abs + 1) });
+      if (pending.kind === "text") return R.showGhost({ text: pending.value, x, y: L.textLine(si, t.staff, abs) });
+      if (!pending.start) return R.showGhost({ hairpin: pending.value, x1: x, x2: x + 3, y: L.exprLine(si, t.staff, abs, abs + 1) });
+      const s = pending.start, sb = barAt(L, s.bar), ssi = L.hit.systems.indexOf(sb.sys), sx = xOfTicks(sb.bar, s.at), sAbs = absOf(s.bar, s.at);
+      const sameSys = ssi === si, x2 = sameSys ? x : sb.sys.bars[sb.sys.bars.length - 1].x1 - 0.3; // on another system the band runs open to the start system's end
+      return R.showGhost({ hairpin: pending.value, x1: sx, x2: Math.max(sx + 0.5, x2), y: L.exprLine(ssi, s.staff, sAbs, Math.max(sAbs + 1, abs)) });
+    }
     if (pending.kind !== "clef") { const hb = barAt(L, t.bar); R.showGhost(null); return R.showTarget(hb ? { hbar: hb.bar, sys: hb.sys } : null); }
     R.showTarget(null);
     const hb = barAt(L, t.bar);
@@ -209,6 +237,11 @@ export function openEditor({ id, ctx, onClose }) {
         if (r.doc === doc) { toast(`already ${v.beats}/${v.unit} there`); setPending(null); return; }
         if (r.after > r.before && !confirm(`${v.beats}/${v.unit} from bar ${t.bar + 1} spills into ${r.after - r.before} more ${r.after - r.before === 1 ? "bar" : "bars"} — go ahead?`)) { setPending(null); return; }
         commit(r.doc); toast(`${v.beats}/${v.unit} from bar ${t.bar + 1}`);
+      } else if (p.kind === "dyn" || p.kind === "text") { commit(addExpression(doc, { kind: p.kind, staff: t.staff, bar: t.bar, at: t.at, value: p.value }).doc); toast(`${p.value} on ${slotName(t.bar, t.at)}`); }
+      else if (p.kind === "hairpin") {
+        if (!p.start) { pending = { ...p, start: t }; toast("now tap where it ends"); haptic(6); sync(); return; } // the first tap of three is the start; the second is the end
+        commit(addHairpin(doc, { staff: p.start.staff, bar: p.start.bar, at: p.start.at, dir: p.value, end: { bar: t.bar, at: t.at } }).doc);
+        toast(`${p.value === "cresc" ? "crescendo" : "diminuendo"} from ${slotName(p.start.bar, p.start.at)} to ${slotName(t.bar, t.at)}`);
       } else { commit(setClef(doc, t.bar, t.staff, p.value, t.at)); toast(`${p.value} clef on the ${t.staff === 0 ? "upper" : "lower"} staff from ${t.at ? `beat ${t.at / groupSize(timeAt(doc, t.bar)) + 1} of ` : ""}bar ${t.bar + 1}`); }
       haptic(8);
     } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar ?? t.bar); }
@@ -239,10 +272,10 @@ export function openEditor({ id, ctx, onClose }) {
     if (pending) { applyChangeAt(clientX, clientY); return; }
     if (pasting) { dropAt(clientX, clientY); return; }
     const { x, y } = toS(clientX, clientY);
-    const thing = thingAt(L, x, y);
-    // In Place mode a rest (and a chord's stem) is where the next note goes; only a notehead selects.
-    if (thing && (mode === "select" || thing.type === "head")) { select(thing); return; }
-    if (mode === "select") { if (selection.size) { selection.clear(); R.setSelection(selection); sync(); } return; }
+    const thing = thingAt(L, x, y, mode === "select" ? selectedHairpins() : undefined);
+    // In Place mode a rest (and a chord's stem, and an expression) is where the next note goes; only a notehead selects.
+    if (thing && (mode === "select" || thing.type === "head")) { if (thing.type === "hairpin-start" || thing.type === "hairpin-end") return; select(thing); return; }
+    if (mode === "select") { if (selection.size) { selection.clear(); showSel(); sync(); } return; }
     const slot = slotAt(L, x, y);
     if (!slot) return;
     slot.voice = voice; // a tap places into the active voice, exactly where it is tapped — a rest of another voice there is not the target, the slot is
@@ -265,9 +298,10 @@ export function openEditor({ id, ctx, onClose }) {
   const allHeads = () => selection.size > 0 && [...selection].every((k) => k.includes(":"));
   const allRests = () => selection.size > 0 && [...selection].every((k) => !k.includes(":") && find(doc, k)?.ev.kind === "rest");
   const allNotes = () => selection.size > 0 && selEvIds().every((id) => find(doc, id)?.ev.kind === "note");
+  const allExprs = () => selection.size > 0 && [...selection].every((k) => !k.includes(":") && findExpression(doc, k));
   /** After undo / redo: keep whatever is still there (a note that came back stays selected). */
   function pruneSelection() {
-    for (const k of [...selection]) { const [ev, pi] = k.split(":"); const f = find(doc, ev); if (!f || (pi !== undefined && (f.ev.kind !== "note" || Number(pi) >= f.ev.pitches.length))) selection.delete(k); }
+    for (const k of [...selection]) { const [ev, pi] = k.split(":"); const f = find(doc, ev); if (!f) { if (pi !== undefined || !findExpression(doc, ev)) selection.delete(k); continue; } if (pi !== undefined && (f.ev.kind !== "note" || Number(pi) >= f.ev.pitches.length)) selection.delete(k); }
   }
   // --- clipboard: copy / cut take the selection as a phrase; paste arms a cursor and a tap drops it ---
   function copySelection() {
@@ -288,7 +322,7 @@ export function openEditor({ id, ctx, onClose }) {
     try {
       const r = paste(doc, clipboard, t);
       commit(r.doc);
-      selection.clear(); for (const k of r.keys) selection.add(k); R.setSelection(selection);
+      selection.clear(); for (const k of r.keys) selection.add(k); showSel();
       pasting = false; sync(); haptic(10);
       const notes = r.keys.filter((k) => k.includes(":")).slice(0, 6).map((k) => { const [ev, pi] = k.split(":"); return find(doc, ev)?.ev.pitches[Number(pi)]; }).filter(Boolean);
       sound.play(notes, 260);
@@ -305,7 +339,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (selection.has(key)) { if (toggle) selection.delete(key); }
     else { selection.clear(); selection.add(key); }
     follow(thing);
-    R.setSelection(selection); sync(); haptic(4);
+    showSel(); sync(); haptic(4);
   }
   /** The voice follows the pen: selecting a thing makes its voice the active one (the switcher moves). */
   function follow(thing) { if (thing && Number.isInteger(thing.voice) && thing.voice !== voice) { voice = thing.voice; } }
@@ -314,20 +348,39 @@ export function openEditor({ id, ctx, onClose }) {
   // movement re-pitches by staff step (sounding each), release commits. The mode is untouched:
   // in Place mode the armed duration stays armed and the next tap elsewhere still places.
   // In Select mode a rest grabs the same way: dragging moves the glyph by staff steps out of
-  // another voice's way (`nudgeRest`) — silent, the bar's arithmetic untouched.
-  let drag = null; // { id, type, thing, items, cluster, wasSelected, y0, delta, base, preview, keys, t }
+  // another voice's way (`nudgeRest`) — silent, the bar's arithmetic untouched. An expression
+  // (dynamic, text, hairpin) grabs sideways: the pointer's slot moves it in time
+  // (`moveExpressions`), a selected hairpin's end handle moves that end alone (`moveHairpinEnd`).
+  let drag = null; // { id, type, thing, items, cluster, wasSelected, y0, delta, base, preview, keys, t, at0?, at? }
   function grabStart(e, thing) {
+    const handle = thing.type === "hairpin-start" || thing.type === "hairpin-end", expr = EXPR_TYPES.has(thing.type);
     const wasSelected = selection.has(keyOf(thing));
-    // a grabbed head that belongs to an all-noteheads selection takes the whole cluster with it (rests likewise)
-    const cluster = wasSelected && (thing.type === "rest" ? allRests() : allHeads()) && selection.size > 1;
-    if (!cluster) select(thing, { toggle: false });
+    // a grabbed head that belongs to an all-noteheads selection takes the whole cluster with it (rests and expressions likewise)
+    const cluster = !handle && wasSelected && (thing.type === "rest" ? allRests() : expr ? allExprs() : allHeads()) && selection.size > 1;
+    if (!cluster && !handle) select(thing, { toggle: false });
     const items = cluster ? selItems() : [{ ev: thing.ev, pi: thing.pi }];
-    drag = { id: e.pointerId, type: e.pointerType, thing, items, cluster, wasSelected, y0: e.clientY, delta: 0, base: doc, preview: doc, keys: [...selection], keys0: [...selection], t: performance.now() };
+    let at0 = null;
+    if (expr) { const f = findExpression(doc, thing.ev); at0 = thing.type === "hairpin-end" ? absOf(f.x.end.bar, f.x.end.at) : absOf(f.bar, f.x.at); }
+    drag = { id: e.pointerId, type: e.pointerType, thing, items, cluster, wasSelected, y0: e.clientY, delta: 0, base: doc, preview: doc, keys: [...selection], keys0: [...selection], t: performance.now(), at0, at: at0 };
     R.showGhost(null);
     try { view.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
   }
   function grabMove(e) {
     if (!drag || drag.id !== e.pointerId) return;
+    if (EXPR_TYPES.has(drag.thing.type)) { // sideways: the slot under the pointer, across bars and systems
+      const { x, y } = toS(e.clientX, e.clientY);
+      const slot = slotAt(L, x, y);
+      if (!slot) return;
+      const s = exprSlot(drag.base, slot.bar, slot.ticks), abs = barStarts(drag.base).starts[s.bar] + s.at;
+      if (abs === drag.at) return;
+      try {
+        const type = drag.thing.type;
+        drag.preview = type === "hairpin-start" || type === "hairpin-end" ? moveHairpinEnd(drag.base, drag.thing.ev, type === "hairpin-start" ? "start" : "end", s) : moveExpressions(drag.base, drag.items.map((it) => it.ev), abs - drag.at0);
+        drag.at = abs; drag.delta = abs - drag.at0;
+        doc = drag.preview; layout(); haptic(3);
+      } catch (err) { if (!(err instanceof Nudge)) throw err; /* holds at the last good slot */ }
+      return;
+    }
     const delta = Math.round((drag.y0 - e.clientY) / (S / 2));
     if (delta === drag.delta) return;
     try {
@@ -353,13 +406,13 @@ export function openEditor({ id, ctx, onClose }) {
     if (cancel || g.delta === 0) {
       doc = g.base;
       if (g.delta !== 0) { selection.clear(); for (const k of (g.cluster ? g.keys0 ?? g.keys : [keyOf(g.thing)])) selection.add(k); layout(); }
-      // a clean tap on an already-selected single note deselects it (the toggle a tap always had)
-      if (!cancel && g.wasSelected && !g.cluster && performance.now() - g.t <= TAP_MS) { selection.clear(); R.setSelection(selection); sync(); }
+      // a clean tap on an already-selected single note deselects it (the toggle a tap always had); a tap on a handle is nothing
+      if (!cancel && g.wasSelected && !g.cluster && g.thing.type !== "hairpin-start" && g.thing.type !== "hairpin-end" && performance.now() - g.t <= TAP_MS) { selection.clear(); showSel(); sync(); }
       return;
     }
     doc = g.base;                         // commit records base → preview as one step
     commit(g.preview);
-    selection.clear(); for (const k of g.keys) selection.add(k); R.setSelection(selection); sync();
+    selection.clear(); for (const k of g.keys) selection.add(k); showSel(); sync();
     haptic(8);
   }
 
@@ -386,7 +439,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (!l.active) { // a plain tap: on a rest (or a stem) it selects that; on empty staff it clears
       const t = thingAt(L, l.pts[0].x, l.pts[0].y);
       if (t) { select(t); return; }
-      if (selection.size) { selection.clear(); R.setSelection(selection); sync(); }
+      if (selection.size) { selection.clear(); showSel(); sync(); }
       return;
     }
     selection.clear();
@@ -394,12 +447,12 @@ export function openEditor({ id, ctx, onClose }) {
     for (const t of got) selection.add(keyOf(t));
     const lastHead = [...got].reverse().find((t) => t.type === "head") ?? got[got.length - 1];
     follow(lastHead); // the last head lassoed sets the active voice
-    R.setSelection(selection); sync(); haptic(selection.size ? 6 : 0);
+    showSel(); sync(); haptic(selection.size ? 6 : 0);
   }
   function deleteSelection() {
     if (!selection.size) return;
     const items = [...selection].map((k) => { const [ev, pi] = k.split(":"); return pi === undefined ? { ev } : { ev, pi: Number(pi) }; });
-    const next = remove(doc, items);
+    const next = removeExpressions(remove(doc, items), selEvIds()); // notes to rests, expressions gone — one undo step
     selection.clear();
     commit(next); haptic(8);
   }
@@ -410,8 +463,8 @@ export function openEditor({ id, ctx, onClose }) {
   let pan = null;     // Pan state: { pointers: Map(id → {x, y}), scrollTop, dist0, S0, last, vy, inertia }
   const wide = (e) => (e.width > PALM_PX || e.height > PALM_PX);
 
-  /** The grabbable thing under the pointer: a head in any mode; in Select mode a rest as well. */
-  const headUnder = (e) => { if (!L) return null; const { x, y } = toS(e.clientX, e.clientY); const t = thingAt(L, x, y); return t?.type === "head" || (t?.type === "rest" && mode === "select") ? t : null; };
+  /** The grabbable thing under the pointer: a head in any mode; in Select mode a rest or an expression (and a selected hairpin's handles) as well. */
+  const headUnder = (e) => { if (!L) return null; const { x, y } = toS(e.clientX, e.clientY); const t = thingAt(L, x, y, mode === "select" ? selectedHairpins() : undefined); return t?.type === "head" || (mode === "select" && t && (t.type === "rest" || EXPR_TYPES.has(t.type))) ? t : null; };
   view.addEventListener("pointerdown", (e) => {
     if (mode === "pan") { onPanDown(e); return; }
     if (e.pointerType === "touch") {
@@ -573,19 +626,29 @@ export function openEditor({ id, ctx, onClose }) {
         try { commit(slur(doc, selEvIds())); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
         return;
       }
-      case "dyn": {
-        if (!selection.size) { toast("select the notes for the dynamic"); return; }
-        try { commit(dynamic(doc, selEvIds(), arg)); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+      case "dyn": { // with dynamics selected it retypes them; otherwise it arms — the next tap on the staff places it on the nearest half-beat (the armed one again → off)
+        if (selection.size && selFacts().dyns) { try { commit(setExpressionValue(doc, selEvIds(), arg)); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); } return; }
+        if (pending?.kind === "dyn" && pending.value === arg) { setPending(null); return; }
+        setPending({ kind: "dyn", value: arg }); toast(`${arg} — tap the beat it goes on`);
         return;
       }
-      case "hairpin": {
-        if (!selection.size) { toast("select the notes for the hairpin"); return; }
-        try { commit(hairpin(doc, selEvIds(), arg)); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+      case "hairpin": { // three taps: the button, where it starts, where it ends
+        if (pending?.kind === "hairpin" && pending.value === arg) { setPending(null); return; }
+        setPending({ kind: "hairpin", value: arg, start: null }); toast(`${arg === "cresc" ? "crescendo" : "diminuendo"} — tap where it starts, then where it ends`);
         return;
       }
-      case "text": {
-        if (!selection.size) { toast("select the note the text goes over"); return; }
-        try { commit(exprText(doc, selEvIds(), arg)); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+      case "text": { // a chip or typed words: with texts selected it retypes them; otherwise it arms
+        const t = String(arg ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+        if (!t) { toast("say what the text is"); return; }
+        if (selection.size && selFacts().texts) { try { commit(setExpressionValue(doc, selEvIds(), t)); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); } return; }
+        if (pending?.kind === "text" && pending.value === t) { setPending(null); return; }
+        setPending({ kind: "text", value: t }); toast(`${t} — tap the beat it goes over`);
+        return;
+      }
+      case "expr-nudge": { // ← / → on an expression-only selection: one slot of the first one's bar
+        const ids = selEvIds(), f = findExpression(doc, ids[0]);
+        if (!f) return;
+        try { commit(moveExpressions(doc, ids, arg * exprGrid(timeAt(doc, f.bar)))); haptic(4); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
         return;
       }
       case "arp": {
@@ -597,7 +660,7 @@ export function openEditor({ id, ctx, onClose }) {
         const v = Number(arg);
         if (!(v >= 0 && v < MAX_VOICES)) return;
         if (selection.size && selFacts().notes) {
-          try { const ids = selEvIds(); commit(setVoice(doc, ids, v)); voice = v; pruneSelection(); R.setSelection(selection); sync(); haptic(8); } // the selection stays selected, so a wrong move is one tap back
+          try { const ids = selEvIds(); commit(setVoice(doc, ids, v)); voice = v; pruneSelection(); showSel(); sync(); haptic(8); } // the selection stays selected, so a wrong move is one tap back
           catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
           return;
         }
@@ -609,7 +672,7 @@ export function openEditor({ id, ctx, onClose }) {
       case "voice-swap": { // swap voices 1 and 2 in the bars the selection touches
         if (!selection.size) { toast("select notes in the bars to swap"); return; }
         const bars = [...new Map(selEvIds().map((id) => find(doc, id)).filter(Boolean).map((f) => [`${f.bar}:${f.staff}`, { bar: f.bar, staff: f.staff }])).values()];
-        try { commit(swapVoices(doc, bars, 0, 1)); pruneSelection(); R.setSelection(selection); sync(); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+        try { commit(swapVoices(doc, bars, 0, 1)); pruneSelection(); showSel(); sync(); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
         return;
       }
       case "cross": { // arg = −1 (to the staff above) | 1 (below)
@@ -658,7 +721,7 @@ export function openEditor({ id, ctx, onClose }) {
       case "tuplet": { // arg = n from the hold menu; a plain tap uses the current n
         const n = arg ?? tupletN;
         if (selection.size) {
-          try { const ids = selEvIds(); commit(tuplet(doc, ids, n)); selection.clear(); for (const id of ids) selection.add(id); R.setSelection(selection); sync(); haptic(8); }
+          try { const ids = selEvIds(); commit(tuplet(doc, ids, n)); selection.clear(); for (const id of ids) selection.add(id); showSel(); sync(); haptic(8); }
           catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
           tupletN = n; saveArm(); sync();
           return;
@@ -683,7 +746,7 @@ export function openEditor({ id, ctx, onClose }) {
           if (!allNotes()) { toast("pick notes to turn into rests"); return; }
           const ids = selEvIds();
           commit(toRests(doc, ids));
-          selection.clear(); for (const id of ids) selection.add(id); R.setSelection(selection); sync(); haptic(8);
+          selection.clear(); for (const id of ids) selection.add(id); showSel(); sync(); haptic(8);
           return;
         }
         armed = { ...armed, rest: !armed.rest }; saveArm(); if (mode !== "place") setMode("place"); else sync(); return;
@@ -711,11 +774,12 @@ export function openEditor({ id, ctx, onClose }) {
     if (mod && e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); act("cross", e.key === "ArrowUp" ? -1 : 1); return; }
     if (mod) return;
     if ((e.key === "ArrowUp" || e.key === "ArrowDown") && allRests()) { e.preventDefault(); act("rest-nudge", e.key === "ArrowUp" ? 1 : -1); return; }
+    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && allExprs()) { e.preventDefault(); act("expr-nudge", e.key === "ArrowLeft" ? -1 : 1); return; }
     if (e.key === " " || e.code === "Space") { e.preventDefault(); act("play"); return; }
     if (e.key === "Home") { e.preventDefault(); act("stop"); return; }
     if (e.key === "Escape" && pending) { setPending(null); return; }
     if (e.key === "Escape" && pasting) { setPasting(false); return; }
-    if (e.key === "Escape") { if (selection.size) { selection.clear(); R.setSelection(selection); sync(); } else setMode(mode === "select" ? "place" : "select"); return; }
+    if (e.key === "Escape") { if (selection.size) { selection.clear(); showSel(); sync(); } else setMode(mode === "select" ? "place" : "select"); return; }
     if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelection(); return; }
     if (KEY_BASE[e.key]) { act("dur", KEY_BASE[e.key]); return; }
     if (e.key === ".") { act("dot"); return; }

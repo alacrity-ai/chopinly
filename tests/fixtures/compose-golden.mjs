@@ -1,11 +1,12 @@
 // A single-voice piece exercising most of the engraver: both staves, chords with a second, beams,
 // a tuplet, ties across a barline, a slur, marks, a dynamic + hairpin, a clef change, a roll,
 // accidentals. tests/compose-layout.test.mjs lays it out and compares against
-// compose-golden.json (written by the code before multi-voice landed, WSHED-120), so a
-// piece that never uses voice 2 keeps its exact layout. Regenerate only on purpose:
+// compose-golden.json (written by the code before multi-voice landed, WSHED-120; the expression
+// entries regenerated when marks moved onto slots, WSHED-122), so a piece that never uses voice 2
+// keeps its exact layout. Regenerate only on purpose:
 //   node -e 'import("./tests/fixtures/compose-golden.mjs").then(m=>m.write())'
 import { newComposition } from "../../js/lib/compose/model.js";
-import { place, tuplet, tie, slur, articulate, dynamic, hairpin, setClef, arpeggio, accidental, exprText } from "../../js/lib/compose/engine.js";
+import { place, tuplet, tie, slur, articulate, addExpression, addHairpin, setClef, arpeggio, accidental } from "../../js/lib/compose/engine.js";
 import { layoutComposition } from "../../js/lib/compose/layout.js";
 import { PPQ } from "../../js/lib/compose/ticks.js";
 
@@ -26,8 +27,8 @@ export function goldenDoc() {
   d = tie(d, [{ ev: v(2)[v(2).length - 1].id }]);
   d = slur(d, [v(1)[0].id, v(1)[3].id]);
   d = articulate(d, [v(0)[1].id], "staccato"); d = articulate(d, [v(0)[2].id], "trill"); d = articulate(d, [v(0)[3].id], "fermata");
-  d = dynamic(d, [v(0)[0].id], "p"); d = hairpin(d, [v(0)[0].id, v(0)[3].id], "cresc");
-  d = exprText(d, [v(1)[0].id], "dolce");
+  d = addExpression(d, { kind: "dyn", staff: 0, bar: 0, at: 0, value: "p" }).doc; d = addHairpin(d, { staff: 0, bar: 0, at: 0, dir: "cresc", end: { bar: 0, at: 3 * PPQ } }).doc; // WSHED-122: on the slots the notes were on
+  d = addExpression(d, { kind: "text", staff: 0, bar: 1, at: 0, value: "dolce" }).doc;
   d = accidental(d, [{ ev: v(0)[1].id, pi: 0 }], 1); d = accidental(d, [{ ev: v(1)[2].id, pi: 0 }], -1);
   d = arpeggio(d, [v(0)[0].id], "up");
   d = setClef(d, 3, 1, "tenor", 2 * PPQ);
