@@ -2,6 +2,7 @@
 // staff, select, delete, undo / redo, nudge on overflow, palm safety, Pan,
 // reload. Chromium with an iPad user agent and touch.
 // BASE=… SHOTS=… node tests/e2e/compose.mjs
+import { readFileSync } from "node:fs";
 import { chromium } from "/home/leif/lets-get-rich/claude_ops/.claude/skills/tcw-quote/node_modules/playwright/index.mjs";
 const S = process.env.SHOTS ?? ".", BASE = process.env.BASE ?? "http://127.0.0.1:8789";
 const IPAD_UA = "Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
@@ -410,7 +411,7 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   // the header's Rails ▾ menu shows and hides lanes; the File ▾ menu is a placeholder for export
   if (!(await page.locator(".cp-header [data-act=back]").count()) || !(await page.locator(".cp-header #cp-title").count())) throw new Error("back / title not on the header rail");
   await page.click("[data-pop=cp-file-more]");
-  if ((await page.locator("#cp-file-more .cp-menu-row:disabled").count()) < 4) throw new Error("file menu placeholders");
+  if ((await page.locator("#cp-file-more .cp-menu-row:disabled").count()) !== 2 || (await page.locator("#cp-file-more .cp-menu-row:not(:disabled)").count()) !== 2) throw new Error("file menu: two PDF rows live, MusicXML / MIDI placeholders");
   await page.click("[data-pop=cp-file-more]");
   await page.click("[data-pop=cp-rails-more]");
   if ((await page.locator("#cp-rails-more .cp-rail-row").count()) !== 5) throw new Error("rail rows"); // controls · transport · notes · utility · expression
@@ -759,6 +760,74 @@ await step("Pan scrolls and places nothing; leaving Pan pins the score again; zo
   if ((await state()).mode !== "place") throw new Error("not back to place");
   if ((await page.evaluate(() => document.querySelectorAll(".cp-svg .cp-head").length)) !== notes) throw new Error("pan placed something");
   await page.screenshot({ path: `${S}/cp-04-zoomed.png` });
+});
+
+await step("export: File ▾ → Export PDF opens the sheet with a page-1 preview; − / + step the staff size (readout + page count), page / margins / header re-plan; Save PDF downloads a real vector PDF; Add to Scores puts it in the library, the reader shows ink; a re-send after a change replaces the file in place", async () => {
+  const cid = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.id);
+  await page.click("[data-pop=cp-file-more]");
+  await page.click("#cp-file-more [data-act=export-pdf]");
+  await page.waitForSelector(".cp-export-wrap .cp-paper .cp-page");
+  const readout = () => page.textContent("#cp-x-size");
+  const pagesOf = async () => Number((await readout()).match(/(\d+) pages?/)[1]);
+  if (!/^staff 7\.2 mm · \d+ pages?$/.test(await readout())) throw new Error("readout " + (await readout()));
+  const ink = await page.locator(".cp-paper .cp-svg .cp-ev").count();
+  if (ink < 4) throw new Error("the preview shows no notes: " + ink);
+  if ((await page.locator(".cp-paper .cp-page-text").count()) < 1) throw new Error("no title on the preview");
+  const p0 = await pagesOf();
+  await page.click("#cp-x-larger"); await page.click("#cp-x-larger"); await page.click("#cp-x-larger"); // 1.8 → 2.0 → 2.2 → 2.5 mm
+  if (!(await readout()).startsWith("staff 10.0 mm")) throw new Error("larger: " + (await readout()));
+  if ((await pagesOf()) < p0) throw new Error("a bigger staff never needs fewer pages");
+  if (!(await page.getAttribute("#cp-x-larger", "disabled") !== null)) throw new Error("+ should be at its end");
+  await page.click("[data-margins=wide]");
+  if ((await page.getAttribute("[data-margins=wide]", "aria-pressed")) !== "true") throw new Error("margins not pressed");
+  await page.click("[data-page=a4]");
+  if (!/A4 · wide margins/.test(await page.textContent("#cp-x-fine"))) throw new Error("fine print " + (await page.textContent("#cp-x-fine")));
+  await page.click("#cp-x-header");
+  if ((await page.locator(".cp-paper .cp-page-text").count()) !== 0) throw new Error("header off still shows a title");
+  await page.click("#cp-x-header");
+  // the choices persist
+  if (JSON.parse(await page.evaluate(() => localStorage.getItem("ws.compose.export"))).page !== "a4") throw new Error("export choices not remembered");
+  // Save PDF → a download of a real PDF (no share sheet in Chromium headless)
+  const box = await page.locator("#cp-x-save").boundingBox();
+  if (!box || box.y + box.height > page.viewportSize().height) throw new Error("Save PDF sits below the fold at iPad-landscape height: " + JSON.stringify(box));
+  const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 20000 }), page.click("#cp-x-save")]);
+  if (!/\.pdf$/.test(dl.suggestedFilename())) throw new Error("download name " + dl.suggestedFilename());
+  const pdf = readFileSync(await dl.path());
+  const txt = pdf.toString("latin1");
+  if (!txt.startsWith("%PDF-")) throw new Error("not a PDF");
+  const nPages = (txt.match(/\/Type \/Page(?!s)/g) ?? []).length;
+  if (nPages !== (await pagesOf())) throw new Error(`the PDF has ${nPages} pages, the sheet promised ${await pagesOf()}`);
+  if (!/\/BaseFont \/Fraunces-Regular/.test(txt) || !/\/Subtype \/Form/.test(txt) || /\/Subtype \/Image/.test(txt)) throw new Error("not the vector PDF we make");
+  await page.screenshot({ path: `${S}/cp-19-export.png` });
+  // Add to Scores
+  await page.click("#cp-x-scores");
+  await page.waitForFunction(() => document.querySelector("#cp-x-scores-label")?.textContent === "Open in Scores", null, { timeout: 20000 });
+  const scoreId = await page.getAttribute("#cp-x-scores", "data-open");
+  const lb = async () => page.evaluate(async ([sid, cid]) => { const { logbook } = await import("/js/lib/logbook.js"); const s = logbook.score(sid), c = logbook.composition(cid); return { n: logbook.scores().length, title: s?.title, tags: s?.tags, pages: s?.pages, sha: s?.sha256, linked: c?.scoreId }; }, [scoreId, cid]);
+  let r = await lb();
+  if (r.linked !== scoreId || !r.tags?.includes("compose") || r.pages !== nPages) throw new Error("score record " + JSON.stringify(r));
+  const nScores = r.n, sha1 = r.sha;
+  await page.click("#cp-x-scores"); // the row is now the way there
+  await page.waitForSelector(".sc-reader", { timeout: 15000 });
+  await page.waitForFunction(() => { const c = document.querySelector("#sc-page"); return c && c.width > 2; }, null, { timeout: 20000 });
+  await page.waitForTimeout(400);
+  const dark = await page.evaluate(() => { const c = document.querySelector("#sc-page"); const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; let k = 0; for (let i = 0; i < d.length; i += 16) if (d[i] < 128) k++; return k / (d.length / 16); });
+  if (!(dark > 0.002)) throw new Error("the reader shows a blank page: " + dark);
+  await page.screenshot({ path: `${S}/cp-20-export-in-scores.png` });
+  // back in the editor: the sheet knows the linked score; a change + re-send replaces the file in place (same score, new bytes)
+  await page.goto(`${BASE}/?app=1&t=9#/compose/${cid}`);
+  await page.waitForSelector(".cp-editor .cp-svg");
+  await page.click("[data-pop=cp-file-more]"); await page.click("#cp-file-more [data-act=save-pdf]");
+  await page.waitForSelector(".cp-export-wrap .cp-paper .cp-page");
+  if ((await page.textContent("#cp-x-scores-label")) !== "Update in Scores") throw new Error("the sheet forgot the linked score");
+  await page.click("#cp-x-smaller"); // different bytes
+  await page.click("#cp-x-scores");
+  await page.waitForFunction(() => document.querySelector("#cp-x-scores-label")?.textContent === "Open in Scores", null, { timeout: 20000 });
+  r = await lb();
+  if (r.n !== nScores || r.sha === sha1 || r.linked !== scoreId) throw new Error("re-send did not replace in place " + JSON.stringify(r));
+  await page.keyboard.press("Escape"); await page.waitForTimeout(350);
+  if (await page.locator(".cp-export-wrap:not(.closing)").count()) await page.click(".cp-export-wrap .lb-close");
+  await page.waitForFunction(() => !document.querySelector(".cp-export-wrap"), null, { timeout: 3000 });
 });
 
 await step("reload restores the composition, the zoom and the armed duration", async () => {

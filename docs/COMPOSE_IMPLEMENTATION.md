@@ -239,6 +239,13 @@ carries its dynamics, and *practice this* logs minutes against it.
 
 ## Phase 4 — export (vector PDF with scaling, add to Scores, MusicXML) — MVP complete
 
+**P4a LANDED v88 (WSHED-121, 2026-09-14):** steps 1, 2, 4, 6 and 7 below for the PDF —
+as built in design §10.1 (painter split `paint.js`, baked Bravura outlines as form XObjects,
+static Fraunces subsets through vendored pdf-lib + fontkit UMD, the export sheet with a live
+page-1 preview, Add to Scores with replace-in-place). **P4b = WSHED-119:** MusicXML (step 3)
+and the public story (step 5).
+
+
 **Goal:** a composition leaves Chopinly as a printable PDF, lands in the Scores
 library in one tap, and round-trips into Sibelius as MusicXML.
 

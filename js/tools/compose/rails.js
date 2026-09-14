@@ -50,8 +50,8 @@ const DYNS = ["pp", "p", "mp", "mf", "f", "ff"];
 const TEXTS = ["rit.", "a tempo", "accel.", "rall.", "cresc.", "dim.", "dolce", "espress.", "legato", "rubato", "cantabile", "marcato"];
 /** The voice menu (hold a voice button, or ▾ at phone width): rows are enabled by what the selection allows. */
 const VOICE_ROWS = [...[0, 1, 2, 3].map((v) => ["voice", `voice ${v + 1}`, { v }]), ["voice-swap", "swap 1 ↔ 2 in these bars", {}], ["cross", "cross to the upper staff", { dir: -1 }], ["cross", "cross to the lower staff", { dir: 1 }], ["hide-rest", "hide rest", {}]];
-/** What the File menu will hold (P4 export); nothing works yet, so every row is disabled. */
-const FILE_ITEMS = [["save-pdf", "Save to Scores as PDF"], ["export-pdf", "Export PDF"], ["export-xml", "Export MusicXML"], ["export-midi", "Export MIDI"]];
+/** The File menu: the two PDF rows open the export sheet (WSHED-121); MusicXML / MIDI wait for WSHED-119. */
+const FILE_ITEMS = [["save-pdf", "Save to Scores as PDF", true], ["export-pdf", "Export PDF", true], ["export-xml", "Export MusicXML", false], ["export-midi", "Export MIDI", false]];
 
 export function buildRails(host, { title, onAction }) {
   host.innerHTML = `
@@ -60,7 +60,7 @@ export function buildRails(host, { title, onAction }) {
       <button type="button" class="cp-title" id="cp-title" data-act="details" aria-label="details — title, composer, tags">${esc(title)}</button>
       <span class="cp-more-wrap">
         <button type="button" class="cp-btn cp-pick cp-file" data-pop="cp-file-more" aria-label="file" aria-expanded="false"><span class="cp-pick-label">File</span>&#9662;</button>
-        <span class="cp-more cp-menu" id="cp-file-more" hidden>${FILE_ITEMS.map(([act, label]) => `<button type="button" class="cp-btn cp-menu-row" data-act="${act}" disabled><span>${label}</span><small>soon</small></button>`).join("")}</span>
+        <span class="cp-more cp-menu" id="cp-file-more" hidden>${FILE_ITEMS.map(([act, label, live]) => `<button type="button" class="cp-btn cp-menu-row" data-act="${act}"${live ? "" : " disabled"}><span>${label}</span>${live ? "" : "<small>soon</small>"}</button>`).join("")}</span>
       </span>
       <span class="cp-more-wrap">
         <button type="button" class="cp-btn cp-pick cp-rails-btn" data-pop="cp-rails-more" aria-label="show or hide rails" aria-expanded="false">${icon("grip")}<span class="cp-pick-label">Rails</span>&#9662;</button>

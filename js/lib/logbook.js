@@ -457,6 +457,10 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     if ("composer" in patch) { const c = cleanComposer(patch.composer); if (c) s.composer = c; else delete s.composer; }
     if ("tags" in patch) s.tags = cleanTags(patch.tags);
     if ("goalId" in patch) { if (patch.goalId) { mustGoal(patch.goalId); s.goalId = patch.goalId; } else delete s.goalId; }
+    // the file itself was replaced (a composition re-sent to Scores): the reader and the cloud go by these
+    if ("pages" in patch) { const n = Math.round(Number(patch.pages)); if (!(n > 0)) throw new Error("a score needs pages"); s.pages = n; }
+    if ("size" in patch) s.size = Math.max(0, Math.round(Number(patch.size)) || 0);
+    if ("sha256" in patch) s.sha256 = String(patch.sha256 ?? "").slice(0, 64);
     touch("score", s); save(); return s;
   }
   /** Opened just now (drives the "recent" sort on every device). */
@@ -607,6 +611,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     if ("tags" in patch) { c.tags = cleanTags(patch.tags); edited = true; }
     if ("measures" in patch) { c.measures = patch.measures; edited = true; }
     if ("tempo" in patch) { c.tempo = patch.tempo; edited = true; }
+    if ("scoreId" in patch) { if (patch.scoreId) c.scoreId = String(patch.scoreId); else delete c.scoreId; edited = true; } // the Scores copy this piece was sent to (WSHED-121)
     if ("openedAt" in patch) c.openedAt = patch.openedAt;
     if (edited) touch("composition", c);
     save(); return c;

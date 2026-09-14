@@ -18,5 +18,10 @@ test("the service worker precaches every module under js/ (offline broke once be
   // JPEG 2000 / JBIG2 scans) and the licence files are fetched on demand.
   const vendor = walkAll(join(ROOT, "vendor", "pdfjs")).filter((p) => !p.includes("/wasm/") && !/LICENSE|VERSION/.test(p));
   assert.deepEqual(vendor.filter((p) => !shell.has(p)), [], "vendor/pdfjs files missing from the precache");
+  // pdf-lib + fontkit + the two Fraunces faces (WSHED-121): the PDF export must work offline too
+  const pdflib = walkAll(join(ROOT, "vendor", "pdflib")).filter((p) => !/LICENSE|VERSION/.test(p));
+  assert.ok(pdflib.length >= 2, "vendor/pdflib is empty — run dev/vendor-pdflib.mjs");
+  assert.deepEqual(pdflib.filter((p) => !shell.has(p)), [], "vendor/pdflib files missing from the precache");
+  for (const f of ["/fonts/Fraunces-Regular.ttf", "/fonts/Fraunces-Italic.ttf"]) { assert.ok(shell.has(f), f + " missing from the precache"); assert.ok(statSync(join(ROOT, f)).isFile(), f + " is gone"); }
   assert.match(sw, /BUSTABLE = .*vendor/, "vendor/ fetches must carry ?v=<CACHE> like js/");
 });
