@@ -18,7 +18,7 @@ export const G = {
   // articulations (above / below the head), ornaments, fermata
   staccatoAbove: cp(0xe4a2), staccatoBelow: cp(0xe4a3), accentAbove: cp(0xe4a0), accentBelow: cp(0xe4a1),
   tenutoAbove: cp(0xe4a4), tenutoBelow: cp(0xe4a5), fermataAbove: cp(0xe4c0), fermataBelow: cp(0xe4c1),
-  trill: cp(0xe566), mordent: cp(0xe56c), turn: cp(0xe567),
+  trill: cp(0xe566), mordent: cp(0xe56c), lowerMordent: cp(0xe56d), turn: cp(0xe567),
   // palette pictures (SMuFL "metronome" notes: head + stem + flags in one glyph)
   metDblWhole: cp(0xeca0), metWhole: cp(0xeca2), metHalf: cp(0xeca3), metQuarter: cp(0xeca5),
   met8th: cp(0xeca7), met16th: cp(0xeca9), met32nd: cp(0xecab), met64th: cp(0xecad),
@@ -35,4 +35,4 @@ export const flagGlyph = (base, up) => ({ 8: up ? G.flagUp : G.flagDown, 16: up 
 /** Palette picture for a base. */
 export const metGlyph = (base) => ({ 0: G.metDblWhole, 1: G.metWhole, 2: G.metHalf, 4: G.metQuarter, 8: G.met8th, 16: G.met16th, 32: G.met32nd, 64: G.met64th })[base];
 /** Articulation glyph for a mark on the given side. */
-export const artGlyph = (mark, above) => ({ staccato: above ? G.staccatoAbove : G.staccatoBelow, accent: above ? G.accentAbove : G.accentBelow, tenuto: above ? G.tenutoAbove : G.tenutoBelow, fermata: above ? G.fermataAbove : G.fermataBelow, trill: G.trill, mordent: G.mordent, turn: G.turn })[mark];
+export const artGlyph = (mark, above) => ({ staccato: above ? G.staccatoAbove : G.staccatoBelow, accent: above ? G.accentAbove : G.accentBelow, tenuto: above ? G.tenutoAbove : G.tenutoBelow, fermata: above ? G.fermataAbove : G.fermataBelow, trill: G.trill, mordent: G.mordent, lowerMordent: G.lowerMordent, turn: G.turn })[mark];

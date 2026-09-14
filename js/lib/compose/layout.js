@@ -284,7 +284,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     if (near >= staffTopY && near <= staffBotY && onLine(near, staffTopY)) near += stemUp ? 0.5 : -0.5;
     let high = Math.min(staffTopY - 1.4, (d.stem === "up" ? d.stemTipY : d.topY) - 1.2);
     for (const m of d.art) {
-      const ornament = m === "fermata" || m === "trill" || m === "mordent" || m === "turn";
+      const ornament = m === "fermata" || m === "trill" || m === "mordent" || m === "lowerMordent" || m === "turn";
       if (ornament) { marks.push({ x: d.x + d.headW / 2, y: high, mark: m, above: true, system: d.system }); high -= m === "fermata" ? 1.8 : 1.4; }
       else { marks.push({ x: d.x + d.headW / 2, y: near, mark: m, above: !stemUp, system: d.system }); near += stemUp ? 1.1 : -1.1; if (!stemUp) high = Math.min(high, near - 0.4); }
     }

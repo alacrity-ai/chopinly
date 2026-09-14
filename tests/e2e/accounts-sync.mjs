@@ -101,6 +101,35 @@ await step("delete on A tombstones on B; both press play apart → one clock sur
   await run(A.page, `lb.stop(); await sync.now();`);
 });
 
+await step("a composition written on A opens on B; B's edit comes back; A's delete removes it on B (no plan needed)", async () => {
+  const a = await run(A.page, `const { newComposition } = await import("/js/lib/compose/model.js"); const c = lb.addComposition(newComposition({ id: "e2e-" + a[0], title: "Sync étude", composer: "Bot", tags: ["e2e"] })); await sync.now(); return { pending: lb.pendingCount(), status: sync.snapshot().status, bars: c.measures.length };`, Date.now().toString(36));
+  if (a.pending !== 0 || a.status !== "synced") throw new Error("A push " + JSON.stringify(a));
+  const b = await run(B.page, `await sync.now(); const c = lb.compositions().find((x) => x.title === "Sync étude"); return c ? { composer: c.composer, tags: c.tags, bars: c.measures.length, tempo: c.tempo } : null;`);
+  if (!b || b.composer !== "Bot" || b.tags.join() !== "e2e" || b.bars !== a.bars) throw new Error("B pull " + JSON.stringify(b));
+  await B.page.goto(`${BASE}/?app=1#/compose`);
+  await B.page.waitForSelector(".sc-row");
+  if (!(await B.page.locator(".sc-title").allTextContents()).includes("Sync étude")) throw new Error("B's list does not show the piece");
+  await B.page.screenshot({ path: `${S}/acc-02-B-composition.png` });
+  await run(B.page, `const c = lb.compositions().find((x) => x.title === "Sync étude"); lb.updateComposition(c.id, { title: "Sync étude in G", tempo: 72 }); await sync.now();`);
+  const a2 = await run(A.page, `await sync.now(); const c = lb.compositions().find((x) => x.title.startsWith("Sync étude")); return { title: c?.title, tempo: c?.tempo, id: c?.id };`);
+  if (a2.title !== "Sync étude in G" || a2.tempo !== 72) throw new Error("A did not get B's edit " + JSON.stringify(a2));
+  // B has the piece open while A changes it → B's editor swaps in A's version (title on the header, tempo on the rail)
+  await B.page.click(".sc-open");
+  await B.page.waitForSelector(".cp-editor .cp-svg");
+  if ((await B.page.locator("#cp-title").textContent()) !== "Bot – Sync étude in G") throw new Error("header " + (await B.page.locator("#cp-title").textContent()));
+  await run(A.page, `lb.updateComposition(a[0], { title: "Sync étude in G minor", tempo: 60 }); await sync.now();`, a2.id);
+  const b3 = await run(B.page, `await sync.now(); const ed = document.querySelector(".cp-editor").__editor.state; return { title: ed.title, tempo: ed.tempo, header: document.querySelector("#cp-title").textContent, bpm: document.querySelector("#cp-bpm").textContent };`);
+  if (b3.title !== "Sync étude in G minor" || b3.tempo !== 60 || b3.header !== "Bot – Sync étude in G minor" || b3.bpm !== "60") throw new Error("B's open editor did not follow " + JSON.stringify(b3));
+  await B.page.screenshot({ path: `${S}/acc-03-B-editor-follows.png` });
+  await B.page.click("[data-act=back]");
+  await B.page.waitForSelector(".sc-row");
+  await run(A.page, `lb.removeComposition(a[0]); await sync.now();`, a2.id);
+  const b2 = await run(B.page, `await sync.now(); return { left: lb.compositions().filter((x) => x.title.startsWith("Sync étude")).length, tomb: lb.doc.deleted.some((t) => t.kind === "composition") };`);
+  if (b2.left !== 0 || !b2.tomb) throw new Error("B still has it " + JSON.stringify(b2));
+  await B.page.goto(`${BASE}/?app=1#/logbook`);
+  await B.page.waitForSelector("#lb-play");
+});
+
 await step("export matches; sign out keeps local data; delete wipes the account", async () => {
   const exp = await run(A.page, `const r = await fetch("/api/me/export", { credentials: "same-origin" }); return await r.json();`);
   if (exp.goals.length !== 2 || exp.email !== EMAIL) throw new Error("export " + JSON.stringify({ g: exp.goals.length, e: exp.email }));

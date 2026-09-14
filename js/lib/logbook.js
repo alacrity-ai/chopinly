@@ -581,7 +581,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     return brushes();
   }
 
-  // --- compositions (WSHED-114 P0): Compose documents, local only until P3 puts them in KINDS ---
+  // --- compositions (WSHED-114 P0; synced as kind `composition` since v81) ---
   /** Compositions — the same filters and sorts as scores (q over title / composer / tags; every tag must match). */
   const compositions = ({ q = "", tags = [], sort = "recent" } = {}) => sortScores(filterScores(doc.compositions, { q, tags }), sort);
   const composition = (id) => doc.compositions.find((c) => c.id === id) ?? null;
@@ -591,25 +591,35 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     const t = cleanTitle(c.title);
     if (!t) throw new Error("a composition needs a title");
     c.title = t; c.composer = cleanComposer(c.composer); c.tags = cleanTags(c.tags);
-    c.updatedAt = now(); doc.compositions.push(c); save(); return c;
+    touch("composition", c); doc.compositions.push(c); save(); return c;
   }
-  /** Replace a composition's content (measures / title / composer / openedAt / tempo). Not synced yet, so no pending mark. */
+  /**
+   * Replace a composition's content (measures / title / composer / tags / tempo / openedAt).
+   * Opening is not an edit: `openedAt` alone neither bumps updatedAt nor syncs — a device that
+   * merely opened a piece must never outrank one that edited it offline (the merge clock is updatedAt).
+   */
   function updateComposition(id, patch = {}) {
     const c = composition(id);
     if (!c) throw new Error(`no composition ${id}`);
-    if ("title" in patch) { const t = cleanTitle(patch.title); if (!t) throw new Error("a composition needs a title"); c.title = t; }
-    if ("composer" in patch) c.composer = cleanComposer(patch.composer);
-    if ("tags" in patch) c.tags = cleanTags(patch.tags);
-    if ("measures" in patch) c.measures = patch.measures;
+    let edited = false;
+    if ("title" in patch) { const t = cleanTitle(patch.title); if (!t) throw new Error("a composition needs a title"); c.title = t; edited = true; }
+    if ("composer" in patch) { c.composer = cleanComposer(patch.composer); edited = true; }
+    if ("tags" in patch) { c.tags = cleanTags(patch.tags); edited = true; }
+    if ("measures" in patch) { c.measures = patch.measures; edited = true; }
+    if ("tempo" in patch) { c.tempo = patch.tempo; edited = true; }
     if ("openedAt" in patch) c.openedAt = patch.openedAt;
-    if ("tempo" in patch) c.tempo = patch.tempo;
-    c.updatedAt = now(); save(); return c;
+    if (edited) touch("composition", c);
+    save(); return c;
   }
   function removeComposition(id) {
     const before = doc.compositions.length;
     doc.compositions = doc.compositions.filter((c) => c.id !== id);
-    if (doc.compositions.length !== before) save();
+    if (doc.compositions.length === before) return;
+    tomb(id, "composition");
+    save();
   }
+  /** True when a composition is small enough to back up (bodies over the cap stay on this device). */
+  const compositionSyncable = (c) => { const { id: _, updatedAt: __, ...body } = c; return JSON.stringify(body).length <= bodyCap("composition"); };
 
   // --- other tools writing in -----------------------------------------------
   /**
@@ -753,7 +763,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   const on = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
 
   // --- sync (docs/ACCOUNTS_DESIGN.md §4) --------------------------------------
-  const listOf = { goal: () => doc.goals, segment: () => doc.segments, note: () => doc.notes, take: () => doc.takes, score: () => doc.scores, mark: () => doc.marks, ink: () => doc.ink, brush: () => doc.brushes };
+  const listOf = { goal: () => doc.goals, segment: () => doc.segments, note: () => doc.notes, take: () => doc.takes, score: () => doc.scores, mark: () => doc.marks, ink: () => doc.ink, brush: () => doc.brushes, composition: () => doc.compositions };
   const findEntity = (kind, id) => listOf[kind]().find((x) => x.id === id) ?? null;
   const findTomb = (kind, id) => doc.deleted.find((t) => t.kind === kind && t.id === id) ?? null;
   const localEnvelope = (kind, id) => {
@@ -762,11 +772,16 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     const t = findTomb(kind, id);
     return t ? tombEnvelope(t) : null;
   };
-  /** Envelopes for every locally changed entity (dropping stale keys). */
+  /**
+   * Envelopes for every locally changed entity (dropping stale keys). A body over its kind's cap
+   * is dropped too — the API would refuse the whole push, and one huge composition must not
+   * stall everything else (it stays on this device; the editor says so).
+   */
   function pendingEnvelopes() {
     const out = [];
     doc.pending = doc.pending.filter((k) => {
       const [kind, ...rest] = k.split(":"); const env = listOf[kind] ? localEnvelope(kind, rest.join(":")) : null;
+      if (env && !env.deleted && JSON.stringify(env.body).length > bodyCap(kind)) { console.warn(`${k} is over the sync cap — kept on this device only`); return false; }
       if (env) out.push(env);
       return !!env;
     });
@@ -791,7 +806,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   }
   /** Merge remote envelopes in. Returns how many changed the document. */
   function applyRemote(envelopes) {
-    const order = { goal: 0, segment: 1, note: 2, take: 3, score: 4, mark: 5, ink: 6, brush: 7 };
+    const order = { goal: 0, segment: 1, note: 2, take: 3, score: 4, mark: 5, ink: 6, brush: 7, composition: 8 };
     const sorted = [...envelopes].filter((e) => listOf[e.kind]).sort((a, b) => order[a.kind] - order[b.kind]);
     let applied = 0;
     for (const env of sorted) {
@@ -838,7 +853,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     // ink + brushes
     inkFor, inkPages, setInk, brushes, brush, addBrush, updateBrush, removeBrush, reorderBrushes, resetBrushes,
     // compositions
-    compositions, composition, addComposition, updateComposition, removeComposition,
+    compositions, composition, addComposition, updateComposition, removeComposition, compositionSyncable,
     // other tools
     addAuto,
     // sync

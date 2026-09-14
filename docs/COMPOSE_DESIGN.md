@@ -30,7 +30,7 @@ the ergonomics can be judged before anything deeper is built.
    rail button acts on it — duration, dot, tie, tuplet, accidental,
    articulation, dynamic. Without one, a palette button arms the next placement.
    One rule for every button.
-5. **The score holds still.** In edit modes nothing pans or zooms. Scrub is a
+5. **The score holds still.** In edit modes nothing pans or zooms. Pan is a
    deliberate mode; in it, nothing places.
 6. **It is Chopinly.** A composition is a piece; a piece is a goal. Vanilla ES
    modules, no build step, one deploy, one sync engine, the merge rule in one
@@ -44,7 +44,7 @@ the ergonomics can be judged before anything deeper is built.
 | | Compose (MVP) |
 |---|---|
 | Open | Compose → *new composition* → a blank piano score: treble + bass, C major, 4/4, eight empty bars, the quarter already armed. The first tap places a note. |
-| Rails | **Control:** undo · redo · Select · Scrub · delete · zoom. **Palette:** whole · half · quarter · eighth · sixteenth · *more* (double whole, 32nd, 64th) · dot · tie · tuplet · ♯ ♭ ♮ · **Rest** toggle. **Utility** (drops down from the palette): key · time · clef · fermata · staccato · accent · tenuto · trill · mordent · turn · glissando. **Expression** (second drop-down): pp p mp mf f ff · < > hairpins · text. |
+| Rails | **Control:** undo · redo · Select · Pan · delete · zoom. **Palette:** whole · half · quarter · eighth · sixteenth · *more* (double whole, 32nd, 64th) · dot · tie · tuplet · ♯ ♭ ♮ · **Rest** toggle. **Utility** (drops down from the palette): key · time · clef · fermata · staccato · accent · tenuto · trill · mordent · turn · glissando. **Expression** (second drop-down): pp p mp mf f ff · < > hairpins · text. |
 | Place | Arm a duration, tap a staff: the note lands on the nearest line or space at the nearest slot of that duration. A ghost follows the stylus before the tap. The note sounds as it lands. |
 | Rests | Rest on + eighth armed = an eighth rest. Deleting anything leaves rests behind. A bar's rests are always drawn in standard groupings. |
 | Chords | Tap a different pitch at an existing note's slot: the pitch joins the chord. Same duration for the whole chord. |
@@ -57,8 +57,8 @@ the ergonomics can be judged before anything deeper is built.
 | Bars | A new empty bar appears when the last one gets its first note. Trailing empty bars beyond one are trimmed on export. |
 | Identity | Title, composer and tags, stored like a score's, edited in the same details modal (tap the title on the header; also how a new composition starts), browsed like the Scores library. |
 | Key · time · clef | Pick the change on the utility rail, then tap where it goes (key and time: a bar; clef: a staff and a beat); it holds until the next change. Cautionary accidentals and courtesy signatures follow standard practice. |
-| Scrub | Finger pans, pinch zooms, nothing places. Leave Scrub and the score is pinned again. A mouse wheel always scrolls (a desk has no palm). |
-| Keep | Every edit is saved on this device at once. With an account (P3), compositions sync through the logbook like everything else, and a composition can be *practiced* like a score. |
+| Pan | Finger pans, pinch zooms, nothing places (called *Pan* since v81 — the slider on the transport rail is what scrubs). Leave Pan and the score is pinned again. A mouse wheel always scrolls (a desk has no palm). |
+| Keep | Every edit is saved on this device at once. With an account, compositions sync through the logbook like everything else (v81, no plan needed — see §8.5e); P3 lets a composition be *practiced* like a score. |
 | Export | A vector PDF, Letter or A4, staff size and margins as sliders, title and composer at the top. *Add to Scores* drops the PDF into the library in one tap. MusicXML follows for the Sibelius round-trip; MIDI after. |
 
 Not in the MVP: more than one voice per staff, more than two staves, cross-staff
@@ -83,13 +83,13 @@ import, parts, sharing.
 | Bars | Start with **eight empty bars**; a new bar is appended when the last bar receives its first event; trailing empty bars beyond one are trimmed on export and on close. | An empty page with no bars gives the musician nothing to tap; an infinite scroll of empty bars is noise. |
 | Measures per system | Ideal widths from the **union of onsets across both staves** (a bar's columns are shared by the staves), packed 1–6 per system, justified; last system not stretched past ×1.25 (the sight-singing rule). | Both staves must align tick for tick. Computing widths per staff and then reconciling is how engraving bugs are born. |
 | Screen | **Wrapped systems** at the viewport width, stacked vertically, exactly as the PDF will page them. Zoom scales S (8–22 px). | What you edit is what you print. Horizontal scrolling would make page turns on the iPad a different layout from the export. |
-| Palm safety | In **edit modes** the score accepts: pen down/move/up; a **single** finger tap (down/up within 300 ms and 10 px with no other touch active). Everything else — multi-touch, wide contacts, finger drags — is discarded. `touch-action: none` on the score. In **Scrub**, one finger pans, two pinch, the pen pans too, and nothing places. | The reader's tap rule already lives in Scores. A resting palm is a wide, long, moving contact that fails every test. A phone without a stylus still gets tap-to-place. |
+| Palm safety | In **edit modes** the score accepts: pen down/move/up; a **single** finger tap (down/up within 300 ms and 10 px with no other touch active). Everything else — multi-touch, wide contacts, finger drags — is discarded. `touch-action: none` on the score. In **Pan**, one finger pans, two pinch, the pen pans too, and nothing places. | The reader's tap rule already lives in Scores. A resting palm is a wide, long, moving contact that fails every test. A phone without a stylus still gets tap-to-place. |
 | Sound | The existing piano voice (`js/lib/keyboard/piano.js`) auditions a placed note and each step of a drag; chords sound together. No metronome coupling, no playback in the MVP. | Already built, polyphonic, offline. |
 | Undo | **Snapshots** of the measures array per committed edit, capped at 200, structured-cloned. Drag re-pitch commits once on release. | Compositions are tens of KB; a snapshot is cheaper and safer than inverse commands. |
-| Persistence | Compositions live in the **logbook document** (`compositions[]`), saved on every committed edit (debounced 300 ms). **P3** adds sync as kind `composition` with a 256 KB body cap. | The logbook is the one store with migration, sync and account wipe. Ink proved a big-bodied kind works. |
+| Persistence | Compositions live in the **logbook document** (`compositions[]`), saved on every committed edit (debounced 300 ms). Synced as kind `composition` with a **1 MiB** body cap (v81; 100 bars of solid sixteenths on two staves measure ≈ 350 KB, so the 256 KB first planned was too tight). | The logbook is the one store with migration, sync and account wipe. Ink proved a big-bodied kind works. |
 | PDF | **Vector**: our SVG subset → PDF through a vendored `pdf-lib` + `fontkit` with a Bravura OTF loaded only at export. Letter / A4, staff space 1.6–2.2 mm, margins, title and composer. | The SVG the engraver emits is a closed set — lines, rects, polygons, cubic paths, Bravura text, plain text — so a walker of ~200 lines covers all of it. Raster at 300 dpi would print fine but it is a half-measure and Leif has vetoed those. |
 | Tool placement | New tool `compose`, category **`library`**, listed **after Scores**. Routes `#/compose` (list) and `#/compose/<id>` (editor). | Scores and Compose are the sheet-music group. |
-| Copy | *composition*, *bar*, *note*, *rest*, *place*, *arm*, *Scrub*, *Select*. Not *document*, *canvas*, *object*, *insert mode*. | House style. |
+| Copy | *composition*, *bar*, *note*, *rest*, *place*, *arm*, *Pan*, *Select*. Not *document*, *canvas*, *object*, *insert mode*. | House style. |
 
 ## 3. Architecture
 
@@ -328,14 +328,14 @@ non-integer tick count; `ticks()` throws on any non-integer as a last guard.
 ### 8.1 Screen
 
 ```
-┌ control rail: ↶ ↷ │ Select  Scrub │ 🗑 │ −  + ─────────────── title ┐
+┌ control rail: ↶ ↷ │ Select  Pan │ 🗑 │ −  + ─────────────── title ┐
 ├ palette rail: 𝅝 𝅗𝅥 ♩ ♪ 𝅘𝅥𝅯 ▾ │ • ⌒ 3 │ ♯ ♭ ♮ │ Rest ● │ ⌄ (utility) ┤
 │ (utility / expression rail slides in under the palette when open)     │
 │                                                                       │
 │   ╭── 𝄞 ───────────────────────────────────────────────────────╮     │
 │   │                                                             │     │
 │   ╰── 𝄢 ───────────────────────────────────────────────────────╯     │
-│   (systems stack; the viewport scrolls only in Scrub / with a wheel)  │
+│   (systems stack; the viewport scrolls only in Pan / with a wheel)  │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -348,7 +348,7 @@ rows; the utility / expression rails become sheets.
 |---|---|
 | **Place** (default; any duration armed) | tap on staff → `place`; **pointer down on a notehead grabs it at once** (selected, and a vertical drag re-pitches by staff step, sounding each; release commits; a clean tap on an already-selected note lets it go) — the mode and the armed duration are untouched, so the next tap elsewhere still places; a rest (or a chord's stem) is where the next note goes, so a tap there places; long-press → marquee (Select mode for this gesture) |
 | **Select** (armed duration cleared) | tap → select / toggle; the same grab-and-drag on a notehead; **pointer down on empty staff that moves more than a few px becomes a lasso** — a freehand path drawn under the tip; lifting closes it and selects everything whose anchor lies inside (noteheads one by one, rests, later marks), replacing the selection; a down that never moves is a tap that clears |
-| **Scrub** | one finger / pen → pan; two fingers → zoom; nothing selects or places |
+| **Pan** | one finger / pen → pan; two fingers → zoom; nothing selects or places |
 
 Tapping the armed duration again in the palette clears it (→ Select). Esc → Select.
 Rest, dot and tuplet are **states** that persist across taps: *dotted eighth
@@ -367,7 +367,7 @@ carries the accidental, then the button clears.
   contact lets go and reverts). Anything else is dropped and cancels nothing (a
   palm landing mid-drag does not break a pen drag). A **mouse** behaves as a pen.
 - `fingerPlaces` off (a setting) turns finger taps into select-only.
-- Scrub uses the reader's swipe logic with inertia and pinch-to-zoom; zoom is
+- Pan uses the reader's swipe logic with inertia and pinch-to-zoom; zoom is
   applied by re-laying out at the new S (no CSS transform — text stays crisp).
 - Ghost: on `pointermove` (pen / mouse) the hit table gives the slot and step;
   the ghost notehead draws at that position at 40 % in the armed shape. Touch
@@ -382,7 +382,7 @@ as the sight-singing *current* state). Selection survives re-render (ids are
 stable) and undo / redo (whatever still exists stays selected). Keyboard: ←/→ move to the previous / next event in the staff, ↑/↓
 re-pitch, Shift+←/→ extend, Delete / Backspace remove, Cmd/Ctrl+Z / Shift+Z
 undo / redo, `1`–`7` = 64th … whole (the MuseScore mapping), `.` dot, `r` rest,
-`t` tie, `s` Scrub, `v` Select, `Esc` clear.
+`t` tie, `h` Pan, `v` Select, `Esc` clear.
 
 ### 8.5 Sound
 
@@ -407,7 +407,7 @@ document and the per-device zoom. Undo history is per open editor, not saved.
 
 ### 8.5b The utility rail as built (v73, re-cut v74)
 
-A fourth lane, toggled by the **𝄞 …** button on the control rail (remembered per device), holds **Key ▾ · Time ▾ · Clef ▾** pickers (the clef menu: treble, soprano, mezzo, alto, tenor, baritone, bass), then fermata · staccato · accent · tenuto · trill · mordent · turn · *gliss.* acting on the selection. There is no target-bar control: **a change is placed the way a paste is** — pick it, the cursor is armed (the picker or button lights, the score highlights the bar under the pointer or ghosts the clef on its beat), tap the score, and the change lands there. One tap applies and disarms; tapping the armed pick again, Esc, or Scrub cancels; while a change is armed, taps neither grab nor lasso.
+A fourth lane, toggled by the **𝄞 …** button on the control rail (remembered per device), holds **Key ▾ · Time ▾ · Clef ▾** pickers (the clef menu: treble, soprano, mezzo, alto, tenor, baritone, bass), then fermata · staccato · accent · tenuto · trill · mordent · lower mordent (the one with the line through it, SMuFL *ornamentMordent*; the plain one is *ornamentShortTrill*) · turn · *gliss.* acting on the selection. There is no target-bar control: **a change is placed the way a paste is** — pick it, the cursor is armed (the picker or button lights, the score highlights the bar under the pointer or ghosts the clef on its beat), tap the score, and the change lands there. One tap applies and disarms; tapping the armed pick again, Esc, or Pan cancels; while a change is armed, taps neither grab nor lasso.
 
 - **Key** (15 keys, C♭ … C♯ with relative minors): tap the bar it starts at. Picking the key already in force there removes an explicit change. Cancelled accidentals get naturals before the new signature; the same key/time/clef re-appear as a courtesy at the end of a system when the next system opens with a change.
 - **Time** (2/4 3/4 4/4 5/4 6/8 9/8 12/8 2/2 3/8 7/8, or *other…*): tap the bar it starts at. Re-cuts the bars from there to the next time change: notes that cross a new barline split into tied pieces (`decompose`: one plain / dotted value, else the fewest plain values); a tuplet that would cross refuses the change (bar flash); key and clef changes inside the stretch follow their tick (a clef lands on the beat of the new metre at or before it); if content spills into new bars the editor asks first. Choosing the metre before the stretch simply rejoins it. Empty bars are stored as one rest that spans the bar when a value does (whole in 4/4, dotted half in 3/4 and 6/8), else the metre's standard split — always drawn as one whole-bar rest.
@@ -421,6 +421,14 @@ A topmost lane holds **‹ back · title … File ▾ · Rails ▾**. **Rails �
 ### 8.5d Identity — title · composer · tags (v80)
 
 A composition carries the same identity as a score: `title`, `composer`, `tags` (cleaned by the logbook exactly as a score's are), so *Save to Scores* (P4) copies them 1:1. The **details modal** (`js/tools/compose/details.js`) is the Scores details form — title, composer with suggestions, tags with the one-line rail and the all-tags sheet — built from the widgets shared in `js/tools/shared/catalog.js`, plus *delete*. Tapping the **title on the header** opens it (a rename updates the header; a delete leaves the editor); **new composition** opens the same modal empty and creates the piece on *start composing*. The **list** browses like the Scores library — search over title / composer / tag, sort recent / title / composer, group by composer, the tag rail — through the same shared widgets (`logbook.compositions({ q, tags, sort })` uses the scores filter and sort). Tag suggestions draw on scores and compositions together: one vocabulary across the library.
+
+### 8.5e Cloud, the header line and the square buttons (v81)
+
+- **Compositions follow the account.** Kind `composition` in `KINDS`; the whole document is the body (title, composer, tags, tempo, parts, measures), cap 1 MiB. Add, edit (measures, title, composer, tags, tempo) and delete go pending like everything else; **opening is not an edit** — `openedAt` alone bumps neither `updatedAt` nor the pending set, because the merge clock is `updatedAt` and a device that merely opened a piece must never outrank one that edited it offline. Two devices editing the same piece apart: last write wins on the whole document (as designed). No plan is required — the sync path has no storage gate; only cloud PDFs do.
+- **The open editor follows too.** The editor writes through one `put` so it can tell its own saves from a version the sync engine swapped in; when a newer version lands while nothing is unsaved, it replaces the document (an undo step), re-lays out and says *updated from another device*; when a local edit is pending, the local one wins on its next save. A remote delete closes the editor; the list re-renders when the set of compositions changes.
+- **Over the cap:** a piece too big to back up is still saved here, dropped from the push (once, with a console warning) and the editor says so once.
+- **Header line:** *Composer – Title* when a composer is set, else the title.
+- **Square buttons:** every icon- or glyph-only button carries `cp-sq` — one exact square (3.4 rem; 3 rem on the header; 2.8 rem at phone width) — so a rail reads as a grid; only the worded buttons (Select, Pan, rest, the pickers, *gliss.*) are wider.
 
 ### 8.6 Transport (v70) and the rails' look (v71)
 
@@ -510,6 +518,6 @@ per dynamic, no tempo map beyond a default 100 bpm. A follow-up card, not the MV
   touch policy): new composition → arm quarter → tap ×4 → four quarters in bar
   1 and bar 2 present; tap an existing head → selected; palette half → retyped;
   overflow → nudge and unchanged; undo ×2 / redo; rest toggle; a touch pointer
-  with width 60 does nothing; Scrub pans; reload restores. Screenshots at phone
+  with width 60 does nothing; Pan pans; reload restores. Screenshots at phone
   and iPad widths attached to the card.
 - **Leif's iPad pass** after P0 is the gate for everything after.

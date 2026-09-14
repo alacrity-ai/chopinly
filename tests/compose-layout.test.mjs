@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition } from "../js/lib/compose/model.js";
-import { place, setClef, setKey, setTime } from "../js/lib/compose/engine.js";
+import { place, setClef, setKey, setTime, articulate, MARKS } from "../js/lib/compose/engine.js";
 import { layoutComposition, SYS_H, TOP_PAD } from "../js/lib/compose/layout.js";
 import { slotAt, thingAt, ticksAt, xOfTicks, barAt } from "../js/lib/compose/hit.js";
 import { PPQ } from "../js/lib/compose/ticks.js";
@@ -127,4 +127,17 @@ test("courtesy key / time / clef at a system end sit on the staff: the staff lin
   assert.ok(prev.endX > c.timeX + 2.5, `staff runs under the courtesy time (${prev.endX} > ${c.timeX + 2.5})`);
   assert.ok(prev.endX > last && prev.endX * 12 <= 1024, `end ${prev.endX} within the width`);
   for (const s of L.systems) if (!s.courtesyLead) assert.equal(s.endX, null);
+});
+
+test("the lower mordent (the one with the line through it) is a mark and lays out as an ornament above the staff", () => {
+  assert.ok(MARKS.includes("lowerMordent") && MARKS.includes("mordent"));
+  let d = newComposition({ id: "m", now: 1 });
+  d = place(d, { bar: 0, staff: 0, ticks: 0, step: 4 }, { base: 4, dots: 0, rest: false, tuplet: null, alter: null }).doc;
+  const ev = d.measures[0].staves[0].voices[0][0];
+  d = articulate(d, [ev.id], "lowerMordent");
+  assert.deepEqual(d.measures[0].staves[0].voices[0][0].art, ["lowerMordent"]);
+  const L = layoutComposition(d, { unit: 10, width: 800 });
+  const m = L.marks.find((x) => x.mark === "lowerMordent");
+  assert.ok(m && m.above, "drawn above like the other ornaments");
+  assert.ok(m.y < L.systems[0].staffTop[0], "above the top line");
 });

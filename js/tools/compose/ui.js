@@ -1,5 +1,6 @@
 // Compose: the router. `#/compose` is the list, `#/compose/<id>` the editor —
 // a full-screen layer over the list, like the Scores reader.
+import { logbook } from "../../lib/logbook.js";
 import { mountList } from "./list.js";
 import { openEditor } from "./editor.js";
 
@@ -18,6 +19,11 @@ export function buildUI(root, ctx) {
   };
   const onHash = () => { if (location.hash.startsWith("#/compose")) show(); };
   window.addEventListener("hashchange", onHash);
+  // the list follows the logbook while it is what's on screen: a sync pull from another device
+  // shows up without a reload (only when the compositions themselves changed — not on every save)
+  const print = () => logbook.compositions().map((c) => `${c.id}:${c.updatedAt}:${c.title}:${c.composer}:${c.tags?.join()}`).join("|");
+  let seen = print();
+  const offLogbook = logbook.on(() => { const now = print(); if (now === seen) return; seen = now; if (list && !editor && location.hash.startsWith("#/compose")) list.refresh(); });
   show();
-  return { destroy() { window.removeEventListener("hashchange", onHash); editor?.close({ silent: true }); editor = null; list?.destroy(); list = null; } };
+  return { destroy() { offLogbook(); window.removeEventListener("hashchange", onHash); editor?.close({ silent: true }); editor = null; list?.destroy(); list = null; } };
 }
