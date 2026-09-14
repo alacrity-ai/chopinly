@@ -13,7 +13,8 @@ import { slotAt, thingAt, xOfTicks, barAt, lasso } from "../../lib/compose/hit.j
 import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
-import { clefAt } from "../../lib/compose/model.js";
+import { createPlayer } from "../../lib/compose/play.js";
+import { clefAt, tempoOf, MIN_TEMPO, MAX_TEMPO } from "../../lib/compose/model.js";
 import { ticks as ticksOf } from "../../lib/compose/ticks.js";
 import { buildRails, MAIN_BASES, MORE_BASES, durName } from "./rails.js";
 
@@ -33,7 +34,9 @@ export function openEditor({ id, ctx, onClose }) {
   let mode = "place";                 // "place" | "select" | "scrub"
   const selection = new Set();        // "ev" | "ev:pi"
   let L = null, R = null, closed = false, saveTimer = 0, dirty = false, pasting = false;
+  let tempo = tempoOf(c);              // playback tempo — saved with the piece, outside undo
   const sound = createSound(getAudio);
+  const player = createPlayer({ getAudio, getDoc: () => doc, getTempo: () => tempo, onTick: showPlayhead, onEnd: () => syncTransport() });
 
   const el = document.createElement("div");
   el.className = "cp-editor";
@@ -53,16 +56,42 @@ export function openEditor({ id, ctx, onClose }) {
     R = renderComposition(sheet, L);
     R.setSelection(selection);
     sync();
+    showPlayhead(player.position);
   }
   function sync() {
     rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting });
     view.dataset.mode = mode; view.classList.toggle("pasting", pasting);
+    syncTransport();
   }
+  function syncTransport() { rails.transport({ playing: player.playing, bpm: tempo, total: barStarts(doc).total, pos: player.position, bar: locate(doc, player.position)?.bar ?? doc.measures.length - 1, bars: doc.measures.length }); }
   function commit(next) {
     if (next === doc) return;
     doc = history.push(next); dirty = true;
     layout(); scheduleSave();
+    player.refresh();
   }
+  // --- transport: the playhead rides the overlay; the view follows it between systems ---
+  let lastSys = -1;
+  function showPlayhead(t) {
+    if (!L || !R) return;
+    const loc = locate(doc, Math.min(t, barStarts(doc).total - 1));
+    const hb = loc && barAt(L, loc.bar);
+    if (!hb || (!player.playing && t === 0)) { R.showPlayhead(null); if (loc) rails.transport({ pos: t, bar: loc.bar, bars: doc.measures.length }); return; } // at rest on bar 1 there is nothing to mark
+    const sysIndex = L.hit.systems.indexOf(hb.sys);
+    R.showPlayhead(xOfTicks(hb.bar, loc.ticks), hb.sys);
+    rails.transport({ pos: t, bar: loc.bar, bars: doc.measures.length });
+    if (player.playing && sysIndex !== lastSys) { // keep the playing system in view (no scroll while the score is being edited by hand)
+      const top = hb.sys.top * S + 8, bottom = hb.sys.bottom * S + 8;
+      if (top < view.scrollTop || bottom > view.scrollTop + view.clientHeight) view.scrollTo({ top: Math.max(0, top - view.clientHeight * 0.25), behavior: "smooth" });
+    }
+    lastSys = sysIndex;
+  }
+  function setTempo(v) {
+    const n = Math.max(MIN_TEMPO, Math.min(MAX_TEMPO, Math.round(Number(v))));
+    if (!Number.isFinite(n) || n === tempo) return;
+    tempo = n; logbook.updateComposition(id, { tempo }); player.refresh(); rails.transport({ bpm: tempo });
+  }
+  const barStartOf = (bar) => barStarts(doc).starts[Math.max(0, Math.min(doc.measures.length - 1, bar))];
   function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(flush, SAVE_MS); }
   function flush() { clearTimeout(saveTimer); if (!dirty || closed && !doc) return; logbook.updateComposition(id, { measures: doc.measures }); dirty = false; }
 
@@ -377,6 +406,14 @@ export function openEditor({ id, ctx, onClose }) {
       case "copy": copySelection(); return;
       case "cut": cutSelection(); return;
       case "paste": setPasting(!pasting); if (pasting) toast("tap where the phrase goes"); return;
+      case "play": player.toggle(); syncTransport(); return;
+      case "stop": player.stop(); syncTransport(); return;
+      case "rew": { const loc = locate(doc, player.position); const b = loc ? (loc.ticks > 0 ? loc.bar : loc.bar - 1) : doc.measures.length - 1; player.seek(barStartOf(b)); syncTransport(); return; }
+      case "ff": { const loc = locate(doc, player.position); player.seek(loc && loc.bar < doc.measures.length - 1 ? barStartOf(loc.bar + 1) : barStarts(doc).total - 1); syncTransport(); return; }
+      case "seek": player.seek(Math.max(0, Math.min(barStarts(doc).total - 1, Number(arg) || 0))); return;
+      case "tempo-down": setTempo(tempo - 1); return;
+      case "tempo-up": setTempo(tempo + 1); return;
+      case "tempo": { const v = prompt("tempo (beats per minute)", String(tempo)); if (v !== null) setTempo(v); return; }
       case "zoom-in": setZoom(S + 2); return;
       case "zoom-out": setZoom(S - 2); return;
       case "dur":
@@ -421,6 +458,8 @@ export function openEditor({ id, ctx, onClose }) {
     if (mod && e.key.toLowerCase() === "x") { e.preventDefault(); cutSelection(); return; }
     if (mod && e.key.toLowerCase() === "v") { e.preventDefault(); if (clipboard) { setPasting(true); toast("tap where the phrase goes"); } return; }
     if (mod) return;
+    if (e.key === " " || e.code === "Space") { e.preventDefault(); act("play"); return; }
+    if (e.key === "Home") { e.preventDefault(); act("stop"); return; }
     if (e.key === "Escape" && pasting) { setPasting(false); return; }
     if (e.key === "Escape") { if (selection.size) { selection.clear(); R.setSelection(selection); sync(); } else setMode(mode === "select" ? "place" : "select"); return; }
     if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelection(); return; }
@@ -448,6 +487,8 @@ export function openEditor({ id, ctx, onClose }) {
     window.removeEventListener("resize", onResize);
     window.removeEventListener("pagehide", onHide);
     cancelAnimationFrame(scrub?.inertia);
+    player.destroy();
+    rails.destroy();
     sound.destroy();
     setRunning?.(false);
     el.remove();
@@ -457,7 +498,7 @@ export function openEditor({ id, ctx, onClose }) {
   const api = {
     id, close,
     /** For tests: the live state. */
-    get state() { return { mode, armed, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, doc }; },
+    get state() { return { mode, armed, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, doc }; },
     /** For tests: the client point of a musical place. */
     pointFor({ bar, staff, ticks, step }) {
       const { sys, bar: hb } = barAt(L, bar);

@@ -87,7 +87,8 @@ export function renderComposition(container, L) {
   const flash = el("rect", { class: "cp-flash", x: 0, y: 0, width: 0, height: 0, hidden: "" });
   const ghost = el("g", { class: "cp-ghost", hidden: "" });
   const lassoEl = el("polyline", { class: "cp-lasso", points: "", hidden: "" });
-  overlay.append(flash, ghost, lassoEl);
+  const playhead = el("line", { class: "cp-playhead", x1: 0, y1: 0, x2: 0, y2: 0, hidden: "" });
+  overlay.append(flash, ghost, lassoEl, playhead);
   container.replaceChildren(svg, overlay);
 
   return {
@@ -113,6 +114,12 @@ export function renderComposition(container, L) {
       if (!points) { lassoEl.setAttribute("hidden", ""); return; }
       lassoEl.setAttribute("points", points.map((p) => `${px(p.x)},${px(p.y)}`).join(" "));
       lassoEl.removeAttribute("hidden");
+    },
+    /** The playhead at x (in S) across a system, or null to hide. */
+    showPlayhead(x, sys) {
+      if (x === null || x === undefined) { playhead.setAttribute("hidden", ""); return; }
+      playhead.setAttribute("x1", px(x)); playhead.setAttribute("x2", px(x)); playhead.setAttribute("y1", px(sys.top + 2)); playhead.setAttribute("y2", px(sys.bottom - 2));
+      playhead.removeAttribute("hidden");
     },
     /** Flash a bar (system-local rect) for a refused edit. */
     flashBar(hbar, sys) {

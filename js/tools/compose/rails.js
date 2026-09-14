@@ -27,6 +27,22 @@ export function buildRails(host, { title, onAction }) {
       <button type="button" class="cp-btn cp-zoom" data-act="zoom-out" aria-label="smaller">&minus;</button>
       <button type="button" class="cp-btn cp-zoom" data-act="zoom-in" aria-label="bigger">+</button>
     </div>
+    <div class="cp-rail cp-transport" role="toolbar" aria-label="transport">
+      <button type="button" class="cp-btn" data-act="stop" aria-label="stop — back to the start">${icon("stop")}</button>
+      <button type="button" class="cp-btn" data-act="rew" aria-label="a bar back">${icon("skipBack")}</button>
+      <button type="button" class="cp-btn cp-play" data-act="play" aria-label="play" aria-pressed="false"><span class="cp-play-ic">${icon("play")}</span><span class="cp-pause-ic">${icon("pause")}</span></button>
+      <button type="button" class="cp-btn" data-act="ff" aria-label="a bar forward">${icon("skipFwd")}</button>
+      <span class="cp-pos-wrap">
+        <input type="range" class="cp-pos" id="cp-pos" min="0" max="1" step="1" value="0" aria-label="position in the piece">
+        <span class="cp-pos-read" id="cp-pos-read" aria-live="off">bar 1 of 8</span>
+      </span>
+      <span class="cp-tempo" aria-label="tempo">
+        <span class="cp-tempo-mark"><span class="cp-glyph cp-glyph-xs">${metGlyph(4)}</span><span class="cp-tempo-eq">=</span></span>
+        <button type="button" class="cp-btn cp-tempo-btn" data-act="tempo-down" aria-label="slower">&minus;</button>
+        <button type="button" class="cp-btn cp-bpm" data-act="tempo" id="cp-bpm" aria-label="tempo — tap to type one">100</button>
+        <button type="button" class="cp-btn cp-tempo-btn" data-act="tempo-up" aria-label="faster">+</button>
+      </span>
+    </div>
     <div class="cp-rail cp-palette" role="toolbar" aria-label="palette">
       ${MAIN_BASES.map((b) => `<button type="button" class="cp-btn cp-dur" data-act="dur" data-base="${b}" aria-pressed="false" aria-label="${NAMES[b]}"><span class="cp-glyph">${metGlyph(b)}</span></button>`).join("")}
       <span class="cp-more-wrap">
@@ -55,9 +71,34 @@ export function buildRails(host, { title, onAction }) {
     closeMore();
     onAction(act);
   });
-  document.addEventListener("pointerdown", (e) => { if (!host.querySelector(".cp-more-wrap").contains(e.target)) closeMore(); });
+  const onDocDown = (e) => { if (!host.querySelector(".cp-more-wrap").contains(e.target)) closeMore(); };
+  document.addEventListener("pointerdown", onDocDown);
+  // the tempo buttons repeat while held (a click after a hold is swallowed)
+  for (const b of host.querySelectorAll(".cp-tempo-btn")) {
+    let timer = 0, held = false;
+    const stop = () => { clearTimeout(timer); timer = 0; };
+    b.addEventListener("pointerdown", (e) => { if (e.button && e.button !== 0) return; held = false; stop(); timer = setTimeout(function rep() { held = true; onAction(b.dataset.act); timer = setTimeout(rep, 70); }, 380); });
+    for (const t of ["pointerup", "pointercancel", "pointerleave"]) b.addEventListener(t, stop);
+    b.addEventListener("click", (e) => { if (held) { held = false; e.stopPropagation(); } }, true);
+  }
+  // the position slider: seek on input; while a finger is on it, ticks leave it alone
+  const pos = host.querySelector("#cp-pos"), posRead = host.querySelector("#cp-pos-read");
+  let scrubbing = false;
+  pos.addEventListener("pointerdown", () => { scrubbing = true; });
+  for (const t of ["pointerup", "pointercancel"]) pos.addEventListener(t, () => { scrubbing = false; });
+  pos.addEventListener("input", () => onAction("seek", Number(pos.value)));
+  pos.addEventListener("change", () => { scrubbing = false; onAction("seek", Number(pos.value)); });
 
   return {
+    destroy() { document.removeEventListener("pointerdown", onDocDown); },
+    /** The playhead: { pos, total, bar, bars, playing?, bpm? } — called every frame while playing, so it touches only what changed. */
+    transport({ pos: t, total, bar, bars, playing, bpm }) {
+      if (total !== undefined && Number(pos.max) !== total) pos.max = String(total);
+      if (!scrubbing && t !== undefined) pos.value = String(Math.round(t));
+      if (bar !== undefined) { const read = `bar ${bar + 1} of ${bars}`; if (posRead.textContent !== read) posRead.textContent = read; }
+      if (playing !== undefined) { const b = host.querySelector("[data-act=play]"); b.setAttribute("aria-pressed", String(playing)); b.setAttribute("aria-label", playing ? "pause" : "play"); }
+      if (bpm !== undefined) host.querySelector("#cp-bpm").textContent = String(bpm);
+    },
     /** Reflect the editor's state: { armed, mode, canUndo, canRedo, hasSelection, title }. */
     update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, title }) {
       for (const b of host.querySelectorAll(".cp-dur")) b.setAttribute("aria-pressed", String(mode === "place" && Number(b.dataset.base) === armed.base));
