@@ -638,7 +638,8 @@ test("fuzz: 3,000 edits mixing time / key / clef changes with notes keep every i
 });
 
 // --- P5 (WSHED-120): voices — sparse per bar, the voice follows the pen, move / swap / cross / hide ---------
-import { setVoice, swapVoices, crossStaff, hideRest, seqOf, compactVoices } from "../js/lib/compose/engine.js";
+import { setVoice, swapVoices, crossStaff, hideRest, nudgeRest, seqOf, compactVoices } from "../js/lib/compose/engine.js";
+import { REST_Y_MAX, clone } from "../js/lib/compose/model.js";
 import { usedVoices, MAX_VOICES, SCHEMA } from "../js/lib/compose/model.js";
 const vKinds = (doc, bar, staff, vi) => (doc.measures[bar].staves[staff].voices[vi] ?? null)?.map((e) => `${e.kind === "rest" ? "r" : "n"}${e.dur.base}${".".repeat(e.dur.dots)}${e.dur.tuplet ? `/${e.dur.tuplet.n}` : ""}`).join(" ") ?? null;
 
@@ -883,7 +884,7 @@ test("fuzz: 4,000 random edits across four voices keep every invariant (every pr
     else if (x < 0.62) { const picked = [...new Set([pick(ns), pick(ns), pick(ns)].slice(0, 1 + Math.floor(rnd() * 3)))]; run("setVoice", () => setVoice(d, picked.map((n) => n.id), Math.floor(rnd() * 4))); }
     else if (x < 0.68) { const n = pick(ns), f = find(d, n.id); run("swap", () => swapVoices(d, [{ bar: f.bar, staff: f.staff }], 0, 1 + Math.floor(rnd() * 3))); }
     else if (x < 0.74) { const n = pick(ns); run("cross", () => crossStaff(d, [n.id], pick([-1, 1]))); }
-    else if (x < 0.78) { const rs = rests(); if (rs.length) run("hide", () => hideRest(d, [pick(rs).id])); }
+    else if (x < 0.78) { const rs = rests(); if (rs.length) run(rnd() < 0.5 ? "hide" : "nudgeRest", () => (rnd() < 0.5 ? hideRest(d, [pick(rs).id]) : nudgeRest(d, [pick(rs).id], pick([-3, -1, 1, 2, 5])))); }
     else if (x < 0.84) { const n = pick(ns); run("tie", () => tie(d, [{ ev: n.id }])); if (rnd() < 0.5) run("slur", () => slur(d, [n.id])); }
     else if (x < 0.88) { const n = pick(ns); run("retype", () => retype(d, [n.id], pick([W, H, Q, E]))); }
     else if (x < 0.92) { const n = pick(ns), f = find(d, n.id), voice = d.measures[f.bar].staves[f.staff].voices[f.voice]; run("tuplet", () => tuplet(d, voice.slice(f.index, f.index + pick([2, 3, 3])).map((e) => e.id), pick([2, 3, 5]))); }
@@ -893,9 +894,63 @@ test("fuzz: 4,000 random edits across four voices keep every invariant (every pr
     if (d.measures.length > 300) d = trimBars(d);
   }
   validate(d);
-  for (const k of ["place", "remove", "setVoice", "swap", "cross", "hide", "retype", "tuplet", "time", "paste"]) assert.ok(counts[k] > 10, `${k}: ${counts[k]}`);
+  for (const k of ["place", "remove", "setVoice", "swap", "cross", "hide", "nudgeRest", "retype", "tuplet", "time", "paste"]) assert.ok(counts[k] > 10, `${k}: ${counts[k]}`);
+  assert.ok(rests().some((r) => r.restY), "dragged rests survive");
   assert.ok(counts.tie > 2 && counts.slur > 10, `tie ${counts.tie} slur ${counts.slur}`); // a tie needs the same pitch next in the voice: rare under random steps
   assert.ok(usedVoices(d).size >= 3, "several voices in use: " + [...usedVoices(d)].join());
   assert.ok(d.measures.some((m) => m.staves.some((s) => s.voices.length > 2)), "voices 3 or 4 appear");
   assert.ok(notes().some((n) => n.cross), "crossed notes survive");
+});
+
+test("nudgeRest: a display offset in steps on rests only, clamped at ±REST_Y_MAX, cleared at 0; it survives normalisation while the rest keeps its onset and length, and is dropped when the rest is re-split", () => {
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;              // n4 r4 r2
+  const [note, r4, r2] = d.measures[0].staves[0].voices[0];
+  assert.throws(() => nudgeRest(d, [note.id], 1), /pick the rests/);
+  assert.throws(() => nudgeRest(d, [r4.id], 0.5), /whole steps/);
+  d = nudgeRest(d, [r4.id, r2.id], -3);
+  assert.equal(find(d, r4.id).ev.restY, -3); assert.equal(find(d, r2.id).ev.restY, -3);
+  validate(d);
+  d = nudgeRest(d, [r4.id], 3);
+  assert.equal(find(d, r4.id).ev.restY, undefined, "back to automatic clears the field");
+  assert.throws(() => nudgeRest(d, [r2.id], -(REST_Y_MAX)), /as low as it goes/);
+  d = nudgeRest(d, [r2.id], -(REST_Y_MAX - 3));
+  assert.equal(find(d, r2.id).ev.restY, -REST_Y_MAX);
+  assert.throws(() => nudgeRest(nudgeRest(d, [r4.id], REST_Y_MAX), [r4.id], 1), /as high as it goes/);
+  assert.equal(d.measures[0].staves[0].voices[0].reduce((n, e) => n + evTicks(e), 0), capacity(timeAt(d, 0)), "the bar still adds up");
+  // normalisation keeps the offset on a rest that comes back unchanged: re-pitching the note re-normalises the bar
+  const moved = setPitch(d, [{ ev: note.id, pi: 0 }], 2).doc;
+  assert.equal(find(moved, r2.id).ev.restY, -REST_Y_MAX, "the half rest keeps its offset");
+  assert.equal(vKinds(moved, 0, 0, 0), "n4 r4 r2");
+  // ...and hidden survives the same way (before, any later edit in the bar showed the rest again)
+  const hid = setPitch(hideRest(d, [r2.id]), [{ ev: note.id, pi: 0 }], -1).doc;
+  assert.equal(find(hid, r2.id).ev.hidden, true);
+  // a note placed into the dragged half rest re-splits it: the pieces are fresh rests at the automatic place
+  const split = place(d, { bar: 0, staff: 0, ticks: 3 * Qt, step: 4 }, Q).doc;      // n4 r4 r4 n4
+  assert.equal(vKinds(split, 0, 0, 0), "n4 r4 r4 n4");
+  assert.ok(split.measures[0].staves[0].voices[0].filter((e) => e.kind === "rest").every((e) => !e.restY), "re-split rests start at the automatic place");
+  validate(split);
+  // a whole-bar rest (voice 1 silent under voice 2) takes the offset too
+  let v = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4, voice: 1 }, Q).doc;
+  const whole = v.measures[0].staves[0].voices[0][0];
+  v = nudgeRest(v, [whole.id], 4);
+  assert.equal(find(v, whole.id).ev.restY, 4); validate(v);
+  // the schema refuses a bad offset
+  const bad = clone(d); bad.measures[0].staves[0].voices[0][1].restY = REST_Y_MAX + 1;
+  assert.throws(() => validate(bad), /restY/);
+  const onNote = clone(d); onNote.measures[0].staves[0].voices[0][0].restY = 1;
+  assert.throws(() => validate(onNote), /restY/);
+});
+
+test("clipboard: a crossed tuplet sibling copied as a rest sheds its cross — the paste validates (found by the fuzz)", () => {
+  let d = fresh();
+  d = place(d, { bar: 0, staff: 1, ticks: 0, step: 10 }, { base: 8, dots: 0, rest: false, tuplet: 3 }).doc;
+  d = place(d, { bar: 0, staff: 1, ticks: snap(d, { bar: 0, staff: 1, ticks: PPQ / 3 + 10 }, { base: 8, dots: 0, rest: false, tuplet: 3 }).ticks, step: 10 }, { base: 8, dots: 0, rest: false, tuplet: 3 }).doc;
+  const trip = d.measures[0].staves[1].voices[0].filter((e) => e.dur.tuplet);
+  assert.ok(trip.length >= 2, "a triplet group: " + vKinds(d, 0, 1, 0));
+  d = crossStaff(d, [trip[0].id], -1);
+  validate(d);
+  const clip = clipFrom(d, [{ ev: trip[1].id }]);                   // the crossed sibling rides along as a rest
+  assert.ok(clip.events.every((e) => e.kind === "note" || !e.cross), "no rest in the clip crosses");
+  const p = paste(d, clip, { bar: 2, ticks: 0, staff: 1, voice: 0 }).doc;
+  validate(p);
 });

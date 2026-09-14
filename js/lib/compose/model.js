@@ -3,6 +3,8 @@ import { ticks, capacity, fromTicks, splitRest, groupSize } from "./ticks.js";
 
 export const SCHEMA = 2;
 export const MAX_VOICES = 4;
+/** How far a rest may be dragged from its automatic place, in staff steps (`ev.restY`). */
+export const REST_Y_MAX = 12;
 export const DEFAULT_BARS = 8;
 export const DEFAULT_TEMPO = 100, MIN_TEMPO = 20, MAX_TEMPO = 300;
 /** The playback tempo of a document (older documents carry none). */
@@ -103,6 +105,7 @@ export function validate(doc) {
         if (ev.kind === "note" && !(ev.pitches?.length > 0)) throw new Error(`note ${ev.id} without pitches`);
         if (ev.kind === "rest" && ev.pitches) throw new Error(`rest ${ev.id} with pitches`);
         if (ev.hidden && ev.kind !== "rest") throw new Error(`note ${ev.id} marked hidden`);
+        if (ev.restY !== undefined && (ev.kind !== "rest" || !Number.isInteger(ev.restY) || Math.abs(ev.restY) > REST_Y_MAX)) throw new Error(`${ev.id}: restY must be a whole number of steps within ±${REST_Y_MAX} on a rest`);
         if (ev.cross !== undefined && (ev.kind !== "note" || (ev.cross !== 1 && ev.cross !== -1) || si + ev.cross < 0 || si + ev.cross >= m.staves.length)) throw new Error(`bar ${bi + 1}: ${ev.id} crosses to a staff that is not there`);
         if (ev.dur.tuplet) { const g = groups.get(ev.dur.tuplet.id) ?? { n: ev.dur.tuplet.n, plain: 0, last: i - 1, notes: 0 }; if (g.last !== i - 1) throw new Error(`bar ${bi + 1}: tuplet ${ev.dur.tuplet.id} is not contiguous`); g.last = i; g.plain += ticks({ base: ev.dur.base, dots: ev.dur.dots }); if (ev.kind === "note") g.notes++; groups.set(ev.dur.tuplet.id, g); }
       });

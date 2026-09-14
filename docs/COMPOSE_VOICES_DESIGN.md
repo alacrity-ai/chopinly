@@ -259,6 +259,15 @@ hand rising) and depends only on V0 + the beam pass of V1.
   (`makeCrossBeam`); a beam whose notes are all crossed keeps the home-pointing direction.
 - **Hidden rests draw faint on screen** (`.cp-hidden`, 28 %), so they can be picked and shown
   again; they still count and still take taps. Paper (P4 export) leaves them out.
+- **Rests drag vertically (v87, Leif's ask after reviewing v86).** In Select mode a pen / finger / mouse
+  down on a rest grabs it like a head; vertical movement moves the glyph by staff steps and release
+  commits one undo step. The offset is `ev.restY` (whole steps, ± `REST_Y_MAX` = 12, relative to the
+  automatic place so a voice added later keeps the adjustment on top of the new default); 0 clears
+  it. `nudgeRest(doc, evIds, delta)`; ↑ / ↓ nudge a rest-only selection; a selected cluster of rests
+  drags together. The whole-bar rest takes it too. Playback and the bar's arithmetic never see it;
+  it maps onto MusicXML's rest `display-step` / `display-octave` for WSHED-119. Automatic collision
+  avoidance for rests is not built — this is the manual escape hatch. A rest that survives
+  normalisation at the same onset and length keeps `restY` and `hidden`; a re-split rest is fresh.
 - **A plain tap in Select mode picks the rest (or stem) under it** — before, only a lasso could
   select a rest, which the *hide rest* row needs.
 - **Rests placed into a voice that is not in the bar do nothing** (`action: "none"`): a silent voice

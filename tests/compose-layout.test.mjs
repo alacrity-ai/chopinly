@@ -235,7 +235,7 @@ test("golden: a piece that never uses a second voice lays out exactly as it did 
 });
 
 // --- P5 (WSHED-120): voices in the engraving ------------------------------------------------------
-import { crossStaff, hideRest, setVoice } from "../js/lib/compose/engine.js";
+import { crossStaff, hideRest, setVoice, nudgeRest } from "../js/lib/compose/engine.js";
 const V = (voice, base = 4) => [{ base, dots: 0, rest: false, tuplet: null, alter: null }, voice];
 const put = (d, bar, staff, ticks, step, [armed, voice]) => place(d, { bar, staff, ticks, step, voice }, armed).doc;
 
@@ -356,4 +356,30 @@ test("cross-staff: a lower-staff note crossed up draws on the upper staff (owner
   const mv = setVoice(h, [h.measures[0].staves[0].voices[0][0].id], 1);
   L = layoutComposition(mv, { unit: 12, width: 1024 });
   assert.ok(L.drawn.some((x) => !x.rest && x.voice === 1) && L.drawn.some((x) => x.rest && x.whole && x.voice === 0 && x.bar === 0));
+});
+
+test("a dragged rest draws restY half-spaces higher (or lower), the whole-bar rest too, and the hit table follows it", () => {
+  let d = put(fresh(), 0, 0, 0, 4, V(0));                       // n4 r4 r2 in voice 1
+  d = put(d, 0, 0, 0, 2, V(1));                                 // voice 2 → the bar has two voices, rests offset by voice
+  const r4 = d.measures[0].staves[0].voices[0][1], r2 = d.measures[0].staves[0].voices[0][2];
+  const L0 = layoutComposition(d, { unit: 12, width: 1024 });
+  const y0 = (id, L) => L.drawn.find((x) => x.id === id).y;
+  const moved = nudgeRest(nudgeRest(d, [r4.id], -4), [r2.id], 3);
+  const L1 = layoutComposition(moved, { unit: 12, width: 1024 });
+  assert.ok(Math.abs((y0(r4.id, L1) - y0(r4.id, L0)) - 2) < 1e-9, "four steps down = two spaces lower");
+  assert.ok(Math.abs((y0(r2.id, L0) - y0(r2.id, L1)) - 1.5) < 1e-9, "three steps up");
+  const hr = L1.drawn.find((x) => x.id === r4.id);
+  assert.equal(thingAt(L1, hr.x + 0.7, hr.y)?.ev, r4.id, "the rest is picked where it is drawn");
+  // the whole-bar rest of a silent voice 1 under voice 2
+  let w = put(fresh(), 0, 0, 0, 4, V(1));
+  const whole = w.measures[0].staves[0].voices[0][0];
+  const W0 = layoutComposition(w, { unit: 12, width: 1024 }).drawn.find((x) => x.id === whole.id);
+  assert.ok(W0.whole);
+  const W1 = layoutComposition(nudgeRest(w, [whole.id], -6), { unit: 12, width: 1024 }).drawn.find((x) => x.id === whole.id);
+  assert.ok(W1.whole && Math.abs((W1.y - W0.y) - 3) < 1e-9, "the whole rest drops three spaces");
+  // a single-voice bar's rest moves the same way (no voice offset involved)
+  const s = put(fresh(), 0, 0, 0, 4, V(0)); const sr = s.measures[0].staves[0].voices[0][1];
+  const S0 = layoutComposition(s, { unit: 12, width: 1024 }).drawn.find((x) => x.id === sr.id).y;
+  const S1 = layoutComposition(nudgeRest(s, [sr.id], 2), { unit: 12, width: 1024 }).drawn.find((x) => x.id === sr.id).y;
+  assert.ok(Math.abs((S0 - S1) - 1) < 1e-9);
 });

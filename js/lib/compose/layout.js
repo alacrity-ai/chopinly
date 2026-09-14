@@ -210,9 +210,9 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
           const st = ev.staff, vi = ev.voice, ds = ev.drawStaff, nV = b.nVoices[st];
           if (ev.ev.kind === "rest") {
             const hidden = !!ev.ev.hidden;
-            if (b.allRest[st][vi]) { if (c.ticks === 0) drawn.push({ id: ev.ev.id, bar: b.index, staff: st, drawStaff: st, voice: vi, system: si, rest: true, whole: true, hidden, base: 1, dots: 0, x: (bodyStart + hbar.x1) / 2 - 0.85, y: yOfStep(st, 6 + (nV > 1 ? REST_STEP[vi] : 0)) }); continue; }
+            if (b.allRest[st][vi]) { if (c.ticks === 0) drawn.push({ id: ev.ev.id, bar: b.index, staff: st, drawStaff: st, voice: vi, system: si, rest: true, whole: true, hidden, base: 1, dots: 0, x: (bodyStart + hbar.x1) / 2 - 0.85, y: yOfStep(st, 6 + (nV > 1 ? REST_STEP[vi] : 0) + (ev.ev.restY ?? 0)) }); continue; }
             const base = ev.ev.dur.base;
-            drawn.push({ id: ev.ev.id, bar: b.index, staff: st, drawStaff: st, voice: vi, system: si, rest: true, hidden, base, dots: ev.ev.dur.dots, x, y: yOfStep(st, (base <= 1 ? 6 : 4) + (nV > 1 ? REST_STEP[vi] : 0)), ticks: c.ticks, text: ev.ev.text ?? null, tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index });
+            drawn.push({ id: ev.ev.id, bar: b.index, staff: st, drawStaff: st, voice: vi, system: si, rest: true, hidden, base, dots: ev.ev.dur.dots, x, y: yOfStep(st, (base <= 1 ? 6 : 4) + (nV > 1 ? REST_STEP[vi] : 0) + (ev.ev.restY ?? 0)), ticks: c.ticks, text: ev.ev.text ?? null, tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index });
             continue;
           }
           const base = ev.ev.dur.base, kind = headKind(base), headW = HEAD_W[kind];
