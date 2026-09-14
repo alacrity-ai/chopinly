@@ -10,7 +10,7 @@ import { haptic } from "../logbook/motion.js";
 import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt, lasso } from "../../lib/compose/hit.js";
-import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, moveExpressions, moveHairpinEnd, setExpressionValue, removeExpressions, findExpression, exprSlot, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, moveExpressions, moveHairpinEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { createPlayer } from "../../lib/compose/play.js";
@@ -349,9 +349,11 @@ export function openEditor({ id, ctx, onClose }) {
   // in Place mode the armed duration stays armed and the next tap elsewhere still places.
   // In Select mode a rest grabs the same way: dragging moves the glyph by staff steps out of
   // another voice's way (`nudgeRest`) — silent, the bar's arithmetic untouched. An expression
-  // (dynamic, text, hairpin) grabs sideways: the pointer's slot moves it in time
-  // (`moveExpressions`), a selected hairpin's end handle moves that end alone (`moveHairpinEnd`).
-  let drag = null; // { id, type, thing, items, cluster, wasSelected, y0, delta, base, preview, keys, t, at0?, at? }
+  // (dynamic, text, hairpin) grabs in both directions: the pointer's slot moves it in time
+  // (`moveExpressions`) and its vertical travel lifts it off its automatic line by staff steps
+  // (`nudgeExpressionY`, quantised so two marks line up); a selected hairpin's end handle moves
+  // that end alone, sideways (`moveHairpinEnd`).
+  let drag = null; // { id, type, thing, items, cluster, wasSelected, y0, delta, base, preview, keys, t, at0?, at?, dy? }
   function grabStart(e, thing) {
     const handle = thing.type === "hairpin-start" || thing.type === "hairpin-end", expr = EXPR_TYPES.has(thing.type);
     const wasSelected = selection.has(keyOf(thing));
@@ -359,26 +361,36 @@ export function openEditor({ id, ctx, onClose }) {
     const cluster = !handle && wasSelected && (thing.type === "rest" ? allRests() : expr ? allExprs() : allHeads()) && selection.size > 1;
     if (!cluster && !handle) select(thing, { toggle: false });
     const items = cluster ? selItems() : [{ ev: thing.ev, pi: thing.pi }];
-    let at0 = null;
-    if (expr) { const f = findExpression(doc, thing.ev); at0 = thing.type === "hairpin-end" ? absOf(f.x.end.bar, f.x.end.at) : absOf(f.bar, f.x.at); }
-    drag = { id: e.pointerId, type: e.pointerType, thing, items, cluster, wasSelected, y0: e.clientY, delta: 0, base: doc, preview: doc, keys: [...selection], keys0: [...selection], t: performance.now(), at0, at: at0 };
+    let at0 = null, ref = null; // at0: the slot under the pen at grab time (the drag's delta counts from there, so a vertical drag slides nothing); ref: the mark's own slot (or the grabbed end's) that the delta applies to
+    if (expr) { const { x, y } = toS(e.clientX, e.clientY), sl = slotAt(L, x, y), s0 = sl && exprSlot(doc, sl.bar, sl.ticks); at0 = s0 ? absOf(s0.bar, s0.at) : null; const f = findExpression(doc, thing.ev); ref = thing.type === "hairpin-end" ? absOf(f.x.end.bar, f.x.end.at) : absOf(f.bar, f.x.at); }
+    drag = { id: e.pointerId, type: e.pointerType, thing, items, cluster, wasSelected, y0: e.clientY, delta: 0, base: doc, preview: doc, keys: [...selection], keys0: [...selection], t: performance.now(), at0, at: at0, ref, dy: 0 };
     R.showGhost(null);
     try { view.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
   }
   function grabMove(e) {
     if (!drag || drag.id !== e.pointerId) return;
-    if (EXPR_TYPES.has(drag.thing.type)) { // sideways: the slot under the pointer, across bars and systems
+    if (EXPR_TYPES.has(drag.thing.type)) { // sideways: the slot under the pointer, across bars and systems; up / down: whole staff steps off the automatic line
       const { x, y } = toS(e.clientX, e.clientY);
       const slot = slotAt(L, x, y);
       if (!slot) return;
+      const type = drag.thing.type, handle = type === "hairpin-start" || type === "hairpin-end", ids = drag.items.map((it) => it.ev);
       const s = exprSlot(drag.base, slot.bar, slot.ticks), abs = barStarts(drag.base).starts[s.bar] + s.at;
-      if (abs === drag.at) return;
-      try {
-        const type = drag.thing.type;
-        drag.preview = type === "hairpin-start" || type === "hairpin-end" ? moveHairpinEnd(drag.base, drag.thing.ev, type === "hairpin-start" ? "start" : "end", s) : moveExpressions(drag.base, drag.items.map((it) => it.ev), abs - drag.at0);
-        drag.at = abs; drag.delta = abs - drag.at0;
-        doc = drag.preview; layout(); haptic(3);
-      } catch (err) { if (!(err instanceof Nudge)) throw err; /* holds at the last good slot */ }
+      const dy = handle ? 0 : Math.round((drag.y0 - e.clientY) / (S / 2));
+      if (drag.at0 === null || (abs === drag.at && dy === drag.dy)) return;
+      const sideways = (base, delta) => { // the mark (or the grabbed end) by the pen's travel in slots
+        if (!handle) return moveExpressions(base, ids, delta);
+        const tgt = slotOfAbs(base, drag.ref + delta);
+        if (!tgt) throw new Nudge("as far right as it goes");
+        return moveHairpinEnd(base, drag.thing.ev, type === "hairpin-start" ? "start" : "end", tgt);
+      };
+      let next = drag.base;
+      try { next = sideways(next, abs - drag.at0); drag.at = abs; }
+      catch (err) { if (!(err instanceof Nudge)) throw err; if (drag.at !== drag.at0) next = sideways(next, drag.at - drag.at0); } // holds at the last good slot
+      if (!handle && dy !== 0) { try { next = nudgeExpressionY(next, ids, dy); drag.dy = dy; } catch (err) { if (!(err instanceof Nudge)) throw err; if (drag.dy) next = nudgeExpressionY(next, ids, drag.dy); } } // holds at the last good step
+      else drag.dy = dy;
+      if (next === drag.preview) return;
+      drag.preview = next; drag.delta = (drag.at - drag.at0) || drag.dy;
+      doc = next; layout(); haptic(3);
       return;
     }
     const delta = Math.round((drag.y0 - e.clientY) / (S / 2));
@@ -645,6 +657,10 @@ export function openEditor({ id, ctx, onClose }) {
         setPending({ kind: "text", value: t }); toast(`${t} — tap the beat it goes over`);
         return;
       }
+      case "expr-nudge-y": { // ↑ / ↓ on an expression-only selection: one staff step off the automatic line
+        try { commit(nudgeExpressionY(doc, selEvIds(), arg)); haptic(4); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+        return;
+      }
       case "expr-nudge": { // ← / → on an expression-only selection: one slot of the first one's bar
         const ids = selEvIds(), f = findExpression(doc, ids[0]);
         if (!f) return;
@@ -774,6 +790,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (mod && e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); act("cross", e.key === "ArrowUp" ? -1 : 1); return; }
     if (mod) return;
     if ((e.key === "ArrowUp" || e.key === "ArrowDown") && allRests()) { e.preventDefault(); act("rest-nudge", e.key === "ArrowUp" ? 1 : -1); return; }
+    if ((e.key === "ArrowUp" || e.key === "ArrowDown") && allExprs()) { e.preventDefault(); act("expr-nudge-y", e.key === "ArrowUp" ? 1 : -1); return; }
     if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && allExprs()) { e.preventDefault(); act("expr-nudge", e.key === "ArrowLeft" ? -1 : 1); return; }
     if (e.key === " " || e.code === "Space") { e.preventDefault(); act("play"); return; }
     if (e.key === "Home") { e.preventDefault(); act("stop"); return; }

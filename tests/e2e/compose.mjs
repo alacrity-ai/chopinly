@@ -555,7 +555,7 @@ await step("palm safety: a wide touch contact and a second simultaneous finger p
   if ((await kinds(4)) !== "n4 r4 r2") throw new Error("the pen did not place: " + (await kinds(4)));
 });
 
-await step("expressions (WSHED-122, via Rails ▾): f arms and a tap puts it on beat 1; a crescendo takes three taps (button, beat 2, bar 2 beat 1); rit. from the text menu lands on the & of 3; in Select mode the dynamic selects, drags a slot right, ← nudges it back, Delete removes it and undo restores it; a selected hairpin shows two handles; typed text arms without firing shortcuts; Escape cancels a half-placed hairpin; the buttons stay squares", async () => {
+await step("expressions (WSHED-122, via Rails ▾): f arms and a tap puts it on beat 1; a crescendo takes three taps (button, beat 2, bar 2 beat 1); rit. from the text menu lands on the & of 3; in Select mode the dynamic selects, drags a slot right, ← nudges it back, Delete removes it and undo restores it; a selected hairpin shows two handles and drags up by whole staff steps (↓ nudges it back); typed text arms without firing shortcuts; Escape cancels a half-placed hairpin; the buttons stay squares", async () => {
   await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=expression]"); await page.click("[data-pop=cp-rails-more]");
   if (await page.locator("#cp-expression").isHidden()) throw new Error("expression rail did not open");
   if ((await state()).mode !== "place") await page.keyboard.press("v");
@@ -602,6 +602,14 @@ await step("expressions (WSHED-122, via Rails ▾): f arms and a tap puts it on 
   await page.mouse.click(hp.x, hp.y);
   const handles = await page.evaluate(() => ({ sel: document.querySelector(".cp-editor").__editor.state.selection, n: document.querySelector(".cp-overlay .cp-handles").hidden ? 0 : document.querySelectorAll(".cp-overlay .cp-handle").length }));
   if (handles.sel.join() !== hp.id || handles.n !== 2) throw new Error("hairpin handles " + JSON.stringify(handles));
+  // dragging the hairpin's body upward lifts it by whole staff steps (quantised to half a space); ↓ nudges one step back down
+  const Spx = (await state()).S, hpY0 = await page.evaluate(() => document.querySelector(".cp-editor").__editor.layout.hairpins[0].y);
+  await page.mouse.move(hp.x, hp.y); await page.mouse.down(); await page.mouse.move(hp.x, hp.y - 1.1 * Spx, { steps: 6 }); await page.mouse.up();
+  const lifted = await page.evaluate(() => { const ed = document.querySelector(".cp-editor").__editor; return { dy: ed.state.doc.measures[0].expressions.find((x) => x.kind === "hairpin")?.dy, y: ed.layout.hairpins[0].y, at: ed.state.doc.measures[0].expressions.find((x) => x.kind === "hairpin")?.at }; });
+  if (lifted.dy !== 2 || Math.abs(lifted.y - (hpY0 - 1)) > 1e-6 || lifted.at !== PPQ) throw new Error("hairpin lift " + JSON.stringify({ ...lifted, hpY0 }));
+  await page.screenshot({ path: `${S}/cp-16c-expression-lift.png` });
+  await page.keyboard.press("ArrowDown");
+  if ((await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures[0].expressions.find((x) => x.kind === "hairpin")?.dy)) !== 1) throw new Error("↓ did not nudge the hairpin down a step");
   await page.screenshot({ path: `${S}/cp-16b-expression-select.png` });
   // typed text arms (Enter sets it); the typed letters must not fire shortcuts (r = rest); Escape disarms
   await page.keyboard.press("Escape");

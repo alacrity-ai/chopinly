@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition } from "../js/lib/compose/model.js";
-import { place, setClef, setKey, setTime, articulate, arpeggio, accidental, slur, addExpression, addHairpin, MARKS } from "../js/lib/compose/engine.js";
+import { place, setClef, setKey, setTime, articulate, arpeggio, accidental, slur, addExpression, addHairpin, nudgeExpressionY, MARKS } from "../js/lib/compose/engine.js";
 import { things } from "../js/lib/compose/hit.js";
 import { layoutComposition, SYS_H, TOP_PAD } from "../js/lib/compose/layout.js";
 import { slotAt, thingAt, ticksAt, xOfTicks, barAt } from "../js/lib/compose/hit.js";
@@ -242,6 +242,13 @@ test("expressions (WSHED-122): a dynamic sits on the staff's expression line und
   // the ghost helpers agree with the placed marks
   assert.equal(L.exprLine(0, 0, 0, 1), L.dynamics[0].y);
   assert.equal(L.textLine(0, 0, 4 * g), L.texts[0].y);
+  // a vertical nudge lifts the mark by half a space per step (a hairpin: every half); the hit tables follow
+  const n = nudgeExpressionY(nudgeExpressionY(d, [L.dynamics[0].id, L.texts[0].id], -4), [hp.id], 2);
+  const Ln = layoutComposition(n, { unit: 10, width: 900 });
+  assert.equal(Ln.dynamics[0].y, L.dynamics[0].y + 2); assert.equal(Ln.texts[0].y, L.texts[0].y + 2); assert.equal(Ln.hairpins[0].y, L.hairpins[0].y - 1);
+  assert.equal(thingAt(Ln, Ln.hairpins[0].x1 + 2, Ln.hairpins[0].y)?.type, "hairpin");
+  const Ls = layoutComposition(nudgeExpressionY(e, [L2.hairpins[0].id], 4), { unit: 12, width: 700 });
+  assert.deepEqual(Ls.hairpins.map((x) => x.y), L2.hairpins.map((x) => x.y - 2), "both halves lift");
 });
 
 test("golden: a piece that never uses a second voice lays out exactly as it did before multi-voice landed (every value the old engraver produced)", async () => {

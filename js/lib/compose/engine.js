@@ -3,7 +3,7 @@
 // the new document; a refused edit throws Nudge(sentence) and the document is
 // untouched. Pure — node-testable.
 import { groupSize, ticks, capacity, splitRest, fromTicks, exprGrid } from "./ticks.js";
-import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, MAX_VOICES, REST_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, HAIRPINS, TEXT_MAX, eid } from "./model.js";
+import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, MAX_VOICES, REST_Y_MAX, EXPR_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, HAIRPINS, TEXT_MAX, eid } from "./model.js";
 import { parsePitch, keyAlterations, CLEFS } from "../music.js";
 
 export class Nudge extends Error { constructor(msg, { bar = null } = {}) { super(msg); this.name = "Nudge"; this.bar = bar; } }
@@ -1007,6 +1007,24 @@ export function moveHairpinEnd(doc, id, which, { bar, at }) {
   const d = clone(doc);
   setExprs(d.measures[f.bar], exprsOf(d.measures[f.bar]).filter((x) => x.id !== id));
   putExpr(d, { ...f.x, at: start.at, end: { bar: end.bar, at: end.at } }, start.bar);
+  return d;
+}
+/**
+ * Nudge the named expressions off their automatic line by `delta` staff steps (positive = up), like
+ * `nudgeRest`: `x.dy` is relative to where the layout would put the mark, clamped at ±EXPR_Y_MAX with a
+ * Nudge (nothing moves), and absent again at 0. A hairpin moves whole.
+ */
+export function nudgeExpressionY(doc, ids, delta) {
+  if (!Number.isInteger(delta)) throw new Nudge("marks move by whole steps");
+  const found = [...new Set(ids)].map((id) => findExpression(doc, id)).filter(Boolean);
+  if (!found.length) throw new Nudge("pick the marks to move");
+  if (delta === 0) return doc;
+  const d = clone(doc);
+  for (const f of found) {
+    const x = d.measures[f.bar].expressions[f.index], y = (x.dy ?? 0) + delta;
+    if (Math.abs(y) > EXPR_Y_MAX) throw new Nudge(delta > 0 ? "that mark is as high as it goes" : "that mark is as low as it goes", { bar: f.bar });
+    if (y === 0) delete x.dy; else x.dy = y;
+  }
   return d;
 }
 /** Retype the named dynamics (to a dynamic) or texts (to a string); a mixed list is refused; nothing to change → the same document. */
