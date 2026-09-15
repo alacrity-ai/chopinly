@@ -48,6 +48,8 @@ const ARP_ROWS = [["plain", G.arpeggio, "rolled"], ["up", G.arpeggioUp, "rolled 
 const MARK_NAMES = { lowerMordent: "lower mordent — the one with the line through it" };
 /** The rails a reader can show or hide, in order — the header that holds the menu is not one of them. */
 export const RAILS = [["control", "Controls"], ["transport", "Transport"], ["palette", "Notes"], ["utility", "Key · time · clef · marks"], ["expression", "Dynamics · hairpins · text"], ["form", "Form · repeats · tempo"], ["piano", "Piano · pedal · 8va · fingering"], ["notes2", "Grace · tremolo · marks"]]; // expression marks arm a cursor and land on half-beats (docs/COMPOSE_EXPRESSIONS_DESIGN.md)
+/** Pen | Touch (v101): the switch exists only where a finger can touch the score. */
+const TOUCHY = typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
 /** The captions on the palette rails (v100): the word that says which rail this is, sticky at the left while the rail scrolls. */
 const CAPTIONS = { palette: "Notes", utility: "Key · time", expression: "Dynamics", form: "Form", piano: "Piano", notes2: "Marks" };
 export const DEFAULT_RAILS = { control: true, transport: true, palette: true, utility: false, expression: false, form: false, piano: false, notes2: false };
@@ -97,6 +99,10 @@ export function buildRails(host, { title, onAction }) {
       <span class="cp-group cp-switch" role="group" aria-label="mode">
         <button type="button" class="cp-btn cp-mode" data-act="select" aria-pressed="false">${icon("cursor")}<span class="cp-word">Select</span></button>
         <button type="button" class="cp-btn cp-mode" data-act="pan" aria-pressed="false" aria-label="pan — one finger scrolls, two zoom">${icon("hand")}<span class="cp-word">Pan</span></button>
+      </span>
+      <span class="cp-group cp-switch cp-input" role="group" aria-label="what draws"${TOUCHY ? "" : " hidden"}>
+        <button type="button" class="cp-btn cp-inp" data-act="input" data-input="pen" aria-pressed="false" aria-label="the pencil draws — fingers rest">${icon("nib")}<span class="cp-word">Pen</span></button>
+        <button type="button" class="cp-btn cp-inp" data-act="input" data-input="touch" aria-pressed="false" aria-label="a finger draws">${icon("finger")}<span class="cp-word">Touch</span></button>
       </span>
       <span class="cp-tray">
         <button type="button" class="cp-btn cp-sq" data-act="delete" aria-label="delete the selection" disabled>${icon("trash")}</button>
@@ -369,6 +375,7 @@ export function buildRails(host, { title, onAction }) {
     if (b.dataset.pop) { toggle(host.querySelector(`#${b.dataset.pop}`), b); return; }
     const act = b.dataset.act;
     if (act === "rail") { onAction("rail", b.dataset.rail); return; } // the menu stays open: several rails can be toggled in one go
+    if (act === "input") { onAction("input", b.dataset.input); return; } // Pen | Touch (v101)
     closeMore();
     if (act === "dur") { onAction("dur", Number(b.dataset.base)); return; }
     if (act === "key") { onAction("key", Number(b.dataset.fifths)); return; }
@@ -444,8 +451,9 @@ export function buildRails(host, { title, onAction }) {
       if (bpm !== undefined) host.querySelector("#cp-bpm").textContent = String(bpm);
     },
     /** Reflect the editor's state: { armed, mode, canUndo, canRedo, hasSelection, title }. */
-    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, rails = DEFAULT_RAILS, pending = null, title, voice = 0, used = new Set([0]), sel = {}, tempoUnit = { base: 4, dots: 0 }, hands = "en", pedalStyle = "line" }) {
+    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, rails = DEFAULT_RAILS, pending = null, title, voice = 0, used = new Set([0]), sel = {}, tempoUnit = { base: 4, dots: 0 }, hands = "en", pedalStyle = "line", input = "touch" }) {
       let shown = false;
+      for (const b of host.querySelectorAll(".cp-inp")) b.setAttribute("aria-pressed", String(b.dataset.input === input)); // Pen | Touch (v101, docs/COMPOSE_DESIGN.md §8.5i)
       // the voice picker (v90: one ▾ button, not four squares — the rail wrapped on many devices): the active voice's number in its colour;
       // the menu's rows: the active one lit, voices the piece uses in full ink, the rest dim; the rows follow the selection
       { const pick = host.querySelector(".cp-voice-pick"); pick.dataset.v = String(voice); pick.querySelector(".cp-voice-n").textContent = String(voice + 1); }

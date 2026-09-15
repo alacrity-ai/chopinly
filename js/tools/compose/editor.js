@@ -3,7 +3,9 @@
 // mode taps only select; Pan is the one mode in which the score moves. In
 // edit modes a touch pointer counts only as a single clean tap — a resting
 // palm (wide, long, moving, or a second contact) is discarded — and pen and
-// mouse are trusted fully.
+// mouse are trusted fully. The Pen | Touch switch (v101, docs/COMPOSE_DESIGN.md
+// §8.5i) turns the finger into the pen: the palm guard lifts, Select-mode targets
+// grow to a fingertip, and holding or sliding aims with a lifted ghost.
 import { logbook } from "../../lib/logbook.js";
 import { toast } from "../logbook/util.js";
 import { haptic } from "../logbook/motion.js";
@@ -24,6 +26,8 @@ import { saveFile } from "./savefile.js";
 import { toMusicXml, musicXmlFileName, MUSICXML_TYPE } from "../../lib/compose/musicxml.js";
 
 const TAP_MS = 300, TAP_PX = 10, PALM_PX = 40, S_MIN = 8, S_MAX = 22, SAVE_MS = 300, LASSO_PX = 6;
+const FINGER_PX = 22, AIM_PX = 40, AIM_MS = 500; // Touch mode (v101): a hit answers from a fingertip away; a finger held this long (or slid) aims with a ghost floating this far above it
+const TOUCHY = typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
 const KEY_BASE = { 1: 64, 2: 32, 3: 16, 4: 8, 5: 4, 6: 2, 7: 1 };
 const EXPR_TYPES = new Set(["dyn", "text", "hairpin", "hairpin-start", "hairpin-end", "pedal", "pedal-start", "pedal-end", "ottava", "ottava-start", "ottava-end", "textline", "textline-start", "textline-end"]); // the selectable expressions and a selected span's two handles
 const SPAN_PENDING = new Set(["hairpin", "pedal", "ottava", "textline"]); // pending kinds placed by two taps (start, end)
@@ -57,6 +61,8 @@ export function openEditor({ id, ctx, onClose }) {
   let tempoUnit = TEMPO_UNIT_BASES.includes(savedUnit?.base) ? { base: savedUnit.base, dots: savedUnit.dots ? 1 : 0 } : { base: 4, dots: 0 };
   let hands = HANDS[savedHands] ? savedHands : "en";
   let pedalStyle = PEDAL_STYLES.includes(savedPedal) ? savedPedal : "line";
+  let penSeen = store.get("penSeen", false) === true; // Pen | Touch (v101): the first pen contact on this device flips the switch once
+  let input = store.get("input", null); if (input !== "pen" && input !== "touch") input = penSeen ? "pen" : "touch"; // what a finger may do — remembered per device
   const savedRails = store.get("rails", null);
   let railsOn = Object.fromEntries(RAILS.map(([k]) => [k, typeof savedRails?.[k] === "boolean" ? savedRails[k] : DEFAULT_RAILS[k]])); // which rails show — remembered per device
   const sound = createSound(getAudio);
@@ -110,7 +116,7 @@ export function openEditor({ id, ctx, onClose }) {
     return { any: fs.length > 0, exprs, dyns: exprs && xs.every((f) => f.x.kind === "dyn"), texts: exprs && xs.every((f) => f.x.kind === "text"), notes: notes.length > 0, rests: rests.length > 0, hidden: rests.length > 0 && rests.every((f) => f.ev.hidden), up: notes.some((f) => f.staff + (f.ev.cross ?? 0) - 1 >= 0 && Math.abs((f.ev.cross ?? 0) - 1) <= 1), down: notes.some((f) => f.staff + (f.ev.cross ?? 0) + 1 < n && Math.abs((f.ev.cross ?? 0) + 1) <= 1) };
   }
   function sync() {
-    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title: heading(), voice, used: usedVoices(doc), sel: selFacts(), tempoUnit, hands, pedalStyle });
+    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title: heading(), voice, used: usedVoices(doc), sel: selFacts(), tempoUnit, hands, pedalStyle, input });
     view.dataset.mode = mode; view.classList.toggle("pasting", pasting); view.classList.toggle("arming", !!pending);
     syncTransport();
   }
@@ -249,7 +255,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (pending) { if (drag) grabEnd({ pointerId: drag.id }, { cancel: true }); if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true }); if (mode === "pan") setMode("place"); pasting = false; }
     R?.showGhost(null); R?.showTarget(null); sync();
   }
-  function applyChangeAt(clientX, clientY) {
+  function applyChangeAt(clientX, clientY, tol = 0) {
     const t = changeTarget(clientX, clientY);
     if (!t) return;
     const p = pending;
@@ -279,7 +285,7 @@ export function openEditor({ id, ctx, onClose }) {
         if (r.added) { sound.play([pitch], 140); toast(`grace ${p.value.chord ? "chord" : "note"} before ${slotName(g.bar, g.start)}`); } else toast("grace note removed");
         return;
       } else if (p.kind === "finger") { // stays armed: every tap on a head stamps it (the same digit there again clears it)
-        const th = thingAt(L, t.x, t.y);
+        const th = thingAt(L, t.x, t.y, undefined, tol);
         if (!th || th.type !== "head") { toast("tap a notehead"); return; }
         const next = finger(doc, [{ ev: th.ev, pi: th.pi }], p.value);
         if (next !== doc) { commit(next); toast(find(next, th.ev).ev.pitches[th.pi].finger ? `finger ${p.value}` : `finger ${p.value} cleared`); haptic(6); }
@@ -336,12 +342,12 @@ export function openEditor({ id, ctx, onClose }) {
   }
 
   // --- a tap -----------------------------------------------------------------
-  function tapAt(clientX, clientY) {
+  function tapAt(clientX, clientY, tol = 0) { // tol (in S): a Touch-mode finger's reach (docs/COMPOSE_DESIGN.md §8.5i)
     if (!L) return;
-    if (pending) { applyChangeAt(clientX, clientY); return; }
+    if (pending) { applyChangeAt(clientX, clientY, tol); return; }
     if (pasting) { dropAt(clientX, clientY); return; }
     const { x, y } = toS(clientX, clientY);
-    const thing = thingAt(L, x, y, mode === "select" ? selectedSpans() : undefined);
+    const thing = thingAt(L, x, y, mode === "select" ? selectedSpans() : undefined, mode === "select" ? tol : 0);
     // In Place mode a rest (and a chord's stem, and an expression) is where the next note goes; only a notehead selects.
     if (thing && (mode === "select" || thing.type === "head")) { if (isHandle(thing.type)) return; select(thing); return; }
     if (mode === "select") { if (selection.size) { selection.clear(); showSel(); sync(); } return; }
@@ -518,7 +524,7 @@ export function openEditor({ id, ctx, onClose }) {
     R.showLasso(null);
     if (cancel) return;
     if (!l.active) { // a plain tap: on a rest (or a stem) it selects that; on empty staff it clears
-      const t = thingAt(L, l.pts[0].x, l.pts[0].y);
+      const t = thingAt(L, l.pts[0].x, l.pts[0].y, undefined, l.type === "touch" && input === "touch" ? FINGER_PX / S : 0);
       if (t) { select(t); return; }
       if (selection.size) { selection.clear(); showSel(); sync(); }
       return;
@@ -543,22 +549,41 @@ export function openEditor({ id, ctx, onClose }) {
   let gesture = null;   // the pointer that may become a tap: { id, type, x, y, t, valid }
   let pan = null;     // Pan state: { pointers: Map(id → {x, y}), scrollTop, dist0, S0, last, vy, inertia }
   const wide = (e) => (e.width > PALM_PX || e.height > PALM_PX);
+  /** A Touch-mode finger's reach in S: fingertip-sized targets in Select mode (and for a fingering stamp); in Place mode the staff is for placing, so a head is grabbed only when hit. */
+  const tolOf = (e) => (e.pointerType === "touch" && input === "touch" ? FINGER_PX / S : 0);
+  /** Pen | Touch (v101, docs/COMPOSE_DESIGN.md §8.5i). */
+  function setInput(next) {
+    if ((next !== "pen" && next !== "touch") || next === input) return;
+    input = next; store.set("input", next);
+    if (gesture?.type === "touch") { clearTimeout(gesture.timer); gesture = null; R?.showGhost(null); R?.showTarget(null); }
+    sync();
+  }
+  /** The aim (Touch mode): a held or slid finger lifts the ghost AIM_PX above the fingertip; the lift lands where the ghost is. */
+  function startAim(id) {
+    if (!gesture || gesture.id !== id || gesture.type !== "touch" || !gesture.valid || gesture.aim) return;
+    gesture.aim = true; haptic(4); ghostAt(gesture.lx, gesture.ly - AIM_PX);
+  }
 
   /** The grabbable thing under the pointer: a head in any mode; in Select mode a rest or an expression (and a selected hairpin's handles) as well. */
-  const headUnder = (e) => { if (!L) return null; const { x, y } = toS(e.clientX, e.clientY); const t = thingAt(L, x, y, mode === "select" ? selectedSpans() : undefined); return t?.type === "head" || (mode === "select" && t && (t.type === "rest" || EXPR_TYPES.has(t.type))) ? t : null; };
+  const headUnder = (e) => { if (!L) return null; const { x, y } = toS(e.clientX, e.clientY); const t = thingAt(L, x, y, mode === "select" ? selectedSpans() : undefined, mode === "select" ? tolOf(e) : 0); return t?.type === "head" || (mode === "select" && t && (t.type === "rest" || EXPR_TYPES.has(t.type))) ? t : null; };
   view.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "pen" && !penSeen) { // the first pencil on this device: fingers rest from here on, once, unless the user says otherwise (§8.5i)
+      penSeen = true; store.set("penSeen", true);
+      if (input === "touch") { input = "pen"; store.set("input", "pen"); if (TOUCHY) toast("Pencil — fingers rest now. Tap Touch to draw by hand."); sync(); }
+    }
     if (mode === "pan") { onPanDown(e); return; }
     if (e.pointerType === "touch") {
-      const valid = touches.size === 0 && !wide(e);
+      const trusted = input === "touch"; // Touch mode: the finger is the pen — no palm guard
+      const valid = touches.size === 0 && (trusted || !wide(e));
       touches.add(e.pointerId);
       if (drag?.type === "touch") { grabEnd({ pointerId: drag.id }, { cancel: true }); return; } // a second finger lets go
-      if (gesture?.type === "touch") gesture.valid = false; // a second finger spoils the first
+      if (gesture?.type === "touch") { gesture.valid = false; clearTimeout(gesture.timer); R?.showGhost(null); R?.showTarget(null); } // a second finger spoils the first (and an aim)
       if (!valid) { if (gesture?.type !== "touch") return; gesture = { id: e.pointerId, type: "touch", valid: false }; return; }
       if (lassoState?.type === "touch") { lassoEnd({ pointerId: lassoState.id }, { cancel: true }); return; } // a second finger lets go
       const head = pasting || pending ? null : headUnder(e);
       if (head) { gesture = null; grabStart(e, head); return; }
       if (mode === "select" && !pasting && !pending) { gesture = null; lassoStart(e); return; }
-      gesture = { id: e.pointerId, type: "touch", x: e.clientX, y: e.clientY, t: performance.now(), valid: true };
+      gesture = { id: e.pointerId, type: "touch", x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, t: performance.now(), valid: true, aim: false, timer: trusted ? setTimeout(() => startAim(e.pointerId), AIM_MS) : 0 };
       ghostAt(e.clientX, e.clientY);
       return;
     }
@@ -572,7 +597,15 @@ export function openEditor({ id, ctx, onClose }) {
     if (mode === "pan") { onPanMove(e); return; }
     if (drag) { grabMove(e); return; }
     if (lassoState) { lassoMove(e); return; }
-    if (e.pointerType === "touch") { if (gesture?.id === e.pointerId && gesture.valid && Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > TAP_PX) { gesture.valid = false; R?.showGhost(null); R?.showTarget(null); } return; }
+    if (e.pointerType === "touch") {
+      if (gesture?.id !== e.pointerId || !gesture.valid) return;
+      gesture.lx = e.clientX; gesture.ly = e.clientY;
+      if (gesture.aim) { ghostAt(e.clientX, e.clientY - AIM_PX); return; } // aiming: the ghost rides above the finger
+      if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) <= TAP_PX) return;
+      if (input === "touch") { clearTimeout(gesture.timer); startAim(e.pointerId); return; } // a slide starts the aim
+      gesture.valid = false; R?.showGhost(null); R?.showTarget(null); // Pen mode: a moving finger is a palm
+      return;
+    }
     if (!gesture || gesture.id !== e.pointerId) ghostAt(e.clientX, e.clientY); // hover
     else if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > TAP_PX) { gesture.valid = false; R?.showGhost(null); R?.showTarget(null); }
   });
@@ -583,9 +616,12 @@ export function openEditor({ id, ctx, onClose }) {
     if (e.pointerType === "touch") {
       touches.delete(e.pointerId);
       if (gesture?.id === e.pointerId) {
-        const ok = gesture.valid && e.type === "pointerup" && performance.now() - gesture.t <= TAP_MS && touches.size === 0 && !wide(e);
+        clearTimeout(gesture.timer);
+        const trusted = input === "touch", tol = tolOf(e);
         const g = gesture; gesture = null; R?.showGhost(null); R?.showTarget(null);
-        if (ok) tapAt(g.x, g.y);
+        if (g.aim) { if (g.valid && e.type === "pointerup" && touches.size === 0) tapAt(e.clientX, e.clientY - AIM_PX, tol); return; } // the lift lands where the ghost was
+        const ok = g.valid && e.type === "pointerup" && touches.size === 0 && (trusted || (performance.now() - g.t <= TAP_MS && !wide(e))); // Touch: any lift before the aim is a tap under the finger
+        if (ok) tapAt(g.x, g.y, tol);
       }
       return;
     }
@@ -666,6 +702,7 @@ export function openEditor({ id, ctx, onClose }) {
       }
       case "undo": if (history.canUndo) { doc = history.undo(); dirty = true; pruneSelection(); layout(); flush(); } return;
       case "redo": if (history.canRedo) { doc = history.redo(); dirty = true; pruneSelection(); layout(); flush(); } return;
+      case "input": setInput(arg); return; // Pen | Touch (v101)
       case "select": setMode(mode === "select" ? "place" : "select"); return;
       case "pan": setMode(mode === "pan" ? "place" : "pan"); return;
       case "delete": deleteSelection(); return;
@@ -1030,7 +1067,7 @@ export function openEditor({ id, ctx, onClose }) {
   const api = {
     id, close,
     /** For tests: the live state. */
-    get state() { return { mode, armed, voice, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, pending, rails: railsOn, title, doc }; },
+    get state() { return { mode, armed, voice, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, pending, rails: railsOn, title, doc, input, penSeen }; },
     /** For tests: the current layout. */
     get layout() { return L; },
     /** For tests: the client point of a musical place. */

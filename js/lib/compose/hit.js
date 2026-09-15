@@ -42,31 +42,32 @@ export function barAt(L, bar, system = null) {
   for (const s of L.hit.systems) { if (system !== null && L.hit.systems.indexOf(s) !== system) continue; const b = s.bars.find((x) => x.index === bar); if (b) return { sys: s, bar: b }; }
   return null;
 }
-/** The head / rest / stem / expression under a point, or null; `handles` = ids of selected spans whose ends answer as handles. */
-export function thingAt(L, x, y, handles = new Set()) {
+/** The head / rest / stem / expression under a point, or null; `handles` = ids of selected spans whose ends answer as handles;
+ * `tol` (in S) widens every box to a fingertip in Touch mode (docs/COMPOSE_DESIGN.md §8.5i) — the nearest thing still wins. */
+export function thingAt(L, x, y, handles = new Set(), tol = 0) {
   let best = null, bd = Infinity;
   for (const d of L.drawn) {
     if (d.rest) {
       const cx = d.x + 0.7, dx = Math.abs(x - cx), dy = Math.abs(y - d.y);
-      if (dx <= 1.1 && dy <= 2.2 && dx + dy < bd) { bd = dx + dy; best = { type: "rest", ev: d.id, bar: d.bar, staff: d.staff, voice: d.voice }; }
+      if (dx <= Math.max(1.1, tol) && dy <= Math.max(2.2, tol) && dx + dy < bd) { bd = dx + dy; best = { type: "rest", ev: d.id, bar: d.bar, staff: d.staff, voice: d.voice }; }
       continue;
     }
     for (const h of d.heads) {
       const dx = Math.abs(x - (h.x + d.headW / 2)), dy = Math.abs(y - h.y);
-      if (dx <= 0.75 && dy <= 0.35 && dx + dy < bd) { bd = dx + dy; best = { type: "head", ev: d.id, pi: h.pi, bar: d.bar, staff: d.staff, voice: d.voice }; }
+      if (dx <= Math.max(0.75, tol) && dy <= Math.max(0.35, tol) && dx + dy < bd) { bd = dx + dy; best = { type: "head", ev: d.id, pi: h.pi, bar: d.bar, staff: d.staff, voice: d.voice }; }
     }
     if (d.stem && d.heads.length > 1 && Math.abs(x - d.stemX) <= 0.45 && y >= Math.min(d.stemFromY, d.stemTipY) && y <= Math.max(d.stemFromY, d.stemTipY) && 0.5 < bd) { bd = 0.5; best = { type: "stem", ev: d.id, bar: d.bar, staff: d.staff, voice: d.voice }; }
   }
   if (best) return best;
   // expressions (docs/COMPOSE_EXPRESSIONS_DESIGN.md §4): after the notes, which are small and sit on the staff
-  for (const dy of L.dynamics) if (Math.abs(x - dy.x) <= 1.2 && Math.abs(y - dy.y + 0.3) <= 0.9) return { type: "dyn", ev: dy.id, bar: dy.bar, staff: dy.staff, x: dy.x, y: dy.y };
-  for (const tx of L.texts) if (x >= tx.x - 0.3 && x <= tx.x + 0.6 * tx.text.length && y >= tx.y - 1.1 && y <= tx.y + 0.3) return { type: "text", ev: tx.id, bar: tx.bar, staff: tx.staff, x: tx.x, y: tx.y };
+  for (const dy of L.dynamics) if (Math.abs(x - dy.x) <= Math.max(1.2, tol) && Math.abs(y - dy.y + 0.3) <= Math.max(0.9, tol)) return { type: "dyn", ev: dy.id, bar: dy.bar, staff: dy.staff, x: dy.x, y: dy.y };
+  for (const tx of L.texts) if (x >= tx.x - 0.3 - tol && x <= tx.x + 0.6 * tx.text.length + tol && y >= tx.y - 1.1 - tol && y <= tx.y + 0.3 + tol) return { type: "text", ev: tx.id, bar: tx.bar, staff: tx.staff, x: tx.x, y: tx.y };
   for (const hp of spans(L)) { // hairpins, pedal lines, octave lines (docs/COMPOSE_PIANO_DESIGN.md §6) answer alike
-    if (Math.abs(y - hp.y) > 0.9 || x < hp.x1 - 0.6 || x > hp.x2 + 0.6) continue;
+    if (Math.abs(y - hp.y) > Math.max(0.9, tol) || x < hp.x1 - 0.6 - tol || x > hp.x2 + 0.6 + tol) continue;
     const t = { type: hp.type, ev: hp.id, bar: hp.bar, staff: hp.staff, x: (hp.x1 + hp.x2) / 2, y: hp.y };
     if (handles.has(hp.id)) { // a selected span: its real ends are handles (an open half has no handle at the break)
-      if (hp.half !== "in" && hp.half !== "both" && Math.abs(x - hp.x1) <= 1.0) return { ...t, type: `${hp.type}-start` };
-      if (hp.half !== "out" && hp.half !== "both" && Math.abs(x - hp.x2) <= 1.0) return { ...t, type: `${hp.type}-end` };
+      if (hp.half !== "in" && hp.half !== "both" && Math.abs(x - hp.x1) <= Math.max(1.0, tol)) return { ...t, type: `${hp.type}-start` };
+      if (hp.half !== "out" && hp.half !== "both" && Math.abs(x - hp.x2) <= Math.max(1.0, tol)) return { ...t, type: `${hp.type}-end` };
     }
     return t;
   }

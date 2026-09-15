@@ -349,6 +349,15 @@ an old piece opens with its marks in place.
   subsetting fails, the fallback is embedding the whole font (~1 MB per PDF) —
   a size cost, never a fidelity cost. Raster is not a fallback.
 
+## Phase 12 — the Pen | Touch switch — LANDED v101 (WSHED-129, 2026-09-15)
+
+Leif: with no Pencil a finger could not place, lasso or move a note. Design and as-built: docs/COMPOSE_DESIGN.md §8.5i
+(§8.3 rewritten, §4.3 `input` + `penSeen`). `rails.js`: a second `.cp-switch` (Pen | Touch, `icon("nib")` /
+`icon("finger")`) beside Select / Pan, present only when `navigator.maxTouchPoints > 0`; `editor.js`: `input` per
+device (default Touch until the first pen `pointerdown` flips it once), `trusted` lifts the palm width guard, a
+Select-mode `FINGER_PX` tolerance into `thingAt` (hit.js: `tol`), hold-and-slide aiming with the ghost lifted `AIM_PX`
+above the fingertip; the E2E step "v101: Pen | Touch" (50 px synthetic fingers; a mouse-only context has no switch).
+
 ## Phase 11 — the rails facelift — LANDED v100 (WSHED-128, 2026-09-15)
 
 Leif's review of the v99 rails, all of it approved plus his rule that **a rail never wraps** (docs/COMPOSE_DESIGN.md §8.5h). CSS (`.cp-lane`, `.cp-rail` as a hidden-scrollbar horizontal scroller, `.cp-group`, `.cp-tray`, `.cp-cap`, `.cp-hold`, `.cp-chev`, `.cp-pick-ic`, `--cp-h`), `rails.js` (groups and trays in the markup, lanes wrapped after build, fixed-position menus placed on open, overflow fades from `scrollLeft`, the lit button revealed), `icons.js` (`chev`), `glyphs.js` (`timeSigCommon`, re-baked into `export/bravura.js`). E2E: a step that turns every rail on at 1024 × 768, 768 × 1024 and 390 × 844 and asserts one line per rail, no separators or text triangles, 22 groups, hold dots, chevrons, captions on tablet only, fades matching overflow, a CDP finger drag that slides a rail, menus inside the viewport, no bare chevrons. Rails stack with everything on: 560 → 489 px at 1024 × 768.
