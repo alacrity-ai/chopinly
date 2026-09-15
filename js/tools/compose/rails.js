@@ -1,7 +1,7 @@
 // The control rail and the palette rail (docs/COMPOSE_DESIGN.md §8.1). Pure
 // markup + click wiring; the editor owns the state and calls `update`.
 import { icon } from "../../lib/icons.js";
-import { metGlyph, restGlyph, artGlyph, dynGlyph, G } from "../../lib/staff/glyphs.js";
+import { metGlyph, artGlyph, dynGlyph, G } from "../../lib/staff/glyphs.js";
 import { CLEFS } from "../../lib/music.js";
 import { esc } from "../logbook/util.js";
 
@@ -138,8 +138,6 @@ export function buildRails(host, { title, onAction }) {
         <button type="button" class="cp-btn cp-acc-more" data-pop="cp-acc-more" aria-label="double sharp, double flat" aria-expanded="false"><span class="cp-glyph cp-glyph-sm" id="cp-acc-more-glyph">${G[2]}</span>&#9662;</button>
         <span class="cp-more" id="cp-acc-more" hidden>${[[2, "double sharp"], [-2, "double flat"]].map(([a, name]) => `<button type="button" class="cp-btn cp-sq cp-acc" data-act="acc" data-alter="${a}" aria-pressed="false" aria-label="${name}"><span class="cp-glyph">${G[a]}</span></button>`).join("")}</span>
       </span>
-      <span class="cp-sep" aria-hidden="true"></span>
-      <button type="button" class="cp-btn cp-rest" data-act="rest" aria-pressed="false" aria-label="rest"><span class="cp-glyph cp-glyph-rest" id="cp-rest-glyph">${restGlyph(4)}</span><span class="cp-rest-word">rest</span></button>
     </div>
     <div class="cp-rail cp-utility" id="cp-utility" role="toolbar" aria-label="key, time, clef and marks" data-rail="utility" hidden>
       <span class="cp-more-wrap">
@@ -465,9 +463,6 @@ export function buildRails(host, { title, onAction }) {
       if (mg.textContent !== mt) { mg.textContent = mt; centreGlyph(mg); }
       host.querySelector("[data-act=select]").setAttribute("aria-pressed", String(mode === "select"));
       host.querySelector("[data-act=pan]").setAttribute("aria-pressed", String(mode === "pan"));
-      host.querySelector("[data-act=rest]").setAttribute("aria-pressed", String(armed.rest));
-      const rg = host.querySelector("#cp-rest-glyph"), rt = restGlyph(armed.base);
-      if (rg.textContent !== rt) { rg.textContent = rt; centreGlyph(rg); }
       host.querySelector("[data-act=undo]").disabled = !canUndo;
       host.querySelector("[data-act=redo]").disabled = !canRedo;
       host.querySelector("[data-act=delete]").disabled = !hasSelection;

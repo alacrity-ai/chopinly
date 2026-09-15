@@ -8,7 +8,7 @@ note, a quarter, a rest, a triplet … and it just fails. Overly complex, fails 
 recognise the notes I'm laying down. I think we can build a basic music notation
 component into Chopinly. Keep it basic, but extendable."*
 **Confirmed by Leif:** tool name **Compose**; four rails (control, palette,
-utility, expression); a **Rest toggle**, not a rest palette; key / time / clef
+utility, expression); no rest palette (a Rest toggle stood in until v99, when Leif had it removed: rests are what is left when a note goes, Delete makes one); key / time / clef
 changes **anywhere in the piece**; piano grand staff by default; the score must
 **never scroll or zoom while a palm rests on the glass**; PDF export with basic
 scaling first, MusicXML / MIDI later; **Phase 0 lands note placement alone** so
@@ -406,7 +406,7 @@ chords via the stem). Rendered as a class on the SVG groups (brass fill + halo,
 as the sight-singing *current* state). Selection survives re-render (ids are
 stable) and undo / redo (whatever still exists stays selected). Keyboard: ←/→ move to the previous / next event in the staff, ↑/↓
 re-pitch, Shift+←/→ extend, Delete / Backspace remove, Cmd/Ctrl+Z / Shift+Z
-undo / redo, `1`–`7` = 64th … whole (the MuseScore mapping), `.` dot, `r` rest,
+undo / redo, `1`–`7` = 64th … whole (the MuseScore mapping), `.` dot,
 `t` tie, `h` Pan, `v` Select, `Esc` clear.
 
 ### 8.5 Sound
@@ -589,7 +589,7 @@ per dynamic, no tempo map beyond a default 100 bpm. A follow-up card, not the MV
 - **Playwright** (`tests/e2e/compose.mjs`, Chromium, iPad user agent for the
   touch policy): new composition → arm quarter → tap ×4 → four quarters in bar
   1 and bar 2 present; tap an existing head → selected; palette half → retyped;
-  overflow → nudge and unchanged; undo ×2 / redo; rest toggle; a touch pointer
+  overflow → nudge and unchanged; undo ×2 / redo; a touch pointer
   with width 60 does nothing; Pan pans; reload restores. Screenshots at phone
   and iPad widths attached to the card.
 - **Leif's iPad pass** after P0 is the gate for everything after.

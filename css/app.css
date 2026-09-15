@@ -2106,11 +2106,8 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-glyph { font-family: "Bravura"; font-size: 2rem; line-height: 0; display: inline-block; height: 0; transform: translateY(var(--dy, -0.4rem)); pointer-events: none; }
 .cp-glyph-sm { font-size: 1.55rem; }
 .cp-glyph-xs { font-size: 1.25rem; }
-.cp-glyph-rest { font-size: 1.8rem; }
 .cp-dur-more { padding: 0 0.55rem 0 0.6rem; gap: 0.15rem; }
 .cp-dur-more .cp-glyph-sm { margin-right: 0.15rem; }
-.cp-rest { padding: 0 0.85rem 0 0.7rem; gap: 0.35rem; }
-.cp-rest .cp-rest-word { font-size: 0.9rem; }
 .cp-dur-more.on .cp-glyph { color: var(--fg-on-accent); }
 .cp-more-wrap { position: relative; display: inline-flex; }
 .cp-more[hidden] { display: none; }
@@ -2316,11 +2313,10 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
   .cp-btn .ic { width: 1.3rem; height: 1.3rem; }
   .cp-btn.cp-sq, .cp-header .cp-btn.cp-sq { width: 2.8rem; min-width: 2.8rem; max-width: 2.8rem; }
   .cp-glyph { font-size: 1.6rem; }
-  .cp-glyph-rest { font-size: 1.45rem; }
-  .cp-tempo-mark, .cp-mode .cp-word, .cp-rest .cp-rest-word, .cp-pick-label { display: none; }
+  .cp-tempo-mark, .cp-mode .cp-word, .cp-pick-label { display: none; }
   .cp-header .cp-btn { height: 2.8rem; }
   .cp-grid { grid-template-columns: repeat(4, auto); }
-  .cp-mode, .cp-rest { padding: 0 0.5rem; }
+  .cp-mode { padding: 0 0.5rem; }
   .cp-pos-wrap { min-width: 6rem; }
   .cp-sep { height: 1.8rem; margin: 0 0.15rem; }
 }
