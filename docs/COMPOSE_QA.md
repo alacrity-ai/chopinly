@@ -29,6 +29,14 @@ phase's card (WSHED-115 … 122).
 - [ ] Play: the repeat plays twice with ending 1 then ending 2; the playhead jumps back; from the D.S. the music returns to the segno, skips ending 1, jumps at To Coda; Adagio slows the bar it starts at.
 - [ ] Export PDF: barlines, brackets, signs and words are on paper. Export MusicXML → Sibelius shows the repeats, endings and jumps; Sibelius → import keeps them.
 
+## Piano (WSHED-125)
+- [ ] Rails ▾ → Piano. Ped., tap beat 1 of bar 1 on the lower staff, tap beat 1 of bar 2: *Ped.* and a line with an up-hook under the lower staff. Ped. again, tap beat 1 of bar 2 then beat 3: the join becomes a notch (a retake).
+- [ ] 8va, tap the first note of bar 3 on the upper staff, tap its last note: *8va* with a dashed line and a hook; the heads under it draw an octave lower, ledger lines gone; play — the pitch is the same. 8vb on the lower staff likewise (an octave higher).
+- [ ] Select a chord, tap **3**: a 3 on every head; tap **3** again: gone. Nothing selected, tap **2**, then tap three noteheads in turn: each gets a 2 and the button stays lit; tap one of them again: its 2 goes; Esc disarms. Upper-staff digits sit above the notes, lower-staff digits below; a chord's digits stack in the notes' order.
+- [ ] In Select mode a pedal or octave line selects, drags in time, lifts by whole steps, stretches by its end handle; Delete removes it; undo restores.
+- [ ] Play a bar under a pedal: the notes ring until the pedal lifts.
+- [ ] Export PDF: the lines, signs and digits are on paper (the octave line dashed). Export MusicXML → Sibelius shows the pedal, the octave line and the fingering; Sibelius → import keeps them.
+
 ## Voices (WSHED-120)
 - [ ] `voice ▾` → 2, tap: the second voice's stems point down; rests of the two voices sit apart; a rest drags up or down.
 - [ ] ⌘⇧↑ / ↓ (or the menu) sends a note to the other staff and its beam follows.

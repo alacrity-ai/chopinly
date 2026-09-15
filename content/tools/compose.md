@@ -3,7 +3,7 @@ name: Compose
 order: 7
 route: compose
 title: "Free music notation for piano — tap to write, play back, export PDF and MusicXML | Chopinly"
-description: "Write piano music on an iPad or a phone without handwriting recognition: pick a note value, tap the staff, and the note lands exactly there on an engraved grand staff. Chords, ties, tuplets, voices, dynamics and hairpins, repeats and endings, D.C. and coda jumps, tempo changes, playback that follows the form, vector PDF into your scores, MusicXML export and import for Sibelius, MuseScore and Finale. Free, offline, no sign-up."
+description: "Write piano music on an iPad or a phone without handwriting recognition: pick a note value, tap the staff, and the note lands exactly there on an engraved grand staff. Chords, ties, tuplets, voices, dynamics and hairpins, repeats and endings, D.C. and coda jumps, tempo changes, pedal lines, 8va and fingering, playback that follows the form, vector PDF into your scores, MusicXML export and import for Sibelius, MuseScore and Finale. Free, offline, no sign-up."
 short: "Tap-to-write notation on a grand staff: playback, PDF into your scores, MusicXML both ways."
 h1: "Compose"
 lede: "A grand staff that takes a tap where a pen would go. Choose the value, touch the line or the space, and the note is there — engraved, in time, ready to play back, print or hand to Sibelius."
@@ -18,7 +18,9 @@ cta: "Open compose"
 
 **Shape the form.** A Form rail puts double and final barlines, repeats with first and second endings, segno and coda signs, *D.C.* and *D.S. al Fine* or *al Coda*, *To Coda*, *Fine*, rehearsal letters and tempo changes (*Adagio ♩ = 60*) on the bar you tap.
 
-**Hear it.** Play, pause, stop, skip by the bar, drag the playhead, set a tempo. Playback follows the form — repeats twice, endings in turn, the jumps — and slows or quickens at each tempo mark; dynamics and hairpins shape the velocities; slurs play legato; rolled chords roll.
+**Mark it for the hands.** A Piano rail puts a pedal line (*Ped.* to the lift, with retakes), an *8va* or *8vb* line (the notes under it draw an octave lower or higher; the pitch is untouched) and fingering — a digit on each notehead, stamped on a selection or by tapping heads with the digit armed — where you tap.
+
+**Hear it.** Play, pause, stop, skip by the bar, drag the playhead, set a tempo. Playback follows the form — repeats twice, endings in turn, the jumps — and slows or quickens at each tempo mark; the pedal holds the notes under it; dynamics and hairpins shape the velocities; slurs play legato; rolled chords roll.
 
 **Keep it.** Pieces save as you write and, with an account, follow you between devices. Undo reaches back two hundred steps.
 
@@ -26,7 +28,7 @@ cta: "Open compose"
 
 **PDF.** The export sheet shows page one at the staff size you choose, on Letter or A4, with the margins and a title block, then saves the file to the device or shares it. *Add to Scores* puts the same PDF into your [Scores](/scores) library with the title, composer and tags, so the piece you wrote is the piece you practise, with bookmarks and Pencil ink like any other score; send it again after a change and the library copy is replaced in place.
 
-**MusicXML.** *Export MusicXML* writes a MusicXML 4.0 file — pitches, rhythms, chords, ties, tuplets, voices, cross-staff notes, key, time and clef changes, articulations, ornaments, dynamics, hairpins, text and tempo — that Sibelius, MuseScore, Finale and Dorico open. The reverse works too: **import** a `.musicxml`, `.xml` or compressed `.mxl` file from any of those programs (or from a scan you had recognised elsewhere) and it becomes a composition you can edit, play and print. What Compose cannot hold is set aside and named: repeats, lyrics, chord symbols, pedal lines, grace notes.
+**MusicXML.** *Export MusicXML* writes a MusicXML 4.0 file — pitches, rhythms, chords, ties, tuplets, voices, cross-staff notes, key, time and clef changes, articulations, ornaments, dynamics, hairpins, text, tempo, pedal and octave lines, fingering — that Sibelius, MuseScore, Finale and Dorico open. The reverse works too: **import** a `.musicxml`, `.xml` or compressed `.mxl` file from any of those programs (or from a scan you had recognised elsewhere) and it becomes a composition you can edit, play and print. What Compose cannot hold is set aside and named: lyrics, chord symbols, grace notes.
 
 ## Made for the glass
 

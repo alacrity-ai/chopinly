@@ -5,6 +5,8 @@ export const SCHEMA = 3; // v3 (WSHED-122): dynamics, hairpins and text are bar-
 /** Dynamics, softest to loudest; the hairpin directions. */
 export const DYNAMICS = ["pp", "p", "mp", "mf", "f", "ff"];
 export const HAIRPINS = ["cresc", "dim"];
+export const SPAN_KINDS = ["hairpin", "pedal", "ottava"]; // expressions with an end (docs/COMPOSE_PIANO_DESIGN.md §1): one kind on one staff never overlaps itself
+export const FINGER_MAX = 5;
 export const TEXT_MAX = 40;
 export const MAX_VOICES = 4;
 /** How far a rest may be dragged from its automatic place, in staff steps (`ev.restY`). */
@@ -113,17 +115,20 @@ export function validate(doc) {
       if (x.dy !== undefined && (!Number.isInteger(x.dy) || x.dy === 0 || Math.abs(x.dy) > EXPR_Y_MAX)) throw new Error(`bar ${bi + 1}: ${x.id}: dy must be a whole number of steps within ±${EXPR_Y_MAX} (absent when 0)`);
       if (x.kind === "dyn") { if (!DYNAMICS.includes(x.value)) throw new Error(`bar ${bi + 1}: ${x.id} is not a dynamic`); }
       else if (x.kind === "text") { if (typeof x.value !== "string" || !x.value.trim() || x.value.length > TEXT_MAX) throw new Error(`bar ${bi + 1}: ${x.id} text`); }
-      else if (x.kind === "hairpin") {
+      else if (SPAN_KINDS.includes(x.kind)) {
         const eb = doc.measures[x.end?.bar];
-        if (!HAIRPINS.includes(x.dir) || !eb) throw new Error(`bar ${bi + 1}: hairpin ${x.id} has no end`);
+        if (x.kind === "hairpin" && !HAIRPINS.includes(x.dir)) throw new Error(`bar ${bi + 1}: hairpin ${x.id} has no direction`);
+        if (x.kind === "ottava" && x.dir !== 1 && x.dir !== -1) throw new Error(`bar ${bi + 1}: octave line ${x.id} must be 8va (1) or 8vb (-1)`);
+        if (x.kind === "pedal" && x.dir !== undefined) throw new Error(`bar ${bi + 1}: pedal ${x.id} carries a direction`);
+        if (!eb) throw new Error(`bar ${bi + 1}: ${x.kind} ${x.id} has no end`);
         const ecap = capacity(timeAt(doc, x.end.bar)), egrid = exprGrid(timeAt(doc, x.end.bar));
-        if (!Number.isInteger(x.end.at) || x.end.at < 0 || x.end.at >= ecap || x.end.at % egrid) throw new Error(`bar ${bi + 1}: hairpin ${x.id} ends off the grid`);
-        if (x.end.bar < bi || (x.end.bar === bi && x.end.at <= x.at)) throw new Error(`bar ${bi + 1}: hairpin ${x.id} ends before it starts`);
+        if (!Number.isInteger(x.end.at) || x.end.at < 0 || x.end.at >= ecap || x.end.at % egrid) throw new Error(`bar ${bi + 1}: ${x.kind} ${x.id} ends off the grid`);
+        if (x.end.bar < bi || (x.end.bar === bi && x.end.at <= x.at)) throw new Error(`bar ${bi + 1}: ${x.kind} ${x.id} ends before it starts`);
       } else throw new Error(`bar ${bi + 1}: ${x.id} has no kind`);
       if (ids.has(x.id)) throw new Error(`duplicate id ${x.id}`);
       ids.add(x.id);
       if (prev && (prev.at > x.at || (prev.at === x.at && prev.staff > x.staff))) throw new Error(`bar ${bi + 1}: expressions out of order`);
-      if (prev && prev.at === x.at && prev.staff === x.staff && prev.kind === x.kind && x.kind !== "hairpin") throw new Error(`bar ${bi + 1}: two ${x.kind}s on one slot`);
+      if (prev && prev.at === x.at && prev.staff === x.staff && prev.kind === x.kind && !SPAN_KINDS.includes(x.kind)) throw new Error(`bar ${bi + 1}: two ${x.kind}s on one slot`);
       prev = x;
     }
     // form (docs/COMPOSE_FORM_DESIGN.md §1): barlines, an ending over bars, marks on the bar
@@ -160,6 +165,7 @@ export function validate(doc) {
         if (ids.has(ev.id)) throw new Error(`duplicate event id ${ev.id}`);
         ids.add(ev.id);
         if (ev.kind === "note" && !(ev.pitches?.length > 0)) throw new Error(`note ${ev.id} without pitches`);
+        if (ev.kind === "note") for (const p of ev.pitches) if (p.finger !== undefined && !(Number.isInteger(p.finger) && p.finger >= 1 && p.finger <= FINGER_MAX)) throw new Error(`${ev.id}: a finger is 1–${FINGER_MAX}`);
         if (ev.kind === "rest" && ev.pitches) throw new Error(`rest ${ev.id} with pitches`);
         if (ev.hidden && ev.kind !== "rest") throw new Error(`note ${ev.id} marked hidden`);
         if (v3 && (ev.dyn !== undefined || ev.hairpin !== undefined || ev.text !== undefined)) throw new Error(`${ev.id}: a v3 document keeps its marks in expressions`);
@@ -173,12 +179,12 @@ export function validate(doc) {
       }
     }));
   });
-  // hairpins on a staff never overlap (a span is [start, end) in absolute ticks)
+  // spans of one kind on a staff never overlap (a span is [start, end) in absolute ticks); kinds may share a range
   const spans = [];
   let abs = 0;
-  doc.measures.forEach((m, bi) => { const starts = abs; abs += capacity(timeAt(doc, bi)); for (const x of m.expressions ?? []) if (x.kind === "hairpin") spans.push({ staff: x.staff, a: starts + x.at, b: barStartAbs(doc, x.end.bar) + x.end.at, id: x.id, bar: bi }); });
-  spans.sort((p, q) => p.staff - q.staff || p.a - q.a);
-  for (let i = 1; i < spans.length; i++) if (spans[i].staff === spans[i - 1].staff && spans[i].a < spans[i - 1].b) throw new Error(`bar ${spans[i].bar + 1}: hairpins ${spans[i - 1].id} and ${spans[i].id} overlap`);
+  doc.measures.forEach((m, bi) => { const starts = abs; abs += capacity(timeAt(doc, bi)); for (const x of m.expressions ?? []) if (SPAN_KINDS.includes(x.kind)) spans.push({ kind: x.kind, staff: x.staff, a: starts + x.at, b: barStartAbs(doc, x.end.bar) + x.end.at, id: x.id, bar: bi }); });
+  spans.sort((p, q) => p.kind.localeCompare(q.kind) || p.staff - q.staff || p.a - q.a);
+  for (let i = 1; i < spans.length; i++) if (spans[i].kind === spans[i - 1].kind && spans[i].staff === spans[i - 1].staff && spans[i].a < spans[i - 1].b) throw new Error(`bar ${spans[i].bar + 1}: ${spans[i].kind}s ${spans[i - 1].id} and ${spans[i].id} overlap`);
   return true;
 }
 function barStartAbs(doc, bar) { let t = 0; for (let b = 0; b < bar; b++) t += capacity(timeAt(doc, b)); return t; }

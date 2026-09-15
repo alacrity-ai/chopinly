@@ -2,7 +2,7 @@
 // on / off events in ticks, sequenced on the audio clock through the piano
 // voice. `timeline` is pure — node-testable; `createPlayer` owns the clock.
 import { PPQ } from "./ticks.js";
-import { onsets, midiOf, barStarts, expressionsOf, unroll, tempoMap } from "./engine.js";
+import { onsets, midiOf, barStarts, expressionsOf, spansOf, unroll, tempoMap } from "./engine.js";
 import { capacity } from "./ticks.js";
 import { timeAt as timeOfBar } from "./model.js";
 import { createPiano } from "../keyboard/piano.js";
@@ -60,6 +60,8 @@ export function timeline(doc, { tempo } = {}) {
   const notes = [];
   const vel = velocities(doc);
   const passes = [], tempos = [];
+  const pedalsBy = Array.from({ length: doc.parts[0]?.staves ?? 0 }, (_, s) => spansOf(doc, "pedal", s)); // docs/COMPOSE_PIANO_DESIGN.md §7
+  const pedaled = pedalsBy.map(() => []); // per staff: [{ from, to }] in performance ticks, adjacent pieces merged
   let perf = 0, prevBar = -2;
   let open = new Map(); // "staff:voice:midi" → the note still sounding through a tie
   let depth = new Map(); // open slurs per staff + voice: notes under a slur play legato (no air before the next note); the slur's last note breathes
@@ -68,6 +70,12 @@ export function timeline(doc, { tempo } = {}) {
     if (b !== prevBar + 1) { open = new Map(); depth = new Map(); } // a jump or a repeat: nothing carries across
     if (!tempos.length || tempos[tempos.length - 1].bpm !== bpms[b]) tempos.push({ at: perf, bpm: bpms[b] });
     passes.push({ bar: b, pass, perfStart: perf, docStart: starts[b], len });
+    pedalsBy.forEach((list, staff) => { for (const pd of list) { // the pedal's piece inside this bar, in performance time
+      const from = Math.max(pd.abs, starts[b]), to = Math.min(pd.absEnd, starts[b] + len);
+      if (from >= to) continue;
+      const seg = { from: perf + (from - starts[b]), to: perf + (to - starts[b]) }, last = pedaled[staff][pedaled[staff].length - 1];
+      if (last && last.to === seg.from) last.to = seg.to; else pedaled[staff].push(seg);
+    } });
     doc.measures[b].staves.forEach((s, staff) => s.voices.forEach((v, voice) => {
       if (!v) return;
       const line = `${staff}:${voice}`;
@@ -93,6 +101,7 @@ export function timeline(doc, { tempo } = {}) {
     perf += len;
     prevBar = b;
   }
+  for (const n of notes) { const seg = pedaled[n.staff].find((sg) => sg.from <= n.at && n.at < sg.to); if (seg && seg.to > n.at + n.len) { n.len = seg.to - n.at; n.pedal = true; } } // a note under the pedal sounds until it lifts
   notes.sort((a, b) => a.at - b.at || a.staff - b.staff || a.midi - b.midi);
   return { notes, total: perf, passes, tempos };
 }

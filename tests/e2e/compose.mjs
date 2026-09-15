@@ -414,7 +414,7 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   if ((await page.locator("#cp-file-more .cp-menu-row:disabled").count()) !== 1 || (await page.locator("#cp-file-more .cp-menu-row:not(:disabled)").count()) !== 3) throw new Error("file menu: two PDF rows and MusicXML live, MIDI a placeholder");
   await page.click("[data-pop=cp-file-more]");
   await page.click("[data-pop=cp-rails-more]");
-  if ((await page.locator("#cp-rails-more .cp-rail-row").count()) !== 6) throw new Error("rail rows"); // controls · transport · notes · utility · expression · form
+  if ((await page.locator("#cp-rails-more .cp-rail-row").count()) !== 7) throw new Error("rail rows"); // controls · transport · notes · utility · expression · form · piano
   await page.click(".cp-rail-row[data-rail=transport]");
   if (!(await page.locator(".cp-transport").isHidden()) || (await page.locator("#cp-rails-more").isHidden())) throw new Error("transport should hide and the menu stay open");
   await page.click(".cp-rail-row[data-rail=transport]");
@@ -944,6 +944,72 @@ await step("form rail: Rails ▾ → Form; a repeat end on bar 4 draws dots on b
   await page.waitForFunction(() => document.querySelector(".lb-toast.show")?.textContent.includes("imported"), null, { timeout: 10000 });
   await page.waitForSelector(".cp-editor .cp-svg");
   if ((await form()) !== want) throw new Error(`imported form ${await form()} ≠ ${want}`);
+  const imp = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.id);
+  await page.evaluate(async (id) => { const { logbook } = await import("/js/lib/logbook.js"); document.querySelector(".cp-editor").__editor.close({ silent: true }); logbook.removeComposition(id); }, imp);
+  await page.goto(`${BASE}/?app=1&t=9#/compose/${cid}`);
+  await page.waitForSelector(".cp-editor .cp-svg");
+  await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
+});
+
+await step("piano rail (WSHED-125, via Rails ▾): a pedal by three taps draws Ped. + line on the lower staff; 8va over two beats draws those heads an octave lower and leaves the pitches; a finger stamps a selected head, an armed digit stamps by tap and the same digit clears; export → import keeps all three", async () => {
+  await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
+  if ((await state()).mode !== "place") await page.keyboard.press("v");
+  await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
+  await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=piano]"); await page.click("[data-pop=cp-rails-more]");
+  if (await page.locator("#cp-piano").isHidden()) throw new Error("the Piano rail did not open");
+  const ed = () => document.querySelector(".cp-editor").__editor;
+  const b = await page.evaluate(() => { const d = document.querySelector(".cp-editor").__editor.state.doc; return d.measures.findIndex((m) => m.staves[0].voices[0].some((e) => e.kind === "note" && !e.dur.tuplet)); }); // a bar with an untied plain note on the upper staff
+  const headOf = () => page.evaluate((b) => { const L = document.querySelector(".cp-editor").__editor.layout; const d = L.drawn.find((x) => !x.rest && x.staff === 0 && x.bar === b && x.ticks === 0); return d && { id: d.id, y: d.heads[0].y, step: d.heads[0].step, pi: d.heads[0].pi, pitch: JSON.stringify(d.pitches[d.heads[0].pi]) }; }, b);
+  const lines = () => page.evaluate(() => { const d = document.querySelector(".cp-editor").__editor.state.doc; const out = []; d.measures.forEach((m, bi) => { for (const x of m.expressions ?? []) if (x.kind === "pedal" || x.kind === "ottava") out.push(`${x.kind}${x.dir ?? ""}:${x.staff}@${bi}:${x.at}-${x.end.bar}:${x.end.at}`); }); return out.join(" "); });
+  const fingersOf = () => page.evaluate(() => { const d = document.querySelector(".cp-editor").__editor.state.doc; const out = []; d.measures.forEach((m, bi) => m.staves.forEach((s, si) => s.voices.forEach((v) => v && v.forEach((e) => e.pitches?.forEach((p, pi) => { if (p.finger) out.push(`${bi}:${si}:${p.step}${p.octave}:${p.finger}`); }))))); return out.join(" "); });
+  const before = await headOf();
+  if (!before) throw new Error("no head to work with in bar " + (b + 1));
+  // a pedal: the button, where it goes down (beat 1, lower staff), where it lifts (beat 4)
+  await page.click(".cp-pedal-btn");
+  if ((await state()).pending?.kind !== "pedal" || (await page.getAttribute(".cp-pedal-btn", "aria-pressed")) !== "true") throw new Error("pedal did not arm");
+  await tapAt({ bar: b, staff: 1, ticks: 300, step: 4 });
+  if (!(await state()).pending?.start) throw new Error("the first tap did not start the pedal: " + JSON.stringify((await state()).pending));
+  await tapAt({ bar: b, staff: 1, ticks: 3 * PPQ + 300, step: 4 });
+  if ((await lines()) !== `pedal:1@${b}:0-${b}:${3 * PPQ}` || (await state()).pending) throw new Error("pedal not placed: " + (await lines()));
+  if ((await page.locator(".cp-svg .cp-expr[data-kind=pedal]").count()) < 1 || (await page.locator(".cp-svg .cp-pedal-line").count()) < 1) throw new Error("pedal not drawn");
+  // 8va over beats 1–3 of the upper staff: the heads draw seven steps (3.5 S) lower, the pitch is the same
+  await page.click(".cp-ottava-btn[data-dir='1']");
+  await tapAt({ bar: b, staff: 0, ticks: 300, step: 4 }); await tapAt({ bar: b, staff: 0, ticks: 2 * PPQ + 300, step: 4 });
+  const after = await headOf();
+  if (!(await lines()).includes(`ottava1:0@${b}:0-${b}:${2 * PPQ}`)) throw new Error("8va not placed: " + (await lines()));
+  if (Math.abs(after.y - before.y - 3.5) > 1e-6 || after.pitch !== before.pitch) throw new Error(`8va: head y ${before.y} → ${after.y}, pitch ${before.pitch} → ${after.pitch}`);
+  if ((await page.locator(".cp-svg .cp-expr[data-kind=ottava] .cp-ottava-line").count()) !== 1) throw new Error("8va line not drawn");
+  // fingering: tap the head (it selects), digit 3 stamps it; Escape; digit 2 armed, a tap on the head stamps 2 (and stays armed), the same tap again clears
+  const head = await point({ bar: b, staff: 0, ticks: 0, step: after.step });
+  await page.mouse.click(head.x, head.y);
+  if ((await state()).selection.join() !== `${after.id}:${after.pi}`) throw new Error("head not selected: " + JSON.stringify((await state()).selection));
+  await page.click(".cp-finger-btn[data-n='3']");
+  if (!(await fingersOf()).endsWith(":3") || (await page.locator(".cp-svg .cp-finger").count()) !== 1) throw new Error("finger 3 not stamped: " + (await fingersOf()));
+  await page.keyboard.press("Escape");
+  await page.click(".cp-finger-btn[data-n='2']");
+  if ((await state()).pending?.kind !== "finger" || (await state()).pending.value !== 2) throw new Error("finger 2 did not arm");
+  await page.mouse.click(head.x, head.y);
+  if (!(await fingersOf()).endsWith(":2") || (await state()).pending?.kind !== "finger") throw new Error("armed finger did not stamp / stay armed: " + (await fingersOf()) + " " + JSON.stringify((await state()).pending));
+  await page.mouse.click(head.x, head.y);
+  if ((await fingersOf()) !== "" || (await page.locator(".cp-svg .cp-finger").count()) !== 0) throw new Error("the same digit did not clear: " + (await fingersOf()));
+  await page.mouse.click(head.x, head.y); // stamped again for the round trip
+  await page.keyboard.press("Escape");
+  if ((await state()).pending) throw new Error("Escape did not disarm the finger");
+  await page.screenshot({ path: `${S}/cp-23-piano.png` });
+  // MusicXML keeps the three
+  const want = { lines: await lines(), fingers: await fingersOf() };
+  await page.click("[data-pop=cp-file-more]");
+  const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 20000 }), page.click("#cp-file-more [data-act=export-xml]")]);
+  const xml = readFileSync(await dl.path(), "utf8");
+  if (!/<pedal type="start" line="yes"\/>/.test(xml) || !/<octave-shift type="down" size="8"/.test(xml) || !/<fingering>2<\/fingering>/.test(xml)) throw new Error("pedal / 8va / fingering missing from the MusicXML");
+  const cid = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.id);
+  await page.click("[data-act=back]");
+  await page.waitForSelector("#cp-import-file", { state: "attached" });
+  await page.setInputFiles("#cp-import-file", await dl.path());
+  await page.waitForFunction(() => document.querySelector(".lb-toast.show")?.textContent.includes("imported"), null, { timeout: 10000 });
+  await page.waitForSelector(".cp-editor .cp-svg");
+  const got = { lines: await lines(), fingers: await fingersOf() };
+  if (JSON.stringify(got) !== JSON.stringify(want)) throw new Error(`imported ${JSON.stringify(got)} ≠ ${JSON.stringify(want)}`);
   const imp = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.id);
   await page.evaluate(async (id) => { const { logbook } = await import("/js/lib/logbook.js"); document.querySelector(".cp-editor").__editor.close({ silent: true }); logbook.removeComposition(id); }, imp);
   await page.goto(`${BASE}/?app=1&t=9#/compose/${cid}`);

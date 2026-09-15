@@ -9,8 +9,8 @@ import { toast } from "../logbook/util.js";
 import { haptic } from "../logbook/motion.js";
 import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
-import { slotAt, thingAt, xOfTicks, barAt, lasso } from "../../lib/compose/hit.js";
-import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, moveExpressions, moveHairpinEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
+import { slotAt, thingAt, xOfTicks, barAt, lasso, spans as spansOfLayout, isHandle } from "../../lib/compose/hit.js";
+import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, addPedal, addOttava, finger, moveExpressions, moveSpanEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { createPlayer } from "../../lib/compose/play.js";
@@ -25,7 +25,9 @@ import { toMusicXml, musicXmlFileName, MUSICXML_TYPE } from "../../lib/compose/m
 
 const TAP_MS = 300, TAP_PX = 10, PALM_PX = 40, S_MIN = 8, S_MAX = 22, SAVE_MS = 300, LASSO_PX = 6;
 const KEY_BASE = { 1: 64, 2: 32, 3: 16, 4: 8, 5: 4, 6: 2, 7: 1 };
-const EXPR_TYPES = new Set(["dyn", "text", "hairpin", "hairpin-start", "hairpin-end"]); // the selectable expressions and a selected hairpin's two handles
+const EXPR_TYPES = new Set(["dyn", "text", "hairpin", "hairpin-start", "hairpin-end", "pedal", "pedal-start", "pedal-end", "ottava", "ottava-start", "ottava-end"]); // the selectable expressions and a selected span's two handles
+const SPAN_PENDING = new Set(["hairpin", "pedal", "ottava"]); // pending kinds placed by two taps (start, end)
+const LINE_NAME = { pedal: "pedal", 1: "8va", "-1": "8vb" };
 let clipboard = null; // the copied phrase — lives for the session, so it can travel between compositions
 
 export function openEditor({ id, ctx, onClose }) {
@@ -111,10 +113,10 @@ export function openEditor({ id, ctx, onClose }) {
   function showSel() {
     R.setSelection(selection);
     const pts = [];
-    for (const hp of L.hairpins) { if (!selection.has(hp.id)) continue; if (hp.half !== "in" && hp.half !== "both") pts.push({ x: hp.x1, y: hp.y }); if (hp.half !== "out" && hp.half !== "both") pts.push({ x: hp.x2, y: hp.y }); }
+    for (const hp of spansOfLayout(L)) { if (!selection.has(hp.id)) continue; if (hp.half !== "in" && hp.half !== "both") pts.push({ x: hp.x1, y: hp.y }); if (hp.half !== "out" && hp.half !== "both") pts.push({ x: hp.x2, y: hp.y }); }
     R.showHandles(pts);
   }
-  const selectedHairpins = () => new Set([...selection].filter((k) => L?.hairpins.some((hp) => hp.id === k)));
+  const selectedSpans = () => new Set(L ? [...selection].filter((k) => spansOfLayout(L).some((hp) => hp.id === k)) : []);
   function syncTransport() { rails.transport({ playing: player.playing, bpm: tempo, total: barStarts(doc).total, pos: player.position, bar: locate(doc, player.position)?.bar ?? doc.measures.length - 1, bars: doc.measures.length }); }
   function commit(next) {
     if (next === doc) return;
@@ -192,6 +194,7 @@ export function openEditor({ id, ctx, onClose }) {
     const { x, y } = toS(clientX, clientY);
     const slot = slotAt(L, x, y);
     if (!slot) return null;
+    if (pending.kind === "finger") return { bar: slot.bar, x, y };
     if (isExprPending()) { const s = exprSlot(doc, slot.bar, slot.ticks); return { bar: s.bar, at: s.at, staff: pending.start ? pending.start.staff : slot.staff }; }
     if (pending.kind !== "clef") return { bar: slot.bar };
     const time = timeAt(doc, slot.bar), beat = groupSize(time), cap = capacity(time);
@@ -199,7 +202,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (at >= cap) { if (bar + 1 < doc.measures.length) { bar++; at = 0; } else at = cap - beat; } // the tail of the last beat means the next barline
     return { bar, staff: slot.staff, at };
   }
-  const isExprPending = () => pending && (pending.kind === "dyn" || pending.kind === "text" || pending.kind === "hairpin");
+  const isExprPending = () => pending && (pending.kind === "dyn" || pending.kind === "text" || SPAN_PENDING.has(pending.kind));
   const absOf = (bar, at) => barStarts(doc).starts[bar] + at;
   /** "beat 2" / "the & of 2" of a bar, for toasts. */
   const slotName = (bar, at) => { const beat = WHOLE / timeAt(doc, bar).unit, n = Math.floor(at / beat) + 1; return `${at % beat ? `the & of ${n}` : `beat ${n}`} of bar ${bar + 1}`; };
@@ -211,11 +214,14 @@ export function openEditor({ id, ctx, onClose }) {
       const si = L.hit.systems.indexOf(hb.sys), x = xOfTicks(hb.bar, t.at), abs = absOf(t.bar, t.at);
       if (pending.kind === "dyn") return R.showGhost({ dyn: pending.value, x: x + 0.59, y: L.exprLine(si, t.staff, abs, abs + 1) });
       if (pending.kind === "text") return R.showGhost({ text: pending.value, x, y: L.textLine(si, t.staff, abs) });
-      if (!pending.start) return R.showGhost({ hairpin: pending.value, x1: x, x2: x + 3, y: L.exprLine(si, t.staff, abs, abs + 1) });
+      const lineY = (k, staff, a, b) => (pending.kind === "hairpin" ? L.exprLine(k, staff, a, b) : pending.kind === "pedal" ? L.pedalLine(k, staff, a, b) : L.ottavaLine(k, staff, a, b + 1, pending.value));
+      if (!pending.start) return pending.kind === "hairpin" ? R.showGhost({ hairpin: pending.value, x1: x, x2: x + 3, y: lineY(si, t.staff, abs, abs + 1) }) : R.showGhost({ line: pending.kind, dir: pending.value, x1: x - 0.2, x2: x + 4, y: lineY(si, t.staff, abs, abs + 1) });
       const s = pending.start, sb = barAt(L, s.bar), ssi = L.hit.systems.indexOf(sb.sys), sx = xOfTicks(sb.bar, s.at), sAbs = absOf(s.bar, s.at);
       const sameSys = ssi === si, x2 = sameSys ? x : sb.sys.bars[sb.sys.bars.length - 1].x1 - 0.3; // on another system the band runs open to the start system's end
+      if (pending.kind !== "hairpin") return R.showGhost({ line: pending.kind, dir: pending.value, x1: sx - 0.2, x2: Math.max(sx + 0.5, x2), y: lineY(ssi, s.staff, sAbs, Math.max(sAbs + 1, abs)) });
       return R.showGhost({ hairpin: pending.value, x1: sx, x2: Math.max(sx + 0.5, x2), y: L.exprLine(ssi, s.staff, sAbs, Math.max(sAbs + 1, abs)) });
     }
+    if (pending.kind === "finger") { R.showGhost(null); return R.showTarget(null); } // the head under the pen is the target; nothing to preview
     if (pending.kind !== "clef") { const hb = barAt(L, t.bar); R.showGhost(null); return R.showTarget(hb ? { hbar: hb.bar, sys: hb.sys } : null); }
     R.showTarget(null);
     const hb = barAt(L, t.bar);
@@ -244,6 +250,17 @@ export function openEditor({ id, ctx, onClose }) {
         if (!p.start) { pending = { ...p, start: t }; toast("now tap where it ends"); haptic(6); sync(); return; } // the first tap of three is the start; the second is the end
         commit(addHairpin(doc, { staff: p.start.staff, bar: p.start.bar, at: p.start.at, dir: p.value, end: { bar: t.bar, at: t.at } }).doc);
         toast(`${p.value === "cresc" ? "crescendo" : "diminuendo"} from ${slotName(p.start.bar, p.start.at)} to ${slotName(t.bar, t.at)}`);
+      } else if (p.kind === "pedal" || p.kind === "ottava") { // the Piano rail (WSHED-125): the same two taps as a hairpin
+        if (!p.start) { pending = { ...p, start: t }; toast(p.kind === "pedal" ? "now tap where it lifts" : "now tap the last note it covers"); haptic(6); sync(); return; }
+        const args = { staff: p.start.staff, bar: p.start.bar, at: p.start.at, end: { bar: t.bar, at: t.at } };
+        commit(p.kind === "pedal" ? addPedal(doc, args).doc : addOttava(doc, { ...args, dir: p.value }).doc);
+        toast(`${p.kind === "pedal" ? "pedal" : LINE_NAME[p.value]} from ${slotName(p.start.bar, p.start.at)} to ${slotName(t.bar, t.at)}`);
+      } else if (p.kind === "finger") { // stays armed: every tap on a head stamps it (the same digit there again clears it)
+        const th = thingAt(L, t.x, t.y);
+        if (!th || th.type !== "head") { toast("tap a notehead"); return; }
+        const next = finger(doc, [{ ev: th.ev, pi: th.pi }], p.value);
+        if (next !== doc) { commit(next); toast(find(next, th.ev).ev.pitches[th.pi].finger ? `finger ${p.value}` : `finger ${p.value} cleared`); haptic(6); }
+        return;
       } else if (p.kind === "barline") { // docs/COMPOSE_FORM_DESIGN.md §3: the picture says which end of the bar; "both" closes this bar and opens the next
         const k = p.value, b = t.bar, m = doc.measures[b];
         let next = doc;
@@ -294,9 +311,9 @@ export function openEditor({ id, ctx, onClose }) {
     if (pending) { applyChangeAt(clientX, clientY); return; }
     if (pasting) { dropAt(clientX, clientY); return; }
     const { x, y } = toS(clientX, clientY);
-    const thing = thingAt(L, x, y, mode === "select" ? selectedHairpins() : undefined);
+    const thing = thingAt(L, x, y, mode === "select" ? selectedSpans() : undefined);
     // In Place mode a rest (and a chord's stem, and an expression) is where the next note goes; only a notehead selects.
-    if (thing && (mode === "select" || thing.type === "head")) { if (thing.type === "hairpin-start" || thing.type === "hairpin-end") return; select(thing); return; }
+    if (thing && (mode === "select" || thing.type === "head")) { if (isHandle(thing.type)) return; select(thing); return; }
     if (mode === "select") { if (selection.size) { selection.clear(); showSel(); sync(); } return; }
     const slot = slotAt(L, x, y);
     if (!slot) return;
@@ -374,17 +391,17 @@ export function openEditor({ id, ctx, onClose }) {
   // (dynamic, text, hairpin) grabs in both directions: the pointer's slot moves it in time
   // (`moveExpressions`) and its vertical travel lifts it off its automatic line by staff steps
   // (`nudgeExpressionY`, quantised so two marks line up); a selected hairpin's end handle moves
-  // that end alone, sideways (`moveHairpinEnd`).
+  // that end alone, sideways (`moveSpanEnd`); pedal and octave lines (WSHED-125) behave as hairpins do.
   let drag = null; // { id, type, thing, items, cluster, wasSelected, y0, delta, base, preview, keys, t, at0?, at?, dy? }
   function grabStart(e, thing) {
-    const handle = thing.type === "hairpin-start" || thing.type === "hairpin-end", expr = EXPR_TYPES.has(thing.type);
+    const handle = isHandle(thing.type), expr = EXPR_TYPES.has(thing.type);
     const wasSelected = selection.has(keyOf(thing));
     // a grabbed head that belongs to an all-noteheads selection takes the whole cluster with it (rests and expressions likewise)
     const cluster = !handle && wasSelected && (thing.type === "rest" ? allRests() : expr ? allExprs() : allHeads()) && selection.size > 1;
     if (!cluster && !handle) select(thing, { toggle: false });
     const items = cluster ? selItems() : [{ ev: thing.ev, pi: thing.pi }];
     let at0 = null, ref = null; // at0: the slot under the pen at grab time (the drag's delta counts from there, so a vertical drag slides nothing); ref: the mark's own slot (or the grabbed end's) that the delta applies to
-    if (expr) { const { x, y } = toS(e.clientX, e.clientY), sl = slotAt(L, x, y), s0 = sl && exprSlot(doc, sl.bar, sl.ticks); at0 = s0 ? absOf(s0.bar, s0.at) : null; const f = findExpression(doc, thing.ev); ref = thing.type === "hairpin-end" ? absOf(f.x.end.bar, f.x.end.at) : absOf(f.bar, f.x.at); }
+    if (expr) { const { x, y } = toS(e.clientX, e.clientY), sl = slotAt(L, x, y), s0 = sl && exprSlot(doc, sl.bar, sl.ticks); at0 = s0 ? absOf(s0.bar, s0.at) : null; const f = findExpression(doc, thing.ev); ref = thing.type.endsWith("-end") ? absOf(f.x.end.bar, f.x.end.at) : absOf(f.bar, f.x.at); }
     drag = { id: e.pointerId, type: e.pointerType, thing, items, cluster, wasSelected, y0: e.clientY, delta: 0, base: doc, preview: doc, keys: [...selection], keys0: [...selection], t: performance.now(), at0, at: at0, ref, dy: 0 };
     R.showGhost(null);
     try { view.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
@@ -395,7 +412,7 @@ export function openEditor({ id, ctx, onClose }) {
       const { x, y } = toS(e.clientX, e.clientY);
       const slot = slotAt(L, x, y);
       if (!slot) return;
-      const type = drag.thing.type, handle = type === "hairpin-start" || type === "hairpin-end", ids = drag.items.map((it) => it.ev);
+      const type = drag.thing.type, handle = isHandle(type), ids = drag.items.map((it) => it.ev);
       const s = exprSlot(drag.base, slot.bar, slot.ticks), abs = barStarts(drag.base).starts[s.bar] + s.at;
       const dy = handle ? 0 : Math.round((drag.y0 - e.clientY) / (S / 2));
       if (drag.at0 === null || (abs === drag.at && dy === drag.dy)) return;
@@ -403,7 +420,7 @@ export function openEditor({ id, ctx, onClose }) {
         if (!handle) return moveExpressions(base, ids, delta);
         const tgt = slotOfAbs(base, drag.ref + delta);
         if (!tgt) throw new Nudge("as far right as it goes");
-        return moveHairpinEnd(base, drag.thing.ev, type === "hairpin-start" ? "start" : "end", tgt);
+        return moveSpanEnd(base, drag.thing.ev, type.endsWith("-start") ? "start" : "end", tgt);
       };
       let next = drag.base;
       try { next = sideways(next, abs - drag.at0); drag.at = abs; }
@@ -441,7 +458,7 @@ export function openEditor({ id, ctx, onClose }) {
       doc = g.base;
       if (g.delta !== 0) { selection.clear(); for (const k of (g.cluster ? g.keys0 ?? g.keys : [keyOf(g.thing)])) selection.add(k); layout(); }
       // a clean tap on an already-selected single note deselects it (the toggle a tap always had); a tap on a handle is nothing
-      if (!cancel && g.wasSelected && !g.cluster && g.thing.type !== "hairpin-start" && g.thing.type !== "hairpin-end" && performance.now() - g.t <= TAP_MS) { selection.clear(); showSel(); sync(); }
+      if (!cancel && g.wasSelected && !g.cluster && !isHandle(g.thing.type) && performance.now() - g.t <= TAP_MS) { selection.clear(); showSel(); sync(); }
       return;
     }
     doc = g.base;                         // commit records base → preview as one step
@@ -498,7 +515,7 @@ export function openEditor({ id, ctx, onClose }) {
   const wide = (e) => (e.width > PALM_PX || e.height > PALM_PX);
 
   /** The grabbable thing under the pointer: a head in any mode; in Select mode a rest or an expression (and a selected hairpin's handles) as well. */
-  const headUnder = (e) => { if (!L) return null; const { x, y } = toS(e.clientX, e.clientY); const t = thingAt(L, x, y, mode === "select" ? selectedHairpins() : undefined); return t?.type === "head" || (mode === "select" && t && (t.type === "rest" || EXPR_TYPES.has(t.type))) ? t : null; };
+  const headUnder = (e) => { if (!L) return null; const { x, y } = toS(e.clientX, e.clientY); const t = thingAt(L, x, y, mode === "select" ? selectedSpans() : undefined); return t?.type === "head" || (mode === "select" && t && (t.type === "rest" || EXPR_TYPES.has(t.type))) ? t : null; };
   view.addEventListener("pointerdown", (e) => {
     if (mode === "pan") { onPanDown(e); return; }
     if (e.pointerType === "touch") {
@@ -701,6 +718,28 @@ export function openEditor({ id, ctx, onClose }) {
         if (selection.size && selFacts().dyns) { try { commit(setExpressionValue(doc, selEvIds(), arg)); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); } return; }
         if (pending?.kind === "dyn" && pending.value === arg) { setPending(null); return; }
         setPending({ kind: "dyn", value: arg }); toast(`${arg} — tap the beat it goes on`);
+        return;
+      }
+      case "pedal": { // the Piano rail (WSHED-125): three taps like a hairpin
+        if (pending?.kind === "pedal") { setPending(null); return; }
+        setPending({ kind: "pedal", start: null }); toast("pedal — tap where it goes down, then where it lifts");
+        return;
+      }
+      case "ottava": {
+        if (pending?.kind === "ottava" && pending.value === arg) { setPending(null); return; }
+        setPending({ kind: "ottava", value: arg, start: null }); toast(`${LINE_NAME[arg]} — tap the first note it covers, then the last`);
+        return;
+      }
+      case "finger": { // with heads selected: stamps them (the same digit on all → cleared); else arms the digit for taps on heads
+        const n = Number(arg);
+        if (selection.size) {
+          if (!allNotes()) { toast("pick notes to finger"); return; }
+          try { const next = finger(doc, selItems(), n); if (next === doc) return; commit(next); toast(selItems().every((it) => { const f = find(next, it.ev); return (it.pi === undefined ? f.ev.pitches : [f.ev.pitches[it.pi]]).every((q) => q.finger === n); }) ? `finger ${n}` : `finger ${n} cleared`); haptic(8); }
+          catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+          return;
+        }
+        if (pending?.kind === "finger" && pending.value === n) { setPending(null); return; }
+        setPending({ kind: "finger", value: n }); toast(`finger ${n} — tap the notes`);
         return;
       }
       case "hairpin": { // three taps: the button, where it starts, where it ends

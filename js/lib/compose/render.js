@@ -87,6 +87,12 @@ export function renderComposition(container, L) {
       const o = 0.55, cresc = spec.hairpin === "cresc", a1 = cresc ? 0 : o, a2 = cresc ? o : 0, x1 = spec.x1, x2 = Math.max(spec.x1 + 0.5, spec.x2), y = spec.y;
       return [el("path", { class: "cp-hairpin", d: `M${px(x1)},${px(y - a1)} L${px(x2)},${px(y - a2)} M${px(x1)},${px(y + a1)} L${px(x2)},${px(y + a2)}` })];
     }
+    if (spec.line) { // a pedal / octave line being drawn: the sign at the start, a band to the pointer
+      const up = spec.line === "ottava" && spec.dir > 0, sign = spec.line === "pedal" ? G.pedal : up ? G.ottavaAlta : G.ottavaBassa;
+      const g = glyphOf(spec.x1, spec.y, sign, "glyph cp-ghost-sign"); g.setAttribute("style", `font-size:${(fs * (spec.line === "pedal" ? 0.85 : 0.8)).toFixed(1)}px`);
+      const ly = spec.line === "pedal" ? spec.y : up ? spec.y - 0.55 : spec.y - 0.4;
+      return [g, el("line", { class: spec.line === "pedal" ? "cp-pedal-line" : "cp-ottava-line", x1: px(spec.x1 + 2.3), y1: px(ly), x2: px(Math.max(spec.x1 + 2.8, spec.x2)), y2: px(ly) })];
+    }
     if (spec.glyph) { const gg = glyphOf(spec.x, spec.y, G[spec.glyph], "glyph"); if (spec.small) gg.setAttribute("style", `font-size:${(fs * 0.8).toFixed(1)}px`); return [gg]; }
     if (spec.rest) { const out = [glyphOf(spec.x, spec.y, restGlyph(spec.base), "glyph rest")]; for (let i = 0; i < (spec.dots ?? 0); i++) out.push(glyphOf(spec.x + 1.5 + i * 0.7, spec.y - 0.5, G.dot, "glyph head-part")); return out; }
     const out = [], headW = spec.base <= 1 ? 1.7 : 1.18;

@@ -151,7 +151,9 @@ node-tested; `js/tools/compose/*` is the UI. The merge rule stays in
       form?: [ { kind: "segno" }, { kind: "tempo", bpm: 120, text: "Allegro" } ], // v95: signs, jumps (dc, dsAlCoda …), rehearsal, tempo marks on the bar
       expressions?: [ { id, kind: "dyn", staff: 0, at: 3360, value: "mf" },              // v91 (WSHED-122, COMPOSE_EXPRESSIONS_DESIGN.md): dynamics, text and
                       { id, kind: "text", staff: 0, at: 0, value: "rit." },              // hairpins live on half-beat slots of the bar, not on notes;
-                      { id, kind: "hairpin", staff: 0, at: 0, dir: "cresc", end: { bar: 2, at: 0 } } ],  // a hairpin sits on the bar of its start
+                      { id, kind: "hairpin", staff: 0, at: 0, dir: "cresc", end: { bar: 2, at: 0 } },  // a hairpin sits on the bar of its start
+                      { id, kind: "pedal", staff: 1, at: 0, end: { bar: 1, at: 0 } },                   // v96 (WSHED-125, COMPOSE_PIANO_DESIGN.md): a pedal line, a span like a hairpin
+                      { id, kind: "ottava", staff: 0, at: 0, dir: 1, end: { bar: 0, at: 20160 } } ],    // v96: 8va (dir 1) / 8vb (−1) — the heads draw an octave off, the pitch stays; a pitch may carry `finger: 1–5`
       staves: [                               // one entry per staff of the (single) part
         { voices: [ [ /* events */ ] ] },
         { voices: [ [ /* events */ ] ] },

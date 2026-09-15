@@ -3,7 +3,7 @@
 // the new document; a refused edit throws Nudge(sentence) and the document is
 // untouched. Pure — node-testable.
 import { groupSize, ticks, capacity, splitRest, fromTicks, exprGrid } from "./ticks.js";
-import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, tempoOf, MAX_VOICES, REST_Y_MAX, EXPR_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, HAIRPINS, TEXT_MAX, BARLINE_ENDS, JUMPS, FORM_KINDS, TEMPO_TEXT_MAX, ENDING_MAX, MIN_TEMPO, MAX_TEMPO, eid } from "./model.js";
+import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, tempoOf, MAX_VOICES, REST_Y_MAX, EXPR_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, HAIRPINS, SPAN_KINDS, FINGER_MAX, TEXT_MAX, BARLINE_ENDS, JUMPS, FORM_KINDS, TEMPO_TEXT_MAX, ENDING_MAX, MIN_TEMPO, MAX_TEMPO, eid } from "./model.js";
 import { parsePitch, keyAlterations, CLEFS } from "../music.js";
 
 export class Nudge extends Error { constructor(msg, { bar = null } = {}) { super(msg); this.name = "Nudge"; this.bar = bar; } }
@@ -886,7 +886,8 @@ export function articulate(doc, evIds, mark) {
   return d;
 }
 // --- expressions (docs/COMPOSE_EXPRESSIONS_DESIGN.md §2): dynamics, hairpins and text on the half-beat slots of a bar ---
-export { DYNAMICS, HAIRPINS };
+export { DYNAMICS, HAIRPINS, SPAN_KINDS };
+const isSpan = (x) => SPAN_KINDS.includes(x.kind);
 const exprsOf = (m) => m.expressions ?? [];
 const exprOrder = (a, b) => a.at - b.at || a.staff - b.staff || a.kind.localeCompare(b.kind);
 const setExprs = (m, list) => { if (list.length) m.expressions = list.sort(exprOrder); else delete m.expressions; };
@@ -915,21 +916,23 @@ export function nextSlot(doc, { bar, at }) {
 export function expressionsOf(doc) {
   const { starts } = barStarts(doc);
   const out = [];
-  doc.measures.forEach((m, bar) => { for (const x of exprsOf(m)) out.push({ bar, x, abs: starts[bar] + x.at, ...(x.kind === "hairpin" ? { absEnd: starts[x.end.bar] + x.end.at } : {}) }); });
+  doc.measures.forEach((m, bar) => { for (const x of exprsOf(m)) out.push({ bar, x, abs: starts[bar] + x.at, ...(isSpan(x) ? { absEnd: starts[x.end.bar] + x.end.at } : {}) }); });
   return out.sort((a, b) => a.abs - b.abs || a.x.staff - b.x.staff);
 }
+/** The spans of one kind (hairpin / pedal / ottava) on a staff (every staff when null) with absolute ticks, in time order. */
+export const spansOf = (doc, kind, staff = null) => expressionsOf(doc).filter((e) => e.x.kind === kind && (staff === null || e.x.staff === staff));
 export function findExpression(doc, id) {
   for (let bar = 0; bar < doc.measures.length; bar++) { const index = exprsOf(doc.measures[bar]).findIndex((x) => x.id === id); if (index >= 0) return { bar, index, x: doc.measures[bar].expressions[index] }; }
   return null;
 }
 const onGrid = (doc, bar, at) => Number.isInteger(at) && at >= 0 && at < capacity(timeAt(doc, bar)) && at % exprGrid(timeAt(doc, bar)) === 0;
-/** Write an expression into a bar with the ownership rules: a dynamic / text takes its staff's slot, a hairpin takes its staff's range (in place, on a clone). */
+/** Write an expression into a bar with the ownership rules: a dynamic / text takes its staff's slot, a span (hairpin / pedal / ottava) takes its staff's range from spans of its kind (in place, on a clone). */
 function putExpr(d, x, bar) {
   const m = d.measures[bar];
   let list = exprsOf(m).filter((o) => o.id !== x.id);
-  if (x.kind === "hairpin") {
+  if (isSpan(x)) {
     const { starts } = barStarts(d), a = starts[bar] + x.at, b = starts[x.end.bar] + x.end.at;
-    d.measures.forEach((om, ob) => { const kept = exprsOf(om).filter((o) => !(o.kind === "hairpin" && o.staff === x.staff && o.id !== x.id && starts[ob] + o.at < b && starts[o.end.bar] + o.end.at > a)); if (kept.length !== exprsOf(om).length) setExprs(om, kept); });
+    d.measures.forEach((om, ob) => { const kept = exprsOf(om).filter((o) => !(o.kind === x.kind && o.staff === x.staff && o.id !== x.id && starts[ob] + o.at < b && starts[o.end.bar] + o.end.at > a)); if (kept.length !== exprsOf(om).length) setExprs(om, kept); });
     list = exprsOf(m).filter((o) => o.id !== x.id);
   } else list = list.filter((o) => !(o.kind === x.kind && o.staff === x.staff && o.at === x.at));
   setExprs(m, [...list, x]);
@@ -946,17 +949,26 @@ export function addExpression(doc, { kind, staff, bar, at, value }) {
   putExpr(d, { id, kind, staff, at, value: v }, bar);
   return { doc: d, id };
 }
-/** Place a hairpin from a slot to a later one on a staff → { doc, id }; hairpins it overlaps on that staff go. */
-export function addHairpin(doc, { staff, bar, at, dir, end }) {
-  if (!HAIRPINS.includes(dir)) throw new Nudge("no such hairpin");
+const SPAN_NAME = { hairpin: "a hairpin", pedal: "a pedal", ottava: "an octave line" };
+/** Place a span (hairpin / pedal / ottava) from a slot to a later one on a staff → { doc, id }; spans of its kind it overlaps on that staff go. */
+export function addSpan(doc, { kind, staff, bar, at, end, dir }) {
+  if (!SPAN_KINDS.includes(kind)) throw new Nudge("no such line");
+  if (kind === "hairpin" && !HAIRPINS.includes(dir)) throw new Nudge("no such hairpin");
+  if (kind === "ottava" && dir !== 1 && dir !== -1) throw new Nudge("8va or 8vb");
   if (!doc.measures[bar] || !doc.measures[end?.bar] || !(staff >= 0 && staff < doc.parts[0].staves)) throw new Nudge("nowhere to put it");
   if (!onGrid(doc, bar, at) || !onGrid(doc, end.bar, end.at)) throw new Nudge("that's off the grid", { bar });
   const { starts } = barStarts(doc);
-  if (starts[end.bar] + end.at <= starts[bar] + at) throw new Nudge("a hairpin needs to end after it starts", { bar: end.bar });
+  if (starts[end.bar] + end.at <= starts[bar] + at) throw new Nudge(`${SPAN_NAME[kind]} needs to end after it starts`, { bar: end.bar });
   const d = clone(doc), id = eid();
-  putExpr(d, { id, kind: "hairpin", staff, at, dir, end: { bar: end.bar, at: end.at } }, bar);
+  putExpr(d, { id, kind, staff, at, ...(kind === "pedal" ? {} : { dir }), end: { bar: end.bar, at: end.at } }, bar);
   return { doc: d, id };
 }
+/** Place a hairpin from a slot to a later one on a staff → { doc, id }; hairpins it overlaps on that staff go. */
+export const addHairpin = (doc, { staff, bar, at, dir, end }) => addSpan(doc, { kind: "hairpin", staff, bar, at, dir, end });
+/** A pedal line (docs/COMPOSE_PIANO_DESIGN.md §2) from a slot to a later one on a staff → { doc, id }. */
+export const addPedal = (doc, { staff, bar, at, end }) => addSpan(doc, { kind: "pedal", staff, bar, at, end });
+/** An octave line, `dir` 1 = 8va, −1 = 8vb → { doc, id }. */
+export const addOttava = (doc, { staff, bar, at, dir, end }) => addSpan(doc, { kind: "ottava", staff, bar, at, dir, end });
 /** Drop the named expressions (unknown ids ignored; nothing matched → the same document). */
 export function removeExpressions(doc, ids) {
   const want = new Set(ids);
@@ -983,11 +995,11 @@ export function moveExpressions(doc, ids, delta) {
     if (abs < 0 || abs >= total) throw new Nudge(delta < 0 ? "as far left as it goes" : "as far right as it goes", { bar: f.bar });
     const slot = slotOfAbs(d, abs);
     const next = { ...x, at: slot.at };
-    if (x.kind === "hairpin") {
+    if (isSpan(x)) {
       const absEnd = starts[x.end.bar] + x.end.at + delta;
       if (absEnd < 0 || absEnd >= total) throw new Nudge(delta < 0 ? "as far left as it goes" : "as far right as it goes", { bar: f.bar });
       const es = slotOfAbs(d, absEnd);
-      if (starts[es.bar] + es.at <= starts[slot.bar] + slot.at) throw new Nudge("that hairpin can't go there", { bar: slot.bar });
+      if (starts[es.bar] + es.at <= starts[slot.bar] + slot.at) throw new Nudge("that line can't go there", { bar: slot.bar });
       next.end = es;
     }
     moved.push({ x: next, bar: slot.bar });
@@ -996,20 +1008,21 @@ export function moveExpressions(doc, ids, delta) {
   for (const mv of moved) putExpr(d, mv.x, mv.bar);
   return d;
 }
-/** Re-anchor one end of a hairpin (`which` = "start" | "end") to a slot; a collapsed span is refused. */
-export function moveHairpinEnd(doc, id, which, { bar, at }) {
+/** Re-anchor one end of a span — hairpin, pedal or octave line — (`which` = "start" | "end") to a slot; a collapsed span is refused. */
+export function moveSpanEnd(doc, id, which, { bar, at }) {
   const f = findExpression(doc, id);
-  if (!f || f.x.kind !== "hairpin") throw new Nudge("pick the hairpin to stretch");
+  if (!f || !isSpan(f.x)) throw new Nudge("pick the line to stretch");
   if (!doc.measures[bar] || !onGrid(doc, bar, at)) throw new Nudge("that's off the grid", { bar });
   const start = which === "start" ? { bar, at } : { bar: f.bar, at: f.x.at }, end = which === "end" ? { bar, at } : f.x.end;
   if (start.bar === f.bar && start.at === f.x.at && end.bar === f.x.end.bar && end.at === f.x.end.at) return doc;
   const { starts } = barStarts(doc);
-  if (starts[end.bar] + end.at <= starts[start.bar] + start.at) throw new Nudge("a hairpin needs to end after it starts", { bar });
+  if (starts[end.bar] + end.at <= starts[start.bar] + start.at) throw new Nudge(`${SPAN_NAME[f.x.kind]} needs to end after it starts`, { bar });
   const d = clone(doc);
   setExprs(d.measures[f.bar], exprsOf(d.measures[f.bar]).filter((x) => x.id !== id));
   putExpr(d, { ...f.x, at: start.at, end: { bar: end.bar, at: end.at } }, start.bar);
   return d;
 }
+export const moveHairpinEnd = moveSpanEnd;
 /**
  * Nudge the named expressions off their automatic line by `delta` staff steps (positive = up), like
  * `nudgeRest`: `x.dy` is relative to where the layout would put the mark, clamped at ±EXPR_Y_MAX with a
@@ -1033,7 +1046,7 @@ export function setExpressionValue(doc, ids, value) {
   const found = [...new Set(ids)].map((id) => findExpression(doc, id)).filter(Boolean);
   if (!found.length) throw new Nudge("pick the marks to change");
   const kind = found[0].x.kind;
-  if (kind === "hairpin" || found.some((f) => f.x.kind !== kind)) throw new Nudge("pick dynamics or texts, not both");
+  if (SPAN_KINDS.includes(kind) || found.some((f) => f.x.kind !== kind)) throw new Nudge("pick dynamics or texts, not both");
   const v = kind === "text" ? cleanText(value) : value;
   if (kind === "dyn" && !DYNAMICS.includes(v)) throw new Nudge("no such dynamic");
   if (kind === "text" && !v) throw new Nudge("say what the text is");
@@ -1058,21 +1071,21 @@ export function cleanExpressions(doc) {
       const at = x.at - (x.at % g);
       if (at >= cap) continue;
       const y = { ...x, at };
-      if (x.kind === "hairpin") {
+      if (isSpan(x)) {
         if (!(x.end?.bar >= 0 && x.end.bar < n)) continue;
         const et = timeAt(doc, x.end.bar), eg = exprGrid(et), ecap = capacity(et);
         let ea = x.end.at - (x.end.at % eg); if (ea >= ecap) ea = ecap - eg;
         if (x.end.bar < bar || (x.end.bar === bar && ea <= at)) continue;
         y.end = { bar: x.end.bar, at: ea };
-        out.set(`h:${x.id}`, y);
+        out.set(`s:${x.id}`, y);
       } else out.set(`${x.kind}:${x.staff}:${at}`, y);
     }
     setExprs(m, [...out.values()]);
   });
-  // hairpins on a staff never overlap: the earlier keeps its range
-  const spans = expressionsOf(doc).filter((e) => e.x.kind === "hairpin").sort((a, b) => a.x.staff - b.x.staff || a.abs - b.abs);
+  // spans of one kind on a staff never overlap: the earlier keeps its range
+  const spans = expressionsOf(doc).filter((e) => isSpan(e.x)).sort((a, b) => a.x.kind.localeCompare(b.x.kind) || a.x.staff - b.x.staff || a.abs - b.abs);
   const drop = new Set();
-  for (let i = 1, keep = spans[0]; i < spans.length; i++) { const s = spans[i]; if (keep && s.x.staff === keep.x.staff && s.abs < keep.absEnd) drop.add(s.x.id); else keep = s; }
+  for (let i = 1, keep = spans[0]; i < spans.length; i++) { const s = spans[i]; if (keep && s.x.kind === keep.x.kind && s.x.staff === keep.x.staff && s.abs < keep.absEnd) drop.add(s.x.id); else keep = s; }
   if (drop.size) for (const m of doc.measures) if (m.expressions) setExprs(m, m.expressions.filter((x) => !drop.has(x.id)));
   return doc;
 }
@@ -1252,6 +1265,28 @@ export function hideRest(doc, evIds) {
 
 // --- form (docs/COMPOSE_FORM_DESIGN.md §2): barlines, endings, signs, jumps, rehearsal letters, tempo marks ---
 /** A bar's barlines: `start` "repeat" | null, `end` "double" | "final" | "repeat" | null; an absent key keeps what is there. */
+/**
+ * Fingering (docs/COMPOSE_PIANO_DESIGN.md §2): stamp digit `n` (1–5) on the named heads — `{ ev, pi }`
+ * a head, `{ ev }` every pitch of the note; `null` clears. When every named head already carries `n`
+ * the digits are cleared instead (the rail's toggle). A rest among the items → Nudge; nothing to
+ * change → the same document.
+ */
+export function finger(doc, items, n) {
+  if (n !== null && !(Number.isInteger(n) && n >= 1 && n <= FINGER_MAX)) throw new Nudge(`a finger is 1 to ${FINGER_MAX}`);
+  const heads = [];
+  for (const it of items) {
+    const f = find(doc, it.ev);
+    if (!f) continue;
+    if (f.ev.kind !== "note") throw new Nudge("a rest has no finger", { bar: f.bar });
+    if (it.pi === undefined) f.ev.pitches.forEach((_, pi) => heads.push({ f, pi })); else if (f.ev.pitches[it.pi]) heads.push({ f, pi: it.pi });
+  }
+  if (!heads.length) throw new Nudge("pick the notes to finger");
+  const want = n !== null && heads.every((h) => h.f.ev.pitches[h.pi].finger === n) ? null : n;
+  if (heads.every((h) => (h.f.ev.pitches[h.pi].finger ?? null) === want)) return doc;
+  const d = clone(doc);
+  for (const h of heads) { const p = d.measures[h.f.bar].staves[h.f.staff].voices[h.f.voice][h.f.index].pitches[h.pi]; if (want === null) delete p.finger; else p.finger = want; }
+  return d;
+}
 export function setBarline(doc, bar, { start, end } = {}) {
   if (!doc.measures[bar]) throw new Nudge("no such bar");
   if (start !== undefined && start !== null && start !== "repeat") throw new Nudge("a barline can only start a repeat");
