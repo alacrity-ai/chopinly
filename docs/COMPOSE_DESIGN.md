@@ -364,8 +364,8 @@ non-integer tick count; `ticks()` throws on any non-integer as a last guard.
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-Rails are fixed; the score fills the rest. On a phone the palette wraps to two
-rows; the utility / expression rails become sheets.
+Rails are fixed; the score fills the rest. A rail is one line, always (v100, §8.5h):
+when it does not fit it scrolls sideways under a finger, it never wraps.
 
 ### 8.2 Modes
 
@@ -467,6 +467,45 @@ Barlines (double, final, repeat start / end / both), endings 1.–3., segno, cod
 D.S., al Fine, al Coda, To Coda, Fine), rehearsal letters and tempo marks — every button arms a tap
 on a **bar**, the same tap removes, and playback unrolls the form with a tempo map. Design and
 as-built: `docs/COMPOSE_FORM_DESIGN.md`.
+
+### 8.5h The rails facelift (v100, WSHED-128)
+
+Leif reviewed the v99 rails: ~60 near-identical bordered tiles with nothing to group on, no
+sign of which buttons hold a menu, no rail names, and rails that wrapped onto two or three
+lines on a phone. He approved the whole list below and added the first rule.
+
+- **A rail never wraps.** Each `.cp-rail` is `flex-wrap: nowrap; overflow-x: auto` with the
+  scrollbar hidden, exactly the scores tag rail. It sits in a `.cp-lane` whose `::before` /
+  `::after` paint a fade on the side there is more (`rails.js` sets `data-over="left right"`
+  from `scrollLeft` on scroll and on resize). On a tablet or desktop nothing overflows and
+  nothing changes; a phone or a portrait tablet slides. When the editor lights a button that
+  is off the edge (`update()` → `reveal()`), the rail scrolls it into view.
+- **Groups, not tiles.** Buttons sit in `.cp-group` containers: one border, hairlines between
+  the segments, the lit segment fills to the edges. The `.cp-sep` separators are gone.
+- **Trays for one-shot actions.** Undo / redo, delete / copy / cut / paste, the transport and
+  the zoom buttons are borderless icons in a `.cp-tray`. Select / Pan is a two-segment switch.
+- **Pickers** (Key, Time, Clef, Barline, Ending, Jump, voice, text …) keep their word and get a
+  small chevron icon (`icon("chev")`) in place of the ▾ text glyph.
+- **Hold dots.** Every button with a hold menu (`HOLDS`, the tuplet, Grace) carries `.cp-hold`,
+  a dot in its lower-right corner.
+- **Captions.** The six palette rails carry a `.cp-cap` (NOTES, KEY · TIME, DYNAMICS, FORM,
+  PIANO, MARKS) that is `position: sticky; left: 0` so it stays put while the rail slides
+  under it. Hidden at phone width.
+- **Sizes.** `--cp-h: 3rem` (2.8rem under 480 px) on `.cp-rails`; a group is `--cp-h` + 2 px
+  of border; every square is `--cp-h` wide. With all eight rails on at 1024 × 768 the stack
+  went from 560 px to 489 px (71 px back to the score); at 768 × 1024 from 680 to 489; at
+  390 × 844 from 855 (the whole screen) to 457.
+- **Waiting, not dead.** A disabled button keeps its tile and dims only its ink
+  (`color-mix` of `--fg` at 38 %).
+- **Menus are fixed on the screen.** A scrolling rail would clip an absolutely positioned
+  menu, so `.cp-more` is `position: fixed` and `toggle()` places it under its button when it
+  opens: left-aligned in the left half of the screen, right-aligned in the right half, clamped
+  inside the viewport, growing out of the button's middle (`--ox` sets the transform origin).
+  A rail scroll or a resize closes it.
+- **Phone.** A picker whose word is hidden shows a `.cp-pick-ic` glyph (♯♭, 𝄴, 𝄞, a double
+  bar, "1.", "D.S.") so no picker is a bare chevron; once armed, the value stands in for both.
+- **Motion.** Press scale 0.94, menus scale in over 120 ms; both off under
+  `prefers-reduced-motion`.
 
 ### 8.6 Transport (v70) and the rails' look (v71)
 
