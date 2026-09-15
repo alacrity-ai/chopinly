@@ -7,13 +7,15 @@
 // §8.5i) turns the finger into the pen: the palm guard lifts, Select-mode targets
 // grow to a fingertip, and holding or sliding aims with a lifted ghost. Gesture mode
 // (v102, §8.5j) lets a Place-mode stroke lasso, and a stroke through selected heads
-// or dynamics strike them out.
+// or dynamics strike them out; its shapes (v103, §8.5k) begin with the chevrons —
+// ∧ arms the next shorter note value, ∨ the next longer, as the palette would.
 import { logbook } from "../../lib/logbook.js";
 import { toast } from "../logbook/util.js";
 import { haptic } from "../logbook/motion.js";
 import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt, lasso, spans as spansOfLayout, isHandle, struck } from "../../lib/compose/hit.js";
+import { chevron } from "../../lib/compose/gesture.js";
 import { place, remove, snap, trimBars, find, setPitch, retype, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, addPedal, addOttava, addTextLine, finger, graceAt, toggleGrace, tremolo, setTrill, setStem, beamBreak, setSimile, pitchFromStep, moveExpressions, moveSpanEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
@@ -539,6 +541,7 @@ export function openEditor({ id, ctx, onClose }) {
       if (selection.size) { selection.clear(); showSel(); sync(); }
       return;
     }
+    if (gestureOn) { const dir = chevron(l.pts); if (dir) { stepDur(dir); return; } } // a shape first (§8.5k): a deliberately drawn chevron
     if (gestureOn && selection.size) { // the strike (§8.5j): a stroke through selected heads or dynamics deletes them; otherwise it is a lasso
       const hit = struck(l.pts, strikeTargets(tol));
       if (hit.size) { strike(hit); return; }
@@ -549,6 +552,15 @@ export function openEditor({ id, ctx, onClose }) {
     const lastHead = [...got].reverse().find((t) => t.type === "head") ?? got[got.length - 1];
     follow(lastHead); // the last head lassoed sets the active voice
     showSel(); sync(); haptic(selection.size ? 6 : 0);
+  }
+  /** The chevrons (§8.5k): "up" (∧) arms the next shorter value, "down" (∨) the next longer — the palette's ladder, main row and ▾ row together — through the same path as a palette tap (a selection is retyped first). */
+  const LADDER = [0, ...MAIN_BASES, ...MORE_BASES.filter((b) => b > 0)]; // longest → shortest
+  function stepDur(dir) {
+    const i = LADDER.indexOf(armed.base), j = i + (dir === "up" ? 1 : -1);
+    if (j < 0 || j >= LADDER.length) { toast(`already the ${dir === "up" ? "shortest" : "longest"} — ${durName(armed.base)}`); haptic(4); return; }
+    const had = selection.size;
+    act("dur", LADDER[j]);
+    if (armed.base === LADDER[j]) toast(`${durName(LADDER[j])}${had ? "" : " armed"}`);
   }
   /** The selected heads and dynamics as boxes in S for `struck` — a head 0.75 × 0.5 S, a dynamic 1.2 × 0.9 S, each at least the finger's reach. */
   function strikeTargets(tol) {
