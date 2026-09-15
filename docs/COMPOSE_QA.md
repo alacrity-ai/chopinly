@@ -89,3 +89,13 @@ phase's card (WSHED-115 … 122).
 - A menu opened from a rail near the right edge (Rails, File, or a hold on a scrolled rail) stays inside the screen; scrolling the rail closes it.
 - A button that needs a selection is dim in its ink, its tile intact; select a note and it lights.
 - All five skins: the groups, fades, captions and hold dots follow the skin's panel and ink colours.
+
+## Pen | Touch (WSHED-129, v101)
+
+- On an iPad or a phone a second switch sits beside Select / Pan: **Pen | Touch** (a nib, a fingertip). On a desktop with no touch it is not there.
+- Touch: a finger tap on an empty beat places the armed note; in Select mode a finger landing near a head grabs it and a drag re-pitches it, a finger stroke around heads lassoes them, a tap near a rest or a dynamic selects it.
+- Touch, Place mode: hold a finger on the staff for half a second — the ghost lifts above the fingertip; slide, and it follows; lift, and the note lands where the ghost was. A quick tap lands under the finger.
+- Pen: fingers behave as before (a clean tap or a narrow one-finger grab; a wide or moving or second contact does nothing).
+- A fresh device starts in Touch. The first Pencil stroke on the score flips the switch to Pen and toasts "Pencil — fingers rest now"; set it back to Touch and the next Pencil stroke leaves it alone. The setting survives a reload.
+- Pan is the same in both: one finger scrolls, two zoom, nothing places.
+

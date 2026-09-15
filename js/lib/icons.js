@@ -26,6 +26,9 @@ const P = {
   check: `<path d="M5 12.5l4.2 4.2L19 7.5" stroke-width="2.4"/>`,
   // the pickers' chevron (WSHED-128): a small down caret instead of the ▾ text glyph
   chev: `<path d="M7 10l5 5 5-5" stroke-width="2.3"/>`,
+  // Pen | Touch (v101, WSHED-129): a pencil and a pointing finger
+  nib: `<path d="M15 4.2l4.8 4.8L8.4 20.4H3.6v-4.8Z"/><path d="M12.8 6.4l4.8 4.8"/>`,
+  finger: `<path d="M10.6 12.4V4.9a1.5 1.5 0 0 1 3 0v6.9"/><path d="M13.6 11.6l3.6 1a2.3 2.3 0 0 1 1.7 2.2v1.6c0 3.4-2.5 5.4-5.4 5.4h-1.3a4.9 4.9 0 0 1-3.9-2l-2.6-3.5a1.4 1.4 0 0 1 2.2-1.7l1.7 2.1"/>`,
   palette: `<path d="M12 4.5a7.5 7.5 0 1 0 0 15h1.2a1.6 1.6 0 0 0 1.1-2.8 1.6 1.6 0 0 1 1.1-2.7h1.4a2.7 2.7 0 0 0 2.7-2.7A7.5 7.5 0 0 0 12 4.5Z"/><circle cx="8.3" cy="11.2" r="1.1" fill="currentColor" stroke="none"/><circle cx="11" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="8.6" r="1.1" fill="currentColor" stroke="none"/>`,
   keys: `<rect x="3.5" y="6" width="17" height="12" rx="1.5"/><path d="M8 6v7.5M12 6v7.5M16 6v7.5"/><path d="M6.6 6v5h2.8V6M10.6 6v5h2.8V6M14.6 6v5h2.8V6" fill="currentColor" stroke="none"/>`,
   mic: `<rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M6 11.5a6 6 0 0 0 12 0"/><path d="M12 17.5v3M9 20.5h6"/>`,

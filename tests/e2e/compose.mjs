@@ -16,7 +16,7 @@ page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resourc
 page.on("dialog", (d) => d.accept(d.type() === "prompt" ? d.defaultValue() : undefined));
 const step = async (name, f) => { try { await f(); console.log("ok  ", name, errors.length ? `(${errors.length} page errors so far)` : ""); } catch (e) { console.log("FAIL", name, "—", e.message); if (errors.length) console.log("  page errors:", errors.join("\n  ")); try { console.log("  toast:", await page.evaluate(() => document.querySelector(".lb-toast")?.textContent), "url:", page.url()); } catch { /* gone */ } try { console.log("  state:", JSON.stringify(await state())); } catch { /* no editor */ } await page.screenshot({ path: `${S}/fail-compose.png` }); throw e; } };
 const lb = (fn, ...args) => page.evaluate(async ([src, a]) => { const m = await import("/js/lib/logbook.js"); return (new Function("m", "a", src))(m, a); }, [`return (${fn})(m, a)`, args]);
-const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, voice: s.voice, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging, lassoing: s.lassoing, pasting: s.pasting, hasClip: s.hasClip, pending: s.pending }; });
+const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, voice: s.voice, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging, lassoing: s.lassoing, pasting: s.pasting, hasClip: s.hasClip, pending: s.pending, input: s.input, penSeen: s.penSeen }; });
 /** Every visible icon/glyph button (.cp-sq) is one exact square per rail height: the header's own, the lanes' shared one. */
 const squares = () => page.evaluate(() => {
   const out = { header: new Set(), lanes: new Set(), n: 0, bad: [] };
@@ -33,7 +33,7 @@ const kinds = (bar, staff = 0) => page.evaluate(([b, st]) => document.querySelec
 const point = (place) => page.evaluate((p) => document.querySelector(".cp-editor").__editor.pointFor(p), place);
 const tapAt = async (place) => { let p = await point(place); const vr = await page.evaluate(() => { const r = document.querySelector("#cp-view").getBoundingClientRect(); return [r.top, r.bottom]; }); if (p.y > vr[1] - 24 || p.y < vr[0] + 12) { await page.evaluate((y) => { const v = document.querySelector("#cp-view"); v.scrollTop += y - v.getBoundingClientRect().top - v.clientHeight * 0.5; }, p.y); p = await point(place); } if (process.env.DEBUG_TAP) console.log("  tap", JSON.stringify(place), JSON.stringify(p), await page.evaluate(([x, y]) => { const el = document.elementFromPoint(x, y); const v = document.querySelector("#cp-view").getBoundingClientRect(); return { under: el?.closest?.(".cp-ev")?.dataset.ev ?? el?.tagName, view: [v.top, v.bottom], scrollTop: document.querySelector("#cp-view").scrollTop }; }, [p.x, p.y])); await page.touchscreen.tap(Math.round(p.x), Math.round(p.y)); await page.waitForTimeout(80); };
 const noWiden = async () => { const w = await page.evaluate(() => ({ vw: innerWidth, doc: document.documentElement.scrollWidth })); if (w.doc > w.vw) throw new Error("page widened " + JSON.stringify(w)); };
-const PPQ = 6720;
+const PPQ = 6720, AIM = 40; // AIM: the Touch-mode ghost floats this far above the finger (editor.js AIM_PX)
 /** Synthetic pointer events straight at the view — the only way to fake a palm or a Pencil in Chromium. */
 const synth = (type, opts) => page.evaluate(([type, o]) => { const v = document.querySelector("#cp-view"); v.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, isPrimary: true, ...o })); }, [type, opts]);
 
@@ -1344,6 +1344,114 @@ await step("v100: a rail never wraps — one line at every width, slides under a
   await page.screenshot({ path: `${S}/cp-26-phone-rails.png` });
   await page.setViewportSize({ width: 1024, height: 768 }); await page.waitForTimeout(200);
   await page.screenshot({ path: `${S}/cp-26-facelift.png` });
+});
+
+await step("v101: Pen | Touch — a wide finger rests in Pen and draws in Touch; Select-mode targets are fingertip-sized (grab, lasso); hold-and-slide aims above the finger; a fresh device starts in Touch and the first pen flips it once; no switch on a mouse-only device", async () => {
+  // a fresh piece so the bars are known
+  await page.goto(`${BASE}/?app=1&t=4#/compose`);
+  await page.waitForSelector("#cp-new");
+  await page.click("#cp-new"); await page.waitForSelector("#cp-d-title"); await page.fill("#cp-d-title", "Touch"); await page.click("#cp-d-save");
+  await page.waitForSelector(".cp-editor .cp-svg");
+  const SS = (await state()).S;
+  const pressed = () => page.evaluate(() => [...document.querySelectorAll(".cp-inp")].map((b) => `${b.dataset.input}=${b.getAttribute("aria-pressed")}`).join(","));
+  const pitchAt = (bar, i) => page.evaluate(([b, i]) => { const e = document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[0].voices[0][i]; return e.pitches?.map((p) => p.step + p.octave).join("+") ?? e.kind; }, [bar, i]);
+  const fat = (type, o) => synth(type, { pointerType: "touch", pointerId: 130, width: 50, height: 50, ...o }); // an iPad fingertip, wider than the palm guard
+  // this context saw a pen long ago → the switch stands on Pen and is visible on an iPad
+  if (!(await page.locator(".cp-input").isVisible())) throw new Error("no switch on an iPad");
+  if ((await state()).input !== "pen" || (await pressed()) !== "pen=true,touch=false") throw new Error("after a pen this device should rest fingers: " + (await state()).input + " " + (await pressed()));
+  // Pen: a wide finger tap places nothing
+  let p = await point({ bar: 0, staff: 0, ticks: 0, step: 4 });
+  await fat("pointerdown", { clientX: p.x, clientY: p.y }); await fat("pointerup", { clientX: p.x, clientY: p.y });
+  if ((await kinds(0)) !== "r1") throw new Error("Pen mode let a wide finger place: " + (await kinds(0)));
+  // Touch: the same tap places B4; a slow lift still lands under the finger
+  await page.click(".cp-inp[data-input=touch]");
+  if ((await state()).input !== "touch" || (await pressed()) !== "pen=false,touch=true") throw new Error("switch to Touch: " + (await pressed()));
+  await fat("pointerdown", { clientX: p.x, clientY: p.y }); await fat("pointerup", { clientX: p.x, clientY: p.y });
+  if ((await kinds(0)) !== "n4 r4 r2" || (await pitchAt(0, 0)) !== "B4") throw new Error("Touch tap: " + (await kinds(0)) + " " + (await pitchAt(0, 0)));
+  p = await point({ bar: 0, staff: 0, ticks: PPQ, step: 6 });
+  await fat("pointerdown", { clientX: p.x, clientY: p.y }); await page.waitForTimeout(400); await fat("pointerup", { clientX: p.x, clientY: p.y });
+  if ((await kinds(0)) !== "n4 n4 r2" || (await pitchAt(0, 1)) !== "D5") throw new Error("a slow Touch tap: " + (await kinds(0)) + " " + (await pitchAt(0, 1)));
+  // Select mode: a wide finger landing 15 px under the first head still grabs it; a drag of one S re-pitches by two steps
+  await page.click("[data-act=select]");
+  const h = await point({ bar: 0, staff: 0, ticks: 0, step: 4 }); h.x += 0.6 * SS;
+  await fat("pointerdown", { clientX: h.x, clientY: h.y + 15 });
+  const sg = await state();
+  if (!sg.dragging || sg.selection.length !== 1) throw new Error("a fat finger near a head did not grab: " + JSON.stringify(sg));
+  await fat("pointermove", { clientX: h.x, clientY: h.y + 15 + SS }); await fat("pointerup", { clientX: h.x, clientY: h.y + 15 + SS });
+  if ((await pitchAt(0, 0)) !== "G4") throw new Error("finger drag: " + (await pitchAt(0, 0)));
+  // a wide finger stroke around both heads lassoes them
+  const a = await point({ bar: 0, staff: 0, ticks: 0, step: 2 }), b = await point({ bar: 0, staff: 0, ticks: PPQ, step: 6 });
+  const x0 = a.x - SS, x1 = b.x + 2 * SS, y0 = b.y - 2 * SS, y1 = a.y + 2 * SS;
+  await fat("pointerdown", { clientX: x0, clientY: y0 });
+  for (const [x, y] of [[x1, y0], [x1, y1], [x0, y1], [x0, y0]]) await fat("pointermove", { clientX: x, clientY: y });
+  await fat("pointerup", { clientX: x0, clientY: y0 });
+  if ((await state()).selection.length !== 2) throw new Error("finger lasso: " + JSON.stringify((await state()).selection));
+  // a fat tap on empty staff clears; a fat tap 12 px under a head selects it
+  await fat("pointerdown", { clientX: x1, clientY: y1 }); await fat("pointerup", { clientX: x1, clientY: y1 });
+  if ((await state()).selection.length !== 0) throw new Error("tap on empty staff should clear");
+  await fat("pointerdown", { clientX: b.x + 0.6 * SS, clientY: b.y + 12 }); await fat("pointerup", { clientX: b.x + 0.6 * SS, clientY: b.y + 12 });
+  if ((await state()).selection.length !== 1) throw new Error("fat tap near a head should select it");
+  // Place mode: hold → the ghost lifts 40 px above the finger; slide; lift → the note lands where the ghost was (bar 2 beat 1, B4), not under the finger (step 0)
+  await page.click("[data-act=select]");
+  const t = await point({ bar: 1, staff: 0, ticks: 0, step: 4 }); // the aim point; the finger is 40 px below it — two staff steps down at S ≈ 12 is step 0, an E4
+  await fat("pointerdown", { clientX: t.x, clientY: t.y + AIM });
+  await page.waitForTimeout(650);
+  const ghost = await page.evaluate(() => !document.querySelector(".cp-ghost").hasAttribute("hidden"));
+  if (!ghost) throw new Error("a held finger did not lift a ghost");
+  await fat("pointermove", { clientX: t.x + 4, clientY: t.y + AIM + 3 }); await fat("pointermove", { clientX: t.x, clientY: t.y + AIM });
+  await fat("pointerup", { clientX: t.x, clientY: t.y + AIM });
+  if ((await kinds(1)) !== "n4 r4 r2" || (await pitchAt(1, 0)) !== "B4") throw new Error("aimed placement: " + (await kinds(1)) + " " + (await pitchAt(1, 0)));
+  // a slide (no hold) aims too: down at step 0 of bar 3, slide up 40 px → the ghost sits at step 4 + 40 px... place by the ghost
+  const u = await point({ bar: 2, staff: 0, ticks: 0, step: 4 });
+  await fat("pointerdown", { clientX: u.x, clientY: u.y + AIM + 30 });
+  await fat("pointermove", { clientX: u.x, clientY: u.y + AIM + 15 }); await fat("pointermove", { clientX: u.x, clientY: u.y + AIM });
+  await fat("pointerup", { clientX: u.x, clientY: u.y + AIM });
+  if ((await kinds(2)) !== "n4 r4 r2" || (await pitchAt(2, 0)) !== "B4") throw new Error("slid placement: " + (await kinds(2)) + " " + (await pitchAt(2, 0)));
+  // a second finger cancels an aim
+  const v = await point({ bar: 3, staff: 0, ticks: 0, step: 4 });
+  await fat("pointerdown", { clientX: v.x, clientY: v.y + AIM }); await page.waitForTimeout(650);
+  await synth("pointerdown", { pointerType: "touch", pointerId: 131, width: 50, height: 50, clientX: v.x + 200, clientY: v.y });
+  await synth("pointerup", { pointerType: "touch", pointerId: 131, width: 50, height: 50, clientX: v.x + 200, clientY: v.y });
+  await fat("pointerup", { clientX: v.x, clientY: v.y + AIM });
+  if ((await kinds(3)) !== "r1") throw new Error("a second finger should cancel the aim: " + (await kinds(3)));
+  // the pen leaves a deliberate Touch alone
+  await synth("pointerdown", { pointerType: "pen", pointerId: 132, width: 1, height: 1, pressure: 0.5, clientX: v.x, clientY: v.y }); await synth("pointerup", { pointerType: "pen", pointerId: 132, width: 1, height: 1, clientX: v.x, clientY: v.y });
+  if ((await state()).input !== "touch") throw new Error("a later pen must not undo a deliberate Touch");
+  await page.screenshot({ path: `${S}/cp-27-touch.png`, clip: { x: 0, y: 0, width: 1024, height: 200 } });
+  await noWiden();
+  // a fresh device: Touch by default; the first pen flips it to Pen once with a toast; the setting survives a reload
+  const fresh = await browser.newContext({ viewport: { width: 1024, height: 768 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: IPAD_UA });
+  const pg = await fresh.newPage();
+  await pg.goto(`${BASE}/?app=1`);
+  await pg.evaluate(() => { localStorage.setItem("ws.shell.seen", "true"); });
+  await pg.goto(`${BASE}/?app=1&t=1#/compose`);
+  await pg.waitForSelector("#cp-new"); await pg.click("#cp-new"); await pg.waitForSelector("#cp-d-title"); await pg.fill("#cp-d-title", "Fresh"); await pg.click("#cp-d-save");
+  await pg.waitForSelector(".cp-editor .cp-svg");
+  const st = () => pg.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { input: s.input, penSeen: s.penSeen, pressed: [...document.querySelectorAll(".cp-inp")].map((b) => `${b.dataset.input}=${b.getAttribute("aria-pressed")}`).join(",") }; });
+  let f = await st();
+  if (f.input !== "touch" || f.penSeen || f.pressed !== "pen=false,touch=true") throw new Error("a fresh device should start in Touch: " + JSON.stringify(f));
+  const fp = await pg.evaluate(() => document.querySelector(".cp-editor").__editor.pointFor({ bar: 0, staff: 0, ticks: 0, step: 4 }));
+  const synthOn = (type, o) => pg.evaluate(([type, o]) => { document.querySelector("#cp-view").dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, isPrimary: true, ...o })); }, [type, o]);
+  await synthOn("pointerdown", { pointerType: "pen", pointerId: 140, width: 1, height: 1, pressure: 0.5, clientX: fp.x, clientY: fp.y }); await synthOn("pointerup", { pointerType: "pen", pointerId: 140, width: 1, height: 1, clientX: fp.x, clientY: fp.y });
+  f = await st();
+  if (f.input !== "pen" || !f.penSeen || f.pressed !== "pen=true,touch=false") throw new Error("the first pen should flip to Pen: " + JSON.stringify(f));
+  if (!(await pg.locator(".lb-toast").textContent()).includes("Pencil")) throw new Error("no toast on the flip: " + (await pg.locator(".lb-toast").textContent()));
+  await pg.click(".cp-inp[data-input=touch]");
+  await pg.reload(); await pg.waitForSelector(".cp-editor .cp-svg");
+  f = await st();
+  if (f.input !== "touch" || !f.penSeen) throw new Error("the setting should survive a reload: " + JSON.stringify(f));
+  await fresh.close();
+  // a mouse-only device has no switch
+  const desk = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const dp = await desk.newPage();
+  await dp.goto(`${BASE}/?app=1`);
+  await dp.evaluate(() => { localStorage.setItem("ws.shell.seen", "true"); });
+  await dp.goto(`${BASE}/?app=1&t=1#/compose`);
+  await dp.waitForSelector("#cp-new"); await dp.click("#cp-new"); await dp.waitForSelector("#cp-d-title"); await dp.fill("#cp-d-title", "Desk"); await dp.click("#cp-d-save");
+  await dp.waitForSelector(".cp-editor .cp-svg");
+  const d = await dp.evaluate(() => ({ touch: navigator.maxTouchPoints, hidden: document.querySelector(".cp-input").hidden, seen: getComputedStyle(document.querySelector(".cp-input")).display }));
+  if (d.touch !== 0 || !d.hidden || d.seen !== "none") throw new Error("a mouse-only device should have no switch: " + JSON.stringify(d));
+  await desk.close();
 });
 
 await step("phone width: the rails scroll, nothing widens, the editor still places", async () => {

@@ -207,7 +207,8 @@ An **event** (one voice slot):
 ### 4.3 Per-device settings (`ws.compose.*`)
 
 `zoom` (S in px), `armed` (`{ base, dots, rest, tuplet }` — restored per
-session), `fingerPlaces` (bool, default true), `lastId`.
+session), `input` (`"pen"` | `"touch"`, v101 — §8.5i; replaces the never-built
+`fingerPlaces`), `penSeen` (bool — the one-time flip to Pen has happened), `lastId`.
 
 ### 4.4 D1 (P3)
 
@@ -385,13 +386,20 @@ carries the accidental, then the button clears.
 
 - The score element has `touch-action: none`, `user-select: none`, captures
   pointers.
-- Edit modes accept a **pen** pointer fully; a **touch** pointer only as a
-  single tap: `pointerdown` with no other active touch, `pointerup` within 300
-  ms and 10 px, contact `width`/`height` under 40 px when reported — except that
-  a single narrow finger landing **on a notehead** may grab and drag it (a second
-  contact lets go and reverts). Anything else is dropped and cancels nothing (a
-  palm landing mid-drag does not break a pen drag). A **mouse** behaves as a pen.
-- `fingerPlaces` off (a setting) turns finger taps into select-only.
+- A **pen** pointer is accepted fully in the edit modes; a **mouse** behaves as
+  a pen. What a **touch** pointer may do is the Pen | Touch switch's call
+  (v101, §8.5i):
+  - **Pen** (the policy since v70): a touch counts only as a single tap —
+    `pointerdown` with no other active touch, `pointerup` within 300 ms and
+    10 px, contact `width`/`height` under 40 px when reported — except that a
+    single narrow finger landing **on a notehead** may grab and drag it (a
+    second contact lets go and reverts). Anything else is dropped and cancels
+    nothing (a palm landing mid-drag does not break a pen drag).
+  - **Touch**: the finger is the pen. The width guard is off; a tap places;
+    in Select mode a finger on a head, rest or mark grabs it and a stroke on
+    empty staff lassoes, with fingertip-sized hit targets; holding (500 ms) or
+    sliding aims with a lifted ghost, and any lift before that is a tap under
+    the finger. A second finger still lets go.
 - Pan uses the reader's swipe logic with inertia and pinch-to-zoom; zoom is
   applied by re-laying out at the new S (no CSS transform — text stays crisp).
 - Ghost: on `pointermove` (pen / mouse) the hit table gives the slot and step;
@@ -506,6 +514,52 @@ lines on a phone. He approved the whole list below and added the first rule.
   bar, "1.", "D.S.") so no picker is a bare chevron; once armed, the value stands in for both.
 - **Motion.** Press scale 0.94, menus scale in over 120 ms; both off under
   `prefers-reduced-motion`.
+
+### 8.5i The Pen | Touch switch (v101, WSHED-129)
+
+Leif, 2026-09-15: without a Pencil (or a mouse) you could not place, lasso or move a note —
+"if you are in a pinch and don't have a pencil, you can't do much". §8.3 always meant a
+finger to work as a clean tap, a one-finger grab and a lasso; two pen-shaped rules defeated
+it on a real iPad. The palm guard drops any contact wider than `PALM_PX` (40 px), and an
+iPadOS fingertip reports a contact around that size, so most finger touches were thrown
+away silently (the E2E's synthetic fingers were 3 px wide and never saw it). And a
+notehead answers a hit only inside 0.75 S × 0.35 S — about 4 px tall at default zoom — which
+a pen lands in and a finger cannot, so a finger missed the head and got a discarded drag.
+
+- **The switch.** A second two-segment `.cp-switch` in the control rail beside Select / Pan:
+  **Pen | Touch** (`icon("nib")`, `icon("finger")`; the words hide on a phone like Select /
+  Pan). It exists only when `navigator.maxTouchPoints > 0` — a desktop rail is unchanged.
+  It is a switch on the rail and not a settings menu because it is situational (the
+  pencil dies mid-session), one tap, and visible: a user can see why a finger does or does
+  not draw. A settings menu with one item is premature; at three settings the menu gets built.
+- **Pen** is the v70 policy, unchanged (§8.3).
+- **Touch** turns the finger into the pen. `trusted = input === "touch"` lifts the width
+  guard on `pointerdown` and `pointerup`. In **Select** mode `thingAt` is asked with a
+  tolerance of `FINGER_PX` (22 px) / S, so a head, rest, dynamic, text or span answers from
+  a fingertip away (the nearest wins) — a finger grabs and drags a note it lands near, a
+  plain tap selects it, a stroke on empty staff lassoes. In **Place** mode the staff is for
+  placing: a finger grabs a head only when it lands right on it (the pen's box), because a
+  fat target there would grab the note you are trying to add a third above. A second finger
+  still lets go — it is the natural cancel, and a pinch never draws.
+- **Hold and slide to aim.** A finger covers three staff spaces, so a tap alone means
+  zooming in for a precise pitch. In Touch mode a tap lands under the finger as before, however
+  slow — the 300 ms limit is a palm rule and there is no palm here; holding past `AIM_MS`
+  (500 ms, a haptic and the ghost visibly jumping), or sliding past `TAP_PX`, turns the
+  gesture into an **aim**: the ghost lifts `AIM_PX` (40 px) above the fingertip where it can
+  be seen, follows the finger, and lifting places where the ghost is (`tapAt(x, y − AIM_PX)`).
+  A lift before the aim starts never lands above the finger.
+  The aim applies to every tap the editor knows — a note, an armed key / time / clef, an
+  expression, a fingering, a paste. A second finger, a `pointercancel` or lifting off the
+  staff cancels. In Pen mode a moved or held finger is dropped as before.
+- **Default and memory.** `input` is remembered per device (`store`, beside `rails`). A
+  device that has never seen a pen starts in **Touch**, so a phone or a pencil-less iPad
+  works from the first tap. The first pen `pointerdown` on the score sets `penSeen` and, if
+  the switch is on Touch, flips it to Pen once with a toast ("Pencil — fingers rest now.
+  Tap Touch to draw by hand."). After that the switch belongs to the user and never moves on
+  its own; a deliberate Touch is not undone by the next pencil stroke. The cost is one
+  possible stray palm note before the first pencil stroke, which undo fixes.
+- **Unchanged.** Pan (one finger pans, two pinch, in either setting), the mouse, the
+  keyboard, the score's pinning in the edit modes.
 
 ### 8.6 Transport (v70) and the rails' look (v71)
 
