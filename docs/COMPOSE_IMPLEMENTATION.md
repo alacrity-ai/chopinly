@@ -127,7 +127,7 @@ iPad before P1 starts.**
     rename / delete. Empty state: *nothing written yet — start a composition*.
 12. **Editor.** Control rail (undo · redo · Select · Pan · delete · − +) and
     palette rail (whole · half · quarter · eighth · sixteenth · *more* with
-    double whole / 32nd / 64th · Rest toggle; dot / tie / tuplet / accidentals
+    double whole / 32nd / 64th · Rest toggle (removed in v99); dot / tie / tuplet / accidentals
     drawn but disabled until P1); modes per §8.2; pointer policy per §8.3
     (single-touch tap rule, pen full, palm discarded); ghost on move (pen /
     mouse) and on down (touch); place on up at the down point; single selection
@@ -168,7 +168,7 @@ Compose. Leif's verdict on the feel gates P1.
    drag → marquee; stem tap → chord); drag re-pitch with audition per step,
    commit on release, horizontal ignored; palette-on-selection retype + arm;
    dot / tie / tuplet (tap = triplet, hold = 2 / 5 / 6 / 7) / ♯ ♭ ♮ wired to the
-   selection or armed; Rest toggle on a selection; arrows ↑/↓ re-pitch, ←/→
+   selection or armed; Rest toggle on a selection (removed in v99 — Delete makes a rest); arrows ↑/↓ re-pitch, ←/→
    move, Shift extends; `.` `t` keys.
 4. **E2E.** Retype quarter → half; overflow nudge leaves the bar unchanged; dot
    a chord dots every head; tie two same-pitch notes; triplet of eighths;

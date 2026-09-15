@@ -10,7 +10,7 @@ import { haptic } from "../logbook/motion.js";
 import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt, lasso, spans as spansOfLayout, isHandle } from "../../lib/compose/hit.js";
-import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, addPedal, addOttava, addTextLine, finger, graceAt, toggleGrace, tremolo, setTrill, setStem, beamBreak, setSimile, pitchFromStep, moveExpressions, moveSpanEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, setPitch, retype, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, addPedal, addOttava, addTextLine, finger, graceAt, toggleGrace, tremolo, setTrill, setStem, beamBreak, setSimile, pitchFromStep, moveExpressions, moveSpanEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { createPlayer } from "../../lib/compose/play.js";
@@ -40,10 +40,10 @@ export function openEditor({ id, ctx, onClose }) {
   let doc = c;
   let S = Math.max(S_MIN, Math.min(S_MAX, store.get("zoom", 12)));
   const savedArm = store.get("armed", null);
-  // what the next tap places: base, dots and rest / tuplet persist; an accidental is one-shot
-  let armed = { base: MAIN_BASES.includes(savedArm?.base) || MORE_BASES.includes(savedArm?.base) ? savedArm.base : 4, dots: [0, 1, 2].includes(savedArm?.dots) ? savedArm.dots : 0, rest: !!savedArm?.rest, tuplet: TUPLET_IN[savedArm?.tuplet] ? savedArm.tuplet : null, alter: null };
+  // what the next tap places: base, dots and tuplet persist; an accidental is one-shot (the Rest toggle left in v99: rests are what is left when a note goes)
+  let armed = { base: MAIN_BASES.includes(savedArm?.base) || MORE_BASES.includes(savedArm?.base) ? savedArm.base : 4, dots: [0, 1, 2].includes(savedArm?.dots) ? savedArm.dots : 0, tuplet: TUPLET_IN[savedArm?.tuplet] ? savedArm.tuplet : null, alter: null };
   let tupletN = TUPLET_IN[savedArm?.tupletN] ? savedArm.tupletN : (armed.tuplet ?? 3);
-  const saveArm = () => store.set("armed", { base: armed.base, dots: armed.dots, rest: armed.rest, tuplet: armed.tuplet, tupletN });
+  const saveArm = () => store.set("armed", { base: armed.base, dots: armed.dots, tuplet: armed.tuplet, tupletN });
   let mode = "place";                 // "place" | "select" | "pan"
   let voice = 0;                      // the active voice (0-based; the rail shows 1–4) — a piece always opens in voice 1; it follows the pen (docs/COMPOSE_VOICES_DESIGN.md §7.2)
   let voiceHinted = false;            // the "voice N — tap the staff" toast, once a session
@@ -328,10 +328,10 @@ export function openEditor({ id, ctx, onClose }) {
       const s = snap(doc, slot, armed);
       const { sys, bar } = barAt(L, slot.bar);
       const gx = xOfTicks(bar, s.onset);
-      const gy = armed.rest ? stepY(sys, slot.staff, armed.base <= 1 ? 6 : 4) : stepY(sys, slot.staff, slot.step);
+      const gy = stepY(sys, slot.staff, slot.step);
       const ledgers = [];
-      if (!armed.rest) { for (let st = -2; st >= slot.step; st -= 2) ledgers.push(stepY(sys, slot.staff, st)); for (let st = 10; st <= slot.step; st += 2) ledgers.push(stepY(sys, slot.staff, st)); }
-      R.showGhost({ x: gx, y: gy, base: armed.base, dots: armed.dots, onLine: slot.step % 2 === 0, rest: armed.rest, stemUp: ghostStemUp(slot), ledgers }, voice);
+      for (let st = -2; st >= slot.step; st -= 2) ledgers.push(stepY(sys, slot.staff, st)); for (let st = 10; st <= slot.step; st += 2) ledgers.push(stepY(sys, slot.staff, st));
+      R.showGhost({ x: gx, y: gy, base: armed.base, dots: armed.dots, onLine: slot.step % 2 === 0, rest: false, stemUp: ghostStemUp(slot), ledgers }, voice);
     } catch (e) { if (!(e instanceof Nudge)) throw e; R.showGhost(null); }
   }
 
@@ -958,15 +958,6 @@ export function openEditor({ id, ctx, onClose }) {
         if (mode !== "place") setMode("place"); else sync();
         return;
       }
-      case "rest":
-        if (selection.size) { // the selected notes become rests of the same length; the toggle itself is untouched
-          if (!allNotes()) { toast("pick notes to turn into rests"); return; }
-          const ids = selEvIds();
-          commit(toRests(doc, ids));
-          selection.clear(); for (const id of ids) selection.add(id); showSel(); sync(); haptic(8);
-          return;
-        }
-        armed = { ...armed, rest: !armed.rest }; saveArm(); if (mode !== "place") setMode("place"); else sync(); return;
       default: return;
     }
   }
@@ -1003,7 +994,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (e.key === ".") { act("dot"); return; }
     if (e.key === "t" || e.key === "T") { act("tie"); return; }
     const k = e.key.toLowerCase();
-    if (k === "r") act("rest"); else if (k === "h") setMode(mode === "pan" ? "place" : "pan"); else if (k === "v") setMode(mode === "select" ? "place" : "select");
+    if (k === "h") setMode(mode === "pan" ? "place" : "pan"); else if (k === "v") setMode(mode === "select" ? "place" : "select");
     else if (k === "=" || k === "+") act("zoom-in"); else if (k === "-") act("zoom-out");
   };
   document.addEventListener("keydown", onKey);

@@ -57,7 +57,7 @@ await step("new composition → the editor opens on a blank piano score, eight b
   await page.click("#cp-d-save");
   await page.waitForSelector(".cp-editor .cp-svg");
   const s = await state();
-  if (!(s.mode === "place" && s.armed.base === 4 && !s.armed.rest && s.bars === 8)) throw new Error(JSON.stringify(s));
+  if (!(s.mode === "place" && s.armed.base === 4 && s.bars === 8)) throw new Error(JSON.stringify(s));
   if ((await page.locator(".cp-dur[data-base='4'][aria-pressed='true']").count()) !== 1) throw new Error("quarter not armed on the rail");
   const staves = await page.evaluate(() => document.querySelectorAll(".cp-sys").length);
   if (staves < 2) throw new Error("systems " + staves);
@@ -196,10 +196,9 @@ await step("lasso (Select mode): a pen stroke around two heads selects them; the
   if ((await kinds(0)) !== "n8 r8 n8 r8 n4 n4") throw new Error("retype: " + (await kinds(0)));
   s = await state();
   if (s.mode !== "place" || s.armed.base !== 8 || s.selection.length !== 2) throw new Error("state after retype " + JSON.stringify(s));
-  // Rest with the two selected → rests of the same length; the rest toggle stays off
-  await page.click("[data-act=rest]");
+  // Delete with the two selected → rests of the same length (the Rest toggle left in v99: Delete is the way to a rest)
+  await page.click("[data-act=delete]");
   if ((await kinds(0)) !== "r2 n4 n4") throw new Error("to rests: " + (await kinds(0)));
-  if ((await state()).armed.rest) throw new Error("the toggle flipped");
   await page.click("[data-act=undo]"); await page.click("[data-act=undo]");
   if ((await kinds(0)) !== "n4 n4 n4 n4") throw new Error("undo chain " + (await kinds(0)));
   // a mixed lasso (a note + a rest in bar 2: n4 r4 r2) → palette refuses with a toast, nothing changes
@@ -530,15 +529,6 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   if ((await st()).open) throw new Error("utility rail did not close");
 });
 
-await step("Rest toggle: a rest placed into a bar with notes leaves the bar adding up", async () => {
-  await page.click("[data-act=rest]");
-  if (!(await state()).armed.rest) throw new Error("rest not on");
-  await tapAt({ bar: 1, staff: 0, ticks: 2 * PPQ + 40, step: 4 }); // a quarter rest where a half rest was
-  if ((await kinds(1)) !== "n4 r4 r2") throw new Error("bar 2: " + (await kinds(1)));
-  await page.click("[data-act=rest]");
-  if ((await state()).armed.rest) throw new Error("rest still on");
-});
-
 await step("palm safety: a wide touch contact and a second simultaneous finger place nothing; a pen tap does", async () => {
   const p = await point({ bar: 4, staff: 0, ticks: 100, step: 4 });
   const base = { clientX: p.x, clientY: p.y, pointerType: "touch" };
@@ -616,7 +606,7 @@ await step("expressions (WSHED-122, via Rails ▾): f arms and a tap puts it on 
   await page.keyboard.press("Escape");
   await page.click("[data-pop=cp-text-more]"); await page.fill("#cp-text-in", "con brio"); await page.press("#cp-text-in", "Enter");
   const typed = await state();
-  if (typed.pending?.kind !== "text" || typed.pending.value !== "con brio" || typed.armed.rest) throw new Error("typed text " + JSON.stringify(typed.pending));
+  if (typed.pending?.kind !== "text" || typed.pending.value !== "con brio") throw new Error("typed text " + JSON.stringify(typed.pending));
   if ((await page.textContent("#cp-text-lbl")) !== "con brio") throw new Error("the text button does not show the armed words");
   await page.keyboard.press("Escape");
   if ((await state()).pending) throw new Error("Escape did not disarm the text");

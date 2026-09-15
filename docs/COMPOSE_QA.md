@@ -52,6 +52,9 @@ phase's card (WSHED-115 … 122).
 - [ ] Notes +: portato (a dash with a dot) hugs the head; breath ' and caesura // sit after the note at the staff's top; **Orn ▾** on a selection: trill with a wavy line to the next note, tr♯ / tr♭ / tr♮ (the accidental over tr), inverted turn, turn after the note. Play: trills alternate in thirty-seconds, mordents and turns as written. **flip** flips the stems (again on set stems → automatic), **break** breaks the beam before the note (again → joins). Hold **Grace** → chord: taps stack on the last grace.
 - [ ] Export PDF: every sign above is on paper (the % and the two-bar sign, the ✱, the dashed lines, the ring, the wavy trill line, the 15ma). Export MusicXML → Sibelius / MuseScore show them; import back keeps them (stems are written but not read; beam breaks are not written).
 
+## The Rest toggle is gone (v99)
+- [ ] The Notes rail ends at the accidentals: no Rest button, and `r` does nothing. Delete on a selection turns notes into rests; a tapped-out bar is rests already.
+
 ## Voices (WSHED-120)
 - [ ] `voice ▾` → 2, tap: the second voice's stems point down; rests of the two voices sit apart; a rest drags up or down.
 - [ ] ⌘⇧↑ / ↓ (or the menu) sends a note to the other staff and its beam follows.
