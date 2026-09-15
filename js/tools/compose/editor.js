@@ -10,14 +10,14 @@ import { haptic } from "../logbook/motion.js";
 import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt, lasso, spans as spansOfLayout, isHandle } from "../../lib/compose/hit.js";
-import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, addPedal, addOttava, finger, graceAt, toggleGrace, tremolo, pitchFromStep, moveExpressions, moveSpanEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, addPedal, addOttava, addTextLine, finger, graceAt, toggleGrace, tremolo, setTrill, setStem, beamBreak, setSimile, pitchFromStep, moveExpressions, moveSpanEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { createPlayer } from "../../lib/compose/play.js";
 import { clefAt, keyAt, timeAt, tempoOf, usedVoices, MAX_VOICES, MIN_TEMPO, MAX_TEMPO, GRACE_BASES } from "../../lib/compose/model.js";
 import { ticks as ticksOf, capacity, groupSize, exprGrid, WHOLE } from "../../lib/compose/ticks.js";
 import { CLEFS } from "../../lib/music.js";
-import { buildRails, MAIN_BASES, MORE_BASES, KEYS, RAILS, DEFAULT_RAILS, JUMP_LABEL, durName, tupletName } from "./rails.js";
+import { buildRails, MAIN_BASES, MORE_BASES, KEYS, RAILS, DEFAULT_RAILS, JUMP_LABEL, HANDS, durName, tupletName } from "./rails.js";
 import { openCompositionDetails } from "./details.js";
 import { openExportSheet } from "./exportsheet.js";
 import { saveFile } from "./savefile.js";
@@ -25,9 +25,10 @@ import { toMusicXml, musicXmlFileName, MUSICXML_TYPE } from "../../lib/compose/m
 
 const TAP_MS = 300, TAP_PX = 10, PALM_PX = 40, S_MIN = 8, S_MAX = 22, SAVE_MS = 300, LASSO_PX = 6;
 const KEY_BASE = { 1: 64, 2: 32, 3: 16, 4: 8, 5: 4, 6: 2, 7: 1 };
-const EXPR_TYPES = new Set(["dyn", "text", "hairpin", "hairpin-start", "hairpin-end", "pedal", "pedal-start", "pedal-end", "ottava", "ottava-start", "ottava-end"]); // the selectable expressions and a selected span's two handles
-const SPAN_PENDING = new Set(["hairpin", "pedal", "ottava"]); // pending kinds placed by two taps (start, end)
-const LINE_NAME = { pedal: "pedal", 1: "8va", "-1": "8vb" };
+const EXPR_TYPES = new Set(["dyn", "text", "hairpin", "hairpin-start", "hairpin-end", "pedal", "pedal-start", "pedal-end", "ottava", "ottava-start", "ottava-end", "textline", "textline-start", "textline-end"]); // the selectable expressions and a selected span's two handles
+const SPAN_PENDING = new Set(["hairpin", "pedal", "ottava", "textline"]); // pending kinds placed by two taps (start, end)
+const LINE_NAME = { pedal: "pedal", 1: "8va", "-1": "8vb", "1:15": "15ma", "-1:15": "15mb" };
+const PEDAL_STYLES = ["line", "sign", "sost"], TEMPO_UNIT_BASES = [2, 4, 8];
 let clipboard = null; // the copied phrase — lives for the session, so it can travel between compositions
 
 export function openEditor({ id, ctx, onClose }) {
@@ -52,6 +53,10 @@ export function openEditor({ id, ctx, onClose }) {
   const heading = () => (composer ? `${composer} – ${title}` : title);
   let tempo = tempoOf(c);              // playback tempo — saved with the piece, outside undo
   let pending = null;                  // an armed key / time / clef change waiting for a tap: { kind, value }
+  const savedUnit = store.get("tempoUnit", null), savedHands = store.get("hands", null), savedPedal = store.get("pedalStyle", null); // v98 (docs/COMPOSE_RAILS2_DESIGN.md §4): remembered per device
+  let tempoUnit = TEMPO_UNIT_BASES.includes(savedUnit?.base) ? { base: savedUnit.base, dots: savedUnit.dots ? 1 : 0 } : { base: 4, dots: 0 };
+  let hands = HANDS[savedHands] ? savedHands : "en";
+  let pedalStyle = PEDAL_STYLES.includes(savedPedal) ? savedPedal : "line";
   const savedRails = store.get("rails", null);
   let railsOn = Object.fromEntries(RAILS.map(([k]) => [k, typeof savedRails?.[k] === "boolean" ? savedRails[k] : DEFAULT_RAILS[k]])); // which rails show — remembered per device
   const sound = createSound(getAudio);
@@ -105,7 +110,7 @@ export function openEditor({ id, ctx, onClose }) {
     return { any: fs.length > 0, exprs, dyns: exprs && xs.every((f) => f.x.kind === "dyn"), texts: exprs && xs.every((f) => f.x.kind === "text"), notes: notes.length > 0, rests: rests.length > 0, hidden: rests.length > 0 && rests.every((f) => f.ev.hidden), up: notes.some((f) => f.staff + (f.ev.cross ?? 0) - 1 >= 0 && Math.abs((f.ev.cross ?? 0) - 1) <= 1), down: notes.some((f) => f.staff + (f.ev.cross ?? 0) + 1 < n && Math.abs((f.ev.cross ?? 0) + 1) <= 1) };
   }
   function sync() {
-    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title: heading(), voice, used: usedVoices(doc), sel: selFacts() });
+    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title: heading(), voice, used: usedVoices(doc), sel: selFacts(), tempoUnit, hands, pedalStyle });
     view.dataset.mode = mode; view.classList.toggle("pasting", pasting); view.classList.toggle("arming", !!pending);
     syncTransport();
   }
@@ -216,11 +221,12 @@ export function openEditor({ id, ctx, onClose }) {
       const si = L.hit.systems.indexOf(hb.sys), x = xOfTicks(hb.bar, t.at), abs = absOf(t.bar, t.at);
       if (pending.kind === "dyn") return R.showGhost({ dyn: pending.value, x: x + 0.59, y: L.exprLine(si, t.staff, abs, abs + 1) });
       if (pending.kind === "text") return R.showGhost({ text: pending.value, x, y: L.textLine(si, t.staff, abs) });
-      const lineY = (k, staff, a, b) => (pending.kind === "hairpin" ? L.exprLine(k, staff, a, b) : pending.kind === "pedal" ? L.pedalLine(k, staff, a, b) : L.ottavaLine(k, staff, a, b + 1, pending.value));
-      if (!pending.start) return pending.kind === "hairpin" ? R.showGhost({ hairpin: pending.value, x1: x, x2: x + 3, y: lineY(si, t.staff, abs, abs + 1) }) : R.showGhost({ line: pending.kind, dir: pending.value, x1: x - 0.2, x2: x + 4, y: lineY(si, t.staff, abs, abs + 1) });
+      const lineY = (k, staff, a, b) => (pending.kind === "hairpin" || pending.kind === "textline" ? L.exprLine(k, staff, a, b) : pending.kind === "pedal" ? L.pedalLine(k, staff, a, b) : L.ottavaLine(k, staff, a, b + 1, pending.value));
+      const lineSpec = (x1, x2, y) => (pending.kind === "textline" ? { line: "textline", text: pending.value.text, x1, x2, y } : { line: pending.kind, dir: pending.value, size: pending.size, style: pending.value, x1, x2, y });
+      if (!pending.start) return pending.kind === "hairpin" ? R.showGhost({ hairpin: pending.value, x1: x, x2: x + 3, y: lineY(si, t.staff, abs, abs + 1) }) : R.showGhost(lineSpec(x - 0.2, x + 4, lineY(si, t.staff, abs, abs + 1)));
       const s = pending.start, sb = barAt(L, s.bar), ssi = L.hit.systems.indexOf(sb.sys), sx = xOfTicks(sb.bar, s.at), sAbs = absOf(s.bar, s.at);
       const sameSys = ssi === si, x2 = sameSys ? x : sb.sys.bars[sb.sys.bars.length - 1].x1 - 0.3; // on another system the band runs open to the start system's end
-      if (pending.kind !== "hairpin") return R.showGhost({ line: pending.kind, dir: pending.value, x1: sx - 0.2, x2: Math.max(sx + 0.5, x2), y: lineY(ssi, s.staff, sAbs, Math.max(sAbs + 1, abs)) });
+      if (pending.kind !== "hairpin") return R.showGhost(lineSpec(sx - 0.2, Math.max(sx + 0.5, x2), lineY(ssi, s.staff, sAbs, Math.max(sAbs + 1, abs))));
       return R.showGhost({ hairpin: pending.value, x1: sx, x2: Math.max(sx + 0.5, x2), y: L.exprLine(ssi, s.staff, sAbs, Math.max(sAbs + 1, abs)) });
     }
     if (pending.kind === "finger") { R.showGhost(null); return R.showTarget(null); } // the head under the pen is the target; nothing to preview
@@ -257,20 +263,20 @@ export function openEditor({ id, ctx, onClose }) {
       } else if (p.kind === "dyn" || p.kind === "text") { commit(addExpression(doc, { kind: p.kind, staff: t.staff, bar: t.bar, at: t.at, value: p.value }).doc); toast(`${p.value} on ${slotName(t.bar, t.at)}`); }
       else if (p.kind === "hairpin") {
         if (!p.start) { pending = { ...p, start: t }; toast("now tap where it ends"); haptic(6); sync(); return; } // the first tap of three is the start; the second is the end
-        commit(addHairpin(doc, { staff: p.start.staff, bar: p.start.bar, at: p.start.at, dir: p.value, end: { bar: t.bar, at: t.at } }).doc);
-        toast(`${p.value === "cresc" ? "crescendo" : "diminuendo"} from ${slotName(p.start.bar, p.start.at)} to ${slotName(t.bar, t.at)}`);
-      } else if (p.kind === "pedal" || p.kind === "ottava") { // the Piano rail (WSHED-125): the same two taps as a hairpin
-        if (!p.start) { pending = { ...p, start: t }; toast(p.kind === "pedal" ? "now tap where it lifts" : "now tap the last note it covers"); haptic(6); sync(); return; }
+        commit(addHairpin(doc, { staff: p.start.staff, bar: p.start.bar, at: p.start.at, dir: p.value, end: { bar: t.bar, at: t.at }, niente: !!p.niente }).doc);
+        toast(`${p.value === "cresc" ? "crescendo" : "diminuendo"}${p.niente ? (p.value === "cresc" ? " from nothing" : " to nothing") : ""} from ${slotName(p.start.bar, p.start.at)} to ${slotName(t.bar, t.at)}`);
+      } else if (p.kind === "pedal" || p.kind === "ottava" || p.kind === "textline") { // the Piano rail (WSHED-125) and the text line (WSHED-127): the same two taps as a hairpin
+        if (!p.start) { pending = { ...p, start: t }; toast(p.kind === "pedal" ? "now tap where it lifts" : p.kind === "textline" ? "now tap where it ends" : "now tap the last note it covers"); haptic(6); sync(); return; }
         const args = { staff: p.start.staff, bar: p.start.bar, at: p.start.at, end: { bar: t.bar, at: t.at } };
-        commit(p.kind === "pedal" ? addPedal(doc, args).doc : addOttava(doc, { ...args, dir: p.value }).doc);
-        toast(`${p.kind === "pedal" ? "pedal" : LINE_NAME[p.value]} from ${slotName(p.start.bar, p.start.at)} to ${slotName(t.bar, t.at)}`);
+        commit(p.kind === "pedal" ? addPedal(doc, { ...args, style: p.value === "line" ? null : p.value }).doc : p.kind === "textline" ? addTextLine(doc, { ...args, text: p.value.text, endText: p.value.endText }).doc : addOttava(doc, { ...args, dir: p.value, size: p.size }).doc);
+        toast(`${p.kind === "pedal" ? (p.value === "sost" ? "sostenuto pedal" : "pedal") : p.kind === "textline" ? `${p.value.text} line` : LINE_NAME[p.size === 15 ? `${p.value}:15` : p.value]} from ${slotName(p.start.bar, p.start.at)} to ${slotName(t.bar, t.at)}`);
       } else if (p.kind === "grace") { // the extended Notes rail (WSHED-126): stays on; the tap names the pitch and the next note of the voice takes the grace (the same pitch again removes it)
         const g = graceAt(doc, { bar: t.bar, staff: t.staff, ticks: t.ticks, voice });
         if (!g) { toast("no note to grace"); return; }
         const pitch = pitchFromStep(t.step, clefAt(doc, g.bar, t.staff, g.start), keyAt(doc, g.bar));
-        const r = toggleGrace(doc, g.ev.id, { pitch, base: graceBase(), slash: !!p.value.slash });
+        const r = toggleGrace(doc, g.ev.id, { pitch, base: graceBase(), slash: !!p.value.slash, chord: !!p.value.chord });
         commit(r.doc); haptic(6);
-        if (r.added) { sound.play([pitch], 140); toast(`grace note before ${slotName(g.bar, g.start)}`); } else toast("grace note removed");
+        if (r.added) { sound.play([pitch], 140); toast(`grace ${p.value.chord ? "chord" : "note"} before ${slotName(g.bar, g.start)}`); } else toast("grace note removed");
         return;
       } else if (p.kind === "finger") { // stays armed: every tap on a head stamps it (the same digit there again clears it)
         const th = thingAt(L, t.x, t.y);
@@ -279,24 +285,31 @@ export function openEditor({ id, ctx, onClose }) {
         if (next !== doc) { commit(next); toast(find(next, th.ev).ev.pitches[th.pi].finger ? `finger ${p.value}` : `finger ${p.value} cleared`); haptic(6); }
         return;
       } else if (p.kind === "barline") { // docs/COMPOSE_FORM_DESIGN.md §3: the picture says which end of the bar; "both" closes this bar and opens the next
-        const k = p.value, b = t.bar, m = doc.measures[b];
+        const k = p.value, b = t.bar, m = doc.measures[b], times = /^repeat[34]$/.test(k) ? Number(k.slice(-1)) : null;
         let next = doc;
         if (k === "single") next = setBarline(doc, b, { start: null, end: null });
         else if (k === "repeat-start") next = setBarline(doc, b, { start: m.barline?.start ? null : "repeat" });
         else if (k === "both") { next = setBarline(doc, b, { end: "repeat" }); if (b + 1 < doc.measures.length) next = setBarline(next, b + 1, { start: "repeat" }); }
-        else next = setBarline(doc, b, { end: m.barline?.end === k ? null : k });
+        else if (times) next = setBarline(doc, b, m.barline?.end === "repeat" && m.barline.times === times ? { end: null, times: null } : { end: "repeat", times }); // ×3 / ×4 (WSHED-127): the same again clears the repeat
+        else next = setBarline(doc, b, { end: m.barline?.end === k ? null : k, ...(k === "repeat" ? { times: null } : {}) });
         if (next === doc) { toast("already so"); setPending(null); return; }
-        commit(next); toast(k === "single" ? `plain barline on bar ${b + 1}` : k === "repeat-start" ? `${next.measures[b].barline?.start ? "repeat starts at" : "no repeat start on"} bar ${b + 1}` : k === "both" ? `repeat ends on bar ${b + 1} and starts again on bar ${b + 2}` : `${next.measures[b].barline?.end ? `${k} barline on` : "plain barline on"} bar ${b + 1}`);
+        commit(next); toast(k === "single" ? `plain barline on bar ${b + 1}` : k === "repeat-start" ? `${next.measures[b].barline?.start ? "repeat starts at" : "no repeat start on"} bar ${b + 1}` : k === "both" ? `repeat ends on bar ${b + 1} and starts again on bar ${b + 2}` : times ? (next.measures[b].barline?.times ? `repeat ×${times} on bar ${b + 1}` : `plain barline on bar ${b + 1}`) : `${next.measures[b].barline?.end ? `${k} barline on` : "plain barline on"} bar ${b + 1}`);
       } else if (p.kind === "ending") {
         if (p.start === undefined) { pending = { ...p, start: t.bar }; toast(`ending ${p.value} from bar ${t.bar + 1} — now tap its last bar`); haptic(6); sync(); return; }
         const a = Math.min(p.start, t.bar), b = Math.max(p.start, t.bar);
         const next = setEnding(doc, a, p.value, b);
         commit(next); toast(next.measures[a].ending ? `ending ${p.value} over ${a === b ? `bar ${a + 1}` : `bars ${a + 1}–${b + 1}`}` : `ending ${p.value} removed`);
+      } else if (p.kind === "simile") { // a bar repeat (WSHED-127): the tap names the bar
+        const next = setSimile(doc, t.bar, p.value);
+        if (next === doc) { toast("already so"); setPending(null); return; }
+        commit(next); toast(next.measures[t.bar].simile ? `${p.value === 2 ? "two-bar" : "bar"} repeat on bar ${t.bar + 1}` : `bar repeat removed from bar ${t.bar + 1}`);
       } else if (p.kind === "sign" || p.kind === "jump" || p.kind === "rehearsal" || p.kind === "tempo-mark") {
-        const mark = p.kind === "tempo-mark" ? { kind: "tempo", ...p.value } : { kind: p.kind === "rehearsal" ? "rehearsal" : p.value };
-        const had = (doc.measures[t.bar].form ?? []).some((f) => f.kind === mark.kind && (mark.kind !== "tempo" || (f.bpm === mark.bpm && (f.text ?? "") === (mark.text ?? ""))));
+        const mark = p.kind === "tempo-mark" ? { kind: "tempo", ...p.value } : p.kind === "rehearsal" ? { kind: "rehearsal", ...(p.value ?? {}) } : { kind: p.value };
+        const unitKey = (u) => (u ? `${u.base}.${u.dots ?? 0}` : "4.0");
+        const had = (doc.measures[t.bar].form ?? []).some((f) => f.kind === mark.kind && (mark.kind === "tempo" ? f.bpm === mark.bpm && (f.text ?? "") === (mark.text ?? "") && unitKey(f.unit) === unitKey(mark.unit) : mark.kind === "rehearsal" ? (f.text ?? "") === (mark.text ?? "") && (f.style ?? "") === (mark.style ?? "") : true));
         commit(toggleFormMark(doc, t.bar, mark));
-        const name = mark.kind === "tempo" ? `♩ = ${mark.bpm}${mark.text ? ` ${mark.text}` : ""}` : mark.kind === "rehearsal" ? "rehearsal mark" : mark.kind === "segno" ? "segno" : mark.kind === "coda" ? "coda sign" : JUMP_LABEL[mark.kind];
+        const unitName = mark.unit ? ({ 8: "♪", 4: "♩", 2: "𝅗𝅥" }[mark.unit.base] + (mark.unit.dots ? "." : "")) : "♩";
+        const name = mark.kind === "tempo" ? `${unitName} = ${mark.bpm}${mark.text ? ` ${mark.text}` : ""}` : mark.kind === "rehearsal" ? (mark.text ? `"${mark.text}"` : mark.style === "number" ? "rehearsal number" : "rehearsal mark") : mark.kind === "segno" ? "segno" : mark.kind === "coda" ? "coda sign" : JUMP_LABEL[mark.kind];
         toast(had ? `${name} removed from bar ${t.bar + 1}` : `${name} ${JUMP_LABEL[mark.kind] ? "at the end of" : "on"} bar ${t.bar + 1}`);
       } else { commit(setClef(doc, t.bar, t.staff, p.value, t.at)); toast(`${p.value} clef on the ${t.staff === 0 ? "upper" : "lower"} staff from ${t.at ? `beat ${t.at / groupSize(timeAt(doc, t.bar)) + 1} of ` : ""}bar ${t.bar + 1}`); }
       haptic(8);
@@ -701,9 +714,31 @@ export function openEditor({ id, ctx, onClose }) {
         setPending({ kind: name, value: arg }); toast(`${name === "sign" ? (arg === "segno" ? "segno" : "coda sign") : JUMP_LABEL[arg]} — tap the bar${name === "jump" ? " it ends" : ""}`);
         return;
       }
-      case "rehearsal": {
-        if (pending?.kind === "rehearsal") { setPending(null); return; }
-        setPending({ kind: "rehearsal" }); toast("rehearsal mark — tap the bar");
+      case "rehearsal": { // arg = "letter" | "number" | "word" from the hold menu; a plain tap arms letters
+        const style = arg ?? "letter";
+        if (arg === undefined && pending?.kind === "rehearsal") { setPending(null); return; }
+        let value = {};
+        if (style === "number") value = { style: "number" };
+        else if (style === "word") { const v = prompt("the rehearsal word (Trio, Coda, Minore…)", ""); if (v === null) return; const text = v.replace(/\s+/g, " ").trim().slice(0, 12); if (!text) { toast("say the word"); return; } value = { text }; }
+        setPending({ kind: "rehearsal", value }); toast(`${value.text ? `"${value.text}"` : style === "number" ? "rehearsal number" : "rehearsal letter"} — tap the bar`);
+        return;
+      }
+      case "tempo-unit": { // the beat unit of the next tempo mark, remembered per device
+        if (!TEMPO_UNIT_BASES.includes(arg?.base)) return;
+        tempoUnit = { base: arg.base, dots: arg.dots ? 1 : 0 }; store.set("tempoUnit", tempoUnit);
+        if (pending?.kind === "tempo-mark") pending = { ...pending, value: { ...pending.value, ...(tempoUnit.base === 4 && !tempoUnit.dots ? {} : { unit: tempoUnit }) } };
+        sync(); toast(`${{ 8: "♪", 4: "♩", 2: "𝅗𝅥" }[tempoUnit.base]}${tempoUnit.dots ? "." : ""} = — the next tempo mark's beat`);
+        return;
+      }
+      case "simile": { // a bar repeat: arms the sign; the tap names the bar
+        const n = Number(arg) === 2 ? 2 : 1;
+        if (pending?.kind === "simile" && pending.value === n) { setPending(null); return; }
+        setPending({ kind: "simile", value: n }); toast(`${n === 2 ? "two-bar" : "bar"} repeat — tap the empty bar`);
+        return;
+      }
+      case "hands": { // r.h. / l.h. in English, French or Italian
+        if (!HANDS[arg]) return;
+        hands = arg; store.set("hands", hands); sync();
         return;
       }
       case "tempo-mark": {
@@ -713,7 +748,8 @@ export function openEditor({ id, ctx, onClose }) {
         const m = /^\s*(.*?)\s*(\d+)\s*$/.exec(v);
         if (!m) { toast("say a number, like 120, or Allegro 120"); return; }
         const bpm = Math.max(MIN_TEMPO, Math.min(MAX_TEMPO, Number(m[2]))), text = m[1].trim().slice(0, 20);
-        setPending({ kind: "tempo-mark", value: { bpm, ...(text ? { text } : {}) } }); toast(`♩ = ${bpm}${text ? ` ${text}` : ""} — tap the bar it starts at`);
+        const unit = tempoUnit.base === 4 && !tempoUnit.dots ? null : tempoUnit;
+        setPending({ kind: "tempo-mark", value: { bpm, ...(text ? { text } : {}), ...(unit ? { unit } : {}) } }); toast(`${{ 8: "♪", 4: "♩", 2: "𝅗𝅥" }[tempoUnit.base]}${tempoUnit.dots ? "." : ""} = ${bpm}${text ? ` ${text}` : ""} — tap the bar it starts at`);
         return;
       }
       case "art": {
@@ -737,14 +773,51 @@ export function openEditor({ id, ctx, onClose }) {
         setPending({ kind: "dyn", value: arg }); toast(`${arg} — tap the beat it goes on`);
         return;
       }
-      case "pedal": { // the Piano rail (WSHED-125): three taps like a hairpin
-        if (pending?.kind === "pedal") { setPending(null); return; }
-        setPending({ kind: "pedal", start: null }); toast("pedal — tap where it goes down, then where it lifts");
+      case "pedal": { // the Piano rail (WSHED-125): three taps like a hairpin; arg = a style from the hold menu (remembered)
+        if (arg && PEDAL_STYLES.includes(arg)) { pedalStyle = arg; store.set("pedalStyle", pedalStyle); }
+        else if (pending?.kind === "pedal") { setPending(null); return; }
+        setPending({ kind: "pedal", value: pedalStyle, start: null }); toast(`${pedalStyle === "sost" ? "sostenuto pedal" : pedalStyle === "sign" ? "Ped. ✱" : "pedal"} — tap where it goes down, then where it lifts`);
         return;
       }
-      case "ottava": {
-        if (pending?.kind === "ottava" && pending.value === arg) { setPending(null); return; }
-        setPending({ kind: "ottava", value: arg, start: null }); toast(`${LINE_NAME[arg]} — tap the first note it covers, then the last`);
+      case "ottava": { // arg = { dir, size }
+        const dir = Number(arg?.dir ?? arg), size = arg?.size === 15 ? 15 : 8;
+        if (pending?.kind === "ottava" && pending.value === dir && (pending.size ?? 8) === size) { setPending(null); return; }
+        setPending({ kind: "ottava", value: dir, size, start: null }); toast(`${LINE_NAME[size === 15 ? `${dir}:15` : dir]} — tap the first note it covers, then the last`);
+        return;
+      }
+      case "textline": { // "cresc. – – –", "una corda … tre corde": two taps like a hairpin
+        const text = String(arg?.text ?? "").trim(), endText = String(arg?.endText ?? "").trim();
+        if (!text) return;
+        if (pending?.kind === "textline" && pending.value.text === text) { setPending(null); return; }
+        setPending({ kind: "textline", value: { text, endText }, start: null }); toast(`${text} — tap where it starts, then where it ends`);
+        return;
+      }
+      case "trill": { // Orn ▾ (WSHED-127): a line or an accidental on the selected notes' trills
+        if (!selection.size) { toast("select notes to trill"); return; }
+        try { commit(setTrill(doc, selEvIds(), arg)); haptic(8); toast(arg.line ? "trill with a line" : `trill with a ${arg.alter === 1 ? "sharp" : arg.alter === -1 ? "flat" : "natural"}`); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+        return;
+      }
+      case "stem": { // flip the selected notes' stems; every one already set → back to automatic
+        if (!selection.size) { toast("select the notes to flip"); return; }
+        const ids = selEvIds().filter((id) => find(doc, id)?.ev.kind === "note");
+        if (!ids.length) { toast("select notes to flip"); return; }
+        try {
+          if (ids.every((id) => find(doc, id).ev.stem)) { commit(setStem(doc, ids, null)); toast("stems automatic again"); haptic(8); return; }
+          const drawn = (id) => L.drawn.find((d) => d.id === id)?.stem ?? "up";
+          const ups = ids.filter((id) => drawn(id) === "down"), downs = ids.filter((id) => drawn(id) === "up");
+          let next = doc; if (ups.length) next = setStem(next, ups, "up"); if (downs.length) next = setStem(next, downs, "down");
+          commit(next); toast(ids.length === 1 ? "stem flipped" : "stems flipped"); haptic(8);
+        } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+        return;
+      }
+      case "beam": {
+        if (!selection.size) { toast("select the note the beam breaks before"); return; }
+        try { const next = beamBreak(doc, selEvIds()); commit(next); toast(selEvIds().every((id) => find(next, id)?.ev.beam === "break") ? `beam broken before ${selEvIds().length === 1 ? "the note" : `${selEvIds().length} notes`}` : "beam joined"); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+        return;
+      }
+      case "grace-chord": { // with Grace on: the next taps stack pitches on the last grace; off Grace: arms it so
+        const on = pending?.kind === "grace" ? !pending.value?.chord : true;
+        setPending({ kind: "grace", value: { slash: pending?.kind === "grace" ? !!pending.value?.slash : true, chord: on } }); toast(on ? "grace chord — each tap stacks on the last grace" : "grace notes — each tap adds one");
         return;
       }
       case "grace": { // the extended Notes rail (WSHED-126): a toggle — on, a tap places a grace note; arg picks slashed (true) / plain (false) from the hold menu
@@ -771,9 +844,10 @@ export function openEditor({ id, ctx, onClose }) {
         setPending({ kind: "finger", value: n }); toast(`finger ${n} — tap the notes`);
         return;
       }
-      case "hairpin": { // three taps: the button, where it starts, where it ends
-        if (pending?.kind === "hairpin" && pending.value === arg) { setPending(null); return; }
-        setPending({ kind: "hairpin", value: arg, start: null }); toast(`${arg === "cresc" ? "crescendo" : "diminuendo"} — tap where it starts, then where it ends`);
+      case "hairpin": { // three taps: the button, where it starts, where it ends; arg = the kind, or { kind, niente } from the hold menu
+        const kind = typeof arg === "string" ? arg : arg?.kind, niente = typeof arg === "object" && !!arg?.niente;
+        if (pending?.kind === "hairpin" && pending.value === kind && !!pending.niente === niente) { setPending(null); return; }
+        setPending({ kind: "hairpin", value: kind, niente, start: null }); toast(`${kind === "cresc" ? "crescendo" : "diminuendo"}${niente ? (kind === "cresc" ? " from nothing" : " to nothing") : ""} — tap where it starts, then where it ends`);
         return;
       }
       case "text": { // a chip or typed words: with texts selected it retypes them; otherwise it arms

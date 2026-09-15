@@ -44,6 +44,14 @@ phase's card (WSHED-115 … 122).
 - [ ] Play a bar with a slashed grace: it sounds just before the beat and the previous note ends early; a plain grace takes the first half of its note.
 - [ ] Drag a graced note up a step: the grace moves with it. Export PDF: graces, beams, slashes, slurs and tremolo bars are on paper. Export MusicXML → Sibelius shows them; Sibelius → import keeps them.
 
+## The rails filled out (WSHED-127, v98)
+- [ ] Dynamics: hold **pp** → ppp / pppp, hold **ff** → fff / ffff; **sf ▾** → sfz on a beat: the note there jumps two steps louder, the level after is unchanged; fp: an f attack, then p. Hold **<** → *cresc.* – – – (dashed words to the end tap) and *from nothing* (a ring at the tip; playback from silence). Text ▾ has più f, meno f, sub. p, poco a poco, sempre, leggiero, sotto voce, sim.
+- [ ] rit. / rall. / accel. text is heard: the tempo ramps to 70 % (130 %) until *a tempo*, the next tempo mark or the end of the following bar, then the tempo before it resumes. A fermata holds its note 1.5×; a caesura pauses half a beat after its note.
+- [ ] Form: Barline ▾ has repeat ×3 / ×4 (the "3×" over the barline; playback passes three times). Hold **♩=** → ♪ / ♩ / ♩. / 𝅗𝅥, the button shows it, the next tempo mark uses it (♪ = 120 plays as ♩ = 60). Hold **A** → numbers / a word (Trio). **%** on an empty bar after a full one: the sign on both staves, no rest; hold for two bars (the sign on the barline with a 2); playback repeats the bar(s) before; a note placed into the bar clears the sign; a bar with notes is refused.
+- [ ] Piano: hold **8va** → 15ma (two octaves: the heads draw fourteen steps lower), hold **8vb** → 15mb. Hold **Ped.** → Ped. ✱ (signs, no line) / Sost. Ped. (the sign and a line); the choice is remembered. **u.c.** by two taps: *una corda* … dashes … *tre corde*, below the dynamics; notes under it play softer. **r.h.** / **l.h.** land as text; hold r.h. for m.d./m.g. or m.d./m.s.
+- [ ] Notes +: portato (a dash with a dot) hugs the head; breath ' and caesura // sit after the note at the staff's top; **Orn ▾** on a selection: trill with a wavy line to the next note, tr♯ / tr♭ / tr♮ (the accidental over tr), inverted turn, turn after the note. Play: trills alternate in thirty-seconds, mordents and turns as written. **flip** flips the stems (again on set stems → automatic), **break** breaks the beam before the note (again → joins). Hold **Grace** → chord: taps stack on the last grace.
+- [ ] Export PDF: every sign above is on paper (the % and the two-bar sign, the ✱, the dashed lines, the ring, the wavy trill line, the 15ma). Export MusicXML → Sibelius / MuseScore show them; import back keeps them (stems are written but not read; beam breaks are not written).
+
 ## Voices (WSHED-120)
 - [ ] `voice ▾` → 2, tap: the second voice's stems point down; rests of the two voices sit apart; a rest drags up or down.
 - [ ] ⌘⇧↑ / ↓ (or the menu) sends a note to the other staff and its beam follows.

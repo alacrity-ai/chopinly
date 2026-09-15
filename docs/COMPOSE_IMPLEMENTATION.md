@@ -349,6 +349,18 @@ an old piece opens with its marks in place.
   subsetting fails, the fallback is embedding the whole font (~1 MB per PDF) —
   a size cost, never a fidelity cost. Raster is not a fallback.
 
+## Phase 10 — the rails filled out — LANDED v98 (WSHED-127, 2026-09-15)
+
+Leif's brainstorm after v97 ("a few more buttons" on four rails), landed as one release. Design and as-built:
+`docs/COMPOSE_RAILS2_DESIGN.md`. Model: the ten dynamic levels and five sudden ones, `niente`, a fourth span
+kind `textline`, `size` on an octave line, `style` on a pedal, `barline.times`, a tempo mark's `unit`, a
+rehearsal mark's `text` / `style`, `measure.simile`, five marks, `trill` options, `stem` and `beam` overrides;
+engine `addTextLine` / `setSimile` / `simileSource` / `setTrill` / `setStem` / `beamBreak` / grace chords / `quarterBpm`;
+playback hears sudden dynamics, niente, text-line ramps, una corda, rit. / accel. / a tempo, fermata and caesura,
+the ornaments, portato and breath, bar repeats and repeat times; the engraver draws all of it; hold menus on the
+rails; MusicXML both ways; `tests/compose-rails2.test.mjs`; the E2E step. Own rounds next: pickup bars, finger
+substitutions, two-note tremolo.
+
 ## Phase 9 — the extended Notes rail (grace notes, tremolo, marcato, staccatissimo) — LANDED v97 (WSHED-126, 2026-09-15)
 
 Leif's shape: grace as a toggle on the palette's value, on a second Notes lane. Design and as-built:

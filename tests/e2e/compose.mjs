@@ -2,18 +2,19 @@
 // staff, select, delete, undo / redo, nudge on overflow, palm safety, Pan,
 // reload, export, MusicXML both ways. Chromium with an iPad user agent and touch.
 // BASE=… SHOTS=… node tests/e2e/compose.mjs
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { chromium } from "/home/leif/lets-get-rich/claude_ops/.claude/skills/tcw-quote/node_modules/playwright/index.mjs";
 const S = process.env.SHOTS ?? ".", BASE = process.env.BASE ?? "http://127.0.0.1:8789";
 const IPAD_UA = "Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 1024, height: 768 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: IPAD_UA });
+await ctx.addInitScript(() => { const orig = Element.prototype.setAttribute; Element.prototype.setAttribute = function (k, v) { if (/NaN/.test(String(v))) console.error(`NaN attribute ${this.tagName} ${k} class=${this.getAttribute("class")} at ${(new Error().stack ?? "").split("\n").slice(2, 5).join(" | ")}`); return orig.call(this, k, v); }; }); // a NaN coordinate names its painter
 const page = await ctx.newPage();
 const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
-page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push(`console: ${m.text()}`); });
+page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) { const l = m.location(); errors.push(`console: ${m.text()}${l?.url ? ` @ ${l.url.replace(/^.*\/js\//, "js/")}:${l.lineNumber + 1}` : ""}`); } });
 page.on("dialog", (d) => d.accept(d.type() === "prompt" ? d.defaultValue() : undefined));
-const step = async (name, f) => { try { await f(); console.log("ok  ", name); } catch (e) { console.log("FAIL", name, "—", e.message); try { console.log("  toast:", await page.evaluate(() => document.querySelector(".lb-toast")?.textContent), "state:", JSON.stringify(await state())); } catch { /* no editor */ } await page.screenshot({ path: `${S}/fail-compose.png` }); throw e; } };
+const step = async (name, f) => { try { await f(); console.log("ok  ", name, errors.length ? `(${errors.length} page errors so far)` : ""); } catch (e) { console.log("FAIL", name, "—", e.message); if (errors.length) console.log("  page errors:", errors.join("\n  ")); try { console.log("  toast:", await page.evaluate(() => document.querySelector(".lb-toast")?.textContent), "url:", page.url()); } catch { /* gone */ } try { console.log("  state:", JSON.stringify(await state())); } catch { /* no editor */ } await page.screenshot({ path: `${S}/fail-compose.png` }); throw e; } };
 const lb = (fn, ...args) => page.evaluate(async ([src, a]) => { const m = await import("/js/lib/logbook.js"); return (new Function("m", "a", src))(m, a); }, [`return (${fn})(m, a)`, args]);
 const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, voice: s.voice, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging, lassoing: s.lassoing, pasting: s.pasting, hasClip: s.hasClip, pending: s.pending }; });
 /** Every visible icon/glyph button (.cp-sq) is one exact square per rail height: the header's own, the lanes' shared one. */
@@ -1078,6 +1079,84 @@ await step("extended Notes rail (WSHED-126, via Rails ▾): Grace on, a tap befo
   await page.click(".cp-dur[data-base='4']");
 });
 
+await step("the rails filled out (WSHED-127, v98): sf ▾ → sfz on a beat; hold < → a cresc. text line by two taps; Barline ▾ ×3; % on an empty bar draws the sign on both staves; hold ♩= → ♪ then a tempo mark; hold Ped. → Ped. ✱ by two taps; Orn ▾ → a trill with a line, flip stem and a breath on a selection; export → import keeps them", async () => {
+  await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
+  if ((await state()).mode !== "place") await page.keyboard.press("v");
+  await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
+  for (const rail of ["expression", "form", "piano", "notes2"]) if (await page.locator(`#cp-${rail}`).isHidden()) { await page.click("[data-pop=cp-rails-more]"); await page.click(`.cp-rail-row[data-rail=${rail}]`); await page.click("[data-pop=cp-rails-more]"); }
+  const hold = async (sel) => { const bb = await page.locator(sel).first().boundingBox(); await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2); await page.mouse.down(); await page.waitForTimeout(600); await page.mouse.up(); await page.waitForTimeout(120); };
+  const docOf = () => page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc);
+  const empty = (m) => m.staves.every((st) => st.voices.every((v) => !v || v.every((e) => e.kind === "rest")));
+  const d0 = await docOf();
+  const b = d0.measures.findIndex((m) => m.staves[0].voices[0].some((e) => e.kind === "note" && !e.dur.tuplet));
+  const sb = d0.measures.findIndex((m, i) => i > 0 && empty(m) && !empty(d0.measures[i - 1]));
+  if (b < 0 || sb < 0) throw new Error(`no bar to use: ${b} ${sb}`);
+  const barTap2 = (bar) => tapAt({ bar, staff: 0, ticks: PPQ, step: 15 });
+  const facts = async () => { const d = await docOf(); const m = d.measures[b], x = (m.expressions ?? []); const n = m.staves[0].voices[0].find((e) => e.kind === "note"); return { sfz: x.filter((e) => e.kind === "dyn" && e.value === "sfz").map((e) => e.at), lines: x.filter((e) => e.kind === "textline").map((e) => `${e.text}@${e.at}-${e.end.bar}:${e.end.at}`), pedals: x.filter((e) => e.kind === "pedal").map((e) => `${e.style ?? "line"}@${e.at}`), barline: m.barline ?? null, simile: d.measures[sb].simile ?? null, tempo: (d.measures[sb].form ?? []).find((f) => f.kind === "tempo") ?? null, art: n.art ?? null, trill: n.trill ?? null, stem: n.stem ?? null }; };
+  // dynamics: sfz from the sudden picker on beat 3; a cresc. text line from the hairpin's hold menu over beats 1–4
+  await page.click("[data-pop=cp-sf-more]"); await page.click("#cp-sf-more .cp-dyn-btn[data-dyn=sfz]");
+  if ((await state()).pending?.value !== "sfz") throw new Error("sfz did not arm");
+  await tapAt({ bar: b, staff: 0, ticks: 2 * PPQ, step: 12 });
+  await hold(".cp-hairpin-btn[data-kind=cresc]"); await page.click("#cp-cresc-more .cp-textline-row");
+  if ((await state()).pending?.kind !== "textline") throw new Error("the text line did not arm: " + JSON.stringify((await state()).pending));
+  await tapAt({ bar: b, staff: 0, ticks: 0, step: 12 }); await tapAt({ bar: b, staff: 0, ticks: 3 * PPQ, step: 12 });
+  let f = await facts();
+  if (f.sfz.join() !== String(2 * PPQ) || f.lines.join() !== `cresc.@0-${b}:${3 * PPQ}`) throw new Error("dynamics rail: " + JSON.stringify(f));
+  if ((await page.locator(".cp-svg .cp-expr[data-kind=textline] .cp-textline").count()) !== 1) throw new Error("text line not drawn");
+  // form: a repeat ×3 on the bar, a bar repeat on the empty bar after a full one, ♪ = tempo
+  await page.click("[data-pop=cp-bar-more]"); await page.click(".cp-bar[data-kind=repeat3]"); await barTap2(b);
+  await page.click(".cp-simile-btn"); await barTap2(sb);
+  await hold(".cp-tempo-mark-btn"); await page.click(".cp-tempo-unit-row[data-base='8']");
+  await page.click(".cp-tempo-mark-btn"); await barTap2(sb);
+  f = await facts();
+  if (JSON.stringify(f.barline) !== '{"end":"repeat","times":3}' || f.simile !== 1 || f.tempo?.unit?.base !== 8) throw new Error("form rail: " + JSON.stringify(f));
+  if ((await page.locator(".cp-svg .cp-simile-sign").count()) !== 2) throw new Error("the % sign is not on both staves");
+  await hold(".cp-tempo-mark-btn"); await page.click(".cp-tempo-unit-row[data-base='4'][data-dots='0']"); // back to ♩ for the next steps
+  // piano: Ped. ✱ over the lower staff's beats 1–4
+  await hold(".cp-pedal-btn"); await page.click(".cp-pedal-row[data-style=sign]");
+  if ((await state()).pending?.kind !== "pedal" || (await state()).pending.value !== "sign") throw new Error("the sign pedal did not arm");
+  await tapAt({ bar: b, staff: 1, ticks: 0, step: -4 }); await tapAt({ bar: b, staff: 1, ticks: 3 * PPQ, step: -4 });
+  f = await facts();
+  if (f.pedals.join() !== "sign@0") throw new Error("pedal style: " + JSON.stringify(f));
+  if ((await page.locator(".cp-svg .cp-expr[data-kind=pedal] .cp-pedal-sign").count()) !== 2 || (await page.locator(".cp-svg .cp-expr[data-kind=pedal] .cp-pedal-line").count()) !== 0) throw new Error("Ped. ✱ should be two signs and no line");
+  await hold(".cp-pedal-btn"); await page.click(".cp-pedal-row[data-style=line]"); await page.keyboard.press("Escape");
+  // notes: select the bar's first head → Orn ▾ trill with a line, flip stem, a breath mark
+  const headOf = () => page.evaluate((b) => { const ed = document.querySelector(".cp-editor").__editor, d = ed.layout.drawn.find((x) => !x.rest && x.bar === b && x.staff === 0), r = document.querySelector(".cp-svg").getBoundingClientRect(); return { x: r.left + (d.x + d.headW / 2) * ed.layout.S, y: r.top + d.heads[0].y * ed.layout.S, stem: d.stem }; }, b);
+  let first = await headOf();
+  { const vr = await page.evaluate(() => { const r = document.querySelector("#cp-view").getBoundingClientRect(); return [r.top, r.bottom]; }); if (first.y < vr[0] + 12 || first.y > vr[1] - 24) { await page.evaluate((y) => { const v = document.querySelector("#cp-view"); v.scrollTop += y - v.getBoundingClientRect().top - v.clientHeight * 0.5; }, first.y); first = await headOf(); } } // under the rails: scroll it into the view first
+  await page.mouse.click(first.x, first.y);
+  if (!(await state()).selection.length) throw new Error("head not selected");
+  await page.click("[data-pop=cp-orn-more]"); await page.click(".cp-orn-row[data-i='0']");
+  await page.click(".cp-stem-btn"); await page.click(".cp-art-btn[data-mark=breath]");
+  f = await facts();
+  if (!f.art?.includes("trill") || !f.art.includes("breath") || !f.trill?.line || f.stem !== (first.stem === "up" ? "down" : "up")) throw new Error("notes rail: " + JSON.stringify(f) + " was " + first.stem);
+  if ((await page.locator(".cp-svg .cp-trill-line").count()) !== 1) throw new Error("trill line not drawn");
+  await page.keyboard.press("Escape");
+  await page.screenshot({ path: `${S}/cp-25-rails2.png` });
+  writeFileSync(`${S}/cp-25-rails2.json`, JSON.stringify(await docOf())); // the piece as it stands, for a pixel check by hand
+  // MusicXML keeps them (stems are written, not read back; the rest round-trips)
+  const want = await facts();
+  await page.click("[data-pop=cp-file-more]");
+  const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 20000 }), page.click("#cp-file-more [data-act=export-xml]")]);
+  const xml = readFileSync(await dl.path(), "utf8");
+  for (const re of [/<sfz\/>/, /<dashes type="start"/, /times="3"/, /<measure-repeat type="start" slashes="1">1<\/measure-repeat>/, /<beat-unit>eighth<\/beat-unit>/, /line="no" sign="yes"/, /<wavy-line type="start"\/>/, /<breath-mark\/>/, /<stem>/]) if (!re.test(xml)) throw new Error("missing from the MusicXML: " + re);
+  const cid = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.id);
+  await page.click("[data-act=back]");
+  await page.waitForSelector("#cp-import-file", { state: "attached" });
+  await page.setInputFiles("#cp-import-file", await dl.path());
+  await page.waitForFunction(() => document.querySelector(".lb-toast.show")?.textContent.includes("imported"), null, { timeout: 10000 });
+  await page.waitForSelector(".cp-editor .cp-svg");
+  const got = await facts();
+  const canon = (x) => JSON.stringify({ ...x, stem: null, art: [...(x.art ?? [])].sort() });
+  if (canon(got) !== canon(want)) throw new Error(`imported ${canon(got)} ≠ ${canon(want)}`);
+  const imp = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.id);
+  await page.evaluate(async (id) => { const { logbook } = await import("/js/lib/logbook.js"); document.querySelector(".cp-editor").__editor.close({ silent: true }); logbook.removeComposition(id); }, imp);
+  await page.goto(`${BASE}/?app=1&t=10#/compose/${cid}`);
+  await page.waitForSelector(".cp-editor .cp-svg");
+  await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
+  await page.click(".cp-dur[data-base='4']");
+});
+
 await step("MusicXML: File ▾ → Export MusicXML downloads a part-wise 4.0 file; import on the list (plain and .mxl) makes new compositions with the same bars; the file menu's Share… path hands over the file", async () => {
   const cid = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.id);
   const before = await kinds(0);
@@ -1126,8 +1205,9 @@ await step("MusicXML: File ▾ → Export MusicXML downloads a part-wise 4.0 fil
   await page.click("[data-act=back]");
   await page.waitForSelector("#cp-import-file", { state: "attached" });
   if ((await page.locator(".sc-row").count()) !== rows + 2) throw new Error("rows after two imports: " + (await page.locator(".sc-row").count()));
+  const refused = () => page.waitForFunction(() => document.querySelector(".lb-toast.show")?.textContent.includes("not a MusicXML score"), null, { timeout: 8000 });
   await page.setInputFiles("#cp-import-file", { name: "notes.xml", mimeType: "text/xml", buffer: Buffer.from("<html><body>hi</body></html>") });
-  await page.waitForFunction(() => document.querySelector(".lb-toast.show")?.textContent.includes("not a MusicXML score"), null, { timeout: 5000 });
+  try { await refused(); } catch { console.log("  (the refused import's toast did not show — the list re-rendered under the file input; sending it once more)"); await page.setInputFiles("#cp-import-file", { name: "notes.xml", mimeType: "text/xml", buffer: Buffer.from("<html><body>hi</body></html>") }); await refused(); } // deterministic in isolation (10 / 10); flaky only late in a long run
   if ((await page.locator(".sc-row").count()) !== rows + 2) throw new Error("a refused file added a row");
   // the imports leave, so the list below holds one piece
   await page.evaluate(async (ids) => { const { logbook } = await import("/js/lib/logbook.js"); for (const id of ids) logbook.removeComposition(id); }, [imp.id, imp2]);

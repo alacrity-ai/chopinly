@@ -42,7 +42,7 @@ export function barAt(L, bar, system = null) {
   for (const s of L.hit.systems) { if (system !== null && L.hit.systems.indexOf(s) !== system) continue; const b = s.bars.find((x) => x.index === bar); if (b) return { sys: s, bar: b }; }
   return null;
 }
-/** The head / rest / stem / expression under a point, or null; `handles` = ids of selected hairpins whose ends answer as handles. */
+/** The head / rest / stem / expression under a point, or null; `handles` = ids of selected spans whose ends answer as handles. */
 export function thingAt(L, x, y, handles = new Set()) {
   let best = null, bd = Infinity;
   for (const d of L.drawn) {
@@ -73,7 +73,7 @@ export function thingAt(L, x, y, handles = new Set()) {
   return null;
 }
 /** Every span the layout drew (hairpins, pedals, octave lines), each piece carrying its `type`. */
-export const spans = (L) => [...L.hairpins, ...(L.pedals ?? []), ...(L.ottavas ?? [])];
+export const spans = (L) => [...L.hairpins, ...(L.pedals ?? []), ...(L.ottavas ?? []), ...(L.textLines ?? [])];
 /** Whether a thing type is a selected span's end handle. */
 export const isHandle = (type) => /-(start|end)$/.test(type ?? "");
 

@@ -3,7 +3,12 @@
 // export/pdf.js (paper). Every coordinate is in S (staff spaces); a Bravura glyph's em is
 // 4 S and its origin sits on its musical anchor. Paper differences are the painter's:
 // hidden rests and halos are skipped, voice tints are ink.
-import { G, timeDigit, tupletDigit, restGlyph, headGlyph, flagGlyph, artGlyph, dynGlyph, fingerGlyph } from "../staff/glyphs.js";
+import { G, timeDigit, tupletDigit, restGlyph, headGlyph, flagGlyph, artGlyph, dynGlyph, fingerGlyph, metGlyph } from "../staff/glyphs.js";
+
+const TRILL_SEG = 0.948; // S per wiggleTrill segment at scale 1
+const CH_W = 0.63;       // S per italic character at size 1.15 (the text line's dashes start after its words)
+/** A circle as four Béziers (the painters' path has no arc). */
+const circlePath = (cx, cy, r) => { const k = 0.5523 * r; return [["M", cx + r, cy], ["C", cx + r, cy + k, cx + k, cy + r, cx, cy + r], ["C", cx - k, cy + r, cx - r, cy + k, cx - r, cy], ["C", cx - r, cy - k, cx - k, cy - r, cx, cy - r], ["C", cx + k, cy - r, cx + r, cy - k, cx + r, cy], ["Z"]]; };
 
 const vcls = (vi) => (vi ? ` cp-v${vi + 1}` : ""); // voices 2–4 tint on screen (skin tokens --voice-2..4); voice 1 is ink
 
@@ -120,7 +125,11 @@ export function paintScore(L, p) {
     const b = t.h * sgn, b2 = b - 0.3 * sgn, cx = Math.min(len * 0.32, 4);
     p.path([["M", x1, y1], ["C", x1 + cx, y1 + b, x2 - cx, y2 + b, x2, y2], ["C", x2 - cx, y2 + b2, x1 + cx, y1 + b2, x1, y1], ["Z"]], `cp-slur${vcls(t.voice)}`);
   }
-  for (const m of L.marks) p.glyph(m.x, m.y, artGlyph(m.mark, m.above), "glyph cp-art", { centre: true }); // m.x is the head's centre; the glyph's ink is centred on it
+  for (const m of L.marks) p.glyph(m.x, m.y, artGlyph(m.mark, m.above), "glyph cp-art", m.after ? {} : { centre: true }); // m.x is the head's centre; the glyph's ink is centred on it (a mark after the note starts there)
+  for (const t of L.trillLines ?? []) p.glyph(t.x1, t.y, G.wiggleTrill.repeat(Math.max(1, Math.floor((t.x2 - t.x1) / TRILL_SEG))), "glyph cp-art cp-trill-line"); // the trill's wavy extension
+  for (const a of L.trillAccs ?? []) p.glyph(a.x, a.y, G[a.alter], "glyph cp-art", { centre: true, scale: 0.7 });
+  // bar repeats (docs/COMPOSE_RAILS2_DESIGN.md §5): the % sign on each staff; a two-bar sign on the barline with its 2
+  for (const sm of L.similes ?? []) { p.group("cp-simile", { bar: sm.bar }); p.glyph(sm.x, sm.y, sm.n === 2 ? G.repeat2Bars : G.repeat1Bar, "glyph cp-simile-sign", { centre: true }); if (sm.n === 2) p.text(sm.x, sm.y - 2.3, "2", "cp-simile-num", { size: 1.1, anchor: "middle" }); p.end(); }
   // a roll: wiggle segments (each 1.02 S long, ink 0.48 S wide beside the baseline) rotated to run along the chord, an arrowhead segment (2.06 S) for up / down.
   // rotate(−90) runs the text upward from the bottom point with its ink to the left of the anchor; rotate(+90) runs it downward with the ink to the right.
   for (const a of L.arps) {
@@ -139,16 +148,37 @@ export function paintScore(L, p) {
     if (hp.half === "out" || hp.half === "both") a2 = o * (cresc ? 0.55 : 0.45);
     if (hp.half === "in" || hp.half === "both") a1 = o * (cresc ? 0.55 : 0.45);
     p.group("cp-expr", { ev: hp.id, kind: "hairpin" });
-    p.path([["M", hp.x1, hp.y - a1], ["L", hp.x2, hp.y - a2], ["M", hp.x1, hp.y + a1], ["L", hp.x2, hp.y + a2]], "cp-hairpin");
+    let x1 = hp.x1, x2 = hp.x2;
+    if (hp.niente) { // from / to nothing: a small ring at the closed tip, the lines starting past it
+      const closedStart = cresc && hp.half !== "in" && hp.half !== "both", closedEnd = !cresc && hp.half !== "out" && hp.half !== "both";
+      if (closedStart) { p.path(circlePath(hp.x1 + 0.3, hp.y, 0.3), "cp-hairpin cp-niente"); x1 = hp.x1 + 0.7; }
+      if (closedEnd) { p.path(circlePath(hp.x2 - 0.3, hp.y, 0.3), "cp-hairpin cp-niente"); x2 = hp.x2 - 0.7; }
+    }
+    p.path([["M", x1, hp.y - a1], ["L", x2, hp.y - a2], ["M", x1, hp.y + a1], ["L", x2, hp.y + a2]], "cp-hairpin");
     p.end();
   }
   for (const tx of L.texts) { p.group("cp-expr", { ev: tx.id, kind: "text" }); p.text(tx.x, tx.y, tx.text, "cp-expr-text", { size: 1.15 }); p.end(); }
+  // text lines (docs/COMPOSE_RAILS2_DESIGN.md §5): the words, dashes to the end, the end words; a piece open at a break carries no words after / before it
+  for (const tl of L.textLines ?? []) {
+    p.group("cp-expr", { ev: tl.id, kind: "textline" });
+    const words = tl.half !== "in" && tl.half !== "both", endWords = !!tl.endText && tl.half !== "out" && tl.half !== "both";
+    let x1 = tl.x1;
+    if (words) { p.text(tl.x1, tl.y, tl.text, "cp-expr-text cp-textline-text", { size: 1.15 }); x1 = tl.x1 + tl.text.length * CH_W + 0.4; }
+    if (tl.x2 - x1 > 0.5) p.polyline([[x1, tl.y - 0.35], [tl.x2, tl.y - 0.35]], "cp-textline");
+    if (endWords) p.text(tl.x2 + 0.4, tl.y, tl.endText, "cp-expr-text cp-textline-text", { size: 1.15 });
+    p.end();
+  }
   // the Piano rail's lines (docs/COMPOSE_PIANO_DESIGN.md §5): Ped. + a line with an up-hook at the lift (a notch at a retake, no sign after one);
   // 8va / 8vb + a dashed line with a hook toward the staff; a piece open at a system break has no sign after it / no hook before it
   for (const pd of L.pedals ?? []) {
     p.group("cp-expr", { ev: pd.id, kind: "pedal" });
-    const signW = 2.3, x1 = pd.retake || pd.half === "in" || pd.half === "both" ? pd.x1 : pd.x1 + signW;
-    if (!pd.retake && pd.half !== "in" && pd.half !== "both") p.glyph(pd.x1, pd.y, G.pedal, "glyph cp-pedal-sign", { scale: 0.85 });
+    if (pd.style === "sign") { // Ped. … ✱: the signs only (docs/COMPOSE_RAILS2_DESIGN.md §5)
+      if (pd.half !== "in" && pd.half !== "both") p.glyph(pd.x1, pd.y, G.pedal, "glyph cp-pedal-sign", { scale: 0.85 });
+      if (pd.half !== "out" && pd.half !== "both") p.glyph(Math.max(pd.x1 + 2.5, pd.x2 - 1.4), pd.y, G.pedalUp, "glyph cp-pedal-sign", { scale: 0.85 });
+      p.end(); continue;
+    }
+    const sost = pd.style === "sost", signW = sost ? 3.95 : 2.3, x1 = pd.retake || pd.half === "in" || pd.half === "both" ? pd.x1 : pd.x1 + signW;
+    if (!pd.retake && pd.half !== "in" && pd.half !== "both") p.glyph(pd.x1, pd.y, sost ? G.pedalSost : G.pedal, "glyph cp-pedal-sign", { scale: 0.85 });
     const pts = [[x1, pd.y], [pd.x2, pd.y]];
     if (pd.notch) pts.splice(1, 1, [pd.x2 - 0.5, pd.y], [pd.x2, pd.y + 0.9], [pd.x2 + 0.5, pd.y]);
     else if (pd.half !== "out" && pd.half !== "both") pts.push([pd.x2, pd.y - 1.0]);
@@ -157,8 +187,8 @@ export function paintScore(L, p) {
   }
   for (const ot of L.ottavas ?? []) {
     p.group("cp-expr", { ev: ot.id, kind: "ottava" });
-    const up = ot.dir > 0, signW = 2.2, x1 = ot.half === "in" || ot.half === "both" ? ot.x1 : ot.x1 + signW;
-    if (ot.half !== "in" && ot.half !== "both") p.glyph(ot.x1, ot.y, up ? G.ottavaAlta : G.ottavaBassa, "glyph cp-ottava-sign", { scale: 0.8 });
+    const up = ot.dir > 0, quind = ot.size === 15, signW = quind ? (up ? 2.4 : 4.1) : 2.2, x1 = ot.half === "in" || ot.half === "both" ? ot.x1 : ot.x1 + signW;
+    if (ot.half !== "in" && ot.half !== "both") p.glyph(ot.x1, ot.y, up ? (quind ? G.quindicesimaAlta : G.ottavaAlta) : quind ? G.quindicesimaBassa : G.ottavaBassa, "glyph cp-ottava-sign", { scale: 0.8 });
     const ly = up ? ot.y - 0.55 : ot.y - 0.4;
     const pts = [[x1, ly], [ot.x2, ly]];
     if (ot.half !== "out" && ot.half !== "both") pts.push([ot.x2, ly + (up ? 1.0 : -1.0)]);
@@ -171,7 +201,7 @@ export function paintScore(L, p) {
     p.group("cp-form", { bar: f.bar, kind: f.kind });
     if (f.kind === "sign") p.glyph(f.x, f.y, f.sign === "segno" ? G.segno : G.coda, "glyph cp-sign", { scale: 0.75 });
     else if (f.kind === "rehearsal") { p.polyline([[f.x, f.y + 0.45], [f.x + f.w, f.y + 0.45], [f.x + f.w, f.y - 1.35], [f.x, f.y - 1.35], [f.x, f.y + 0.45]], "cp-rehearsal-box"); p.text(f.x + f.w / 2, f.y, f.text, "cp-rehearsal", { size: 1.25, anchor: "middle" }); }
-    else if (f.kind === "tempo") { if (f.text) p.text(f.x, f.y, f.text, "cp-tempo-word", { size: 1.15 }); p.glyph(f.noteX, f.y, G.metQuarter, "glyph cp-tempo-note", { scale: 0.55 }); p.text(f.noteX + 1.3, f.y, `= ${f.bpm}`, "cp-tempo-num", { size: 1.05 }); }
+    else if (f.kind === "tempo") { if (f.text) p.text(f.x, f.y, f.text, "cp-tempo-word", { size: 1.15 }); p.glyph(f.noteX, f.y, metGlyph(f.unit ?? 4), "glyph cp-tempo-note", { scale: 0.55 }); if (f.dotted) p.glyph(f.noteX + 1.05, f.y - 0.35, G.dot, "glyph cp-tempo-note", { scale: 0.55 }); p.text(f.noteX + 1.3 + (f.dotted ? 0.5 : 0), f.y, `= ${f.bpm}`, "cp-tempo-num", { size: 1.05 }); }
     else p.text(f.x, f.y, f.text, "cp-form-words", { size: 1.15, anchor: "end" });
     p.end();
   }

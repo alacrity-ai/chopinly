@@ -22,6 +22,8 @@ cta: "Open compose"
 
 **Ornament it.** A second Notes rail turns grace notes on: the value you have armed becomes a small note before the next note you tap towards, slashed or plain, beamed when there are several; tremolo strokes, marcato and staccatissimo go on a selection.
 
+**And the rest of the page.** Hold a button for its family: ppp and fff behind pp and ff, sudden dynamics (sfz, fp) behind sf ▾, dashed *cresc.* lines and hairpins from nothing behind the hairpins, 15ma behind 8va, Ped. ✱ and Sost. Ped. behind Ped., beat units behind ♩ =, numbers or a word behind the rehearsal letter. A % repeats the bar before it; u.c. lays an *una corda* line; r.h. / l.h. mark the hands; the Notes rail adds portato, breath and caesura marks, trills with a wavy line or an accidental, inverted and delayed turns, and a stem flip and beam break for when the automatic engraving is not what you meant. All of it is heard: rit. and accel. shape the tempo, ornaments play as written, a fermata holds, a caesura pauses.
+
 **Hear it.** Play, pause, stop, skip by the bar, drag the playhead, set a tempo. Playback follows the form — repeats twice, endings in turn, the jumps — and slows or quickens at each tempo mark; the pedal holds the notes under it; grace notes steal their moment before the beat and tremolos re-strike; dynamics and hairpins shape the velocities; slurs play legato; rolled chords roll.
 
 **Keep it.** Pieces save as you write and, with an account, follow you between devices. Undo reaches back two hundred steps.

@@ -139,7 +139,7 @@ test("MusicXML: pedal, octave lines and fingering round-trip exactly; a foreign 
   const back = fromMusicXml(xml, { id: "piano", now: 1 }).doc;
   const strip = (doc) => { const t = trimBars(doc); for (const m of t.measures) for (const x of m.expressions ?? []) delete x.id; return t.measures.map((m) => ({ ...m, staves: m.staves.map((s) => ({ voices: s.voices.map((v) => v && v.map((e) => ({ kind: e.kind, dur: e.dur, pitches: e.pitches?.map((p) => ({ step: p.step, octave: p.octave, alter: p.alter, finger: p.finger ?? null })) }))) })) })); };
   assert.deepEqual(strip(back), strip(d));
-  // a file from another program: a pedal with a change, an octave line by <octave-shift>, a 15ma read as 8va with a warning
+  // a file from another program: a pedal with a change, an octave line by <octave-shift> of size 15 — read as a 15ma since v98
   const foreign = `<?xml version="1.0"?><score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">
     <measure number="1"><attributes><divisions>4</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
       <direction placement="above"><direction-type><octave-shift type="down" size="15"/></direction-type><staff>1</staff></direction>
@@ -156,7 +156,8 @@ test("MusicXML: pedal, octave lines and fingering round-trip exactly; a foreign 
   const r = fromMusicXml(foreign, { id: "f", now: 1 });
   assert.deepEqual(exprs(r.doc), ["ottava1@0-2:0", "pedal@0-2:1", "pedal@2-4:1"]);
   assert.equal(first(r.doc, 0).pitches[0].finger, 4);
-  assert.ok(r.warnings.includes("a 15ma line was read as 8va"), r.warnings.join("; "));
+  assert.ok(!r.warnings.some((w) => /15ma/.test(w)), r.warnings.join("; "));
+  assert.equal(spansOf(r.doc, "ottava")[0].x.size, 15, "a 15ma is its own size since v98");
   const L = layoutComposition(r.doc, { unit: 10, width: 800 });
-  assert.equal(L.ottavas.length, 1); assert.equal(L.pedals.length, 2);
+  assert.equal(L.ottavas.length, 1); assert.equal(L.ottavas[0].size, 15); assert.equal(L.pedals.length, 2);
 });

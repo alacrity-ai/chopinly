@@ -6,7 +6,7 @@
 import { keyAlterations, keySignatureGlyphs, CLEFS, staffStep } from "../music.js";
 import { ticks, capacity, groupSize } from "./ticks.js";
 import { timeAt, keyAt, clefAt, evTicks } from "./model.js";
-import { onsets, diatonicOf, nextEvent, slurEnd, expressionsOf, spansOf, barStarts, formMarksOf } from "./engine.js";
+import { onsets, diatonicOf, nextEvent, slurEnd, expressionsOf, spansOf, barStarts, formMarksOf, simileTail } from "./engine.js";
 import { xOfTicks } from "./hit.js";
 
 export const STAFF_GAP = 8;      // S between the treble's bottom line and the bass's top line
@@ -22,7 +22,10 @@ const MIN_BAR = 8; // S: an empty bar
 /** Rest offsets in steps when a staff holds more than one voice in the bar: voice 1 high, 2 low, 3 higher, 4 lower. */
 const REST_STEP = [2, -2, 4, -4];
 const GRACE_SCALE = 0.6, GRACE_W = 1.5, GRACE_STEM = 2.4; // grace notes (docs/COMPOSE_NOTES2_DESIGN.md §4): scale, the room each takes, the stem length
-const ABOVE_MARKS = new Set(["fermata", "trill", "mordent", "lowerMordent", "turn", "marcato"]); // marks that always go above the staff
+const ABOVE_MARKS = new Set(["fermata", "trill", "mordent", "lowerMordent", "turn", "marcato", "invertedTurn", "delayedTurn"]); // marks that always go above the staff
+const AFTER_MARKS = new Set(["breath", "caesura", "delayedTurn"]); // marks drawn after the note, not over it (docs/COMPOSE_RAILS2_DESIGN.md §5)
+const AFTER_PAD = 1.4; // S a column widens by to make room for them
+const TRILL_SEG = 0.948; // S: one wiggleTrill segment's advance at scale 1
 
 export const headKind = (base) => (base === 0 ? "dblWhole" : base === 1 ? "whole" : base === 2 ? "half" : "black");
 const hasStem = (base) => base >= 2;
@@ -59,7 +62,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     const allRest = m.staves.map((s) => s.voices.map((v) => (v ? v.every((e) => e.kind === "rest") : null)));
     cols.forEach((c, i) => {
       const next = cols[i + 1]?.ticks ?? cap;
-      c.w = colWidth(next - c.ticks);
+      c.w = colWidth(next - c.ticks) + (c.evs.some((x) => x.ev.art?.some((m) => AFTER_MARKS.has(m))) ? AFTER_PAD : 0);
       c.accPad = 0; c.dotPad = 0; c.collPad = 0; c.gracePad = 0; // set by the accidental / collision pass below
       c.clefPad = 0; c.clefs = [];  // clef changes drawn just before this column
     });
@@ -79,7 +82,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
   // an octave line (docs/COMPOSE_PIANO_DESIGN.md §4) draws the heads under it an octave lower (8va) / higher (8vb): the steps shift, the pitches do not
   const { starts: barStart } = barStarts(doc);
   const ottavas = spansOf(doc, "ottava");
-  const ottavaAt = (staff, abs) => ottavas.find((o) => o.x.staff === staff && o.abs <= abs && abs <= o.absEnd)?.x.dir ?? 0; // the end slot is covered too ("from this note to that one")
+  const ottavaAt = (staff, abs) => { const o = ottavas.find((o) => o.x.staff === staff && o.abs <= abs && abs <= o.absEnd); return o ? o.x.dir * (o.x.size === 15 ? 2 : 1) : 0; }; // octaves; the end slot is covered too ("from this note to that one"); a 15ma shifts two
   for (const b of bars) {
     const keyAlt = keyAlterations(b.key.fifths);
     const memory = Array.from({ length: nStaves }, () => new Map());
@@ -100,8 +103,9 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
           x.graceAccs = x.ev.graces.map((g) => g.pitches.map((p) => { const k = p.step + p.octave, mem = memory[x.drawStaff], eff = mem.has(k) ? mem.get(k) : (keyAlt.get(p.step) ?? 0); const show = (p.alter ?? 0) !== eff; if (show) mem.set(k, p.alter ?? 0); return show ? (p.alter ?? 0) : null; }));
         }
         const far = x.steps.reduce((m, s2) => (Math.abs(s2 - 4) > Math.abs(m - 4) ? s2 : m), x.steps[0]);
-        x.stem = hasStem(x.ev.dur.base) ? (x.ev.cross ? (x.ev.cross < 0 ? "down" : "up") : stemFor(x.voice, b.nVoices[x.staff], far)) : null; // a crossed note's stem points home
+        x.stem = hasStem(x.ev.dur.base) ? (x.ev.stem ?? (x.ev.cross ? (x.ev.cross < 0 ? "down" : "up") : stemFor(x.voice, b.nVoices[x.staff], far))) : null; // a crossed note's stem points home; a set stem wins (docs/COMPOSE_RAILS2_DESIGN.md §5)
         x.stemForced = b.nVoices[x.staff] > 1 || !!x.ev.cross;
+        x.stemSet = !!x.ev.stem && hasStem(x.ev.dur.base);
         x.accs = x.ev.pitches.map((p) => {
           const k = p.step + p.octave, mem = memory[x.drawStaff];
           const eff = mem.has(k) ? mem.get(k) : (keyAlt.get(p.step) ?? 0);
@@ -226,7 +230,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
           const st = ev.staff, vi = ev.voice, ds = ev.drawStaff, nV = b.nVoices[st];
           if (ev.ev.kind === "rest") {
             const hidden = !!ev.ev.hidden;
-            if (b.allRest[st][vi]) { if (c.ticks === 0) drawn.push({ id: ev.ev.id, bar: b.index, staff: st, drawStaff: st, voice: vi, system: si, rest: true, whole: true, hidden, base: 1, dots: 0, x: (bodyStart + hbar.x1) / 2 - 0.85, y: yOfStep(st, 6 + (nV > 1 ? REST_STEP[vi] : 0) + (ev.ev.restY ?? 0)) }); continue; }
+            if (b.allRest[st][vi]) { if (c.ticks === 0 && b.m.simile === undefined && !simileTail(doc, b.index)) drawn.push({ id: ev.ev.id, bar: b.index, staff: st, drawStaff: st, voice: vi, system: si, rest: true, whole: true, hidden, base: 1, dots: 0, x: (bodyStart + hbar.x1) / 2 - 0.85, y: yOfStep(st, 6 + (nV > 1 ? REST_STEP[vi] : 0) + (ev.ev.restY ?? 0)) }); continue; }
             const base = ev.ev.dur.base;
             drawn.push({ id: ev.ev.id, bar: b.index, staff: st, drawStaff: st, voice: vi, system: si, rest: true, hidden, base, dots: ev.ev.dur.dots, x, y: yOfStep(st, (base <= 1 ? 6 : 4) + (nV > 1 ? REST_STEP[vi] : 0) + (ev.ev.restY ?? 0)), ticks: c.ticks, tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index });
             continue;
@@ -235,7 +239,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
           const steps = ev.steps;
           const stem = ev.stem;
           const nx = x + ev.dx; // a colliding voice sits right of the other voice's stem
-          const d = { id: ev.ev.id, bar: b.index, staff: st, drawStaff: ds, voice: vi, cross: ev.ev.cross ?? 0, system: si, rest: false, base, dots: ev.ev.dur.dots, kind, headW, x: nx, colX: x, stem, stemForced: ev.stemForced, shared: ev.shared, ticks: c.ticks, group: Math.floor(c.ticks / groupSize(b.time)), heads: [], ledgers: [], tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index, pitches: ev.ev.pitches, art: ev.ev.art ?? null, gliss: ev.ev.gliss ?? null, arp: ev.ev.arp ?? null, slurs: ev.ev.slurs ?? null, accLeft: x - c.accPad * sys.scale, ottava: ev.ottava, trem: ev.ev.trem ?? null, graced: !!ev.ev.graces, fingers: ev.ev.pitches.some((p) => p.finger) ? ev.ev.pitches.map((p) => p.finger ?? null) : null };
+          const d = { id: ev.ev.id, bar: b.index, staff: st, drawStaff: ds, voice: vi, cross: ev.ev.cross ?? 0, system: si, rest: false, base, dots: ev.ev.dur.dots, kind, headW, x: nx, colX: x, stem, stemForced: ev.stemForced, stemSet: ev.stemSet, beamBreak: ev.ev.beam === "break", trill: ev.ev.trill ?? null, shared: ev.shared, ticks: c.ticks, group: Math.floor(c.ticks / groupSize(b.time)), heads: [], ledgers: [], tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index, pitches: ev.ev.pitches, art: ev.ev.art ?? null, gliss: ev.ev.gliss ?? null, arp: ev.ev.arp ?? null, slurs: ev.ev.slurs ?? null, accLeft: x - c.accPad * sys.scale, ottava: ev.ottava, trem: ev.ev.trem ?? null, graced: !!ev.ev.graces, fingers: ev.ev.pitches.some((p) => p.finger) ? ev.ev.pitches.map((p) => p.finger ?? null) : null };
           // heads: sorted by step; seconds flip to the other side of the stem
           const order = steps.map((s2, pi) => ({ step: s2, pi })).sort((a, b2) => a.step - b2.step);
           const walk = stem === "down" ? [...order].reverse() : order;
@@ -313,7 +317,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     const flush = () => { if (run.length >= 2) makeBeam(run, beams); run = []; };
     for (let k = 0; k < list.length; k++) {
       const d = list[k], prev = list[k - 1];
-      const contiguous = prev && prev.group === d.group && prev.tupletId === d.tupletId && !restBetween(drawn, prev, d);
+      const contiguous = prev && prev.group === d.group && prev.tupletId === d.tupletId && !restBetween(drawn, prev, d) && !d.beamBreak;
       if (d.beams >= 1 && (run.length === 0 || contiguous)) run.push(d);
       else { flush(); if (d.beams >= 1) run.push(d); }
     }
@@ -360,7 +364,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     }
   }
   // -- articulations: opposite the stem (fermata and ornaments always above), stacked outward --
-  const marks = [];
+  const marks = [], trillLines = [], trillAccs = [];
   const onLine = (y, top) => Number.isInteger(Math.round((y - top) * 2) / 2) && Math.abs(((y - top) * 2) % 2) < 1e-6; // an integer number of spaces from the staff top = on a line
   for (const d of drawn) {
     if (d.rest || !d.art?.length) continue;
@@ -371,8 +375,17 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     if (near >= staffTopY && near <= staffBotY && onLine(near, staffTopY)) near += stemUp ? 0.5 : -0.5;
     let high = Math.min(staffTopY - 1.4, (d.stem === "up" ? d.stemTipY : d.topY) - 1.2);
     for (const m of d.art) {
+      if (m === "breath" || m === "caesura") { marks.push({ x: d.x + d.headW + (m === "breath" ? 0.9 : 0.8), y: m === "breath" ? staffTopY - 0.3 : staffTopY + 1.0, mark: m, above: true, after: true, system: d.system }); continue; } // after the note, at the staff's top line
       const ornament = ABOVE_MARKS.has(m);
-      if (ornament) { marks.push({ x: d.x + d.headW / 2, y: high, mark: m, above: true, system: d.system }); high -= m === "fermata" ? 1.8 : 1.4; }
+      if (ornament) {
+        const mk = { x: m === "delayedTurn" ? d.x + d.headW + 1.2 : d.x + d.headW / 2, y: high, mark: m, above: true, system: d.system };
+        marks.push(mk); high -= m === "fermata" ? 1.8 : 1.4;
+        if (m === "trill" && d.trill?.alter !== undefined) { trillAccs.push({ x: mk.x, y: high - 0.9, alter: d.trill.alter, system: d.system }); high -= 1.6; } // the accidental over tr (a flat's bowl clears the tr's top)
+        if (m === "trill" && d.trill?.line) { // the wavy extension to the next note of the line, else the bar's end
+          const nx = nextEvent(doc, lineOf(d)), d2 = nx && byId.get(nx.id), x2 = d2 && d2.system === d.system ? (d2.rest ? d2.x : Math.min(d2.accLeft, ...d2.heads.map((h) => h.x))) - 0.4 : hit.systems[d.system].bars.find((hb) => hb.index === d.bar).x1 - 0.5;
+          if (x2 - (mk.x + 1.4) >= TRILL_SEG) trillLines.push({ x1: mk.x + 1.4, x2, y: mk.y, system: d.system });
+        }
+      }
       else { marks.push({ x: d.x + d.headW / 2, y: near, mark: m, above: !stemUp, system: d.system }); near += stemUp ? 1.1 : -1.1; if (!stemUp) high = Math.min(high, near - 0.4); }
     }
   }
@@ -433,10 +446,10 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
   // -- expressions (docs/COMPOSE_EXPRESSIONS_DESIGN.md §3): from each bar's list at the slot's x (interpolated between the
   //    columns, so a slot with no note still has a place); dynamics and hairpins on the staff's expression line — below the
   //    staff and below whatever sounds under them — text above; a hairpin over a system break is drawn in open halves --
-  const dynamics = [], hairpins = [], texts = [], pedals = [], ottavaLines = [], fingers = [];
+  const dynamics = [], hairpins = [], texts = [], pedals = [], ottavaLines = [], textLines = [], fingers = [];
   const hbarOf = new Map(); hit.systems.forEach((hs, si) => hs.bars.forEach((hb) => hbarOf.set(hb.index, { si, hb })));
-  const belowOf = (d) => Math.max(d.fingerBot ?? -Infinity, d.rest ? d.y + 1 : Math.max(d.botY, d.stem === "down" ? d.stemTipY : d.botY) + (d.art?.some((m) => !ABOVE_MARKS.has(m)) && d.stem !== "down" ? 1.3 : 0));
-  const aboveOf = (d) => Math.min(d.fingerTop ?? Infinity, (d.rest ? d.y - 1 : Math.min(d.topY, d.stem === "up" ? d.stemTipY : d.topY)) - (d.rest ? 0 : (d.art ?? []).reduce((n, m) => n + (m === "fermata" ? 1.8 : ABOVE_MARKS.has(m) ? 1.4 : 0), 0)));
+  const belowOf = (d) => Math.max(d.fingerBot ?? -Infinity, d.rest ? d.y + 1 : Math.max(d.botY, d.stem === "down" ? d.stemTipY : d.botY) + (d.art?.some((m) => !ABOVE_MARKS.has(m) && !AFTER_MARKS.has(m)) && d.stem !== "down" ? 1.3 : 0));
+  const aboveOf = (d) => Math.min(d.fingerTop ?? Infinity, (d.rest ? d.y - 1 : Math.min(d.topY, d.stem === "up" ? d.stemTipY : d.topY)) - (d.rest ? 0 : (d.art ?? []).reduce((n, m) => n + (m === "fermata" ? 1.8 : ABOVE_MARKS.has(m) ? 1.4 : 0), 0) + (d.trill?.alter !== undefined ? 1.6 : 0)));
   // -- fingering (docs/COMPOSE_PIANO_DESIGN.md §4): a digit per head, above the upper staff's notes and below the lower's, stacked in the notes' own order (the digit nearest the staff belongs to the head nearest it), 1.25 S apart --
   const FINGER_STEP = 1.25;
   for (const d of drawn) {
@@ -453,7 +466,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
   const exprs = expressionsOf(doc);
   const dynAt = new Set(exprs.filter((e) => e.x.kind === "dyn").map((e) => `${e.x.staff}:${e.abs}`));
   /** Whether a dynamic or a hairpin on the staff shares [a, b) — the pedal (and an 8vb) then goes under the dynamics line. */
-  const dynUnder = (staff, a, b) => exprs.some((o) => o.x.staff === staff && (o.x.kind === "dyn" ? o.abs >= a && o.abs < b : o.x.kind === "hairpin" && o.abs < b && o.absEnd > a));
+  const dynUnder = (staff, a, b) => exprs.some((o) => o.x.staff === staff && (o.x.kind === "dyn" ? o.abs >= a && o.abs < b : (o.x.kind === "hairpin" || o.x.kind === "textline") && o.abs < b && o.absEnd > a)); // a text line ("una corda") shares the dynamics line
   const ottavaBelow = (staff, a, b) => exprs.some((o) => o.x.kind === "ottava" && o.x.dir < 0 && o.x.staff === staff && o.abs < b && o.absEnd >= a); // an 8vb shares the range: the pedal goes under it
   const pedalLine = (si, staff, a, b) => exprLine(si, staff, under(staff, a, b, si)) + (dynUnder(staff, a, b) ? 2.0 : 0.6) + (ottavaBelow(staff, a, b) ? 1.8 : 0); // under the dynamics, under an 8vb — the stack stays inside the system gap
   const ottavaLine = (si, staff, a, b, dir) => (dir > 0 ? Math.min(systems[si].staffTop[staff] - 2.6, ...under(staff, a, b, si).map((d) => aboveOf(d) - 1.0)) : exprLine(si, staff, under(staff, a, b, si)) + (dynUnder(staff, a, b) ? 1.7 : 0));
@@ -471,11 +484,11 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     if (!to) continue;
     const xe = xOfTicks(to.hb, x0.end.at);
     // a hairpin runs from the slot to past the end slot's head (a dynamic there shortens it); a pedal lifts just before its end slot; an octave line covers the end slot's note
-    const x1 = x0.kind === "hairpin" ? x + (dynAt.has(`${x0.staff}:${e.abs}`) ? 2.3 : 0) : x - 0.2;
-    const x2 = x0.kind === "hairpin" ? xe + (dynAt.has(`${x0.staff}:${e.absEnd}`) ? -0.7 : 1.18) : x0.kind === "pedal" ? Math.max(x1 + 1.5, xe - 0.5) : xe + 1.5;
-    const list = x0.kind === "hairpin" ? hairpins : x0.kind === "pedal" ? pedals : ottavaLines;
-    const sp = x0.kind === "hairpin" ? { ...base, type: "hairpin", kind: x0.dir, end: x0.end } : { ...base, type: x0.kind, kind: x0.kind, dir: x0.dir ?? 0, end: x0.end };
-    const yOf = (k) => (x0.kind === "hairpin" ? exprLine(k, x0.staff, under(x0.staff, e.abs, e.absEnd, k)) : x0.kind === "pedal" ? pedalLine(k, x0.staff, e.abs, e.absEnd) : ottavaLine(k, x0.staff, e.abs, e.absEnd + 1, x0.dir)) - lift;
+    const x1 = x0.kind === "hairpin" ? x + (dynAt.has(`${x0.staff}:${e.abs}`) ? 2.3 : 0) : x0.kind === "textline" ? x : x - 0.2;
+    const x2 = x0.kind === "hairpin" ? xe + (dynAt.has(`${x0.staff}:${e.absEnd}`) ? -0.7 : 1.18) : x0.kind === "pedal" ? Math.max(x1 + 1.5, xe - 0.5) : x0.kind === "textline" ? xe + 1.18 : xe + 1.5;
+    const list = x0.kind === "hairpin" ? hairpins : x0.kind === "pedal" ? pedals : x0.kind === "textline" ? textLines : ottavaLines;
+    const sp = x0.kind === "hairpin" ? { ...base, type: "hairpin", kind: x0.dir, end: x0.end, ...(x0.niente ? { niente: true } : {}) } : x0.kind === "textline" ? { ...base, type: "textline", kind: "textline", text: x0.text, endText: x0.endText ?? null, end: x0.end } : { ...base, type: x0.kind, kind: x0.kind, dir: x0.dir ?? 0, end: x0.end, ...(x0.size ? { size: x0.size } : {}), ...(x0.style ? { style: x0.style } : {}) };
+    const yOf = (k) => (x0.kind === "hairpin" || x0.kind === "textline" ? exprLine(k, x0.staff, under(x0.staff, e.abs, e.absEnd, k)) : x0.kind === "pedal" ? pedalLine(k, x0.staff, e.abs, e.absEnd) : ottavaLine(k, x0.staff, e.abs, e.absEnd + 1, x0.dir)) - lift;
     if (to.si === si) { list.push({ ...sp, x1, x2, y: yOf(si), system: si }); continue; }
     for (let k = si; k <= to.si; k++) { // open at every break: out of the first system, through any middle one, into the last
       const endX = systems[k].barlines[systems[k].barlines.length - 1].x - 0.3, startX = hit.systems[k].bars[0].bodyX0 + 0.3;
@@ -483,7 +496,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     }
   }
   // a retake: a pedal that starts on the slot the previous one ends on shares its join — the first draws a notch instead of a hook, the second no sign
-  for (const p of pedals) { const prev = pedals.find((q) => q !== p && q.staff === p.staff && q.end.bar === p.bar && q.end.at === p.at && q.system === p.system && q.half !== "out" && q.half !== "both"); if (prev && p.half !== "in" && p.half !== "both") { prev.notch = true; prev.x2 = p.x1 + 0.6; p.retake = true; p.x1 = prev.x2 + 0.5; } }
+  for (const p of pedals) { const prev = pedals.find((q) => q !== p && q.staff === p.staff && q.end.bar === p.bar && q.end.at === p.at && q.system === p.system && q.half !== "out" && q.half !== "both"); if (prev && p.half !== "in" && p.half !== "both") { if (prev.style === "sign" || p.style === "sign") { p.x1 = Math.max(p.x1, prev.x2 + 1.6); continue; } prev.notch = true; prev.x2 = p.x1 + 0.6; p.retake = true; p.x1 = prev.x2 + 0.5; } } // sign style: ✱ then Ped. side by side
   // -- rolled chords: a vertical wiggle left of everything the chord owns (flipped heads, accidentals), a space past the outer heads --
   const arps = [];
   for (const d of drawn) {
@@ -535,9 +548,20 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     let sx = startX.get(bar) ?? ((first ? hbar.x0 : hbar.bodyX0) + (doc.measures[bar].ending ? 2.4 : 0.2)); // past an ending's number when the bar starts one
     if (x.kind === "rehearsal") { form.push({ kind: "rehearsal", text: letter, x: sx, y, w: 1.2 + 0.7 * letter.length, system: si, bar }); sx += 1.2 + 0.7 * letter.length + 0.7; }
     else if (x.kind === "segno" || x.kind === "coda") { form.push({ kind: "sign", sign: x.kind, x: sx, y: y + (x.kind === "coda" ? 0.4 : 0), system: si, bar }); sx += x.kind === "segno" ? 2.2 : 3.2; } // signs at 0.75 scale keep clear of the bracket lane; the coda's ring hangs below its baseline
-    else if (x.kind === "tempo") { const tw = x.text ? x.text.length * CH_W + 0.5 : 0; form.push({ kind: "tempo", text: x.text ?? "", bpm: x.bpm, x: sx, y, noteX: sx + tw, system: si, bar }); sx += tw + 1.6 + (0.6 + String(x.bpm).length * 0.62); }
+    else if (x.kind === "tempo") { const tw = x.text ? x.text.length * CH_W + 0.5 : 0, dotted = !!x.unit?.dots; form.push({ kind: "tempo", text: x.text ?? "", bpm: x.bpm, unit: x.unit?.base ?? 4, dotted, x: sx, y, noteX: sx + tw, system: si, bar }); sx += tw + 1.6 + (dotted ? 0.5 : 0) + (0.6 + String(x.bpm).length * 0.62); }
     startX.set(bar, sx);
   }
+  // repeat times ("3×") over the repeat barline; the % signs of bar repeats, one per staff (docs/COMPOSE_RAILS2_DESIGN.md §5)
+  const similes = [];
+  doc.measures.forEach((m, bar) => {
+    const place = barPlace[bar];
+    if (!place) return;
+    const { hbar, si } = place;
+    if (m.barline?.times && m.barline.end === "repeat") form.push({ kind: "times", text: `${m.barline.times}×`, x: hbar.x1 - 0.3, y: laneY(si) - ((m.form ?? []).some((f) => JUMP_TEXT[f.kind]) ? 1.5 : 0), system: si, bar });
+    if (m.simile === 1 || (m.simile === 2 && barPlace[bar + 1]?.si !== si)) for (let st = 0; st < nStaves; st++) similes.push({ x: (hbar.bodyX0 + hbar.x1) / 2, y: systems[si].staffTop[st] + 2, n: 1, system: si, bar });
+    else if (m.simile === 2) { for (let st = 0; st < nStaves; st++) similes.push({ x: hbar.x1, y: systems[si].staffTop[st] + 2, n: 2, system: si, bar }); }
+    else if (simileTail(doc, bar) && barPlace[bar - 1]?.si !== si) for (let st = 0; st < nStaves; st++) similes.push({ x: (hbar.bodyX0 + hbar.x1) / 2, y: systems[si].staffTop[st] + 2, n: 1, system: si, bar }); // a pair split over a break: a sign in each bar
+  });
   doc.measures.forEach((m, a) => {
     if (!m.ending) return;
     const b = Math.min(m.ending.end, doc.measures.length - 1);
@@ -553,7 +577,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
   /** The expression line of a staff in a system over [a, b) absolute ticks, and the text line at `a` — where a ghost mark would land. */
   const exprLineAt = (si, staff, a, b) => exprLine(si, staff, under(staff, a, b, si));
   const textLineAt = (si, staff, a) => Math.min(systems[si].staffTop[staff] - 2.3, ...under(staff, a, a + 1, si).map((d) => aboveOf(d) - 1.3));
-  return { S, unit: S, width, height, systems, drawn, beams, ties, slurs, tuplets, marks, glisses, arps, dynamics, hairpins, texts, pedals, ottavas: ottavaLines, fingers, graces, graceBeams, graceSlurs, trems, clefs, form, endings, hit, nStaves, exprLine: exprLineAt, textLine: textLineAt, pedalLine, ottavaLine };
+  return { S, unit: S, width, height, systems, drawn, beams, ties, slurs, tuplets, marks, trillLines, trillAccs, glisses, arps, dynamics, hairpins, texts, pedals, ottavas: ottavaLines, textLines, fingers, graces, graceBeams, graceSlurs, trems, similes, clefs, form, endings, hit, nStaves, exprLine: exprLineAt, textLine: textLineAt, pedalLine, ottavaLine };
 }
 
 function restBetween(drawn, a, b) {
@@ -563,7 +587,8 @@ function restBetween(drawn, a, b) {
 function makeBeam(run, beams) {
   if (new Set(run.map((d) => d.drawStaff)).size > 1) return makeCrossBeam(run, beams);
   const avg = run.reduce((n, d) => n + (d.heads[0].step + d.heads[d.heads.length - 1].step) / 2, 0) / run.length;
-  const dir = run[0].stemForced ? run[0].stem : avg >= 4 ? "down" : "up"; // a bar with more than one voice keeps the voice's direction
+  const set = run.find((d) => d.stemSet);
+  const dir = set ? set.stem : run[0].stemForced ? run[0].stem : avg >= 4 ? "down" : "up"; // a set stem rules the run; a bar with more than one voice keeps the voice's direction
   for (const d of run) {
     d.stem = dir;
     d.stemX = dir === "up" ? d.x + d.headW - 0.07 : d.x + 0.07;

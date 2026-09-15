@@ -4,8 +4,8 @@
 // keeping what Compose can hold and refusing, with the bar number, anything that would corrupt a
 // bar. Pure — node-testable; the .mxl container is `mxl.js`.
 import { PPQ, ticks, capacity, fromTicks, splitRest, groupSize, exprGrid } from "./ticks.js";
-import { newComposition, newMeasure, noteEvent, restEvent, barRests, timeAt, keyAt, clefAt, evTicks, voicesOf, tempoOf, validate, eid, DYNAMICS, HAIRPINS, SPAN_KINDS, FINGER_MAX, GRACE_BASES, TREM_MAX, TEXT_MAX, EXPR_Y_MAX, REST_Y_MAX, MAX_VOICES, MIN_TEMPO, MAX_TEMPO, DEFAULT_BARS } from "./model.js";
-import { onsets, normalizeBar, cleanTies, cleanExpressions, trimBars, decompose, diatonicOf, MARKS, formMarksOf } from "./engine.js";
+import { newComposition, newMeasure, noteEvent, restEvent, barRests, timeAt, keyAt, clefAt, evTicks, voicesOf, tempoOf, validate, eid, DYNAMICS, DYN_VALUES, HAIRPINS, SPAN_KINDS, FINGER_MAX, GRACE_BASES, TREM_MAX, TEXT_MAX, EXPR_Y_MAX, REST_Y_MAX, MAX_VOICES, MIN_TEMPO, MAX_TEMPO, DEFAULT_BARS } from "./model.js";
+import { onsets, normalizeBar, cleanTies, cleanExpressions, trimBars, decompose, diatonicOf, MARKS, formMarksOf, quarterBpm, simileTail } from "./engine.js";
 import { keyAlterations, CLEFS, parsePitch } from "../music.js";
 import { parseXml, child, children, textOf, numOf, esc } from "./xml.js";
 import { VERSION } from "../../version.js";
@@ -17,10 +17,12 @@ const TYPE_OF_BASE = { 0: "breve", 1: "whole", 2: "half", 4: "quarter", 8: "eigh
 const BASE_OF_TYPE = Object.fromEntries(Object.entries(TYPE_OF_BASE).map(([b, t]) => [t, Number(b)]));
 const ACC_NAME = { "-2": "flat-flat", "-1": "flat", 0: "natural", 1: "sharp", 2: "double-sharp" };
 /** Our marks → where they live in <notations> and what they are called. */
-const ART_XML = { staccato: ["articulations", "staccato"], accent: ["articulations", "accent"], tenuto: ["articulations", "tenuto"], fermata: ["fermata", null], trill: ["ornaments", "trill-mark"], mordent: ["ornaments", "inverted-mordent"], lowerMordent: ["ornaments", "mordent"], turn: ["ornaments", "turn"], marcato: ["articulations", "strong-accent"], staccatissimo: ["articulations", "staccatissimo"] };
-const ART_OF = { staccato: "staccato", staccatissimo: "staccatissimo", accent: "accent", "strong-accent": "marcato", tenuto: "tenuto", "detached-legato": "tenuto", "trill-mark": "trill", "inverted-mordent": "mordent", mordent: "lowerMordent", turn: "turn", "delayed-turn": "turn", "inverted-turn": "turn" };
-/** MusicXML dynamics → ours: the six as they are, the extremes folded in, the accents to f. */
-const DYN_IN = { ...Object.fromEntries(DYNAMICS.map((d) => [d, d])), ppp: "pp", pppp: "pp", ppppp: "pp", pppppp: "pp", fff: "ff", ffff: "ff", fffff: "ff", ffffff: "ff", sf: "f", sfz: "f", fz: "f", rf: "f", rfz: "f", sffz: "f", fp: "f", sfp: "f", sfpp: "f", pf: "f" };
+const ART_XML = { staccato: ["articulations", "staccato"], accent: ["articulations", "accent"], tenuto: ["articulations", "tenuto"], fermata: ["fermata", null], trill: ["ornaments", "trill-mark"], mordent: ["ornaments", "inverted-mordent"], lowerMordent: ["ornaments", "mordent"], turn: ["ornaments", "turn"], marcato: ["articulations", "strong-accent"], staccatissimo: ["articulations", "staccatissimo"], portato: ["articulations", "detached-legato"], breath: ["articulations", "breath-mark"], caesura: ["articulations", "caesura"], invertedTurn: ["ornaments", "inverted-turn"], delayedTurn: ["ornaments", "delayed-turn"] };
+const ART_OF = { staccato: "staccato", staccatissimo: "staccatissimo", accent: "accent", "strong-accent": "marcato", tenuto: "tenuto", "detached-legato": "portato", "breath-mark": "breath", caesura: "caesura", "trill-mark": "trill", "inverted-mordent": "mordent", mordent: "lowerMordent", turn: "turn", "delayed-turn": "delayedTurn", "inverted-turn": "invertedTurn" };
+const ACC_MARK = { sharp: 1, flat: -1, natural: 0 }, ACC_MARK_OF = { 1: "sharp", "-1": "flat", 0: "natural" };
+/** MusicXML dynamics → ours: the ten levels and five sudden ones as they are, the rest folded in (docs/COMPOSE_RAILS2_DESIGN.md §6). */
+const DYN_IN = { ...Object.fromEntries(DYN_VALUES.map((d) => [d, d])), ppppp: "pppp", pppppp: "pppp", fffff: "ffff", ffffff: "ffff", fz: "sfz", rf: "rfz", sffz: "sfz", sfpp: "sfp", pf: "f" };
+const UNIT_OF_TYPE = { half: 2, quarter: 4, eighth: 8 }, TYPE_OF_UNIT = { 2: "half", 4: "quarter", 8: "eighth" };
 const WEDGE_OF = { cresc: "crescendo", dim: "diminuendo" }, WEDGE_IN = { crescendo: "cresc", diminuendo: "dim" };
 const REST_STEP = [2, -2, 4, -4]; // layout.js: where each voice's rests sit when a staff holds several
 const TENTHS_PER_STEP = 5; // a staff space is ten tenths; a step is half a space
@@ -78,8 +80,18 @@ export function toMusicXml(doc, { title = doc.title, composer = doc.composer ?? 
   // span stops (hairpins, pedals, octave lines) by the bar they land in
   const stops = d.measures.map(() => []);
   d.measures.forEach((m, bar) => { for (const x of m.expressions ?? []) if (SPAN_KINDS.includes(x.kind)) stops[x.end.bar].push({ at: x.end.at, staff: x.staff, x, from: bar }); });
-  const ottavaXml = (x, type) => `<direction placement="${x.dir > 0 ? "above" : "below"}"><direction-type><octave-shift type="${type}" size="8" number="1"${type === "stop" ? "" : ry(x)}/></direction-type><staff>${x.staff + 1}</staff></direction>`; // MusicXML's "down" = written below sounding = 8va
-  const pedalXml = (x, type) => `<direction placement="below"><direction-type><pedal type="${type}" line="yes"${type === "stop" ? "" : ry(x)}/></direction-type><staff>${x.staff + 1}</staff></direction>`;
+  const ottavaXml = (x, type) => `<direction placement="${x.dir > 0 ? "above" : "below"}"><direction-type><octave-shift type="${type}" size="${x.size ?? 8}" number="1"${type === "stop" ? "" : ry(x)}/></direction-type><staff>${x.staff + 1}</staff></direction>`; // MusicXML's "down" = written below sounding = 8va
+  const pedalXml = (x, type) => `<direction placement="below"><direction-type><pedal type="${type === "start" && x.style === "sost" ? "sostenuto" : type}" ${x.style === "sign" ? 'line="no" sign="yes"' : 'line="yes"'}${type === "stop" ? "" : ry(x)}/></direction-type><staff>${x.staff + 1}</staff></direction>`; // docs/COMPOSE_RAILS2_DESIGN.md §6
+  const textLineXml = (x, type) => (type === "start" ? `<direction placement="below"><direction-type><words${ry(x)}>${esc(x.text)}</words></direction-type><direction-type><dashes type="start" number="${x.staff + 1}"/></direction-type><staff>${x.staff + 1}</staff></direction>` : `<direction placement="below"><direction-type><dashes type="stop" number="${x.staff + 1}"/></direction-type>${x.endText ? `<direction-type><words>${esc(x.endText)}</words></direction-type>` : ""}<staff>${x.staff + 1}</staff></direction>`);
+  // bar repeats (docs/COMPOSE_RAILS2_DESIGN.md §6): a region of % bars opens with measure-repeat start on its first bar and closes on the bar after it
+  const simileAttr = d.measures.map(() => "");
+  { let open = null; // the n of the open region
+    d.measures.forEach((m, b) => {
+      const n = m.simile ?? (simileTail(d, b) ? 2 : null);
+      if (open !== null && (n === null || (n !== open) || (n === 2 && m.simile === 2 && open === 2 && !simileTail(d, b) && false))) { simileAttr[b] += '<measure-style><measure-repeat type="stop"/></measure-style>'; open = null; }
+      if (n !== null && open === null && m.simile !== undefined) { simileAttr[b] += `<measure-style><measure-repeat type="start" slashes="${n}">${n}</measure-repeat></measure-style>`; open = n; }
+    });
+  }
   const endingEnd = d.measures.map(() => null); // bar → the ending that closes on it
   d.measures.forEach((m) => { if (m.ending) endingEnd[Math.min(m.ending.end, d.measures.length - 1)] = m.ending; });
   const letters = new Map(formMarksOf(d).filter((f) => f.letter).map((f) => [f.x, f.letter]));
@@ -96,6 +108,7 @@ export function toMusicXml(doc, { title = doc.title, composer = doc.composer ?? 
     if (m.time) attrs.push(`<time><beats>${m.time.beats}</beats><beat-type>${m.time.unit}</beat-type></time>`);
     if (bar === 0) attrs.push(`<staves>${nStaves}</staves>`);
     if (m.clefs) for (let si = 0; si < nStaves; si++) if (m.clefs[si]) { const [sign, line] = CLEF_XML[m.clefs[si]]; attrs.push(`<clef number="${si + 1}"><sign>${sign}</sign><line>${line}</line></clef>`); }
+    if (simileAttr[bar]) attrs.push(simileAttr[bar]);
     if (attrs.length) w(`      <attributes>${attrs.join("")}</attributes>`);
     const marks = m.form ?? [];
     if (bar === 0 && !marks.some((f) => f.kind === "tempo")) { const t = tempoOf(d); w(`      <direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${t}</per-minute></metronome></direction-type><staff>1</staff><sound tempo="${t}"/></direction>`); }
@@ -107,7 +120,7 @@ export function toMusicXml(doc, { title = doc.title, composer = doc.composer ?? 
       if (f.kind === "rehearsal") w(`      ${dt(`<rehearsal>${letters.get(f)}</rehearsal>`)}</direction>`);
       else if (f.kind === "segno") w(`      ${dt("<segno/>")}<sound segno="segno"/></direction>`);
       else if (f.kind === "coda") w(`      ${dt("<coda/>")}<sound coda="coda"/></direction>`);
-      else if (f.kind === "tempo") w(`      <direction placement="above">${f.text ? `<direction-type><words>${esc(f.text)}</words></direction-type>` : ""}<direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${f.bpm}</per-minute></metronome></direction-type><staff>1</staff><sound tempo="${f.bpm}"/></direction>`);
+      else if (f.kind === "tempo") w(`      <direction placement="above">${f.text ? `<direction-type><words>${esc(f.text)}</words></direction-type>` : ""}<direction-type><metronome><beat-unit>${TYPE_OF_UNIT[f.unit?.base ?? 4]}</beat-unit>${f.unit?.dots ? "<beat-unit-dot/>" : ""}<per-minute>${f.bpm}</per-minute></metronome></direction-type><staff>1</staff><sound tempo="${Math.round(quarterBpm(f) * 100) / 100}"/></direction>`);
     }
     // accidentals as the engraver draws them: key alterations, then a memory per drawn staff that resets at the barline, in time order across voices
     const memory = Array.from({ length: nStaves }, () => new Map());
@@ -126,13 +139,14 @@ export function toMusicXml(doc, { title = doc.title, composer = doc.composer ?? 
     // the staff's inserts: clef changes, wedge stops, dynamics, words, wedge starts — in time order, in that order on a tick
     const inserts = Array.from({ length: nStaves }, () => []);
     for (const c of m.clefChanges ?? []) { const [sign, line] = CLEF_XML[c.clef]; inserts[c.staff].push({ at: c.at, rank: 0, xml: `<attributes><clef number="${c.staff + 1}"><sign>${sign}</sign><line>${line}</line></clef></attributes>` }); }
-    for (const s of stops[bar]) inserts[s.staff].push({ at: s.at, rank: 1, xml: s.x.kind === "hairpin" ? `<direction placement="below"><direction-type><wedge type="stop" number="${s.staff + 1}"/></direction-type><staff>${s.staff + 1}</staff></direction>` : s.x.kind === "pedal" ? pedalXml(s.x, "stop") : ottavaXml(s.x, "stop") });
+    for (const s of stops[bar]) inserts[s.staff].push({ at: s.at, rank: 1, xml: s.x.kind === "hairpin" ? `<direction placement="below"><direction-type><wedge type="stop" number="${s.staff + 1}"/></direction-type><staff>${s.staff + 1}</staff></direction>` : s.x.kind === "pedal" ? pedalXml(s.x, "stop") : s.x.kind === "textline" ? textLineXml(s.x, "stop") : ottavaXml(s.x, "stop") });
     for (const x of m.expressions ?? []) {
       const st = `<staff>${x.staff + 1}</staff>`;
       if (x.kind === "dyn") inserts[x.staff].push({ at: x.at, rank: 2, xml: `<direction placement="below"><direction-type><dynamics${ry(x)}><${x.value}/></dynamics></direction-type>${st}</direction>` });
       else if (x.kind === "text") inserts[x.staff].push({ at: x.at, rank: 3, xml: `<direction placement="above"><direction-type><words${ry(x)}>${esc(x.value)}</words></direction-type>${st}</direction>` });
-      else if (x.kind === "hairpin") inserts[x.staff].push({ at: x.at, rank: 4, xml: `<direction placement="below"><direction-type><wedge type="${WEDGE_OF[x.dir]}" number="${x.staff + 1}"${ry(x)}/></direction-type>${st}</direction>` });
+      else if (x.kind === "hairpin") inserts[x.staff].push({ at: x.at, rank: 4, xml: `<direction placement="below"><direction-type><wedge type="${WEDGE_OF[x.dir]}" number="${x.staff + 1}"${x.niente ? ' niente="yes"' : ""}${ry(x)}/></direction-type>${st}</direction>` });
       else if (x.kind === "pedal") inserts[x.staff].push({ at: x.at, rank: 4, xml: pedalXml(x, "start") });
+      else if (x.kind === "textline") inserts[x.staff].push({ at: x.at, rank: 4, xml: textLineXml(x, "start") });
       else if (x.kind === "ottava") inserts[x.staff].push({ at: x.at, rank: 4, xml: ottavaXml(x, x.dir > 0 ? "down" : "up") });
     }
     for (const list of inserts) list.sort((a, b) => a.at - b.at || a.rank - b.rank);
@@ -173,7 +187,7 @@ export function toMusicXml(doc, { title = doc.title, composer = doc.composer ?? 
             if (ev.gliss === "start") { first.push('<glissando type="start" line-type="wavy"/>'); glissOpen.add(line); }
             const groups = { articulations: [], ornaments: [] };
             let fermata = "";
-            for (const a of ev.art ?? []) { const [where, name] = ART_XML[a] ?? []; if (!where) continue; if (where === "fermata") fermata = "<fermata/>"; else groups[where].push(`<${name}/>`); }
+            for (const a of ev.art ?? []) { const [where, name] = ART_XML[a] ?? []; if (!where) continue; if (where === "fermata") fermata = "<fermata/>"; else groups[where].push(`<${name}/>${a === "trill" && ev.trill ? `${ev.trill.alter !== undefined ? `<accidental-mark>${ACC_MARK_OF[ev.trill.alter]}</accidental-mark>` : ""}${ev.trill.line ? '<wavy-line type="start"/><wavy-line type="stop"/>' : ""}` : ""}`); } // a trill's accidental and wavy line ride in the ornaments (docs/COMPOSE_RAILS2_DESIGN.md §6)
             if (fermata) first.push(fermata);
             if (groups.articulations.length) first.push(`<articulations>${groups.articulations.join("")}</articulations>`);
             if (ev.trem) groups.ornaments.push(`<tremolo type="single">${ev.trem}</tremolo>`);
@@ -184,7 +198,7 @@ export function toMusicXml(doc, { title = doc.title, composer = doc.composer ?? 
               const tie = `${p.tie === "stop" || p.tie === "both" ? '<tie type="stop"/>' : ""}${p.tie === "start" || p.tie === "both" ? '<tie type="start"/>' : ""}`;
               const tied = `${p.tie === "stop" || p.tie === "both" ? '<tied type="stop"/>' : ""}${p.tie === "start" || p.tie === "both" ? '<tied type="start"/>' : ""}`;
               const nots = [tied, ...(pi === 0 ? first : []), p.finger ? `<technical><fingering>${p.finger}</fingering></technical>` : "", arp].join("");
-              w(`      <note>${pi ? "<chord/>" : ""}<pitch><step>${p.step}</step>${p.alter ? `<alter>${p.alter}</alter>` : ""}<octave>${p.octave}</octave></pitch><duration>${o.len}</duration>${tie}<voice>${voiceNo}</voice>${type}${shown[pi] ? `<accidental>${ACC_NAME[p.alter]}</accidental>` : ""}${tm}<staff>${si + 1 + (ev.cross ?? 0)}</staff>${nots ? `<notations>${nots}</notations>` : ""}</note>`);
+              w(`      <note>${pi ? "<chord/>" : ""}<pitch><step>${p.step}</step>${p.alter ? `<alter>${p.alter}</alter>` : ""}<octave>${p.octave}</octave></pitch><duration>${o.len}</duration>${tie}<voice>${voiceNo}</voice>${type}${shown[pi] ? `<accidental>${ACC_NAME[p.alter]}</accidental>` : ""}${tm}${ev.stem ? `<stem>${ev.stem}</stem>` : ""}<staff>${si + 1 + (ev.cross ?? 0)}</staff>${nots ? `<notations>${nots}</notations>` : ""}</note>`);
             });
           }
           cursor = o.start + o.len;
@@ -194,7 +208,7 @@ export function toMusicXml(doc, { title = doc.title, composer = doc.composer ?? 
     });
     move(cap);
     for (const f of marks) if (JUMP_WORDS[f.kind]) w(`      <direction placement="above"><direction-type><words>${JUMP_WORDS[f.kind]}</words></direction-type><staff>1</staff><sound ${JUMP_SOUND[f.kind]}/></direction>`);
-    if (m.barline?.end || endingEnds) w(`      <barline location="right">${m.barline?.end ? `<bar-style>${BAR_STYLE[m.barline.end]}</bar-style>` : ""}${endingEnds ? `<ending number="${endingEnds.n}" type="${m.barline?.end === "repeat" ? "stop" : "discontinue"}"/>` : ""}${m.barline?.end === "repeat" ? '<repeat direction="backward"/>' : ""}</barline>`);
+    if (m.barline?.end || endingEnds) w(`      <barline location="right">${m.barline?.end ? `<bar-style>${BAR_STYLE[m.barline.end]}</bar-style>` : ""}${endingEnds ? `<ending number="${endingEnds.n}" type="${m.barline?.end === "repeat" ? "stop" : "discontinue"}"/>` : ""}${m.barline?.end === "repeat" ? `<repeat direction="backward"${m.barline.times ? ` times="${m.barline.times}"` : ""}/>` : ""}</barline>`);
     w("    </measure>");
   });
   w("  </part>");
@@ -243,7 +257,7 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
   const accSupported = children(child(child(root, "identification"), "encoding"), "supports").some((x) => x.attrs.element === "accidental" && x.attrs.type === "yes");
 
   // pass 1: every bar of every used part → records with tick positions
-  const bars = Array.from({ length: nBars }, () => ({ key: null, time: null, clefs: {}, clefChanges: [], notes: [], dirs: [], len: 0, implicit: false, barline: {}, endingStart: null, endingStop: false, form: [] }));
+  const bars = Array.from({ length: nBars }, () => ({ key: null, time: null, clefs: {}, clefChanges: [], notes: [], dirs: [], len: 0, implicit: false, barline: {}, endingStart: null, endingStop: false, form: [], simileStart: null, simileStop: false }));
   const state = new Map(used.map((p) => [p, { div: 1 }]));
   let time = null; // the time signature in force (the file's, persisted)
   const timeOf = (bi) => { for (let b = Math.min(bi, bars.length - 1); b >= 0; b--) if (bars[b].time) return bars[b].time; return { beats: 4, unit: 4 }; };
@@ -260,6 +274,7 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
         if (el.name === "attributes") {
           const dv = numOf(el, "divisions"); if (dv > 0) st.div = dv;
           const k = child(el, "key"); if (k) { const f = numOf(k, "fifths"); if (f !== null && bar.key === null) bar.key = Math.max(-7, Math.min(7, Math.round(f))); }
+          if (part === used[0]) for (const ms of children(el, "measure-style")) for (const mr of children(ms, "measure-repeat")) { if (mr.attrs.type === "stop") bar.simileStop = true; else { const n = parseInt(mr.text || mr.attrs.slashes || "1", 10); bar.simileStart = n === 2 ? 2 : 1; } } // docs/COMPOSE_RAILS2_DESIGN.md §6
           const t = child(el, "time"); if (t) { if (child(t, "senza-misura")) refuse(`bar ${bi + 1}: unmeasured time`); const beats = children(t, "beats").reduce((n, b) => n + b.text.split("+").reduce((s, x) => s + (Number(x) || 0), 0), 0); const unit = numOf(t, "beat-type", 4); if (!(beats > 0 && [1, 2, 4, 8, 16, 32].includes(unit))) refuse(`bar ${bi + 1}: time signature ${beats}/${unit}`); bar.time = { beats, unit }; time = bar.time; }
           for (const c of children(el, "clef")) {
             const si = ourStaff(part, Number(c.attrs.number ?? 1)); if (si < 0) continue;
@@ -309,6 +324,8 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
           for (const g of [...children(not, "glissando"), ...children(not, "slide")]) if (g.attrs.type === "start") rec.gliss = true;
           for (const grp of ["articulations", "ornaments"]) for (const a of child(not, grp)?.children ?? []) {
             if (a.name === "tremolo") { const n = parseInt(a.text, 10); if ((a.attrs.type ?? "single") === "single" && n >= 1 && n <= TREM_MAX) rec.trem = n; else warnings.add("a two-note tremolo was skipped"); continue; }
+            if (a.name === "wavy-line") { if (a.attrs.type === "start") rec.trillLine = true; continue; } // a trill's extension (only with a trill mark — a bare wavy line is dropped)
+            if (a.name === "accidental-mark") { if (ACC_MARK[a.text] !== undefined) rec.trillAlter = ACC_MARK[a.text]; continue; }
             const m = ART_OF[a.name]; if (m && !rec.art.includes(m)) rec.art.push(m);
           }
           if (children(not, "fermata").length) rec.art.push("fermata");
@@ -329,28 +346,37 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
           const addForm = (f) => { if (part === used[0] && !bar.form.some((o) => o.kind === f.kind)) bar.form.push(f); };
           if (dts.some((x) => x.name === "segno")) addForm({ kind: "segno" });
           if (dts.some((x) => x.name === "coda")) addForm({ kind: "coda" });
-          if (dts.some((x) => x.name === "rehearsal")) addForm({ kind: "rehearsal" });
-          if (pm > 0) { // a metronome mark: the piece's tempo when it is the first thing said, a tempo mark on its bar otherwise (or when it has a word)
+          { const rh = dts.find((x) => x.name === "rehearsal"); if (rh) { const t = rh.text.replace(/\s+/g, " ").trim(); addForm({ kind: "rehearsal", ...(/^[A-Z]{1,2}$/.test(t) || !t ? {} : /^\d+$/.test(t) ? { style: "number" } : { text: t.slice(0, 12) }) }); } } // letters stay automatic; numbers a style; anything else a word
+          if (pm > 0) { // a metronome mark: the piece's tempo when it is the first thing said, a tempo mark on its bar otherwise (or when it has a word); its beat unit rides along (docs/COMPOSE_RAILS2_DESIGN.md §6)
             const bpm = Math.max(MIN_TEMPO, Math.min(MAX_TEMPO, Math.round(pm)));
+            const ub = metro ? UNIT_OF_TYPE[textOf(metro, "beat-unit", "quarter")] : 4, ud = metro ? Math.min(1, children(metro, "beat-unit-dot").length) : 0;
+            const unit = ub && (ub !== 4 || ud) ? { base: ub, dots: ud } : null;
+            if (metro && !ub) warnings.add("a tempo's beat unit was read as a quarter");
             const word = wordsEl && !jump ? wordsEl.text.replace(/\s+/g, " ").trim().slice(0, 20) : "";
-            if (tempo === null) tempo = bpm;
-            if (word || bi > 0 || bar.form.some((f) => f.kind === "tempo")) addForm({ kind: "tempo", bpm, ...(word ? { text: word } : {}) });
+            if (tempo === null) tempo = unit ? quarterBpm({ bpm, unit }) : bpm;
+            if (word || bi > 0 || unit || bar.form.some((f) => f.kind === "tempo")) addForm({ kind: "tempo", bpm, ...(word ? { text: word } : {}), ...(unit ? { unit } : {}) });
             continue;
           }
           if (jump) { addForm({ kind: jump }); continue; }
+          { const dashes = dts.find((x) => x.name === "dashes"); // a dashed text line: the words of its direction belong to it, not to a text mark
+            if (dashes && si >= 0) {
+              const w = wordsEl ? wordsEl.text.replace(/\s+/g, " ").trim().slice(0, TEXT_MAX) : "";
+              if (dashes.attrs.type === "start" && w) { bar.dirs.push({ kind: "textline", si, at, type: "start", number: dashes.attrs.number ?? "1", text: w, dy }); continue; }
+              if (dashes.attrs.type === "stop") { bar.dirs.push({ kind: "textline", si, at, type: "stop", number: dashes.attrs.number ?? "1", endText: w || null, dy }); continue; }
+            } }
           for (const dt of children(el, "direction-type")) for (const x of dt.children) {
             if (x.name === "dynamics") { const v = DYN_IN[x.children[0]?.name]; if (v && si >= 0) bar.dirs.push({ kind: "dyn", si, at, value: v, dy }); }
             else if (x.name === "words") { const v = x.text.replace(/\s+/g, " ").trim().slice(0, TEXT_MAX); if (v && si >= 0) bar.dirs.push({ kind: "text", si, at, value: v, dy }); }
-            else if (x.name === "wedge") { if (si >= 0) bar.dirs.push({ kind: "wedge", si, at, type: x.attrs.type, number: x.attrs.number ?? "1", dy }); }
-            else if (x.name === "pedal") { if (si >= 0 && ["start", "stop", "change"].includes(x.attrs.type)) bar.dirs.push({ kind: "pedal", si, at, type: x.attrs.type, number: x.attrs.number ?? "1", dy }); }
-            else if (x.name === "octave-shift") { if (si >= 0 && ["up", "down", "stop"].includes(x.attrs.type)) { if (x.attrs.size && x.attrs.size !== "8") warnings.add("a 15ma line was read as 8va"); bar.dirs.push({ kind: "ottava", si, at, type: x.attrs.type, number: x.attrs.number ?? "1", dy }); } }
+            else if (x.name === "wedge") { if (si >= 0) bar.dirs.push({ kind: "wedge", si, at, type: x.attrs.type, number: x.attrs.number ?? "1", dy, niente: x.attrs.niente === "yes" }); }
+            else if (x.name === "pedal") { if (si >= 0 && ["start", "stop", "change", "sostenuto"].includes(x.attrs.type)) bar.dirs.push({ kind: "pedal", si, at, type: x.attrs.type === "sostenuto" ? "start" : x.attrs.type, number: x.attrs.number ?? "1", dy, style: x.attrs.type === "sostenuto" ? "sost" : x.attrs.line === "no" ? "sign" : null }); }
+            else if (x.name === "octave-shift") { if (si >= 0 && ["up", "down", "stop"].includes(x.attrs.type)) { const size = x.attrs.size === "15" ? 15 : 8; if (x.attrs.size && x.attrs.size !== "8" && x.attrs.size !== "15") warnings.add("a 22ma line was read as 15ma"); bar.dirs.push({ kind: "ottava", si, at, type: x.attrs.type, number: x.attrs.number ?? "1", dy, size: x.attrs.size && x.attrs.size !== "8" ? Math.max(size, 15) : 8 }); } }
           }
         } else if (el.name === "sound") { if (el.attrs.tempo && tempo === null) tempo = Number(el.attrs.tempo); }
         else if (el.name === "barline") { // form: barlines, repeats, endings (from the part that gives us staves)
           if (part !== used[0]) continue;
           const loc = el.attrs.location ?? "right", style = textOf(el, "bar-style"), rep = child(el, "repeat")?.attrs.direction, end = child(el, "ending");
           if (rep === "forward") bar.barline.start = "repeat";
-          else if (rep === "backward") bar.barline.end = "repeat";
+          else if (rep === "backward") { bar.barline.end = "repeat"; const tm = parseInt(child(el, "repeat").attrs.times, 10); if (tm >= 3 && tm <= 9) bar.barline.times = tm; }
           else if (loc === "right" && style === "light-light") bar.barline.end = "double";
           else if (loc === "right" && (style === "light-heavy" || style === "heavy-heavy")) bar.barline.end = "final";
           if (end) { const n = parseInt(end.attrs.number, 10); if (end.attrs.type === "start" && n >= 1) bar.endingStart = Math.min(n, 9); else if (end.attrs.type === "stop" || end.attrs.type === "discontinue") bar.endingStop = true; }
@@ -379,9 +405,16 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
   const late = new Map(); // bar → expressions that snapped past the bar being built (they land when that bar is made; past the last bar, in the bar added after it)
   const putAt = (bar, x) => { if (bar < measures.length) { const tm = measures[bar]; tm.expressions = [...(tm.expressions ?? []), x]; } else late.set(bar, [...(late.get(bar) ?? []), x]); };
   let openEnding = null; // { n, first } while an ending bracket is open
+  let openSimile = null, simileK = 0; // a measure-repeat region: its n, and how many bars of it have been made
   bars.forEach((bar, bi) => {
     const m = newMeasure(2, timeOf(bi));
     const t = timeOf(bi), cap = capacity(t);
+    if (bar.simileStop) openSimile = null;
+    if (bar.simileStart) { openSimile = bar.simileStart; simileK = 0; }
+    const inSimile = openSimile !== null && bi >= openSimile && capacity(timeOf(bi - openSimile)) === cap;
+    if (openSimile !== null && !inSimile) { warnings.add("a bar repeat with nothing to repeat was read as rests"); openSimile = null; }
+    if (inSimile && (openSimile === 1 || simileK % 2 === 0)) m.simile = openSimile;
+    if (inSimile) simileK++;
     if (bi === 0) { m.key = { fifths: bar.key ?? 0 }; m.time = { ...t }; m.clefs = { 0: bar.clefs[0] ?? "treble", 1: bar.clefs[1] ?? "bass" }; }
     else { if (bar.key !== null && bar.key !== keyAt(doc0, bi - 1).fifths) m.key = { fifths: bar.key }; if (bar.time) m.time = { ...bar.time }; for (const si of [0, 1]) if (bar.clefs[si] && bar.clefs[si] !== clefAt(doc0, bi - 1, si, Infinity)) m.clefs = { ...(m.clefs ?? {}), [si]: bar.clefs[si] }; }
     if (bar.barline.start || bar.barline.end) m.barline = { ...bar.barline };
@@ -403,7 +436,7 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
     for (const grp of homes[bi].values()) present[grp.home][ranks[grp.home].get(grp.key)] = grp;
     for (const si of [0, 1]) {
       const nV = present[si].filter(Boolean).length;
-      const voices = present[si].map((grp, vi) => (grp ? buildVoice(grp, si, vi, nV, bi, t, shift, doc0, refuse) : null));
+      const voices = inSimile ? [barRests(t)] : present[si].map((grp, vi) => (grp ? buildVoice(grp, si, vi, nV, bi, t, shift, doc0, refuse) : null)); // a % bar's own notes are the bar before's: it holds rests
       if (!voices[0]) voices[0] = barRests(t);
       while (voices.length > 1 && !voices[voices.length - 1]) voices.pop();
       m.staves[si].voices = voices;
@@ -422,16 +455,20 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
         if (!open) return;
         spanOpen.delete([...spanOpen.entries()].find(([, v]) => v === open)[0]);
         if (pos.bar < open.bar || (pos.bar === open.bar && pos.at <= open.at)) return; // a collapsed span
-        const x = { id: eid(), kind, staff: open.staff, at: open.at, ...(kind === "pedal" ? {} : { dir: open.dir }), end: { bar: pos.bar, at: pos.at } };
+        const x = { id: eid(), kind, staff: open.staff, at: open.at, ...(kind === "hairpin" || kind === "ottava" ? { dir: open.dir } : {}), end: { bar: pos.bar, at: pos.at } };
+        if (kind === "hairpin" && open.niente) x.niente = true;
+        if (kind === "ottava" && open.size === 15) x.size = 15;
+        if (kind === "pedal" && open.style) x.style = open.style;
+        if (kind === "textline") { x.text = open.text; if (dd.endText) x.endText = dd.endText.slice(0, TEXT_MAX); }
         if (open.dy) x.dy = open.dy;
         putAt(open.bar, x);
       };
-      const opening = dd.kind === "wedge" ? (dd.type === "crescendo" || dd.type === "diminuendo" ? WEDGE_IN[dd.type] : null) : dd.kind === "pedal" ? (dd.type === "start" || dd.type === "change" ? "pedal" : null) : dd.type === "down" ? 1 : dd.type === "up" ? -1 : null;
+      const opening = dd.kind === "wedge" ? (dd.type === "crescendo" || dd.type === "diminuendo" ? WEDGE_IN[dd.type] : null) : dd.kind === "pedal" ? (dd.type === "start" || dd.type === "change" ? "pedal" : null) : dd.kind === "textline" ? (dd.type === "start" ? "textline" : null) : dd.type === "down" ? 1 : dd.type === "up" ? -1 : null;
       if (dd.type === "stop" || dd.type === "change") close();
-      if (opening !== null) spanOpen.set(k, { ...pos, kind, dir: opening, dy: dd.dy, staff: dd.si });
+      if (opening !== null) spanOpen.set(k, { ...pos, kind, dir: opening, dy: dd.dy, staff: dd.si, niente: dd.niente, size: dd.size, style: dd.style, text: dd.text });
     }
   });
-  for (const o of spanOpen.values()) warnings.add(`${o.kind === "hairpin" ? "a hairpin" : o.kind === "pedal" ? "a pedal line" : "an octave line"} without an end was dropped`);
+  for (const o of spanOpen.values()) warnings.add(`${o.kind === "hairpin" ? "a hairpin" : o.kind === "pedal" ? "a pedal line" : o.kind === "textline" ? "a text line" : "an octave line"} without an end was dropped`);
   // finish: one empty bar after the last, at least the default count, standard rests, ties, marks
   const isEmpty = (m) => m.staves.every((s) => s.voices.every((v) => !v || v.every((e) => e.kind === "rest")));
   if (!isEmpty(measures[measures.length - 1]) || late.size) measures.push(newMeasure(2, timeOf(measures.length - 1)));
@@ -503,7 +540,7 @@ function buildVoice(grp, si, vi, nV, bi, time, shift, doc0, refuse) {
     durs.forEach((d, k) => {
       const ev = r.kind === "rest" ? restEvent(d) : noteEvent(d, r.pitches.map((p) => { const q = { step: p.step, alter: p.alter, octave: p.octave }; if (p.tie === "start" || p.tie === "both") { if (k === durs.length - 1) q.tie = p.tie; else q.tie = k === 0 && p.tie === "both" ? "both" : "start"; } else if (p.tie === "stop" && k === 0) q.tie = "stop"; if (k < durs.length - 1) q.tie = q.tie === "stop" || q.tie === "both" ? "both" : "start"; if (p.accShown && k === 0) q.accShown = true; if (p.finger) q.finger = p.finger; return q; }).sort((a, b) => diatonicOf(a) - diatonicOf(b)));
       if (r.kind === "note") {
-        if (k === 0) { if (r.art.length) ev.art = r.art.filter((a) => MARKS.includes(a)); if (r.arp) ev.arp = r.arp; if (r.trem) ev.trem = r.trem; if (r.graces?.length) ev.graces = r.graces; if (r.slurs.some((s) => s.at === "start")) ev.slurs = r.slurs.filter((s) => s.at === "start"); }
+        if (k === 0) { if (r.art.length) ev.art = r.art.filter((a) => MARKS.includes(a)); if (ev.art?.includes("trill") && (r.trillLine || r.trillAlter !== undefined)) ev.trill = { ...(r.trillLine ? { line: true } : {}), ...(r.trillAlter !== undefined ? { alter: r.trillAlter } : {}) }; if (r.arp) ev.arp = r.arp; if (r.trem) ev.trem = r.trem; if (r.graces?.length) ev.graces = r.graces; if (r.slurs.some((s) => s.at === "start")) ev.slurs = r.slurs.filter((s) => s.at === "start"); }
         if (k === durs.length - 1) { if (r.gliss) ev.gliss = "start"; if (r.slurs.some((s) => s.at === "stop")) ev.slurs = [...(ev.slurs ?? []), ...r.slurs.filter((s) => s.at === "stop")]; }
         if (r.si !== si) ev.cross = r.si - si;
       } else {
