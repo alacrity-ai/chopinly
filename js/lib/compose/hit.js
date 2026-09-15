@@ -101,4 +101,43 @@ export function inside(poly, x, y) {
   return on;
 }
 /** The things a closed lasso (points in S) encloses. */
-export const lasso = (L, poly) => (poly.length < 3 ? [] : things(L).filter((t) => inside(poly, t.x, t.y)));
+/**
+ * A stroke that does not come back round is a line, not a loop (v102): its end sits more than 45 % of its
+ * drawn length from its start (a closed loop ≈ 0, three quarters of a circle ≈ 0.3, a line ≈ 1), or it
+ * encloses next to nothing (area under 1 % of its perimeter² — a circle is ≈ 8 %, a square 6 %).
+ */
+export function isLine(poly) {
+  if (poly.length < 3) return true;
+  let area = 0, perim = 0, drawn = 0;
+  for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length]; area += a.x * b.y - b.x * a.y; const d = Math.hypot(b.x - a.x, b.y - a.y); perim += d; if (i < poly.length - 1) drawn += d; }
+  const gap = Math.hypot(poly[poly.length - 1].x - poly[0].x, poly[poly.length - 1].y - poly[0].y);
+  return drawn === 0 || gap > 0.45 * drawn || Math.abs(area) / 2 / (perim * perim) < 0.01;
+}
+export const lasso = (L, poly) => (isLine(poly) ? [] : things(L).filter((t) => inside(poly, t.x, t.y)));
+
+/**
+ * Gesture mode's strike (docs/COMPOSE_DESIGN.md §8.5j): which `targets` (`{ key, x, y, rx, ry }`, boxes in S)
+ * a stroke `pts` (`[{ x, y }]`, in S) passes through — every segment against every box by slab clipping.
+ * A one-point stroke is a point test. Returns the keys crossed.
+ */
+export function struck(pts, targets) {
+  const hit = new Set();
+  if (!pts?.length) return hit;
+  const segs = pts.length === 1 ? [[pts[0], pts[0]]] : pts.slice(1).map((p, i) => [pts[i], p]);
+  for (const t of targets) {
+    const x0 = t.x - t.rx, x1 = t.x + t.rx, y0 = t.y - t.ry, y1 = t.y + t.ry;
+    for (const [a, b] of segs) {
+      const dx = b.x - a.x, dy = b.y - a.y;
+      let t0 = 0, t1 = 1, ok = true;
+      for (const [p, q] of [[-dx, a.x - x0], [dx, x1 - a.x], [-dy, a.y - y0], [dy, y1 - a.y]]) {
+        if (p === 0) { if (q < 0) { ok = false; break; } continue; }
+        const r = q / p;
+        if (p < 0) { if (r > t1) { ok = false; break; } if (r > t0) t0 = r; }
+        else { if (r < t0) { ok = false; break; } if (r < t1) t1 = r; }
+      }
+      if (ok) { hit.add(t.key); break; }
+    }
+  }
+  return hit;
+}
+

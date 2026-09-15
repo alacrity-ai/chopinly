@@ -99,3 +99,11 @@ phase's card (WSHED-115 … 122).
 - A fresh device starts in Touch. The first Pencil stroke on the score flips the switch to Pen and toasts "Pencil — fingers rest now"; set it back to Touch and the next Pencil stroke leaves it alone. The setting survives a reload.
 - Pan is the same in both: one finger scrolls, two zoom, nothing places.
 
+## Gesture mode v1 (WSHED-130, v102)
+
+- A Gesture toggle sits after Pen | Touch on the control rail; off until you switch it on; remembered on the device.
+- On, Place mode: drag on empty staff and a lasso draws; lift and what is inside is selected; a lasso around nothing clears the selection. The armed note stays armed and a plain tap still places.
+- On: select some notes and draw a line through them — they become rests (undo brings them back). The same through a selected dynamic removes it. A line through unselected notes changes nothing.
+- Touch mode: slide a finger at once and it draws a lasso; hold it half a second first and it aims (v101).
+- Off: a drag in Place mode does nothing, as before. Select and Pan are unchanged either way.
+

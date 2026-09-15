@@ -26,6 +26,8 @@ const P = {
   check: `<path d="M5 12.5l4.2 4.2L19 7.5" stroke-width="2.4"/>`,
   // the pickers' chevron (WSHED-128): a small down caret instead of the ▾ text glyph
   chev: `<path d="M7 10l5 5 5-5" stroke-width="2.3"/>`,
+  // Gesture mode (v102, WSHED-130): a drawn stroke
+  gesture: `<path d="M3.6 15.6c2.3-7.6 5-7.6 6.2 0s3.7 7.6 6.2 0"/><path d="M16 15.6l2 1.7 2-2.2"/>`,
   // Pen | Touch (v101, WSHED-129): a pencil and a pointing finger
   nib: `<path d="M15 4.2l4.8 4.8L8.4 20.4H3.6v-4.8Z"/><path d="M12.8 6.4l4.8 4.8"/>`,
   finger: `<path d="M10.6 12.4V4.9a1.5 1.5 0 0 1 3 0v6.9"/><path d="M13.6 11.6l3.6 1a2.3 2.3 0 0 1 1.7 2.2v1.6c0 3.4-2.5 5.4-5.4 5.4h-1.3a4.9 4.9 0 0 1-3.9-2l-2.6-3.5a1.4 1.4 0 0 1 2.2-1.7l1.7 2.1"/>`,

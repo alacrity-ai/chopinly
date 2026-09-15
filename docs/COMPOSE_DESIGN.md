@@ -208,7 +208,8 @@ An **event** (one voice slot):
 
 `zoom` (S in px), `armed` (`{ base, dots, rest, tuplet }` — restored per
 session), `input` (`"pen"` | `"touch"`, v101 — §8.5i; replaces the never-built
-`fingerPlaces`), `penSeen` (bool — the one-time flip to Pen has happened), `lastId`.
+`fingerPlaces`), `penSeen` (bool — the one-time flip to Pen has happened), `gesture` (bool,
+default off, v102 — §8.5j), `lastId`.
 
 ### 4.4 D1 (P3)
 
@@ -400,6 +401,10 @@ carries the accidental, then the button clears.
     empty staff lassoes, with fingertip-sized hit targets; holding (500 ms) or
     sliding aims with a lifted ghost, and any lift before that is a tap under
     the finger. A second finger still lets go.
+- **Gesture** on (v102, §8.5j): in Place mode a stroke on empty staff that travels
+  is a lasso; in either edit mode a stroke through *selected* heads or dynamics
+  is a strike that deletes them. A Touch-mode finger that slides at once draws a
+  gesture; one held first aims.
 - Pan uses the reader's swipe logic with inertia and pinch-to-zoom; zoom is
   applied by re-laying out at the new S (no CSS transform — text stays crisp).
 - Ghost: on `pointermove` (pen / mouse) the hit table gives the slot and step;
@@ -560,6 +565,41 @@ a pen lands in and a finger cannot, so a finger missed the head and got a discar
   possible stray palm note before the first pencil stroke, which undo fixes.
 - **Unchanged.** Pan (one finger pans, two pinch, in either setting), the mouse, the
   keyboard, the score's pinning in the edit modes.
+
+### 8.5j Gesture mode v1 (v102, WSHED-130)
+
+Leif, after v101: a toggle on the control rail for two quality-of-life strokes in Place mode,
+so the common moves stop needing a trip to Select — drag to lasso, and a line through selected
+things to delete them. Shapes that change the note type are v2 and are not here.
+
+- **The toggle.** A single on/off `.cp-btn` (`icon("gesture")`, the word hidden on a phone) in
+  its own one-segment `.cp-group.cp-setting` after Pen | Touch; `aria-pressed` shows the state
+  in the quiet setting fill. Remembered per device (`gesture`), **off by default** — a lasso
+  appearing mid-placement is new behaviour, so a device opts in.
+- **Drag to lasso (Place mode).** With Gesture on, `pointerdown` on empty staff in Place mode
+  starts the same `lassoState` Select mode uses (a pen or mouse at once; a Touch-mode finger the
+  moment it slides past `TAP_PX`, before the `AIM_MS` hold — hold means aim, move means draw).
+  Past `LASSO_PX` the path draws and the ghost hides; the lift selects what is inside, and
+  nothing inside clears the selection, as in Select mode. A stroke that never travelled is the
+  tap it always was: `lassoEnd` routes it to `tapAt` (a pen or mouse inside `TAP_MS`; a Touch-mode
+  finger however slow), so a plain tap still places. The mode stays Place and the armed
+  duration stays armed.
+- **Strike to delete.** At the lift of any active lasso (Place or Select mode) with Gesture on,
+  the path is tested against the **selected** heads and dynamics (`hit.js` `struck`: each path
+  segment against each target's box by slab clipping; a head's box is 0.75 × 0.5 S, a
+  dynamic's 1.2 × 0.9 S, both widened to the Touch-mode finger tolerance). Anything crossed is
+  deleted in one undo step — heads through `remove` (rests come back), dynamics through
+  `removeExpressions` — and leaves the selection; nothing crossed → the stroke is a lasso.
+  Only selected things can be struck, so a lasso can never delete, and a stroke over
+  unselected notes selects nothing: `hit.js` `isLine` calls a stroke a line when its end sits
+  more than 45 % of its drawn length from its start (a closed loop ≈ 0, a line ≈ 1) or when its
+  area is under 1 % of its perimeter² (a circle is ≈ 8 %, a square 6 %), and a line lassoes nothing —
+  which also stops a near-straight Select-mode stroke from catching an anchor by a hair.
+- **Grab vs gesture.** A grab still starts on a head (`headUnder`); a gesture starts on empty
+  staff. Dragging a cluster and striking through it never collide.
+- **Pen | Touch.** Pen mode: fingers rest, gestures come from the pencil or the mouse. Touch
+  mode: slide at once → gesture; hold `AIM_MS` then slide → aim (v101).
+- **Off** leaves every mode exactly as before; Pan is unchanged either way.
 
 ### 8.6 Transport (v70) and the rails' look (v71)
 
