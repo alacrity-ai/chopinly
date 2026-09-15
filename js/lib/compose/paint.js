@@ -47,10 +47,14 @@ export function paintScore(L, p) {
         if (c.time) { p.glyph(c.timeX, st.topY + 1, timeDigit(c.beats), "glyph cp-courtesy"); p.glyph(c.timeX, st.topY + 3, timeDigit(c.unit), "glyph cp-courtesy"); }
       });
     }
-    // barlines spanning both staves
+    // barlines spanning both staves (docs/COMPOSE_FORM_DESIGN.md §5): thin; double = two thin; final = thin + thick; repeat = dots + thin + thick (mirrored to open a bar)
+    const dots = (x) => { for (const topY of sys.staffTop) p.glyph(x, topY + 4, G.repeatDots, "glyph cp-repeat-dots"); };
     for (const bl of sys.barlines) {
-      p.rect(bl.x - (bl.final ? 0.9 : 0.065), t0, 0.13, t1 - t0, "sline-bar");
-      if (bl.final) p.rect(bl.x - 0.45, t0, 0.5, t1 - t0, "sline-bar");
+      const kind = bl.kind ?? (bl.final ? "final" : "single");
+      if (kind === "single") p.rect(bl.x - 0.065, t0, 0.13, t1 - t0, "sline-bar");
+      else if (kind === "double") { p.rect(bl.x - 0.065, t0, 0.13, t1 - t0, "sline-bar"); p.rect(bl.x - 0.565, t0, 0.13, t1 - t0, "sline-bar"); }
+      else { p.rect(bl.x - 0.9, t0, 0.13, t1 - t0, "sline-bar"); p.rect(bl.x - 0.45, t0, 0.5, t1 - t0, "sline-bar"); if (kind === "repeat") dots(bl.x - 1.85); }
+      if (bl.startX !== undefined) { p.rect(bl.startX + 0.05, t0, 0.5, t1 - t0, "sline-bar"); p.rect(bl.startX + 0.85, t0, 0.13, t1 - t0, "sline-bar"); dots(bl.startX + 1.25); }
     }
     p.end();
   }
@@ -120,6 +124,25 @@ export function paintScore(L, p) {
     p.end();
   }
   for (const tx of L.texts) { p.group("cp-expr", { ev: tx.id, kind: "text" }); p.text(tx.x, tx.y, tx.text, "cp-expr-text", { size: 1.15 }); p.end(); }
+  // form: signs, the boxed rehearsal letter, a tempo mark (word, then ♩ = n) at a bar's start; Fine / To Coda / jumps right-aligned at its end; ending brackets with their number
+  for (const f of L.form) {
+    p.group("cp-form", { bar: f.bar, kind: f.kind });
+    if (f.kind === "sign") p.glyph(f.x, f.y, f.sign === "segno" ? G.segno : G.coda, "glyph cp-sign", { scale: 0.75 });
+    else if (f.kind === "rehearsal") { p.polyline([[f.x, f.y + 0.45], [f.x + f.w, f.y + 0.45], [f.x + f.w, f.y - 1.35], [f.x, f.y - 1.35], [f.x, f.y + 0.45]], "cp-rehearsal-box"); p.text(f.x + f.w / 2, f.y, f.text, "cp-rehearsal", { size: 1.25, anchor: "middle" }); }
+    else if (f.kind === "tempo") { if (f.text) p.text(f.x, f.y, f.text, "cp-tempo-word", { size: 1.15 }); p.glyph(f.noteX, f.y, G.metQuarter, "glyph cp-tempo-note", { scale: 0.55 }); p.text(f.noteX + 1.3, f.y, `= ${f.bpm}`, "cp-tempo-num", { size: 1.05 }); }
+    else p.text(f.x, f.y, f.text, "cp-form-words", { size: 1.15, anchor: "end" });
+    p.end();
+  }
+  for (const e of L.endings) {
+    p.group("cp-ending", { bar: e.bar });
+    const pts = [];
+    if (e.hookStart) pts.push([e.x1, e.y + 1.4]);
+    pts.push([e.x1, e.y], [e.x2, e.y]);
+    if (e.hookEnd) pts.push([e.x2, e.y + 1.4]);
+    p.polyline(pts, "cp-ending-line");
+    if (e.hookStart) p.text(e.x1 + 0.4, e.y + 1.15, `${e.n}.`, "cp-ending-num", { size: 1.0 });
+    p.end();
+  }
   for (const gl of L.glisses) {
     p.group("cp-gliss");
     p.line(gl.x1, gl.y1, gl.x2, gl.y2, "cp-gliss-line");

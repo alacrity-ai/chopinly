@@ -146,6 +146,9 @@ node-tested; `js/tools/compose/*` is the UI. The merge rule stays in
       time?: { beats: 4, unit: 4 },           // same
       clefs?: { 0: "treble", 1: "bass" },     // per staff index, same (a change at the barline)
       clefChanges?: [ { staff: 1, at: 13440, clef: "tenor" } ],  // changes on a beat inside the bar (ticks; sorted); either kind holds until the next
+      barline?: { start?: "repeat", end?: "double" | "final" | "repeat" },   // v95 (WSHED-124, COMPOSE_FORM_DESIGN.md): the bar's barlines
+      ending?: { n: 1, end: 5 },                                              // v95: an ending bracket from this bar to bar index `end`
+      form?: [ { kind: "segno" }, { kind: "tempo", bpm: 120, text: "Allegro" } ], // v95: signs, jumps (dc, dsAlCoda …), rehearsal, tempo marks on the bar
       expressions?: [ { id, kind: "dyn", staff: 0, at: 3360, value: "mf" },              // v91 (WSHED-122, COMPOSE_EXPRESSIONS_DESIGN.md): dynamics, text and
                       { id, kind: "text", staff: 0, at: 0, value: "rit." },              // hairpins live on half-beat slots of the bar, not on notes;
                       { id, kind: "hairpin", staff: 0, at: 0, dir: "cresc", end: { bar: 2, at: 0 } } ],  // a hairpin sits on the bar of its start
@@ -451,6 +454,13 @@ A composition carries the same identity as a score: `title`, `composer`, `tags` 
 ### 8.5f The expression rail (v85, WSHED-118; re-based on slots in v91, WSHED-122)
 
 A fifth lane in `RAILS` (off by default, a row in Rails ▾): **pp p mp mf f ff** · **crescendo / diminuendo** · **text ▾** (a popover of suggestions — rit., a tempo, accel., rall., cresc., dim., dolce, espress., legato, rubato, cantabile, marcato — and a box for your own). Since v91 the marks are first-class things on half-beat slots, placed by an armed cursor (a hairpin by three taps), selectable, deletable and draggable in time — the whole story is in [`COMPOSE_EXPRESSIONS_DESIGN.md`](COMPOSE_EXPRESSIONS_DESIGN.md). The lane lives in `rails.js` with the others. Playback: a note's velocity is the dynamic in force on its staff at its tick (mf until one is written); inside a hairpin the notes ramp to the next written dynamic, or one step up / down when none follows (`velocities` in play.js).
+
+### 8.5g The Form rail (v95, WSHED-124)
+
+Barlines (double, final, repeat start / end / both), endings 1.–3., segno, coda, the jumps (D.C.,
+D.S., al Fine, al Coda, To Coda, Fine), rehearsal letters and tempo marks — every button arms a tap
+on a **bar**, the same tap removes, and playback unrolls the form with a tempo map. Design and
+as-built: `docs/COMPOSE_FORM_DESIGN.md`.
 
 ### 8.6 Transport (v70) and the rails' look (v71)
 

@@ -43,8 +43,13 @@ const ARP_ROWS = [["plain", G.arpeggio, "rolled"], ["up", G.arpeggioUp, "rolled 
 /** What the mark buttons say; a mark not listed reads as its id. */
 const MARK_NAMES = { lowerMordent: "lower mordent — the one with the line through it" };
 /** The rails a reader can show or hide, in order — the header that holds the menu is not one of them. */
-export const RAILS = [["control", "Controls"], ["transport", "Transport"], ["palette", "Notes"], ["utility", "Key · time · clef · marks"], ["expression", "Dynamics · hairpins · text"]]; // expression marks arm a cursor and land on half-beats (docs/COMPOSE_EXPRESSIONS_DESIGN.md)
-export const DEFAULT_RAILS = { control: true, transport: true, palette: true, utility: false, expression: false };
+export const RAILS = [["control", "Controls"], ["transport", "Transport"], ["palette", "Notes"], ["utility", "Key · time · clef · marks"], ["expression", "Dynamics · hairpins · text"], ["form", "Form · repeats · tempo"]]; // expression marks arm a cursor and land on half-beats (docs/COMPOSE_EXPRESSIONS_DESIGN.md)
+export const DEFAULT_RAILS = { control: true, transport: true, palette: true, utility: false, expression: false, form: false };
+/** The Form rail (docs/COMPOSE_FORM_DESIGN.md §3): barline pictures, the ending numbers, the jump rows — each arms a tap on a bar. */
+export const BARLINES = [["single", "barSingle", "single barline (clears a repeat or double bar)"], ["double", "barDouble", "double barline"], ["final", "barFinal", "final barline"], ["repeat-start", "repeatLeft", "repeat start"], ["repeat", "repeatRight", "repeat end"], ["both", "repeatBoth", "repeat end and a repeat start on the next bar"]];
+export const ENDINGS = [1, 2, 3];
+export const JUMP_ROWS = [["dc", "D.C."], ["dcAlFine", "D.C. al Fine"], ["dcAlCoda", "D.C. al Coda"], ["ds", "D.S."], ["dsAlFine", "D.S. al Fine"], ["dsAlCoda", "D.S. al Coda"], ["toCoda", "To Coda"], ["fine", "Fine"]];
+export const JUMP_LABEL = Object.fromEntries(JUMP_ROWS);
 /** Dynamics in rail order and the text suggestions (free typing too). */
 const DYNS = ["pp", "p", "mp", "mf", "f", "ff"];
 const TEXTS = ["rit.", "a tempo", "accel.", "rall.", "cresc.", "dim.", "dolce", "espress.", "legato", "rubato", "cantabile", "marcato"];
@@ -163,6 +168,26 @@ export function buildRails(host, { title, onAction }) {
           <span class="cp-text-row"><input class="cp-text-in" id="cp-text-in" type="text" maxlength="40" placeholder="your own…" aria-label="expression text"><button type="button" class="cp-btn cp-text-set" data-act="text-set">set</button></span>
         </span>
       </span>
+    </div>
+    <div class="cp-rail cp-form" id="cp-form" role="toolbar" aria-label="barlines, repeats, endings, jumps, rehearsal marks and tempo" data-rail="form" hidden>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-pick" data-pop="cp-bar-more" aria-label="barline — pick one, then tap the bar" aria-expanded="false" aria-pressed="false"><span class="cp-pick-label">Barline</span><span class="cp-pick-val cp-bar-val" id="cp-bar-val"></span>&#9662;</button>
+        <span class="cp-more cp-grid cp-bar-grid" id="cp-bar-more" hidden>${BARLINES.map(([k, g, label]) => `<button type="button" class="cp-btn cp-sq cp-bar" data-act="barline" data-kind="${k}" aria-pressed="false" aria-label="${label}"><span class="cp-glyph cp-glyph-bar">${G[g]}</span></button>`).join("")}</span>
+      </span>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-pick" data-pop="cp-ending-more" aria-label="ending — pick the number, then tap its first bar and its last" aria-expanded="false" aria-pressed="false"><span class="cp-pick-label">Ending</span><b class="cp-pick-val" id="cp-ending-val"></b>&#9662;</button>
+        <span class="cp-more cp-grid" id="cp-ending-more" hidden>${ENDINGS.map((n) => `<button type="button" class="cp-btn cp-sq cp-ending" data-act="ending" data-n="${n}" aria-pressed="false" aria-label="ending ${n}"><b>${n}.</b></button>`).join("")}</span>
+      </span>
+      <span class="cp-sep" aria-hidden="true"></span>
+      <button type="button" class="cp-btn cp-sq cp-sign-btn" data-act="sign" data-kind="segno" aria-pressed="false" aria-label="segno — tap the bar it marks"><span class="cp-glyph cp-glyph-sm">${G.segno}</span></button>
+      <button type="button" class="cp-btn cp-sq cp-sign-btn" data-act="sign" data-kind="coda" aria-pressed="false" aria-label="coda sign — tap the bar it marks"><span class="cp-glyph cp-glyph-sm">${G.coda}</span></button>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-pick" data-pop="cp-jump-more" aria-label="jump — D.C., D.S., To Coda, Fine: pick one, then tap the bar it ends" aria-expanded="false" aria-pressed="false"><span class="cp-pick-label">Jump</span><i class="cp-pick-val" id="cp-jump-val"></i>&#9662;</button>
+        <span class="cp-more cp-menu" id="cp-jump-more" hidden>${JUMP_ROWS.map(([k, label]) => `<button type="button" class="cp-btn cp-menu-row cp-jump-row" data-act="jump" data-kind="${k}" aria-pressed="false"><i>${label}</i></button>`).join("")}</span>
+      </span>
+      <span class="cp-sep" aria-hidden="true"></span>
+      <button type="button" class="cp-btn cp-sq cp-rehearsal-btn" data-act="rehearsal" aria-pressed="false" aria-label="rehearsal mark — tap the bar"><b class="cp-rehearsal-pic">A</b></button>
+      <button type="button" class="cp-btn cp-tempo-mark-btn" data-act="tempo-mark" aria-pressed="false" aria-label="tempo mark — say the tempo, then tap the bar it starts at"><span class="cp-glyph cp-glyph-xs">${G.metQuarter}</span><span id="cp-tempo-mark-lbl">= tempo</span></button>
     </div>`;
   const moreBtn = host.querySelector(".cp-dur-more"), accMoreBtn = host.querySelector(".cp-acc-more");
   const tupMore = host.querySelector("#cp-tup-more"), tupBtn = host.querySelector(".cp-tuplet");
@@ -196,6 +221,8 @@ export function buildRails(host, { title, onAction }) {
     if (act === "voice") { onAction("voice", Number(b.dataset.v)); return; }
     if (act === "cross") { onAction("cross", Number(b.dataset.dir)); return; }
     if (act === "tuplet") { onAction("tuplet", b.dataset.n ? Number(b.dataset.n) : undefined); return; }
+    if (act === "barline" || act === "sign" || act === "jump") { onAction(act, b.dataset.kind); return; }
+    if (act === "ending") { onAction("ending", Number(b.dataset.n)); return; }
     onAction(act);
   });
   // hold the tuplet button for the other sizes; hold a voice button for the voice menu
@@ -261,6 +288,25 @@ export function buildRails(host, { title, onAction }) {
       for (const b of host.querySelectorAll(".cp-hairpin-btn")) b.setAttribute("aria-pressed", String(pending?.kind === "hairpin" && pending.value === b.dataset.kind));
       host.querySelector(".cp-text-btn").setAttribute("aria-pressed", String(pending?.kind === "text"));
       { const lbl = host.querySelector("#cp-text-lbl"), want = pending?.kind === "text" ? pending.value : "text"; if (lbl.textContent !== want) lbl.textContent = want; }
+      // the form rail (WSHED-124): the armed thing lights its picker or button
+      { const bl = pending?.kind === "barline" ? pending.value : null, pic = BARLINES.find(([k]) => k === bl);
+        const bv = host.querySelector("#cp-bar-val"), bvHtml = pic ? `<span class="cp-glyph cp-glyph-xs">${G[pic[1]]}</span>` : "";
+        if (bv.innerHTML !== bvHtml) { bv.innerHTML = bvHtml; for (const g of bv.querySelectorAll(".cp-glyph")) centreGlyph(g); }
+        host.querySelector("[data-pop=cp-bar-more]").setAttribute("aria-pressed", String(!!bl));
+        for (const b of host.querySelectorAll(".cp-bar")) b.setAttribute("aria-pressed", String(b.dataset.kind === bl));
+        const en = pending?.kind === "ending" ? pending.value : null;
+        host.querySelector("#cp-ending-val").textContent = en ? `${en}.${pending.start !== undefined ? " …" : ""}` : "";
+        host.querySelector("[data-pop=cp-ending-more]").setAttribute("aria-pressed", String(!!en));
+        for (const b of host.querySelectorAll(".cp-ending")) b.setAttribute("aria-pressed", String(Number(b.dataset.n) === en));
+        for (const b of host.querySelectorAll(".cp-sign-btn")) b.setAttribute("aria-pressed", String(pending?.kind === "sign" && pending.value === b.dataset.kind));
+        const jp = pending?.kind === "jump" ? pending.value : null;
+        host.querySelector("#cp-jump-val").textContent = jp ? JUMP_LABEL[jp] : "";
+        host.querySelector("[data-pop=cp-jump-more]").setAttribute("aria-pressed", String(!!jp));
+        for (const b of host.querySelectorAll(".cp-jump-row")) b.setAttribute("aria-pressed", String(b.dataset.kind === jp));
+        host.querySelector(".cp-rehearsal-btn").setAttribute("aria-pressed", String(pending?.kind === "rehearsal"));
+        const tm = pending?.kind === "tempo-mark" ? pending.value : null;
+        host.querySelector(".cp-tempo-mark-btn").setAttribute("aria-pressed", String(!!tm));
+        const tl = host.querySelector("#cp-tempo-mark-lbl"), want = tm ? `= ${tm.bpm}${tm.text ? ` ${tm.text}` : ""}` : "= tempo"; if (tl.textContent !== want) tl.textContent = want; }
       // the armed change (key / time / clef waiting for a tap) shows on its picker and its button
       const key = pending?.kind === "key" ? KEYS.find((k) => k.fifths === pending.value) : null;
       host.querySelector("#cp-key-val").textContent = key ? `${key.major} / ${key.minor}m` : "";

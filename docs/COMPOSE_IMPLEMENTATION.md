@@ -348,3 +348,11 @@ an old piece opens with its marks in place.
 - **PDF font embedding (P4)** depends on fontkit handling Bravura's OTF; if
   subsetting fails, the fallback is embedding the whole font (~1 MB per PDF) —
   a size cost, never a fidelity cost. Raster is not a fallback.
+
+## Phase 7 — the Form rail (barlines, repeats, endings, jumps, rehearsal marks, tempo changes) — LANDED v95 (WSHED-124, 2026-09-14)
+
+Leif's ask after v94; the inventory of everything else still missing is WSHED-123. Design and
+as-built: `docs/COMPOSE_FORM_DESIGN.md`. Model: three optional measure fields (`barline`, `ending`,
+`form`) on schema v3; engine `setBarline` / `setEnding` / `toggleFormMark` / `unroll` / `tempoMap`;
+playback in performance time with `clockOf`; the layout's form lane and barline kinds; the Form lane
+in `rails.js`; MusicXML both ways; `tests/compose-form.test.mjs`; the E2E form step.

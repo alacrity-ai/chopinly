@@ -10,14 +10,14 @@ import { haptic } from "../logbook/motion.js";
 import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt, lasso } from "../../lib/compose/hit.js";
-import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, moveExpressions, moveHairpinEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, moveExpressions, moveHairpinEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { createPlayer } from "../../lib/compose/play.js";
 import { clefAt, timeAt, tempoOf, usedVoices, MAX_VOICES, MIN_TEMPO, MAX_TEMPO } from "../../lib/compose/model.js";
 import { ticks as ticksOf, capacity, groupSize, exprGrid, WHOLE } from "../../lib/compose/ticks.js";
 import { CLEFS } from "../../lib/music.js";
-import { buildRails, MAIN_BASES, MORE_BASES, KEYS, RAILS, DEFAULT_RAILS, durName, tupletName } from "./rails.js";
+import { buildRails, MAIN_BASES, MORE_BASES, KEYS, RAILS, DEFAULT_RAILS, JUMP_LABEL, durName, tupletName } from "./rails.js";
 import { openCompositionDetails } from "./details.js";
 import { openExportSheet } from "./exportsheet.js";
 import { saveFile } from "./savefile.js";
@@ -244,6 +244,26 @@ export function openEditor({ id, ctx, onClose }) {
         if (!p.start) { pending = { ...p, start: t }; toast("now tap where it ends"); haptic(6); sync(); return; } // the first tap of three is the start; the second is the end
         commit(addHairpin(doc, { staff: p.start.staff, bar: p.start.bar, at: p.start.at, dir: p.value, end: { bar: t.bar, at: t.at } }).doc);
         toast(`${p.value === "cresc" ? "crescendo" : "diminuendo"} from ${slotName(p.start.bar, p.start.at)} to ${slotName(t.bar, t.at)}`);
+      } else if (p.kind === "barline") { // docs/COMPOSE_FORM_DESIGN.md §3: the picture says which end of the bar; "both" closes this bar and opens the next
+        const k = p.value, b = t.bar, m = doc.measures[b];
+        let next = doc;
+        if (k === "single") next = setBarline(doc, b, { start: null, end: null });
+        else if (k === "repeat-start") next = setBarline(doc, b, { start: m.barline?.start ? null : "repeat" });
+        else if (k === "both") { next = setBarline(doc, b, { end: "repeat" }); if (b + 1 < doc.measures.length) next = setBarline(next, b + 1, { start: "repeat" }); }
+        else next = setBarline(doc, b, { end: m.barline?.end === k ? null : k });
+        if (next === doc) { toast("already so"); setPending(null); return; }
+        commit(next); toast(k === "single" ? `plain barline on bar ${b + 1}` : k === "repeat-start" ? `${next.measures[b].barline?.start ? "repeat starts at" : "no repeat start on"} bar ${b + 1}` : k === "both" ? `repeat ends on bar ${b + 1} and starts again on bar ${b + 2}` : `${next.measures[b].barline?.end ? `${k} barline on` : "plain barline on"} bar ${b + 1}`);
+      } else if (p.kind === "ending") {
+        if (p.start === undefined) { pending = { ...p, start: t.bar }; toast(`ending ${p.value} from bar ${t.bar + 1} — now tap its last bar`); haptic(6); sync(); return; }
+        const a = Math.min(p.start, t.bar), b = Math.max(p.start, t.bar);
+        const next = setEnding(doc, a, p.value, b);
+        commit(next); toast(next.measures[a].ending ? `ending ${p.value} over ${a === b ? `bar ${a + 1}` : `bars ${a + 1}–${b + 1}`}` : `ending ${p.value} removed`);
+      } else if (p.kind === "sign" || p.kind === "jump" || p.kind === "rehearsal" || p.kind === "tempo-mark") {
+        const mark = p.kind === "tempo-mark" ? { kind: "tempo", ...p.value } : { kind: p.kind === "rehearsal" ? "rehearsal" : p.value };
+        const had = (doc.measures[t.bar].form ?? []).some((f) => f.kind === mark.kind && (mark.kind !== "tempo" || (f.bpm === mark.bpm && (f.text ?? "") === (mark.text ?? ""))));
+        commit(toggleFormMark(doc, t.bar, mark));
+        const name = mark.kind === "tempo" ? `♩ = ${mark.bpm}${mark.text ? ` ${mark.text}` : ""}` : mark.kind === "rehearsal" ? "rehearsal mark" : mark.kind === "segno" ? "segno" : mark.kind === "coda" ? "coda sign" : JUMP_LABEL[mark.kind];
+        toast(had ? `${name} removed from bar ${t.bar + 1}` : `${name} ${JUMP_LABEL[mark.kind] ? "at the end of" : "on"} bar ${t.bar + 1}`);
       } else { commit(setClef(doc, t.bar, t.staff, p.value, t.at)); toast(`${p.value} clef on the ${t.staff === 0 ? "upper" : "lower"} staff from ${t.at ? `beat ${t.at / groupSize(timeAt(doc, t.bar)) + 1} of ` : ""}bar ${t.bar + 1}`); }
       haptic(8);
     } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar ?? t.bar); }
@@ -630,6 +650,36 @@ export function openEditor({ id, ctx, onClose }) {
       case "clef": {
         if (pending?.kind === "clef" && pending.value === arg) { setPending(null); return; }
         setPending({ kind: "clef", value: arg }); toast(`${arg} clef — tap the beat it starts on`);
+        return;
+      }
+      case "barline": { // the Form rail (WSHED-124): every button arms a tap on a bar; the armed one again → off
+        if (pending?.kind === "barline" && pending.value === arg) { setPending(null); return; }
+        setPending({ kind: "barline", value: arg }); toast(`${arg === "single" ? "plain barline" : arg === "repeat-start" ? "repeat start" : arg === "both" ? "repeat end + start" : `${arg} barline`} — tap the bar`);
+        return;
+      }
+      case "ending": {
+        if (pending?.kind === "ending" && pending.value === arg) { setPending(null); return; }
+        setPending({ kind: "ending", value: arg }); toast(`ending ${arg} — tap its first bar, then its last`);
+        return;
+      }
+      case "sign": case "jump": {
+        if (pending?.kind === name && pending.value === arg) { setPending(null); return; }
+        setPending({ kind: name, value: arg }); toast(`${name === "sign" ? (arg === "segno" ? "segno" : "coda sign") : JUMP_LABEL[arg]} — tap the bar${name === "jump" ? " it ends" : ""}`);
+        return;
+      }
+      case "rehearsal": {
+        if (pending?.kind === "rehearsal") { setPending(null); return; }
+        setPending({ kind: "rehearsal" }); toast("rehearsal mark — tap the bar");
+        return;
+      }
+      case "tempo-mark": {
+        if (pending?.kind === "tempo-mark") { setPending(null); return; }
+        const v = prompt("tempo for the bar you tap next — a number, or a word and a number (Allegro 120)", String(tempo));
+        if (v === null) return;
+        const m = /^\s*(.*?)\s*(\d+)\s*$/.exec(v);
+        if (!m) { toast("say a number, like 120, or Allegro 120"); return; }
+        const bpm = Math.max(MIN_TEMPO, Math.min(MAX_TEMPO, Number(m[2]))), text = m[1].trim().slice(0, 20);
+        setPending({ kind: "tempo-mark", value: { bpm, ...(text ? { text } : {}) } }); toast(`♩ = ${bpm}${text ? ` ${text}` : ""} — tap the bar it starts at`);
         return;
       }
       case "art": {

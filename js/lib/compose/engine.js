@@ -3,7 +3,7 @@
 // the new document; a refused edit throws Nudge(sentence) and the document is
 // untouched. Pure — node-testable.
 import { groupSize, ticks, capacity, splitRest, fromTicks, exprGrid } from "./ticks.js";
-import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, MAX_VOICES, REST_Y_MAX, EXPR_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, HAIRPINS, TEXT_MAX, eid } from "./model.js";
+import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, tempoOf, MAX_VOICES, REST_Y_MAX, EXPR_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, HAIRPINS, TEXT_MAX, BARLINE_ENDS, JUMPS, FORM_KINDS, TEMPO_TEXT_MAX, ENDING_MAX, MIN_TEMPO, MAX_TEMPO, eid } from "./model.js";
 import { parsePitch, keyAlterations, CLEFS } from "../music.js";
 
 export class Nudge extends Error { constructor(msg, { bar = null } = {}) { super(msg); this.name = "Nudge"; this.bar = bar; } }
@@ -598,6 +598,7 @@ export function trimBars(doc) {
   let last = d.measures.length - 1;
   while (last > 0 && isEmptyBar(d.measures[last])) last--;
   for (const e of expressionsOf(d)) last = Math.max(last, e.bar, e.x.kind === "hairpin" ? e.x.end.bar : 0); // a bar a mark sits in, or a hairpin ends in, is used
+  d.measures.forEach((m, b) => { if (m.form || m.barline) last = Math.max(last, b); if (m.ending) last = Math.max(last, m.ending.end); }); // so is a bar the form uses
   const keep = Math.max(DEFAULT_BARS, last + 2);
   if (d.measures.length > keep) d.measures.length = keep;
   return d;
@@ -1247,4 +1248,98 @@ export function hideRest(doc, evIds) {
   const all = rests.every((e) => e.hidden);
   for (const e of rests) { if (all) delete e.hidden; else e.hidden = true; }
   return d;
+}
+
+// --- form (docs/COMPOSE_FORM_DESIGN.md §2): barlines, endings, signs, jumps, rehearsal letters, tempo marks ---
+/** A bar's barlines: `start` "repeat" | null, `end` "double" | "final" | "repeat" | null; an absent key keeps what is there. */
+export function setBarline(doc, bar, { start, end } = {}) {
+  if (!doc.measures[bar]) throw new Nudge("no such bar");
+  if (start !== undefined && start !== null && start !== "repeat") throw new Nudge("a barline can only start a repeat");
+  if (end !== undefined && end !== null && !BARLINE_ENDS.includes(end)) throw new Nudge("no such barline");
+  const d = clone(doc), m = d.measures[bar];
+  const next = { ...(m.barline ?? {}) };
+  if (start !== undefined) { if (start) next.start = start; else delete next.start; }
+  if (end !== undefined) { if (end) next.end = end; else delete next.end; }
+  if (next.start === undefined && next.end === undefined) delete m.barline; else m.barline = next;
+  return JSON.stringify(m.barline ?? null) === JSON.stringify(doc.measures[bar].barline ?? null) ? doc : d;
+}
+/** An ending bracket `n` over bars first…last (inclusive); the same number already starting on `first` → off. */
+export function setEnding(doc, first, n, last = first) {
+  if (!doc.measures[first] || !doc.measures[last]) throw new Nudge("no such bar");
+  if (!Number.isInteger(n) || n < 1 || n > ENDING_MAX) throw new Nudge(`endings run 1 to ${ENDING_MAX}`);
+  if (last < first) throw new Nudge("an ending ends after it starts", { bar: last });
+  const d = clone(doc), m = d.measures[first];
+  if (m.ending?.n === n) { delete m.ending; return d; }
+  d.measures.forEach((o, b) => { if (b !== first && o.ending && b <= last && o.ending.end >= first) throw new Nudge("endings can't overlap", { bar: b }); });
+  m.ending = { n, end: last };
+  return d;
+}
+const formOf = (m) => m.form ?? [];
+const sameMark = (a, b) => a.kind === b.kind && (a.kind !== "tempo" || (a.bpm === b.bpm && (a.text ?? "") === (b.text ?? "")));
+/** Put a mark on a bar; the same mark there → off; a tempo with another value, or a jump when the bar has one, replaces it. Nothing changed → the same document. */
+export function toggleFormMark(doc, bar, mark) {
+  if (!doc.measures[bar]) throw new Nudge("no such bar");
+  if (!FORM_KINDS.includes(mark.kind)) throw new Nudge("no such mark");
+  const x = { kind: mark.kind };
+  if (mark.kind === "tempo") {
+    const bpm = Math.round(Number(mark.bpm)), text = String(mark.text ?? "").replace(/\s+/g, " ").trim().slice(0, TEMPO_TEXT_MAX);
+    if (!Number.isFinite(bpm) || bpm < MIN_TEMPO || bpm > MAX_TEMPO) throw new Nudge(`tempo runs ${MIN_TEMPO} to ${MAX_TEMPO}`);
+    x.bpm = bpm; if (text) x.text = text;
+  }
+  const d = clone(doc), m = d.measures[bar];
+  const had = formOf(m).find((f) => f.kind === x.kind);
+  let list;
+  if (had && sameMark(had, x)) list = formOf(m).filter((f) => f !== had);
+  else list = [...formOf(m).filter((f) => f.kind !== x.kind && !(JUMPS.includes(x.kind) && JUMPS.includes(f.kind))), x];
+  list.sort((a, b) => a.kind.localeCompare(b.kind));
+  if (list.length) m.form = list; else delete m.form;
+  return d;
+}
+/** Every form mark with its bar, in score order; rehearsal marks carry their letter. */
+export function formMarksOf(doc) {
+  const out = [];
+  let r = 0;
+  doc.measures.forEach((m, bar) => { for (const x of formOf(m)) out.push({ bar, x, ...(x.kind === "rehearsal" ? { letter: rehearsalLetter(r++) } : {}) }); });
+  return out;
+}
+/** A, B, … Z, AA, AB … */
+export const rehearsalLetter = (i) => (i < 26 ? String.fromCharCode(65 + i) : rehearsalLetter(Math.floor(i / 26) - 1) + String.fromCharCode(65 + (i % 26)));
+/**
+ * The passes the form plays (docs/COMPOSE_FORM_DESIGN.md §4): a repeat span twice, endings by pass, a jump once
+ * (D.C. / D.S. with al Fine / al Coda), repeats not taken after a jump; a guard against a form that never ends.
+ */
+export function unroll(doc) {
+  const ms = doc.measures, n = ms.length, out = [];
+  const guard = 8 * n + 8;
+  const findMark = (kind) => ms.findIndex((m) => formOf(m).some((f) => f.kind === kind));
+  const repeatInside = (first, e) => ms.slice(first, e.end + 1).some((o) => o.barline?.end === "repeat");
+  const closesEnding = (bar) => ms.some((o, a) => o.ending && a <= bar && o.ending.end === bar);
+  let bar = 0, pass = 1, spanStart = 0, jumped = null; // jumped: null | { alFine, alCoda }
+  while (bar < n && out.length < guard) {
+    const m = ms[bar], e = m.ending ?? null;
+    if (e && (jumped ? repeatInside(bar, e) : e.n !== pass)) { bar = e.end + 1; continue; } // not this pass's ending — or, after a jump, the ending that would repeat (repeats are not taken then); the pass ends with the last ending
+    if (m.barline?.start === "repeat" && pass === 1) spanStart = bar;
+    out.push({ bar, pass });
+    const marks = formOf(m);
+    const jump = marks.find((f) => JUMPS.includes(f.kind));
+    if (jumped?.alFine && marks.some((f) => f.kind === "fine")) break;
+    if (jumped?.alCoda && marks.some((f) => f.kind === "toCoda")) { const c = findMark("coda"); if (c >= 0 && c > bar) { bar = c; jumped = { ...jumped, alCoda: false }; continue; } }
+    if (jump && !jumped) {
+      jumped = { alFine: jump.kind.endsWith("AlFine"), alCoda: jump.kind.endsWith("AlCoda") };
+      if (jump.kind.startsWith("ds")) { const sg = findMark("segno"); bar = sg >= 0 ? sg : 0; } else bar = 0;
+      pass = 1; spanStart = 0;
+      continue;
+    }
+    if (m.barline?.end === "repeat" && !jumped) {
+      if (pass === 1) { bar = spanStart; pass = 2; continue; }
+      pass = 1; spanStart = bar + 1;
+    } else if (closesEnding(bar)) { pass = 1; spanStart = bar + 1; } // the last ending of the span is over
+    bar++;
+  }
+  return out;
+}
+/** The tempo in force per bar: the piece's tempo until the first tempo mark, then each mark from its bar on. */
+export function tempoMap(doc, base) {
+  let bpm = base ? tempoOf({ tempo: base }) : tempoOf(doc);
+  return doc.measures.map((m) => { const t = formOf(m).find((f) => f.kind === "tempo"); if (t) bpm = t.bpm; return bpm; });
 }
