@@ -82,13 +82,17 @@ export function renderComposition(container, L) {
   /** The nodes of one ghost note / rest. */
   const ghostNodes = (spec) => {
     if (spec.dyn) { const c = inkCentre(dynGlyph(spec.dyn)); const t = glyphOf(c === null ? spec.x : spec.x - c * 4, spec.y, dynGlyph(spec.dyn), "glyph cp-dyn"); if (c === null) t.setAttribute("text-anchor", "middle"); return [t]; }
-    if (spec.text) return [el("text", { x: px(spec.x), y: px(spec.y), class: "cp-expr-text", style: `font-size:${(S * 1.15).toFixed(1)}px` }, spec.text)];
+    if (spec.text && !spec.line) return [el("text", { x: px(spec.x), y: px(spec.y), class: "cp-expr-text", style: `font-size:${(S * 1.15).toFixed(1)}px` }, spec.text)]; // a text line's ghost carries `text` too (below)
     if (spec.hairpin) { // the rubber band from a placed start to the pointer: open at the far end while it is still being drawn
       const o = 0.55, cresc = spec.hairpin === "cresc", a1 = cresc ? 0 : o, a2 = cresc ? o : 0, x1 = spec.x1, x2 = Math.max(spec.x1 + 0.5, spec.x2), y = spec.y;
       return [el("path", { class: "cp-hairpin", d: `M${px(x1)},${px(y - a1)} L${px(x2)},${px(y - a2)} M${px(x1)},${px(y + a1)} L${px(x2)},${px(y + a2)}` })];
     }
+    if (spec.line === "textline") { // a text line being drawn: the words, dashes to the pointer
+      const t = el("text", { x: px(spec.x1), y: px(spec.y), class: "cp-expr-text", style: `font-size:${(S * 1.15).toFixed(1)}px` }, spec.text);
+      return [t, el("line", { class: "cp-textline", x1: px(spec.x1 + spec.text.length * 0.63 + 0.4), y1: px(spec.y - 0.35), x2: px(Math.max(spec.x1 + spec.text.length * 0.63 + 1.4, spec.x2)), y2: px(spec.y - 0.35) })];
+    }
     if (spec.line) { // a pedal / octave line being drawn: the sign at the start, a band to the pointer
-      const up = spec.line === "ottava" && spec.dir > 0, sign = spec.line === "pedal" ? G.pedal : up ? G.ottavaAlta : G.ottavaBassa;
+      const up = spec.line === "ottava" && spec.dir > 0, sign = spec.line === "pedal" ? (spec.style === "sost" ? G.pedalSost : G.pedal) : up ? (spec.size === 15 ? G.quindicesimaAlta : G.ottavaAlta) : spec.size === 15 ? G.quindicesimaBassa : G.ottavaBassa;
       const g = glyphOf(spec.x1, spec.y, sign, "glyph cp-ghost-sign"); g.setAttribute("style", `font-size:${(fs * (spec.line === "pedal" ? 0.85 : 0.8)).toFixed(1)}px`);
       const ly = spec.line === "pedal" ? spec.y : up ? spec.y - 0.55 : spec.y - 0.4;
       return [g, el("line", { class: spec.line === "pedal" ? "cp-pedal-line" : "cp-ottava-line", x1: px(spec.x1 + 2.3), y1: px(ly), x2: px(Math.max(spec.x1 + 2.8, spec.x2)), y2: px(ly) })];

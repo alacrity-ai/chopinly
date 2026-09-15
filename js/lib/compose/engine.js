@@ -3,7 +3,7 @@
 // the new document; a refused edit throws Nudge(sentence) and the document is
 // untouched. Pure — node-testable.
 import { groupSize, ticks, capacity, splitRest, fromTicks, exprGrid, PPQ } from "./ticks.js";
-import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, tempoOf, MAX_VOICES, REST_Y_MAX, EXPR_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, HAIRPINS, SPAN_KINDS, FINGER_MAX, GRACE_BASES, TREM_MAX, TEXT_MAX, BARLINE_ENDS, JUMPS, FORM_KINDS, TEMPO_TEXT_MAX, ENDING_MAX, MIN_TEMPO, MAX_TEMPO, eid } from "./model.js";
+import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, tempoOf, MAX_VOICES, REST_Y_MAX, EXPR_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, DYN_VALUES, HAIRPINS, SPAN_KINDS, PEDAL_STYLES, TEMPO_UNITS, REHEARSAL_TEXT_MAX, REPEAT_TIMES_MAX, TRILL_ALTERS, FINGER_MAX, GRACE_BASES, TREM_MAX, TEXT_MAX, BARLINE_ENDS, JUMPS, FORM_KINDS, TEMPO_TEXT_MAX, ENDING_MAX, MIN_TEMPO, MAX_TEMPO, eid } from "./model.js";
 import { parsePitch, keyAlterations, CLEFS } from "../music.js";
 
 export class Nudge extends Error { constructor(msg, { bar = null } = {}) { super(msg); this.name = "Nudge"; this.bar = bar; } }
@@ -504,6 +504,7 @@ export function place(doc, slot, armed) {
   const time = timeAt(d, bar), key = keyAt(d, bar), clef = clefAt(d, bar, staff, s.onset);
   if (armed.rest && !d.measures[bar].staves[staff].voices[vi]) return { doc, ev: null, action: "none" }; // a rest into a voice that is not there changes nothing (a silent voice draws nothing)
   const voice = ensureVoice(d, bar, staff, vi);
+  clearSimileAt(d, bar); // writing into a % bar is the way out of it (docs/COMPOSE_RAILS2_DESIGN.md §2)
   const pitch = () => { const p = pitchFromStep(step, clef, key); if (armed.alter !== null && armed.alter !== undefined) spell(p, armed.alter, keyAlt(key, p.step)); return p; };
   if (s.joins) {
     if (armed.rest) throw new Nudge("that beat already has a note", { bar });
@@ -598,8 +599,8 @@ export function trimBars(doc) {
   const d = clone(doc);
   let last = d.measures.length - 1;
   while (last > 0 && isEmptyBar(d.measures[last])) last--;
-  for (const e of expressionsOf(d)) last = Math.max(last, e.bar, e.x.kind === "hairpin" ? e.x.end.bar : 0); // a bar a mark sits in, or a hairpin ends in, is used
-  d.measures.forEach((m, b) => { if (m.form || m.barline) last = Math.max(last, b); if (m.ending) last = Math.max(last, m.ending.end); }); // so is a bar the form uses
+  for (const e of expressionsOf(d)) last = Math.max(last, e.bar, isSpan(e.x) ? e.x.end.bar : 0); // a bar a mark sits in, or a span ends in, is used
+  d.measures.forEach((m, b) => { if (m.form || m.barline || m.simile) last = Math.max(last, b + (m.simile === 2 ? 1 : 0)); if (m.ending) last = Math.max(last, m.ending.end); }); // so is a bar the form uses
   const keep = Math.max(DEFAULT_BARS, last + 2);
   if (d.measures.length > keep) d.measures.length = keep;
   return d;
@@ -710,7 +711,7 @@ export function paste(doc, clip, { bar, ticks: t, staff = 0, voice = 0 }) {
     if (pos < cap) out.push(...gap(cap - pos, pos));
     d.measures[b].staves[st].voices[vi] = out;
   }
-  for (const k of touched.keys()) normalizeBar(d, Number(k.split(":")[0]));
+  for (const k of touched.keys()) { normalizeBar(d, Number(k.split(":")[0])); clearSimileAt(d, Number(k.split(":")[0])); }
   cleanTies(d);
   ensureTrailingBar(d);
   const keys = placed.flatMap((p) => (p.ev.kind === "note" ? p.ev.pitches.map((_, i) => `${p.ev.id}:${i}`) : [p.ev.id]));
@@ -720,7 +721,8 @@ export function paste(doc, clip, { bar, ticks: t, staff = 0, voice = 0 }) {
 // --- key / time / clef anywhere; articulations; glissando (docs/COMPOSE_DESIGN.md §7.1, P2) ---
 
 /** The marks a note can carry. `mordent` is the plain one (SMuFL ornamentShortTrill); `lowerMordent` has the line through it (ornamentMordent). */
-export const MARKS = ["staccato", "accent", "tenuto", "fermata", "trill", "mordent", "lowerMordent", "turn", "marcato", "staccatissimo"]; // marcato and staccatissimo since v97 (WSHED-126)
+export const MARKS = ["staccato", "accent", "tenuto", "fermata", "trill", "mordent", "lowerMordent", "turn", "marcato", "staccatissimo", "portato", "breath", "caesura", "invertedTurn", "delayedTurn"]; // marcato and staccatissimo since v97 (WSHED-126); the last five since v98 (WSHED-127)
+const TURNS = ["turn", "invertedTurn", "delayedTurn"]; // one turn per note
 export const TIME_UNITS = [1, 2, 4, 8, 16, 32];
 
 /** A key change at a bar (fifths −7 … 7); the key already in force there removes the change instead. */
@@ -803,9 +805,9 @@ export function setTime(doc, bar, time) {
     if (m.key) nb.key = m.key;
     for (const [st, clef] of Object.entries(m.clefs ?? {})) putClef(k * capOld, Number(st), clef);
     for (const c of m.clefChanges ?? []) putClef(k * capOld + c.at, c.staff, c.clef);
-    for (const x of m.expressions ?? []) { const s2 = mapSlot(k * capOld + x.at), tb = fresh[s2.bar]; tb.expressions = [...(tb.expressions ?? []), { ...x, at: s2.at, ...(x.kind === "hairpin" ? { end: mapEnd(x.end) } : {}) }]; }
+    for (const x of m.expressions ?? []) { const s2 = mapSlot(k * capOld + x.at), tb = fresh[s2.bar]; tb.expressions = [...(tb.expressions ?? []), { ...x, at: s2.at, ...(isSpan(x) ? { end: mapEnd(x.end) } : {}) }]; }
   });
-  d.measures.forEach((m, b) => { if (b < bar || b >= end) for (const x of m.expressions ?? []) if (x.kind === "hairpin") x.end = mapEnd(x.end); });
+  d.measures.forEach((m, b) => { if (b < bar || b >= end) for (const x of m.expressions ?? []) if (isSpan(x)) x.end = mapEnd(x.end); });
   const prevT = bar > 0 ? timeAt(doc, bar - 1) : null;
   if (!prevT || prevT.beats !== time.beats || prevT.unit !== time.unit) fresh[0].time = { beats: time.beats, unit: time.unit }; // back to the metre before it: the stretch simply rejoins it
   if (bar === 0) { fresh[0].key ??= oldBars[0].key; fresh[0].clefs ??= oldBars[0].clefs; }
@@ -866,6 +868,7 @@ export function setTime(doc, bar, time) {
     });
   }
   d.measures.splice(bar, nOld, ...fresh);
+  if (bar + nNew < d.measures.length && d.measures[bar + nNew].simile) delete d.measures[bar + nNew].simile; // the bar after the stretch no longer knows what it repeated
   for (let b = bar; b < bar + nNew; b++) normalizeBar(d, b);
   cleanTies(d);
   cleanExpressions(d);
@@ -882,12 +885,53 @@ export function articulate(doc, evIds, mark) {
   const all = notes.every((e) => e.art?.includes(mark));
   for (const e of notes) {
     if (all) { e.art = e.art.filter((m) => m !== mark); if (!e.art.length) delete e.art; }
-    else if (!e.art?.includes(mark)) e.art = [...(e.art ?? []), mark];
+    else if (!e.art?.includes(mark)) e.art = [...(e.art ?? []).filter((m) => !(TURNS.includes(mark) && TURNS.includes(m))), mark];
+    if (!e.art?.includes("trill")) delete e.trill; // the trill's options leave with the mark
   }
   return d;
 }
+/**
+ * The trill's options (docs/COMPOSE_RAILS2_DESIGN.md §2): `line` (the wavy extension) or `alter` (the accidental over
+ * tr) on the selected notes, trilling them first when they are not. The same option already on every one → off;
+ * an empty option record leaves with the last option.
+ */
+export function setTrill(doc, evIds, { line, alter } = {}) {
+  if (line === undefined && alter === undefined) throw new Nudge("a line, or an accidental");
+  if (alter !== undefined && !TRILL_ALTERS.includes(alter)) throw new Nudge("a trill takes a sharp, a flat or a natural");
+  const d = clone(doc);
+  const notes = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "note").map((f) => f.ev);
+  if (!notes.length) throw new Nudge("pick notes to trill");
+  const has = (e) => (line !== undefined ? e.trill?.line === true : e.trill?.alter === alter);
+  const all = notes.every((e) => e.art?.includes("trill") && has(e));
+  for (const e of notes) {
+    if (!e.art?.includes("trill")) e.art = [...(e.art ?? []), "trill"];
+    const t = { ...(e.trill ?? {}) };
+    if (all) { if (line !== undefined) delete t.line; else delete t.alter; }
+    else if (line !== undefined) t.line = true; else t.alter = alter;
+    if (Object.keys(t).length) e.trill = t; else delete e.trill;
+  }
+  return d;
+}
+/** An engraving override: the selected notes' stems `"up"` / `"down"`, or `null` back to the automatic direction. */
+export function setStem(doc, evIds, dir) {
+  if (dir !== null && dir !== "up" && dir !== "down") throw new Nudge("a stem points up or down");
+  const d = clone(doc);
+  const notes = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "note").map((f) => f.ev);
+  if (!notes.length) throw new Nudge("pick notes to flip");
+  for (const e of notes) { if (dir === null) delete e.stem; else e.stem = dir; }
+  return d;
+}
+/** Toggle a beam break before each selected note (every one already broken → joined again). */
+export function beamBreak(doc, evIds) {
+  const d = clone(doc);
+  const notes = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "note").map((f) => f.ev);
+  if (!notes.length) throw new Nudge("pick the note the beam breaks before");
+  const all = notes.every((e) => e.beam === "break");
+  for (const e of notes) { if (all) delete e.beam; else e.beam = "break"; }
+  return d;
+}
 // --- expressions (docs/COMPOSE_EXPRESSIONS_DESIGN.md §2): dynamics, hairpins and text on the half-beat slots of a bar ---
-export { DYNAMICS, HAIRPINS, SPAN_KINDS };
+export { DYNAMICS, DYN_VALUES, HAIRPINS, SPAN_KINDS };
 const isSpan = (x) => SPAN_KINDS.includes(x.kind);
 const exprsOf = (m) => m.expressions ?? [];
 const exprOrder = (a, b) => a.at - b.at || a.staff - b.staff || a.kind.localeCompare(b.kind);
@@ -943,33 +987,48 @@ export function addExpression(doc, { kind, staff, bar, at, value }) {
   if (kind !== "dyn" && kind !== "text") throw new Nudge("no such mark");
   if (!doc.measures[bar] || !(staff >= 0 && staff < doc.parts[0].staves)) throw new Nudge("nowhere to put it");
   if (!onGrid(doc, bar, at)) throw new Nudge("that's off the grid", { bar });
-  if (kind === "dyn" && !DYNAMICS.includes(value)) throw new Nudge("no such dynamic");
+  if (kind === "dyn" && !DYN_VALUES.includes(value)) throw new Nudge("no such dynamic");
   const v = kind === "text" ? cleanText(value) : value;
   if (kind === "text" && !v) throw new Nudge("say what the text is");
   const d = clone(doc), id = eid();
   putExpr(d, { id, kind, staff, at, value: v }, bar);
   return { doc: d, id };
 }
-const SPAN_NAME = { hairpin: "a hairpin", pedal: "a pedal", ottava: "an octave line" };
-/** Place a span (hairpin / pedal / ottava) from a slot to a later one on a staff → { doc, id }; spans of its kind it overlaps on that staff go. */
-export function addSpan(doc, { kind, staff, bar, at, end, dir }) {
+const SPAN_NAME = { hairpin: "a hairpin", pedal: "a pedal", ottava: "an octave line", textline: "a text line" };
+/**
+ * Place a span (hairpin / pedal / ottava / textline) from a slot to a later one on a staff → { doc, id }; spans of its
+ * kind it overlaps on that staff go. Options (docs/COMPOSE_RAILS2_DESIGN.md §1): `niente` on a hairpin, `size` 15 on an
+ * octave line, `style` on a pedal, `text` / `endText` on a text line.
+ */
+export function addSpan(doc, { kind, staff, bar, at, end, dir, niente, size, style, text, endText }) {
   if (!SPAN_KINDS.includes(kind)) throw new Nudge("no such line");
   if (kind === "hairpin" && !HAIRPINS.includes(dir)) throw new Nudge("no such hairpin");
   if (kind === "ottava" && dir !== 1 && dir !== -1) throw new Nudge("8va or 8vb");
+  if (kind === "ottava" && size !== undefined && size !== 8 && size !== 15) throw new Nudge("an octave line is 8 or 15");
+  if (kind === "pedal" && style !== undefined && style !== null && !PEDAL_STYLES.includes(style)) throw new Nudge("no such pedal style");
+  const tl = kind === "textline" ? { text: cleanText(text), endText: cleanText(endText) } : null;
+  if (tl && !tl.text) throw new Nudge("say what the line says");
   if (!doc.measures[bar] || !doc.measures[end?.bar] || !(staff >= 0 && staff < doc.parts[0].staves)) throw new Nudge("nowhere to put it");
   if (!onGrid(doc, bar, at) || !onGrid(doc, end.bar, end.at)) throw new Nudge("that's off the grid", { bar });
   const { starts } = barStarts(doc);
   if (starts[end.bar] + end.at <= starts[bar] + at) throw new Nudge(`${SPAN_NAME[kind]} needs to end after it starts`, { bar: end.bar });
   const d = clone(doc), id = eid();
-  putExpr(d, { id, kind, staff, at, ...(kind === "pedal" ? {} : { dir }), end: { bar: end.bar, at: end.at } }, bar);
+  const x = { id, kind, staff, at, ...(kind === "hairpin" || kind === "ottava" ? { dir } : {}), end: { bar: end.bar, at: end.at } };
+  if (kind === "hairpin" && niente) x.niente = true;
+  if (kind === "ottava" && size === 15) x.size = 15;
+  if (kind === "pedal" && style) x.style = style;
+  if (tl) { x.text = tl.text; if (tl.endText) x.endText = tl.endText; }
+  putExpr(d, x, bar);
   return { doc: d, id };
 }
+/** A dashed text line — "cresc. – – –", "una corda … tre corde" — from a slot to a later one → { doc, id }. */
+export const addTextLine = (doc, { staff, bar, at, end, text, endText }) => addSpan(doc, { kind: "textline", staff, bar, at, end, text, endText });
 /** Place a hairpin from a slot to a later one on a staff → { doc, id }; hairpins it overlaps on that staff go. */
-export const addHairpin = (doc, { staff, bar, at, dir, end }) => addSpan(doc, { kind: "hairpin", staff, bar, at, dir, end });
+export const addHairpin = (doc, { staff, bar, at, dir, end, niente }) => addSpan(doc, { kind: "hairpin", staff, bar, at, dir, end, niente });
 /** A pedal line (docs/COMPOSE_PIANO_DESIGN.md §2) from a slot to a later one on a staff → { doc, id }. */
-export const addPedal = (doc, { staff, bar, at, end }) => addSpan(doc, { kind: "pedal", staff, bar, at, end });
+export const addPedal = (doc, { staff, bar, at, end, style }) => addSpan(doc, { kind: "pedal", staff, bar, at, end, style });
 /** An octave line, `dir` 1 = 8va, −1 = 8vb → { doc, id }. */
-export const addOttava = (doc, { staff, bar, at, dir, end }) => addSpan(doc, { kind: "ottava", staff, bar, at, dir, end });
+export const addOttava = (doc, { staff, bar, at, dir, end, size }) => addSpan(doc, { kind: "ottava", staff, bar, at, dir, end, size });
 /** Drop the named expressions (unknown ids ignored; nothing matched → the same document). */
 export function removeExpressions(doc, ids) {
   const want = new Set(ids);
@@ -1049,7 +1108,7 @@ export function setExpressionValue(doc, ids, value) {
   const kind = found[0].x.kind;
   if (SPAN_KINDS.includes(kind) || found.some((f) => f.x.kind !== kind)) throw new Nudge("pick dynamics or texts, not both");
   const v = kind === "text" ? cleanText(value) : value;
-  if (kind === "dyn" && !DYNAMICS.includes(v)) throw new Nudge("no such dynamic");
+  if (kind === "dyn" && !DYN_VALUES.includes(v)) throw new Nudge("no such dynamic");
   if (kind === "text" && !v) throw new Nudge("say what the text is");
   if (found.every((f) => f.x.value === v)) return doc;
   const d = clone(doc);
@@ -1282,12 +1341,17 @@ const samePitchName = (a, b) => a.step === b.step && a.octave === b.octave && (a
  * Toggle a grace note on a note → { doc, added }: a grace of that pitch already there goes (the whole grace when it
  * was its only pitch), else one is appended — `base` 8 / 16 / 32, `slash` for an acciaccatura.
  */
-export function toggleGrace(doc, evId, { pitch, base = 8, slash = true }) {
+export function toggleGrace(doc, evId, { pitch, base = 8, slash = true, chord = false }) {
   if (!GRACE_BASES.includes(base)) throw new Nudge("a grace note is an eighth, a sixteenth or a thirty-second");
   const f = find(doc, evId);
   if (!f || f.ev.kind !== "note") throw new Nudge("a grace note goes before a note");
   const d = clone(doc), ev = d.measures[f.bar].staves[f.staff].voices[f.voice][f.index];
   const had = (ev.graces ?? []).findIndex((g) => g.pitches.some((p) => samePitchName(p, pitch)));
+  if (chord && had < 0 && ev.graces?.length) { // stack the pitch on the last grace (docs/COMPOSE_RAILS2_DESIGN.md §2)
+    const last = ev.graces[ev.graces.length - 1];
+    last.pitches = [...last.pitches, { step: pitch.step, octave: pitch.octave, alter: pitch.alter ?? 0 }].sort((a, b) => diatonicOf(a) - diatonicOf(b));
+    return { doc: d, added: true };
+  }
   if (had >= 0) {
     const g = ev.graces[had], rest = g.pitches.filter((p) => !samePitchName(p, pitch));
     ev.graces = rest.length ? ev.graces.map((x, i) => (i === had ? { ...x, pitches: rest } : x)) : ev.graces.filter((_, i) => i !== had);
@@ -1339,14 +1403,17 @@ export function finger(doc, items, n) {
   for (const h of heads) { const p = d.measures[h.f.bar].staves[h.f.staff].voices[h.f.voice][h.f.index].pitches[h.pi]; if (want === null) delete p.finger; else p.finger = want; }
   return d;
 }
-export function setBarline(doc, bar, { start, end } = {}) {
+export function setBarline(doc, bar, { start, end, times } = {}) {
   if (!doc.measures[bar]) throw new Nudge("no such bar");
   if (start !== undefined && start !== null && start !== "repeat") throw new Nudge("a barline can only start a repeat");
   if (end !== undefined && end !== null && !BARLINE_ENDS.includes(end)) throw new Nudge("no such barline");
+  if (times !== undefined && times !== null && !(Number.isInteger(times) && times >= 2 && times <= REPEAT_TIMES_MAX)) throw new Nudge(`a repeat plays 2 to ${REPEAT_TIMES_MAX} times`);
   const d = clone(doc), m = d.measures[bar];
   const next = { ...(m.barline ?? {}) };
   if (start !== undefined) { if (start) next.start = start; else delete next.start; }
   if (end !== undefined) { if (end) next.end = end; else delete next.end; }
+  if (times !== undefined) { if (times && times !== 2) next.times = times; else delete next.times; }
+  if (next.end !== "repeat") delete next.times; // times ride a repeat end
   if (next.start === undefined && next.end === undefined) delete m.barline; else m.barline = next;
   return JSON.stringify(m.barline ?? null) === JSON.stringify(doc.measures[bar].barline ?? null) ? doc : d;
 }
@@ -1362,8 +1429,12 @@ export function setEnding(doc, first, n, last = first) {
   return d;
 }
 const formOf = (m) => m.form ?? [];
-const sameMark = (a, b) => a.kind === b.kind && (a.kind !== "tempo" || (a.bpm === b.bpm && (a.text ?? "") === (b.text ?? "")));
-/** Put a mark on a bar; the same mark there → off; a tempo with another value, or a jump when the bar has one, replaces it. Nothing changed → the same document. */
+const unitKey = (u) => (u ? `${u.base}.${u.dots ?? 0}` : "4.0");
+const sameMark = (a, b) => a.kind === b.kind && (a.kind === "tempo" ? a.bpm === b.bpm && (a.text ?? "") === (b.text ?? "") && unitKey(a.unit) === unitKey(b.unit) : a.kind === "rehearsal" ? (a.text ?? "") === (b.text ?? "") && (a.style ?? "") === (b.style ?? "") : true);
+/**
+ * Put a mark on a bar; the same mark there → off; a tempo with another value (or unit), a rehearsal mark of another style
+ * or word, or a jump when the bar has one, replaces it. Nothing changed → the same document.
+ */
 export function toggleFormMark(doc, bar, mark) {
   if (!doc.measures[bar]) throw new Nudge("no such bar");
   if (!FORM_KINDS.includes(mark.kind)) throw new Nudge("no such mark");
@@ -1372,6 +1443,11 @@ export function toggleFormMark(doc, bar, mark) {
     const bpm = Math.round(Number(mark.bpm)), text = String(mark.text ?? "").replace(/\s+/g, " ").trim().slice(0, TEMPO_TEXT_MAX);
     if (!Number.isFinite(bpm) || bpm < MIN_TEMPO || bpm > MAX_TEMPO) throw new Nudge(`tempo runs ${MIN_TEMPO} to ${MAX_TEMPO}`);
     x.bpm = bpm; if (text) x.text = text;
+    if (mark.unit && unitKey(mark.unit) !== "4.0") { if (!TEMPO_UNITS.includes(mark.unit.base) || ![0, 1].includes(mark.unit.dots ?? 0)) throw new Nudge("a tempo's unit is a half, quarter or eighth, dotted or not"); x.unit = { base: mark.unit.base, dots: mark.unit.dots ?? 0 }; }
+  }
+  if (mark.kind === "rehearsal") {
+    const text = String(mark.text ?? "").replace(/\s+/g, " ").trim().slice(0, REHEARSAL_TEXT_MAX);
+    if (text) x.text = text; else if (mark.style === "number") x.style = "number";
   }
   const d = clone(doc), m = d.measures[bar];
   const had = formOf(m).find((f) => f.kind === x.kind);
@@ -1382,12 +1458,53 @@ export function toggleFormMark(doc, bar, mark) {
   if (list.length) m.form = list; else delete m.form;
   return d;
 }
-/** Every form mark with its bar, in score order; rehearsal marks carry their letter. */
+/** Every form mark with its bar, in score order; a rehearsal mark carries its label as `letter` — the nth automatic mark's letter or number, or its word. */
 export function formMarksOf(doc) {
   const out = [];
   let r = 0;
-  doc.measures.forEach((m, bar) => { for (const x of formOf(m)) out.push({ bar, x, ...(x.kind === "rehearsal" ? { letter: rehearsalLetter(r++) } : {}) }); });
+  doc.measures.forEach((m, bar) => { for (const x of formOf(m)) out.push({ bar, x, ...(x.kind === "rehearsal" ? { letter: x.text ?? (x.style === "number" ? String(++r) : rehearsalLetter(r++)) } : {}) }); });
   return out;
+}
+// --- bar repeats (docs/COMPOSE_RAILS2_DESIGN.md §2): a % bar plays the bar(s) before it ---
+/** Set (n = 1 / 2) or clear (null) the bar-repeat sign on a bar; the same n there → off. A bar with a note, or nothing before it, is refused. */
+export function setSimile(doc, bar, n) {
+  const m = doc.measures[bar];
+  if (!m) throw new Nudge("no such bar");
+  if (n !== null && n !== 1 && n !== 2) throw new Nudge("a bar repeat is one or two bars");
+  const want = n !== null && m.simile === n ? null : n;
+  if ((m.simile ?? null) === want) return doc;
+  const d = clone(doc);
+  if (want === null) { delete d.measures[bar].simile; return d; }
+  if (bar < want) throw new Nudge("nothing before it to repeat", { bar });
+  const pair = want === 2 ? d.measures[bar + 1] : null;
+  if (want === 2 && !pair) throw new Nudge("a two-bar repeat needs a bar after it", { bar });
+  for (const [b, mm] of [[bar, d.measures[bar]], ...(pair ? [[bar + 1, pair]] : [])]) {
+    if (!isEmptyBar(mm)) throw new Nudge("empty the bar first", { bar: b });
+    if (capacity(timeAt(d, b)) !== capacity(timeAt(d, b - want))) throw new Nudge("the metre changes there", { bar: b });
+  }
+  if (pair?.simile !== undefined) delete pair.simile;
+  d.measures[bar].simile = want;
+  return d;
+}
+/** Whether a bar is the second of a two-bar repeat (it carries no sign of its own). */
+export const simileTail = (doc, bar) => bar > 0 && doc.measures[bar - 1]?.simile === 2 && doc.measures[bar].simile === undefined;
+/** The bar whose notes a bar plays: itself, or through any chain of % signs the plain bar before them. */
+export function simileSource(doc, bar) {
+  let b = bar;
+  for (let guard = 0; guard <= doc.measures.length; guard++) {
+    const m = doc.measures[b];
+    if (!m) return bar;
+    if (m.simile === 1 && b >= 1) b -= 1;
+    else if (m.simile === 2 && b >= 2) b -= 2;
+    else if (simileTail(doc, b) && b >= 2) b -= 2;
+    else return b;
+  }
+  return b;
+}
+/** Drop a % that a bar (or the pair it belongs to) carries — in place, on a clone. */
+function clearSimileAt(d, bar) {
+  if (d.measures[bar]?.simile !== undefined) delete d.measures[bar].simile;
+  if (simileTail(d, bar)) delete d.measures[bar - 1].simile;
 }
 /** A, B, … Z, AA, AB … */
 export const rehearsalLetter = (i) => (i < 26 ? String.fromCharCode(65 + i) : rehearsalLetter(Math.floor(i / 26) - 1) + String.fromCharCode(65 + (i % 26)));
@@ -1418,15 +1535,17 @@ export function unroll(doc) {
       continue;
     }
     if (m.barline?.end === "repeat" && !jumped) {
-      if (pass === 1) { bar = spanStart; pass = 2; continue; }
+      if (pass < (m.barline.times ?? 2)) { bar = spanStart; pass++; continue; } // ×n: back n − 1 times (docs/COMPOSE_RAILS2_DESIGN.md §2)
       pass = 1; spanStart = bar + 1;
     } else if (closesEnding(bar)) { pass = 1; spanStart = bar + 1; } // the last ending of the span is over
     bar++;
   }
   return out;
 }
-/** The tempo in force per bar: the piece's tempo until the first tempo mark, then each mark from its bar on. */
+/** A tempo mark's beats per minute in quarters (♪ = 120 is ♩ = 60; ♩. = 60 is ♩ = 90). */
+export const quarterBpm = (t) => (t.unit ? (t.bpm * ticks({ base: t.unit.base, dots: t.unit.dots ?? 0 })) / PPQ : t.bpm);
+/** The tempo in force per bar (quarters per minute): the piece's tempo until the first tempo mark, then each mark from its bar on. */
 export function tempoMap(doc, base) {
   let bpm = base ? tempoOf({ tempo: base }) : tempoOf(doc);
-  return doc.measures.map((m) => { const t = formOf(m).find((f) => f.kind === "tempo"); if (t) bpm = t.bpm; return bpm; });
+  return doc.measures.map((m) => { const t = formOf(m).find((f) => f.kind === "tempo"); if (t) bpm = quarterBpm(t); return bpm; });
 }

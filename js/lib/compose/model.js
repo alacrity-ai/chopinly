@@ -3,9 +3,16 @@ import { ticks, capacity, fromTicks, splitRest, groupSize, exprGrid } from "./ti
 
 export const SCHEMA = 3; // v3 (WSHED-122): dynamics, hairpins and text are bar-level `expressions`, no longer note attributes
 /** Dynamics, softest to loudest; the hairpin directions. */
-export const DYNAMICS = ["pp", "p", "mp", "mf", "f", "ff"];
+export const DYNAMICS = ["pppp", "ppp", "pp", "p", "mp", "mf", "f", "ff", "fff", "ffff"]; // the levels, softest first (the extremes since v98, WSHED-127)
+export const SUDDEN = ["sf", "sfz", "sfp", "fp", "rfz"]; // an accent on the slot's notes, the level in force untouched (fp / sfp then drop to p)
+export const DYN_VALUES = [...DYNAMICS, ...SUDDEN];
 export const HAIRPINS = ["cresc", "dim"];
-export const SPAN_KINDS = ["hairpin", "pedal", "ottava"]; // expressions with an end (docs/COMPOSE_PIANO_DESIGN.md §1): one kind on one staff never overlaps itself
+export const SPAN_KINDS = ["hairpin", "pedal", "ottava", "textline"]; // expressions with an end (docs/COMPOSE_PIANO_DESIGN.md §1): one kind on one staff never overlaps itself; textline = "cresc. – – –" / "una corda … tre corde" (docs/COMPOSE_RAILS2_DESIGN.md §1)
+export const PEDAL_STYLES = ["sign", "sost"]; // absent = the line
+export const TEMPO_UNITS = [2, 4, 8]; // a tempo mark's beat unit (absent = quarter)
+export const REHEARSAL_TEXT_MAX = 12;
+export const REPEAT_TIMES_MAX = 9;
+export const TRILL_ALTERS = [-1, 0, 1];
 export const FINGER_MAX = 5;
 export const GRACE_BASES = [8, 16, 32]; // a grace note's value (docs/COMPOSE_NOTES2_DESIGN.md §1)
 export const TREM_MAX = 3;
@@ -115,13 +122,17 @@ export function validate(doc) {
     for (const x of m.expressions ?? []) {
       if (!x.id || !(x.staff >= 0 && x.staff < m.staves.length) || !Number.isInteger(x.at) || x.at < 0 || x.at >= cap || x.at % grid) throw new Error(`bar ${bi + 1}: ${x.kind ?? "expression"} ${x.id} off the grid`);
       if (x.dy !== undefined && (!Number.isInteger(x.dy) || x.dy === 0 || Math.abs(x.dy) > EXPR_Y_MAX)) throw new Error(`bar ${bi + 1}: ${x.id}: dy must be a whole number of steps within ±${EXPR_Y_MAX} (absent when 0)`);
-      if (x.kind === "dyn") { if (!DYNAMICS.includes(x.value)) throw new Error(`bar ${bi + 1}: ${x.id} is not a dynamic`); }
+      if (x.kind === "dyn") { if (!DYN_VALUES.includes(x.value)) throw new Error(`bar ${bi + 1}: ${x.id} is not a dynamic`); }
       else if (x.kind === "text") { if (typeof x.value !== "string" || !x.value.trim() || x.value.length > TEXT_MAX) throw new Error(`bar ${bi + 1}: ${x.id} text`); }
       else if (SPAN_KINDS.includes(x.kind)) {
         const eb = doc.measures[x.end?.bar];
         if (x.kind === "hairpin" && !HAIRPINS.includes(x.dir)) throw new Error(`bar ${bi + 1}: hairpin ${x.id} has no direction`);
         if (x.kind === "ottava" && x.dir !== 1 && x.dir !== -1) throw new Error(`bar ${bi + 1}: octave line ${x.id} must be 8va (1) or 8vb (-1)`);
         if (x.kind === "pedal" && x.dir !== undefined) throw new Error(`bar ${bi + 1}: pedal ${x.id} carries a direction`);
+        if (x.kind === "hairpin" && x.niente !== undefined && x.niente !== true) throw new Error(`bar ${bi + 1}: hairpin ${x.id}: niente is true or absent`);
+        if (x.kind === "ottava" && x.size !== undefined && x.size !== 15) throw new Error(`bar ${bi + 1}: octave line ${x.id}: size is 15 or absent`);
+        if (x.kind === "pedal" && x.style !== undefined && !PEDAL_STYLES.includes(x.style)) throw new Error(`bar ${bi + 1}: pedal ${x.id}: no such style`);
+        if (x.kind === "textline" && (typeof x.text !== "string" || !x.text.trim() || x.text.length > TEXT_MAX || (x.endText !== undefined && (typeof x.endText !== "string" || !x.endText.trim() || x.endText.length > TEXT_MAX)))) throw new Error(`bar ${bi + 1}: text line ${x.id} text`);
         if (!eb) throw new Error(`bar ${bi + 1}: ${x.kind} ${x.id} has no end`);
         const ecap = capacity(timeAt(doc, x.end.bar)), egrid = exprGrid(timeAt(doc, x.end.bar));
         if (!Number.isInteger(x.end.at) || x.end.at < 0 || x.end.at >= ecap || x.end.at % egrid) throw new Error(`bar ${bi + 1}: ${x.kind} ${x.id} ends off the grid`);
@@ -138,6 +149,15 @@ export function validate(doc) {
       if (typeof m.barline !== "object" || !m.barline || (m.barline.start === undefined && m.barline.end === undefined)) throw new Error(`bar ${bi + 1}: an empty barline record`);
       if (m.barline.start !== undefined && m.barline.start !== "repeat") throw new Error(`bar ${bi + 1}: a barline can only start a repeat`);
       if (m.barline.end !== undefined && !BARLINE_ENDS.includes(m.barline.end)) throw new Error(`bar ${bi + 1}: no such barline`);
+      if (m.barline.times !== undefined && (m.barline.end !== "repeat" || !Number.isInteger(m.barline.times) || m.barline.times < 2 || m.barline.times > REPEAT_TIMES_MAX)) throw new Error(`bar ${bi + 1}: repeat times go 2–${REPEAT_TIMES_MAX} on a repeat end`);
+    }
+    if (m.simile !== undefined) { // docs/COMPOSE_RAILS2_DESIGN.md §1: a % bar holds only rests and plays the bar(s) before it
+      const n = m.simile;
+      if (n !== 1 && n !== 2) throw new Error(`bar ${bi + 1}: a bar repeat is 1 or 2 bars`);
+      if (bi < n) throw new Error(`bar ${bi + 1}: nothing before it to repeat`);
+      const pair = n === 2 ? doc.measures[bi + 1] : null;
+      if (n === 2 && (!pair || pair.simile !== undefined)) throw new Error(`bar ${bi + 1}: a two-bar repeat needs a plain bar after it`);
+      for (const [b, mm] of [[bi, m], ...(pair ? [[bi + 1, pair]] : [])]) { if (!isEmptyBar(mm)) throw new Error(`bar ${b + 1}: a bar repeat holds no notes`); if (capacity(timeAt(doc, b)) !== capacity(timeAt(doc, b - n))) throw new Error(`bar ${b + 1}: a bar repeat needs the same metre as the bar it repeats`); }
     }
     if (m.ending !== undefined) {
       if (!Number.isInteger(m.ending.n) || m.ending.n < 1 || m.ending.n > ENDING_MAX || !Number.isInteger(m.ending.end) || m.ending.end < bi || m.ending.end >= doc.measures.length) throw new Error(`bar ${bi + 1}: an ending needs a number 1–${ENDING_MAX} and a last bar in the piece`);
@@ -152,7 +172,10 @@ export function validate(doc) {
         kinds.add(f.kind);
         if (JUMPS.includes(f.kind) && ++jumps > 1) throw new Error(`bar ${bi + 1}: two jumps on one bar`);
         if (f.kind === "tempo" && (!Number.isInteger(f.bpm) || f.bpm < MIN_TEMPO || f.bpm > MAX_TEMPO || (f.text !== undefined && (typeof f.text !== "string" || !f.text.trim() || f.text.length > TEMPO_TEXT_MAX)))) throw new Error(`bar ${bi + 1}: a tempo mark needs ${MIN_TEMPO}–${MAX_TEMPO} and at most ${TEMPO_TEXT_MAX} letters`);
-        if (f.kind !== "tempo" && (f.bpm !== undefined || f.text !== undefined)) throw new Error(`bar ${bi + 1}: only a tempo mark carries a value`);
+        if (f.kind === "tempo" && f.unit !== undefined && (!TEMPO_UNITS.includes(f.unit.base) || (f.unit.dots !== 0 && f.unit.dots !== 1))) throw new Error(`bar ${bi + 1}: a tempo mark's unit is a half, quarter or eighth, dotted or not`);
+        if (f.kind === "rehearsal" && ((f.text !== undefined && (typeof f.text !== "string" || !f.text.trim() || f.text.length > REHEARSAL_TEXT_MAX || f.style !== undefined)) || (f.style !== undefined && f.style !== "number"))) throw new Error(`bar ${bi + 1}: a rehearsal mark is letters, numbers or a word of at most ${REHEARSAL_TEXT_MAX} letters`);
+        if (f.kind !== "tempo" && f.kind !== "rehearsal" && (f.bpm !== undefined || f.text !== undefined || f.unit !== undefined || f.style !== undefined)) throw new Error(`bar ${bi + 1}: only a tempo mark carries a value`);
+        if (f.kind === "tempo" && f.style !== undefined) throw new Error(`bar ${bi + 1}: only a rehearsal mark carries a style`);
       }
       for (let i = 1; i < m.form.length; i++) if (m.form[i - 1].kind > m.form[i].kind) throw new Error(`bar ${bi + 1}: form marks out of order`);
     }
@@ -173,6 +196,10 @@ export function validate(doc) {
           for (const g of ev.graces) if (!GRACE_BASES.includes(g.base) || !(g.pitches?.length > 0) || g.pitches.some((p) => !/^[A-G]$/.test(p.step) || !Number.isInteger(p.octave) || !Number.isInteger(p.alter ?? 0) || Math.abs(p.alter ?? 0) > 2)) throw new Error(`${ev.id}: a grace note needs a value of 8, 16 or 32 and pitches`);
         }
         if (ev.trem !== undefined && (ev.kind !== "note" || !Number.isInteger(ev.trem) || ev.trem < 1 || ev.trem > TREM_MAX)) throw new Error(`${ev.id}: a tremolo is 1–${TREM_MAX} strokes on a note`);
+        if (ev.trill !== undefined && (ev.kind !== "note" || !ev.art?.includes("trill") || typeof ev.trill !== "object" || !ev.trill || (ev.trill.line !== undefined && ev.trill.line !== true) || (ev.trill.alter !== undefined && !TRILL_ALTERS.includes(ev.trill.alter)) || (ev.trill.line === undefined && ev.trill.alter === undefined))) throw new Error(`${ev.id}: trill options belong on a trilled note — a line, an accidental`);
+        if (ev.stem !== undefined && (ev.kind !== "note" || (ev.stem !== "up" && ev.stem !== "down"))) throw new Error(`${ev.id}: a stem is up or down, on a note`);
+        if (ev.beam !== undefined && (ev.kind !== "note" || ev.beam !== "break")) throw new Error(`${ev.id}: a beam break goes on a note`);
+        if (ev.art && ev.art.filter((a) => a === "turn" || a === "invertedTurn" || a === "delayedTurn").length > 1) throw new Error(`${ev.id}: one turn per note`);
         if (ev.kind === "rest" && ev.pitches) throw new Error(`rest ${ev.id} with pitches`);
         if (ev.hidden && ev.kind !== "rest") throw new Error(`note ${ev.id} marked hidden`);
         if (v3 && (ev.dyn !== undefined || ev.hairpin !== undefined || ev.text !== undefined)) throw new Error(`${ev.id}: a v3 document keeps its marks in expressions`);

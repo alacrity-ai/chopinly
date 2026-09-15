@@ -167,7 +167,7 @@ test("import: directions — dynamics fold, words trim, a wedge pairs by number,
   ]);
   const { doc, warnings } = fromMusicXml(xml, { id: "d" });
   const x = doc.measures[0].expressions.map((e) => `${e.kind}:${e.value ?? e.dir}@${e.at}${e.end ? `→${e.end.bar}:${e.end.at}` : ""}`);
-  assert.deepEqual(x, ["dyn:ff@0", "hairpin:cresc@0→0:13440", "text:dolce assai@0", "dyn:f@10080"], "the sfz a division past beat 2 lands on the & of 2; the wedge ends where its stop is written");
+  assert.deepEqual(x, ["dyn:fff@0", "hairpin:cresc@0→0:13440", "text:dolce assai@0", "dyn:sfz@10080"], "fff and sfz are their own dynamics since v98; the sfz a division past beat 2 lands on the & of 2; the wedge ends where its stop is written");
   assert.equal(doc.measures[1].expressions, undefined, "niente is not a dynamic Compose holds");
   assert.equal(doc.tempo, 88);
   assert.deepEqual(warnings.sort(), ["a hairpin without an end was dropped"]);

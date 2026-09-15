@@ -48,13 +48,22 @@ export const DEFAULT_RAILS = { control: true, transport: true, palette: true, ut
 export const TREMS = [1, 2, 3];
 export const FINGERS = [1, 2, 3, 4, 5];
 /** The Form rail (docs/COMPOSE_FORM_DESIGN.md §3): barline pictures, the ending numbers, the jump rows — each arms a tap on a bar. */
-export const BARLINES = [["single", "barSingle", "single barline (clears a repeat or double bar)"], ["double", "barDouble", "double barline"], ["final", "barFinal", "final barline"], ["repeat-start", "repeatLeft", "repeat start"], ["repeat", "repeatRight", "repeat end"], ["both", "repeatBoth", "repeat end and a repeat start on the next bar"]];
+export const BARLINES = [["single", "barSingle", "single barline (clears a repeat or double bar)"], ["double", "barDouble", "double barline"], ["final", "barFinal", "final barline"], ["repeat-start", "repeatLeft", "repeat start"], ["repeat", "repeatRight", "repeat end"], ["both", "repeatBoth", "repeat end and a repeat start on the next bar"], ["repeat3", "repeatRight", "repeat end, played three times", "3×"], ["repeat4", "repeatRight", "repeat end, played four times", "4×"]];
+/** The rails filled out (docs/COMPOSE_RAILS2_DESIGN.md §4): the extreme and sudden dynamics, the hairpin variants, the tempo units, the pedal styles, the ornament rows. */
+export const SUDDENS = ["sf", "sfz", "sfp", "fp", "rfz"];
+export const TEMPO_UNIT_ROWS = [[8, 0, "eighth"], [4, 0, "quarter"], [4, 1, "dotted quarter"], [2, 0, "half"]];
+export const PEDAL_STYLE_ROWS = [["line", "Ped. with a line to the lift"], ["sign", "Ped. … ✱"], ["sost", "Sost. Ped. (sostenuto)"]];
+export const HANDS = { en: ["r.h.", "l.h."], fr: ["m.d.", "m.g."], it: ["m.d.", "m.s."] };
+export const ORN_ROWS = [["trill", { line: true }, "trill with a wavy line"], ["trill", { alter: 1 }, "trill with a sharp"], ["trill", { alter: -1 }, "trill with a flat"], ["trill", { alter: 0 }, "trill with a natural"], ["art", "invertedTurn", "inverted turn"], ["art", "delayedTurn", "turn after the note"]];
 export const ENDINGS = [1, 2, 3];
 export const JUMP_ROWS = [["dc", "D.C."], ["dcAlFine", "D.C. al Fine"], ["dcAlCoda", "D.C. al Coda"], ["ds", "D.S."], ["dsAlFine", "D.S. al Fine"], ["dsAlCoda", "D.S. al Coda"], ["toCoda", "To Coda"], ["fine", "Fine"]];
 export const JUMP_LABEL = Object.fromEntries(JUMP_ROWS);
 /** Dynamics in rail order and the text suggestions (free typing too). */
 const DYNS = ["pp", "p", "mp", "mf", "f", "ff"];
-const TEXTS = ["rit.", "a tempo", "accel.", "rall.", "cresc.", "dim.", "dolce", "espress.", "legato", "rubato", "cantabile", "marcato"];
+const TEXTS = ["rit.", "a tempo", "accel.", "rall.", "cresc.", "dim.", "dolce", "espress.", "legato", "rubato", "cantabile", "marcato", "più f", "meno f", "sub. p", "poco a poco", "sempre", "leggiero", "sotto voce", "sim."];
+const dynBtn = (d, extra = "") => `<button type="button" class="cp-btn cp-sq cp-expr-btn cp-dyn-btn${extra}" data-act="dyn" data-dyn="${d}" aria-label="${d} — tap the beat it goes on" aria-pressed="false"><span class="cp-glyph cp-glyph-dyn">${dynGlyph(d)}</span></button>`;
+/** A hairpin's hold menu: the hairpin, the dashed words, from / to nothing. */
+const hairpinRows = (kind) => { const cresc = kind === "cresc"; return [`<button type="button" class="cp-btn cp-menu-row cp-hairpin-row" data-act="hairpin" data-kind="${kind}"><span class="cp-glyph cp-glyph-xs">${cresc ? G.hairpinCresc : G.hairpinDim}</span><span>${cresc ? "crescendo" : "diminuendo"} hairpin</span></button>`, `<button type="button" class="cp-btn cp-menu-row cp-textline-row" data-act="textline" data-text="${cresc ? "cresc." : "dim."}"><i>${cresc ? "cresc." : "dim."} – – –</i><span>dashed words</span></button>`, `<button type="button" class="cp-btn cp-menu-row cp-hairpin-row" data-act="hairpin" data-kind="${kind}" data-niente="1"><span>${cresc ? "o&lt;" : "&gt;o"}</span><span>${cresc ? "from nothing" : "to nothing"}</span></button>`].join(""); };
 /** The voice menu (hold a voice button, or ▾ at phone width): rows are enabled by what the selection allows. */
 const VOICE_ROWS = [...[0, 1, 2, 3].map((v) => ["voice", `voice ${v + 1}`, { v }]), ["voice-swap", "swap 1 ↔ 2 in these bars", {}], ["cross", "cross to the upper staff", { dir: -1 }], ["cross", "cross to the lower staff", { dir: 1 }], ["hide-rest", "hide rest", {}]];
 /** The File menu: the two PDF rows open the export sheet (WSHED-121); MusicXML / MIDI wait for WSHED-119. */
@@ -158,10 +167,22 @@ export function buildRails(host, { title, onAction }) {
       </span>
     </div>
     <div class="cp-rail cp-expression" id="cp-expression" role="toolbar" aria-label="dynamics, hairpins and text" data-rail="expression" hidden>
-      ${DYNS.map((d) => `<button type="button" class="cp-btn cp-sq cp-expr-btn cp-dyn-btn" data-act="dyn" data-dyn="${d}" aria-label="${d} — tap the beat it goes on" aria-pressed="false"><span class="cp-glyph cp-glyph-dyn">${dynGlyph(d)}</span></button>`).join("")}
+      <span class="cp-more-wrap">${dynBtn("pp", " cp-hold-pp")}<span class="cp-more" id="cp-pp-more" hidden>${dynBtn("ppp")}${dynBtn("pppp")}</span></span>
+      ${DYNS.slice(1, -1).map((d) => dynBtn(d)).join("")}
+      <span class="cp-more-wrap">${dynBtn("ff", " cp-hold-ff")}<span class="cp-more" id="cp-ff-more" hidden>${dynBtn("fff")}${dynBtn("ffff")}</span></span>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-expr-btn cp-sf-btn" data-pop="cp-sf-more" aria-label="sudden dynamics — sf, sfz, sfp, fp, rfz: pick one, then tap the beat" aria-expanded="false" aria-pressed="false"><span class="cp-glyph cp-glyph-dyn" id="cp-sf-glyph">${dynGlyph("sf")}</span>&#9662;</button>
+        <span class="cp-more" id="cp-sf-more" hidden>${SUDDENS.map((d) => dynBtn(d)).join("")}</span>
+      </span>
       <span class="cp-sep" aria-hidden="true"></span>
-      <button type="button" class="cp-btn cp-sq cp-expr-btn cp-hairpin-btn" data-act="hairpin" data-kind="cresc" aria-label="crescendo — tap where it starts, then where it ends" aria-pressed="false"><span class="cp-glyph cp-glyph-sm">${G.hairpinCresc}</span></button>
-      <button type="button" class="cp-btn cp-sq cp-expr-btn cp-hairpin-btn" data-act="hairpin" data-kind="dim" aria-label="diminuendo — tap where it starts, then where it ends" aria-pressed="false"><span class="cp-glyph cp-glyph-sm">${G.hairpinDim}</span></button>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-sq cp-expr-btn cp-hairpin-btn" data-act="hairpin" data-kind="cresc" aria-label="crescendo — tap where it starts, then where it ends; hold for the dashed words or from nothing" aria-pressed="false"><span class="cp-glyph cp-glyph-sm">${G.hairpinCresc}</span></button>
+        <span class="cp-more cp-menu" id="cp-cresc-more" hidden>${hairpinRows("cresc")}</span>
+      </span>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-sq cp-expr-btn cp-hairpin-btn" data-act="hairpin" data-kind="dim" aria-label="diminuendo — tap where it starts, then where it ends; hold for the dashed words or to nothing" aria-pressed="false"><span class="cp-glyph cp-glyph-sm">${G.hairpinDim}</span></button>
+        <span class="cp-more cp-menu" id="cp-dim-more" hidden>${hairpinRows("dim")}</span>
+      </span>
       <span class="cp-sep" aria-hidden="true"></span>
       <span class="cp-more-wrap">
         <button type="button" class="cp-btn cp-expr-btn cp-text-btn" data-pop="cp-text-more" aria-label="text — rit., a tempo, dolce… or your own: pick it, then tap the beat it goes over" aria-expanded="false" aria-pressed="false"><i id="cp-text-lbl">text</i>&#9662;</button>
@@ -174,7 +195,7 @@ export function buildRails(host, { title, onAction }) {
     <div class="cp-rail cp-form" id="cp-form" role="toolbar" aria-label="barlines, repeats, endings, jumps, rehearsal marks and tempo" data-rail="form" hidden>
       <span class="cp-more-wrap">
         <button type="button" class="cp-btn cp-pick" data-pop="cp-bar-more" aria-label="barline — pick one, then tap the bar" aria-expanded="false" aria-pressed="false"><span class="cp-pick-label">Barline</span><span class="cp-pick-val cp-bar-val" id="cp-bar-val"></span>&#9662;</button>
-        <span class="cp-more cp-grid cp-bar-grid" id="cp-bar-more" hidden>${BARLINES.map(([k, g, label]) => `<button type="button" class="cp-btn cp-sq cp-bar" data-act="barline" data-kind="${k}" aria-pressed="false" aria-label="${label}"><span class="cp-glyph cp-glyph-bar">${G[g]}</span></button>`).join("")}</span>
+        <span class="cp-more cp-grid cp-bar-grid" id="cp-bar-more" hidden>${BARLINES.map(([k, g, label, tag]) => `<button type="button" class="cp-btn cp-sq cp-bar" data-act="barline" data-kind="${k}" aria-pressed="false" aria-label="${label}"><span class="cp-glyph cp-glyph-bar">${G[g]}</span>${tag ? `<small class="cp-bar-tag">${tag}</small>` : ""}</button>`).join("")}</span>
       </span>
       <span class="cp-more-wrap">
         <button type="button" class="cp-btn cp-pick" data-pop="cp-ending-more" aria-label="ending — pick the number, then tap its first bar and its last" aria-expanded="false" aria-pressed="false"><span class="cp-pick-label">Ending</span><b class="cp-pick-val" id="cp-ending-val"></b>&#9662;</button>
@@ -188,21 +209,50 @@ export function buildRails(host, { title, onAction }) {
         <span class="cp-more cp-menu" id="cp-jump-more" hidden>${JUMP_ROWS.map(([k, label]) => `<button type="button" class="cp-btn cp-menu-row cp-jump-row" data-act="jump" data-kind="${k}" aria-pressed="false"><i>${label}</i></button>`).join("")}</span>
       </span>
       <span class="cp-sep" aria-hidden="true"></span>
-      <button type="button" class="cp-btn cp-sq cp-rehearsal-btn" data-act="rehearsal" aria-pressed="false" aria-label="rehearsal mark — tap the bar"><b class="cp-rehearsal-pic">A</b></button>
-      <button type="button" class="cp-btn cp-tempo-mark-btn" data-act="tempo-mark" aria-pressed="false" aria-label="tempo mark — say the tempo, then tap the bar it starts at"><span class="cp-glyph cp-glyph-xs">${G.metQuarter}</span><span id="cp-tempo-mark-lbl">= tempo</span></button>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-sq cp-rehearsal-btn" data-act="rehearsal" aria-pressed="false" aria-label="rehearsal mark — tap the bar; hold for numbers or a word"><b class="cp-rehearsal-pic">A</b></button>
+        <span class="cp-more cp-menu" id="cp-rehearsal-more" hidden>${[["letter", "letters — A, B, C…"], ["number", "numbers — 1, 2, 3…"], ["word", "a word… (Trio, Coda)"]].map(([st, label]) => `<button type="button" class="cp-btn cp-menu-row cp-rehearsal-row" data-act="rehearsal" data-style="${st}"><span>${label}</span></button>`).join("")}</span>
+      </span>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-tempo-mark-btn" data-act="tempo-mark" aria-pressed="false" aria-label="tempo mark — say the tempo, then tap the bar it starts at; hold for the beat unit"><span class="cp-glyph cp-glyph-xs" id="cp-tempo-unit-glyph">${G.metQuarter}</span><span id="cp-tempo-mark-lbl">= tempo</span></button>
+        <span class="cp-more cp-menu" id="cp-tempo-unit-more" hidden>${TEMPO_UNIT_ROWS.map(([base, dots, label]) => `<button type="button" class="cp-btn cp-menu-row cp-tempo-unit-row" data-act="tempo-unit" data-base="${base}" data-dots="${dots}" aria-pressed="false"><span class="cp-glyph cp-glyph-xs">${metGlyph(base)}${dots ? G.dot : ""}</span><span>${label} =</span></button>`).join("")}</span>
+      </span>
+      <span class="cp-sep" aria-hidden="true"></span>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-sq cp-simile-btn" data-act="simile" data-n="1" aria-pressed="false" aria-label="bar repeat — tap an empty bar: it plays the bar before it; hold for two bars"><span class="cp-glyph cp-glyph-sm">${G.repeat1Bar}</span></button>
+        <span class="cp-more cp-menu" id="cp-simile-more" hidden>${[[1, G.repeat1Bar, "one bar — repeats the bar before"], [2, G.repeat2Bars, "two bars — repeat the two before"]].map(([n, g, label]) => `<button type="button" class="cp-btn cp-menu-row cp-simile-row" data-act="simile" data-n="${n}" aria-pressed="false"><span class="cp-glyph cp-glyph-xs">${g}</span><span>${label}</span></button>`).join("")}</span>
+      </span>
     </div>
     <div class="cp-rail cp-piano" id="cp-piano" role="toolbar" aria-label="pedal, octave lines and fingering" data-rail="piano" hidden>
-      <button type="button" class="cp-btn cp-sq cp-pedal-btn" data-act="pedal" aria-pressed="false" aria-label="pedal — tap where it goes down, then where it lifts"><span class="cp-glyph cp-glyph-pedal">${G.pedal}</span></button>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-sq cp-pedal-btn" data-act="pedal" aria-pressed="false" aria-label="pedal — tap where it goes down, then where it lifts; hold for the style"><span class="cp-glyph cp-glyph-pedal" id="cp-pedal-glyph">${G.pedal}</span></button>
+        <span class="cp-more cp-menu" id="cp-pedal-more" hidden>${PEDAL_STYLE_ROWS.map(([st, label]) => `<button type="button" class="cp-btn cp-menu-row cp-pedal-row" data-act="pedal" data-style="${st}" aria-pressed="false"><span class="cp-glyph cp-glyph-xs">${st === "sost" ? G.pedalSost : G.pedal}${st === "sign" ? ` ${G.pedalUp}` : ""}</span><span>${label}</span></button>`).join("")}</span>
+      </span>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-textline-btn" data-act="textline" data-text="una corda" data-end="tre corde" aria-pressed="false" aria-label="una corda — tap where the soft pedal goes down, then where tre corde lifts it"><i>u.c.</i></button>
+      </span>
       <span class="cp-sep" aria-hidden="true"></span>
-      <button type="button" class="cp-btn cp-sq cp-ottava-btn" data-act="ottava" data-dir="1" aria-pressed="false" aria-label="8va — tap the first note it covers, then the last"><span class="cp-glyph cp-glyph-ottava">${G.ottavaAlta}</span></button>
-      <button type="button" class="cp-btn cp-sq cp-ottava-btn" data-act="ottava" data-dir="-1" aria-pressed="false" aria-label="8vb — tap the first note it covers, then the last"><span class="cp-glyph cp-glyph-ottava">${G.ottavaBassa}</span></button>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-sq cp-ottava-btn" data-act="ottava" data-dir="1" data-size="8" aria-pressed="false" aria-label="8va — tap the first note it covers, then the last; hold for 15ma"><span class="cp-glyph cp-glyph-ottava">${G.ottavaAlta}</span></button>
+        <span class="cp-more" id="cp-8va-more" hidden><button type="button" class="cp-btn cp-sq cp-ottava-btn" data-act="ottava" data-dir="1" data-size="15" aria-pressed="false" aria-label="15ma — two octaves up"><span class="cp-glyph cp-glyph-ottava">${G.quindicesimaAlta}</span></button></span>
+      </span>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-sq cp-ottava-btn" data-act="ottava" data-dir="-1" data-size="8" aria-pressed="false" aria-label="8vb — tap the first note it covers, then the last; hold for 15mb"><span class="cp-glyph cp-glyph-ottava">${G.ottavaBassa}</span></button>
+        <span class="cp-more" id="cp-8vb-more" hidden><button type="button" class="cp-btn cp-sq cp-ottava-btn cp-ottava-wide" data-act="ottava" data-dir="-1" data-size="15" aria-pressed="false" aria-label="15mb — two octaves down"><span class="cp-glyph cp-glyph-ottava">${G.quindicesimaBassa}</span></button></span>
+      </span>
       <span class="cp-sep" aria-hidden="true"></span>
       ${FINGERS.map((n) => `<button type="button" class="cp-btn cp-sq cp-finger-btn" data-act="finger" data-n="${n}" aria-pressed="false" aria-label="finger ${n} — on the selected notes, or tap the notes"><b>${n}</b></button>`).join("")}
+      <span class="cp-sep" aria-hidden="true"></span>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-hand-btn" data-act="text" data-text="r.h." id="cp-rh" aria-pressed="false" aria-label="right hand — tap the beat it goes over; hold for the language"><i id="cp-rh-lbl">r.h.</i></button>
+        <span class="cp-more cp-menu" id="cp-hands-more" hidden>${Object.entries(HANDS).map(([lang, [r, l]]) => `<button type="button" class="cp-btn cp-menu-row cp-hands-row" data-act="hands" data-lang="${lang}" aria-pressed="false"><i>${r} / ${l}</i><span>${lang === "en" ? "English" : lang === "fr" ? "French" : "Italian"}</span></button>`).join("")}</span>
+      </span>
+      <button type="button" class="cp-btn cp-hand-btn" data-act="text" data-text="l.h." id="cp-lh" aria-pressed="false" aria-label="left hand — tap the beat it goes over"><i id="cp-lh-lbl">l.h.</i></button>
     </div>
     <div class="cp-rail cp-notes2" id="cp-notes2" role="toolbar" aria-label="grace notes, tremolo and more marks" data-rail="notes2" hidden>
       <span class="cp-more-wrap">
         <button type="button" class="cp-btn cp-sq cp-grace-btn" data-act="grace" aria-pressed="false" aria-label="grace notes — on, a tap before a note adds one of the armed value; hold for slashed or plain"><span class="cp-glyph cp-glyph-grace">${G.graceSlash}</span></button>
-        <span class="cp-more cp-menu" id="cp-grace-more" hidden>${[["1", "slashed — acciaccatura, before the beat"], ["0", "plain — appoggiatura, on the beat"]].map(([s, label]) => `<button type="button" class="cp-btn cp-menu-row cp-grace-row" data-act="grace" data-slash="${s}" aria-pressed="false"><span>${label}</span></button>`).join("")}</span>
+        <span class="cp-more cp-menu" id="cp-grace-more" hidden>${[["1", "slashed — acciaccatura, before the beat"], ["0", "plain — appoggiatura, on the beat"]].map(([s, label]) => `<button type="button" class="cp-btn cp-menu-row cp-grace-row" data-act="grace" data-slash="${s}" aria-pressed="false"><span>${label}</span></button>`).join("")}<button type="button" class="cp-btn cp-menu-row cp-grace-chord-row" data-act="grace-chord" aria-pressed="false"><span>chord — stack on the last grace</span></button></span>
       </span>
       <span class="cp-sep" aria-hidden="true"></span>
       <span class="cp-more-wrap">
@@ -210,12 +260,23 @@ export function buildRails(host, { title, onAction }) {
         <span class="cp-more cp-menu" id="cp-trem-more" hidden>${TREMS.map((n) => `<button type="button" class="cp-btn cp-menu-row cp-trem-row" data-act="trem" data-n="${n}"><span class="cp-glyph cp-glyph-trem">${G[`trem${n}`]}</span><span>${n} ${n === 1 ? "stroke" : "strokes"}</span></button>`).join("")}</span>
       </span>
       <span class="cp-sep" aria-hidden="true"></span>
-      ${["marcato", "staccatissimo"].map((m) => `<button type="button" class="cp-btn cp-sq cp-art-btn" data-act="art" data-mark="${m}" aria-label="${m}"><span class="cp-glyph">${artGlyph(m, true)}</span></button>`).join("")}
+      ${["marcato", "staccatissimo", "portato"].map((m) => `<button type="button" class="cp-btn cp-sq cp-art-btn" data-act="art" data-mark="${m}" aria-label="${m}"><span class="cp-glyph">${artGlyph(m, true)}</span></button>`).join("")}
+      ${["breath", "caesura"].map((m) => `<button type="button" class="cp-btn cp-sq cp-art-btn cp-after-btn" data-act="art" data-mark="${m}" aria-label="${m === "breath" ? "breath mark" : "caesura"} — after the selected notes"><span class="cp-glyph cp-glyph-sm">${artGlyph(m, true)}</span></button>`).join("")}
+      <span class="cp-sep" aria-hidden="true"></span>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-orn-btn" data-pop="cp-orn-more" aria-label="ornaments — a trill with a line or an accidental, an inverted or delayed turn, on the selected notes" aria-expanded="false" disabled><span class="cp-glyph cp-glyph-xs">${G.trill}</span>&#9662;</button>
+        <span class="cp-more cp-menu" id="cp-orn-more" hidden>${ORN_ROWS.map(([act, v, label], i) => `<button type="button" class="cp-btn cp-menu-row cp-orn-row" data-act="${act}" data-i="${i}"><span class="cp-glyph cp-glyph-xs">${act === "art" ? artGlyph(v, true) : `${v.alter !== undefined ? G[v.alter] : ""}${G.trill}${v.line ? G.wiggleTrill.repeat(2) : ""}`}</span><span>${label}</span></button>`).join("")}</span>
+      </span>
+      <span class="cp-sep" aria-hidden="true"></span>
+      <button type="button" class="cp-btn cp-sq cp-stem-btn" data-act="stem" aria-label="flip the stems of the selected notes (every one already set → automatic again)" disabled><span class="cp-glyph cp-glyph-xs cp-glyph-note">${metGlyph(4)}</span><small>flip</small></button>
+      <button type="button" class="cp-btn cp-sq cp-beam-btn" data-act="beam" aria-label="break the beam before the selected notes (again → join)" disabled><span class="cp-glyph cp-glyph-xs cp-glyph-note">${metGlyph(8)}${metGlyph(8)}</span><small>break</small></button>
     </div>`;
   const moreBtn = host.querySelector(".cp-dur-more"), accMoreBtn = host.querySelector(".cp-acc-more");
   const tupMore = host.querySelector("#cp-tup-more"), tupBtn = host.querySelector(".cp-tuplet");
   const graceMore = host.querySelector("#cp-grace-more"), graceBtn = host.querySelector(".cp-grace-btn");
-  const pops = [...host.querySelectorAll("[data-pop]")].map((b) => [host.querySelector(`#${b.dataset.pop}`), b]).concat([[tupMore, tupBtn], [graceMore, graceBtn]]);
+  // the hold menus of v98 (docs/COMPOSE_RAILS2_DESIGN.md §4): a square and the menu behind it
+  const HOLDS = [[".cp-hold-pp", "#cp-pp-more"], [".cp-hold-ff", "#cp-ff-more"], [".cp-hairpin-btn[data-kind=cresc]", "#cp-cresc-more"], [".cp-hairpin-btn[data-kind=dim]", "#cp-dim-more"], [".cp-rehearsal-btn", "#cp-rehearsal-more"], [".cp-tempo-mark-btn", "#cp-tempo-unit-more"], [".cp-simile-btn", "#cp-simile-more"], [".cp-pedal-btn", "#cp-pedal-more"], [".cp-ottava-btn[data-dir='1'][data-size='8']", "#cp-8va-more"], [".cp-ottava-btn[data-dir='-1'][data-size='8']", "#cp-8vb-more"], ["#cp-rh", "#cp-hands-more"]].map(([b, m]) => [host.querySelector(m), host.querySelector(b)]);
+  const pops = [...host.querySelectorAll("[data-pop]")].map((b) => [host.querySelector(`#${b.dataset.pop}`), b]).concat([[tupMore, tupBtn], [graceMore, graceBtn]], HOLDS);
   // Bravura glyphs sit on a musical anchor, not a typographic centre: measure each one's ink and
   // slide it so the ink is centred in its button (re-done whenever a glyph's text changes).
   const centreAll = () => { for (const g of host.querySelectorAll(".cp-glyph")) centreGlyph(g); };
@@ -238,7 +299,6 @@ export function buildRails(host, { title, onAction }) {
     if (act === "art") { onAction("art", b.dataset.mark); return; }
     if (act === "arp") { onAction("arp", b.dataset.kind); return; }
     if (act === "dyn") { onAction("dyn", b.dataset.dyn); return; }
-    if (act === "hairpin") { onAction("hairpin", b.dataset.kind); return; }
     if (act === "text") { onAction("text", b.dataset.text ?? ""); return; }
     if (act === "text-set") { const inp = host.querySelector("#cp-text-in"); onAction("text", inp.value); inp.value = ""; inp.blur(); return; }
     if (act === "acc") { onAction("acc", Number(b.dataset.alter)); return; }
@@ -247,10 +307,19 @@ export function buildRails(host, { title, onAction }) {
     if (act === "tuplet") { onAction("tuplet", b.dataset.n ? Number(b.dataset.n) : undefined); return; }
     if (act === "barline" || act === "sign" || act === "jump") { onAction(act, b.dataset.kind); return; }
     if (act === "ending") { onAction("ending", Number(b.dataset.n)); return; }
-    if (act === "ottava") { onAction("ottava", Number(b.dataset.dir)); return; }
+    if (act === "ottava") { onAction("ottava", { dir: Number(b.dataset.dir), size: Number(b.dataset.size ?? 8) }); return; }
     if (act === "finger") { onAction("finger", Number(b.dataset.n)); return; }
     if (act === "grace") { onAction("grace", b.dataset.slash === undefined ? undefined : b.dataset.slash === "1"); return; }
     if (act === "trem") { onAction("trem", Number(b.dataset.n)); return; }
+    if (act === "hairpin") { onAction("hairpin", b.dataset.niente ? { kind: b.dataset.kind, niente: true } : b.dataset.kind); return; }
+    if (act === "textline") { onAction("textline", { text: b.dataset.text, endText: b.dataset.end ?? "" }); return; }
+    if (act === "rehearsal") { onAction("rehearsal", b.dataset.style); return; }
+    if (act === "tempo-unit") { onAction("tempo-unit", { base: Number(b.dataset.base), dots: Number(b.dataset.dots) }); return; }
+    if (act === "simile") { onAction("simile", Number(b.dataset.n)); return; }
+    if (act === "pedal") { onAction("pedal", b.dataset.style); return; }
+    if (act === "hands") { onAction("hands", b.dataset.lang); return; }
+    if (act === "trill") { onAction("trill", ORN_ROWS[Number(b.dataset.i)][1]); return; }
+    if (act === "art" && b.dataset.i !== undefined) { onAction("art", ORN_ROWS[Number(b.dataset.i)][1]); return; }
     onAction(act);
   });
   // hold the tuplet button for the other sizes; hold a voice button for the voice menu
@@ -259,7 +328,8 @@ export function buildRails(host, { title, onAction }) {
     for (const t of ["pointerup", "pointercancel", "pointerleave"]) btn.addEventListener(t, () => clearTimeout(timer));
   };
   hold(tupBtn, () => toggle(tupMore, tupBtn));
-  hold(graceBtn, () => toggle(graceMore, graceBtn)); // hold Grace for slashed / plain
+  hold(graceBtn, () => toggle(graceMore, graceBtn)); // hold Grace for slashed / plain / chord
+  for (const [m, b] of HOLDS) if (m && b) hold(b, () => toggle(m, b));
   // typing in the text box: Enter sets; the editor's shortcuts stay out of inputs
   { const inp = host.querySelector("#cp-text-in");
     inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); closeMore(); onAction("text", inp.value); inp.value = ""; inp.blur(); } else if (e.key === "Escape") { closeMore(); inp.blur(); } }); // the words are armed: focus leaves the box so the pen (and Escape) go to the staff
@@ -293,7 +363,7 @@ export function buildRails(host, { title, onAction }) {
       if (bpm !== undefined) host.querySelector("#cp-bpm").textContent = String(bpm);
     },
     /** Reflect the editor's state: { armed, mode, canUndo, canRedo, hasSelection, title }. */
-    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, rails = DEFAULT_RAILS, pending = null, title, voice = 0, used = new Set([0]), sel = {} }) {
+    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, rails = DEFAULT_RAILS, pending = null, title, voice = 0, used = new Set([0]), sel = {}, tempoUnit = { base: 4, dots: 0 }, hands = "en", pedalStyle = "line" }) {
       let shown = false;
       // the voice picker (v90: one ▾ button, not four squares — the rail wrapped on many devices): the active voice's number in its colour;
       // the menu's rows: the active one lit, voices the piece uses in full ink, the rest dim; the rows follow the selection
@@ -311,10 +381,32 @@ export function buildRails(host, { title, onAction }) {
         host.querySelector(`.cp-rail-row[data-rail="${k}"]`).setAttribute("aria-checked", String(on));
       }
       if (shown) centreAll(); // a lane that was display:none had no metrics to measure
-      for (const b of host.querySelectorAll(".cp-art-btn, .cp-gliss-btn, .cp-arp-btn, .cp-slur-btn, .cp-trem-btn")) b.disabled = !hasSelection;
+      for (const b of host.querySelectorAll(".cp-art-btn, .cp-gliss-btn, .cp-arp-btn, .cp-slur-btn, .cp-trem-btn, .cp-orn-btn, .cp-stem-btn, .cp-beam-btn")) b.disabled = !hasSelection;
       // the extended Notes rail (WSHED-126): Grace is lit while on; the hold menu shows which kind
       graceBtn.setAttribute("aria-pressed", String(pending?.kind === "grace"));
       for (const r of host.querySelectorAll(".cp-grace-row")) r.setAttribute("aria-pressed", String(pending?.kind === "grace" && (r.dataset.slash === "1") === !!pending.value?.slash));
+      host.querySelector(".cp-grace-chord-row").setAttribute("aria-pressed", String(pending?.kind === "grace" && !!pending.value?.chord));
+      // the rails filled out (WSHED-127): the sudden picker shows the armed one; the text line, bar repeat, hands, pedal style, tempo unit
+      { const sd = pending?.kind === "dyn" && SUDDENS.includes(pending.value) ? pending.value : null, sg = host.querySelector("#cp-sf-glyph"), want = dynGlyph(sd ?? "sf");
+        if (sg.textContent !== want) { sg.textContent = want; centreGlyph(sg); }
+        host.querySelector(".cp-sf-btn").setAttribute("aria-pressed", String(!!sd));
+        host.querySelector(".cp-textline-btn").setAttribute("aria-pressed", String(pending?.kind === "textline" && /^una corda/i.test(pending.value?.text ?? "")));
+        for (const r of host.querySelectorAll(".cp-textline-row")) r.setAttribute("aria-pressed", String(pending?.kind === "textline" && pending.value?.text === r.dataset.text));
+        for (const r of host.querySelectorAll(".cp-hairpin-row")) r.setAttribute("aria-pressed", String(pending?.kind === "hairpin" && pending.value === r.dataset.kind && !!pending.niente === !!r.dataset.niente));
+        const sm = pending?.kind === "simile" ? pending.value : null;
+        host.querySelector(".cp-simile-btn").setAttribute("aria-pressed", String(!!sm));
+        for (const r of host.querySelectorAll(".cp-simile-row")) r.setAttribute("aria-pressed", String(Number(r.dataset.n) === sm));
+        for (const r of host.querySelectorAll(".cp-rehearsal-row")) r.setAttribute("aria-pressed", String(pending?.kind === "rehearsal" && (r.dataset.style === "word" ? !!pending.value?.text : r.dataset.style === "number" ? pending.value?.style === "number" : !pending.value?.text && !pending.value?.style)));
+        const ug = host.querySelector("#cp-tempo-unit-glyph"), ut = `${metGlyph(tempoUnit.base)}${tempoUnit.dots ? G.dot : ""}`;
+        if (ug.textContent !== ut) { ug.textContent = ut; centreGlyph(ug); }
+        for (const r of host.querySelectorAll(".cp-tempo-unit-row")) r.setAttribute("aria-pressed", String(Number(r.dataset.base) === tempoUnit.base && Number(r.dataset.dots) === (tempoUnit.dots ?? 0)));
+        const pg = host.querySelector("#cp-pedal-glyph"), pt = pedalStyle === "sost" ? G.pedalSost : G.pedal;
+        if (pg.textContent !== pt) { pg.textContent = pt; centreGlyph(pg); }
+        for (const r of host.querySelectorAll(".cp-pedal-row")) r.setAttribute("aria-pressed", String(r.dataset.style === pedalStyle));
+        const [rh, lh] = HANDS[hands] ?? HANDS.en, rb = host.querySelector("#cp-rh"), lb2 = host.querySelector("#cp-lh");
+        rb.dataset.text = rh; lb2.dataset.text = lh; host.querySelector("#cp-rh-lbl").textContent = rh; host.querySelector("#cp-lh-lbl").textContent = lh;
+        rb.setAttribute("aria-pressed", String(pending?.kind === "text" && pending.value === rh)); lb2.setAttribute("aria-pressed", String(pending?.kind === "text" && pending.value === lh));
+        for (const r of host.querySelectorAll(".cp-hands-row")) r.setAttribute("aria-pressed", String(r.dataset.lang === hands)); }
       // the expression buttons always work: they arm a cursor (WSHED-122), or retype a selection of their own kind; the armed one is lit
       for (const b of host.querySelectorAll(".cp-dyn-btn")) b.setAttribute("aria-pressed", String(pending?.kind === "dyn" && pending.value === b.dataset.dyn));
       for (const b of host.querySelectorAll(".cp-hairpin-btn")) b.setAttribute("aria-pressed", String(pending?.kind === "hairpin" && pending.value === b.dataset.kind));
@@ -341,7 +433,7 @@ export function buildRails(host, { title, onAction }) {
         const tl = host.querySelector("#cp-tempo-mark-lbl"), want = tm ? `= ${tm.bpm}${tm.text ? ` ${tm.text}` : ""}` : "= tempo"; if (tl.textContent !== want) tl.textContent = want; }
       // the Piano rail (WSHED-125): the armed line or finger is lit
       host.querySelector(".cp-pedal-btn").setAttribute("aria-pressed", String(pending?.kind === "pedal"));
-      for (const b of host.querySelectorAll(".cp-ottava-btn")) b.setAttribute("aria-pressed", String(pending?.kind === "ottava" && pending.value === Number(b.dataset.dir)));
+      for (const b of host.querySelectorAll(".cp-ottava-btn")) b.setAttribute("aria-pressed", String(pending?.kind === "ottava" && pending.value === Number(b.dataset.dir) && (pending.size ?? 8) === Number(b.dataset.size ?? 8)));
       for (const b of host.querySelectorAll(".cp-finger-btn")) b.setAttribute("aria-pressed", String(pending?.kind === "finger" && pending.value === Number(b.dataset.n)));
       // the armed change (key / time / clef waiting for a tap) shows on its picker and its button
       const key = pending?.kind === "key" ? KEYS.find((k) => k.fifths === pending.value) : null;

@@ -2174,6 +2174,23 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-piano .cp-glyph-pedal { font-size: 1.5rem; }
 .cp-piano .cp-glyph-ottava { font-size: 1.45rem; }
 .cp-piano .cp-finger-btn b { font: 600 1.1rem var(--serif); }
+/* the rails filled out (WSHED-127): the sudden picker, the hold menus' squares, u.c. / r.h. / l.h., %, the ornament picker, the two overrides */
+.cp-expression .cp-sf-btn { padding: 0 0.5rem 0 0.55rem; gap: 0.1rem; }
+.cp-expression .cp-hairpin-row .cp-glyph-xs { width: 1.6rem; }
+.cp-expression .cp-textline-row i, .cp-piano .cp-textline-btn i, .cp-piano .cp-hand-btn i { font: italic 500 1rem var(--serif); }
+.cp-piano .cp-textline-btn, .cp-piano .cp-hand-btn { padding: 0 0.7rem; }
+.cp-piano .cp-ottava-wide .cp-glyph-ottava { font-size: 1.1rem; }
+.cp-piano .cp-pedal-row .cp-glyph-xs { width: 2.6rem; }
+.cp-form .cp-bar { position: relative; }
+.cp-form .cp-bar .cp-bar-tag { position: absolute; right: 0.25rem; bottom: 0.2rem; font: 700 0.6rem var(--sans); }
+.cp-form .cp-simile-btn .cp-glyph-sm { font-size: 1.7rem; }
+.cp-form .cp-tempo-unit-row .cp-glyph-xs { width: 1.6rem; }
+.cp-notes2 .cp-after-btn .cp-glyph-sm { font-size: 1.5rem; }
+.cp-notes2 .cp-orn-btn { padding: 0 0.5rem 0 0.6rem; gap: 0.15rem; }
+.cp-notes2 .cp-orn-row .cp-glyph-xs { width: 2.4rem; }
+.cp-notes2 .cp-stem-btn, .cp-notes2 .cp-beam-btn { flex-direction: column; gap: 0; }
+.cp-notes2 .cp-stem-btn small, .cp-notes2 .cp-beam-btn small { font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.04em; line-height: 1; margin-top: 0.9rem; }
+.cp-notes2 .cp-stem-btn .cp-glyph-xs, .cp-notes2 .cp-beam-btn .cp-glyph-xs { font-size: 1.1rem; }
 .cp-utility .cp-sep { margin: 0 0.15rem; }
 .cp-gliss-btn i { font: italic 500 0.95rem var(--serif); }
 .cp-arp-btn { padding: 0 0.55rem 0 0.6rem; gap: 0.15rem; }
@@ -2261,6 +2278,11 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 /* expressions are selectable things (WSHED-122): the selected one takes the highlight; a selected hairpin's end handles ride the overlay; ghosts are faint */
 .cp-svg .cp-expr.sel .cp-dyn, .cp-svg .cp-expr.sel .cp-expr-text { fill: var(--hi); }
 .cp-svg .cp-expr.sel .cp-hairpin { stroke: var(--hi); }
+.cp-svg .cp-textline { fill: none; stroke: var(--fg); stroke-width: 1.2; stroke-linecap: butt; stroke-dasharray: 4 3; }
+.cp-svg .cp-expr.sel .cp-textline { stroke: var(--hi); }
+.cp-svg .cp-simile-sign { fill: var(--fg); }
+.cp-svg .cp-simile-num { font: 600 1em var(--sans); fill: var(--fg); }
+.cp-overlay .cp-textline { fill: none; stroke: var(--fg); stroke-width: 1.2; stroke-dasharray: 4 3; opacity: 0.42; }
 /* the Piano rail (WSHED-125): pedal and octave lines are selectable expressions; fingering digits ride the notes */
 .cp-svg .cp-pedal-sign, .cp-svg .cp-ottava-sign, .cp-svg .cp-finger { fill: var(--fg); }
 .cp-svg .cp-pedal-line { fill: none; stroke: var(--fg); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }

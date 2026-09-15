@@ -176,6 +176,9 @@ An **event** (one voice slot):
   arp?: "plain" | "up" | "down",                                // v83: a rolled chord
   // v85's dyn / hairpin / text on the event are gone since v91 (schema v3): see `expressions` on the bar; `upgrade()` lifts them
   // v97 (WSHED-126, COMPOSE_NOTES2_DESIGN.md): a note may carry `graces: [{ base: 8 | 16 | 32, pitches, slash? }]` (grace notes before it) and `trem: 1–3`
+  // v98 (WSHED-127, COMPOSE_RAILS2_DESIGN.md): `trill: { line?, alter? }` with the trill mark, `stem: "up" | "down"`, `beam: "break"`; MARKS gains portato, breath, caesura, invertedTurn, delayedTurn;
+  //   a dyn's value may be a sudden one (sf sfz sfp fp rfz) or an extreme (pppp ppp fff ffff); a hairpin may be `niente`; an ottava `size: 15`; a pedal `style: "sign" | "sost"`;
+  //   a fourth span kind `textline { text, endText? }`; `barline.times`, a tempo mark's `unit`, a rehearsal mark's `text` / `style`, and `measure.simile: 1 | 2` (a % bar)
 }
 ```
 

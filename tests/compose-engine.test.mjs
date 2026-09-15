@@ -548,7 +548,7 @@ test("expressions (WSHED-122): a dynamic / text takes a half-beat slot of a staf
   d = addExpression(d, { kind: "text", staff: 0, bar: 0, at: 5 * g, value: "  rit.   qui " }).doc;
   assert.deepEqual(d.measures[0].expressions.map((x) => [x.kind, x.staff, x.at, x.value]), [["dyn", 0, 0, "pp"], ["dyn", 1, 0, "mf"], ["text", 0, 5 * g, "rit. qui"]]);
   assert.throws(() => addExpression(d, { kind: "dyn", staff: 0, bar: 0, at: g / 2, value: "f" }), /off the grid/);
-  assert.throws(() => addExpression(d, { kind: "dyn", staff: 0, bar: 0, at: 0, value: "fff" }), /no such dynamic/);
+  assert.throws(() => addExpression(d, { kind: "dyn", staff: 0, bar: 0, at: 0, value: "fffff" }), /no such dynamic/); // fff is a dynamic since v98
   assert.throws(() => addExpression(d, { kind: "text", staff: 0, bar: 0, at: 0, value: "   " }), /say what/);
   assert.throws(() => addExpression(d, { kind: "dyn", staff: 2, bar: 0, at: 0, value: "f" }), /nowhere/);
   r = addHairpin(d, { staff: 0, bar: 0, at: 2 * g, dir: "cresc", end: { bar: 1, at: 0 } }); d = r.doc;
