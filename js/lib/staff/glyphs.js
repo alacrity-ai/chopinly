@@ -26,6 +26,9 @@ export const G = {
   // form (WSHED-124): repeat dots (origin on the bottom line, dots in spaces 2 and 3), the signs, the barline pictures for the rail
   repeatDots: cp(0xe043), segno: cp(0xe047), coda: cp(0xe048),
   barSingle: cp(0xe030), barDouble: cp(0xe031), barFinal: cp(0xe032), repeatLeft: cp(0xe040), repeatRight: cp(0xe041), repeatBoth: cp(0xe042),
+  // the Piano rail (WSHED-125): the pedal sign, the octave signs, the fingering digits
+  pedal: cp(0xe650), ottavaAlta: cp(0xe512), ottavaBassa: cp(0xe51c),
+  finger1: cp(0xed11), finger2: cp(0xed12), finger3: cp(0xed13), finger4: cp(0xed14), finger5: cp(0xed15),
   // palette pictures (SMuFL "metronome" notes: head + stem + flags in one glyph)
   metDblWhole: cp(0xeca0), metWhole: cp(0xeca2), metHalf: cp(0xeca3), metQuarter: cp(0xeca5),
   met8th: cp(0xeca7), met16th: cp(0xeca9), met32nd: cp(0xecab), met64th: cp(0xecad),
@@ -45,4 +48,5 @@ export const metGlyph = (base) => ({ 0: G.metDblWhole, 1: G.metWhole, 2: G.metHa
 export const artGlyph = (mark, above) => ({ staccato: above ? G.staccatoAbove : G.staccatoBelow, accent: above ? G.accentAbove : G.accentBelow, tenuto: above ? G.tenutoAbove : G.tenutoBelow, fermata: above ? G.fermataAbove : G.fermataBelow, trill: G.trill, mordent: G.mordent, lowerMordent: G.lowerMordent, turn: G.turn })[mark];
 
 /** The Bravura glyph of a dynamic mark (pp … ff). */
+export const fingerGlyph = (n) => G[`finger${n}`];
 export const dynGlyph = (d) => ({ pp: G.dynPP, p: G.dynP, mp: G.dynMP, mf: G.dynMF, f: G.dynF, ff: G.dynFF })[d];

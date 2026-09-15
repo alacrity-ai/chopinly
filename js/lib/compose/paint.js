@@ -3,7 +3,7 @@
 // export/pdf.js (paper). Every coordinate is in S (staff spaces); a Bravura glyph's em is
 // 4 S and its origin sits on its musical anchor. Paper differences are the painter's:
 // hidden rests and halos are skipped, voice tints are ink.
-import { G, timeDigit, tupletDigit, restGlyph, headGlyph, flagGlyph, artGlyph, dynGlyph } from "../staff/glyphs.js";
+import { G, timeDigit, tupletDigit, restGlyph, headGlyph, flagGlyph, artGlyph, dynGlyph, fingerGlyph } from "../staff/glyphs.js";
 
 const vcls = (vi) => (vi ? ` cp-v${vi + 1}` : ""); // voices 2–4 tint on screen (skin tokens --voice-2..4); voice 1 is ink
 
@@ -124,6 +124,29 @@ export function paintScore(L, p) {
     p.end();
   }
   for (const tx of L.texts) { p.group("cp-expr", { ev: tx.id, kind: "text" }); p.text(tx.x, tx.y, tx.text, "cp-expr-text", { size: 1.15 }); p.end(); }
+  // the Piano rail's lines (docs/COMPOSE_PIANO_DESIGN.md §5): Ped. + a line with an up-hook at the lift (a notch at a retake, no sign after one);
+  // 8va / 8vb + a dashed line with a hook toward the staff; a piece open at a system break has no sign after it / no hook before it
+  for (const pd of L.pedals ?? []) {
+    p.group("cp-expr", { ev: pd.id, kind: "pedal" });
+    const signW = 2.3, x1 = pd.retake || pd.half === "in" || pd.half === "both" ? pd.x1 : pd.x1 + signW;
+    if (!pd.retake && pd.half !== "in" && pd.half !== "both") p.glyph(pd.x1, pd.y, G.pedal, "glyph cp-pedal-sign", { scale: 0.85 });
+    const pts = [[x1, pd.y], [pd.x2, pd.y]];
+    if (pd.notch) pts.splice(1, 1, [pd.x2 - 0.5, pd.y], [pd.x2, pd.y + 0.9], [pd.x2 + 0.5, pd.y]);
+    else if (pd.half !== "out" && pd.half !== "both") pts.push([pd.x2, pd.y - 1.0]);
+    if (x1 < pd.x2 - 0.2) p.polyline(pts, "cp-pedal-line");
+    p.end();
+  }
+  for (const ot of L.ottavas ?? []) {
+    p.group("cp-expr", { ev: ot.id, kind: "ottava" });
+    const up = ot.dir > 0, signW = 2.2, x1 = ot.half === "in" || ot.half === "both" ? ot.x1 : ot.x1 + signW;
+    if (ot.half !== "in" && ot.half !== "both") p.glyph(ot.x1, ot.y, up ? G.ottavaAlta : G.ottavaBassa, "glyph cp-ottava-sign", { scale: 0.8 });
+    const ly = up ? ot.y - 0.55 : ot.y - 0.4;
+    const pts = [[x1, ly], [ot.x2, ly]];
+    if (ot.half !== "out" && ot.half !== "both") pts.push([ot.x2, ly + (up ? 1.0 : -1.0)]);
+    if (x1 < ot.x2 - 0.2) p.polyline(pts, "cp-ottava-line");
+    p.end();
+  }
+  for (const f of L.fingers ?? []) p.glyph(f.x, f.y, fingerGlyph(f.n), "glyph cp-finger", { centre: true, scale: 0.9, data: { ev: f.ev, pi: f.pi } });
   // form: signs, the boxed rehearsal letter, a tempo mark (word, then ♩ = n) at a bar's start; Fine / To Coda / jumps right-aligned at its end; ending brackets with their number
   for (const f of L.form) {
     p.group("cp-form", { bar: f.bar, kind: f.kind });

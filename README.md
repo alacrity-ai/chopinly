@@ -115,8 +115,9 @@ reward the wrong thing.
   four voices per staff with cross-staff notes, key / time / clef changes on any
   bar or beat, dynamics, hairpins and text on the beats; repeats, endings,
   double and final barlines, segno / coda / D.C. / D.S. jumps, rehearsal letters
-  and tempo changes on a Form rail. Playback follows the form and the tempo
-  marks. Export a vector PDF into Scores (or to a file), and MusicXML both
+  and tempo changes on a Form rail; pedal lines, 8va / 8vb and fingering on a
+  Piano rail. Playback follows the form, the tempo marks and the pedal. Export a
+  vector PDF into Scores (or to a file), and MusicXML both
   ways: *Export MusicXML* for Sibelius / MuseScore / Finale / Dorico, *import* a
   `.musicxml` / `.xml` / `.mxl` as a new composition. Synced with an account.
 - **Logbook** — goals, the clock, notes, today, history, analytics.

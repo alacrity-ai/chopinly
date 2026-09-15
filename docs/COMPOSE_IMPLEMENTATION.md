@@ -349,6 +349,16 @@ an old piece opens with its marks in place.
   subsetting fails, the fallback is embedding the whole font (~1 MB per PDF) —
   a size cost, never a fidelity cost. Raster is not a fallback.
 
+## Phase 8 — the Piano rail (pedal lines, 8va / 8vb, fingering) — LANDED v96 (WSHED-125, 2026-09-15)
+
+Leif's pick from WSHED-123 after v95. Design and as-built: `docs/COMPOSE_PIANO_DESIGN.md`. Model:
+two new expression kinds (`pedal`, `ottava`) as spans beside the hairpin (`SPAN_KINDS`), `finger` on
+a pitch; engine `addSpan` / `addPedal` / `addOttava` / `moveSpanEnd` / `finger` / `spansOf`; the
+engraver shifts heads under an octave line by seven steps and draws the lines and digits; playback
+holds notes under the pedal; the Piano lane in `rails.js`; MusicXML both ways;
+`tests/compose-piano.test.mjs`; the E2E piano step. Next from the inventory: the extended Notes rail
+(grace notes, tremolo, marcato, staccatissimo) — WSHED-126 / v97.
+
 ## Phase 7 — the Form rail (barlines, repeats, endings, jumps, rehearsal marks, tempo changes) — LANDED v95 (WSHED-124, 2026-09-14)
 
 Leif's ask after v94; the inventory of everything else still missing is WSHED-123. Design and

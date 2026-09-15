@@ -43,8 +43,9 @@ const ARP_ROWS = [["plain", G.arpeggio, "rolled"], ["up", G.arpeggioUp, "rolled 
 /** What the mark buttons say; a mark not listed reads as its id. */
 const MARK_NAMES = { lowerMordent: "lower mordent — the one with the line through it" };
 /** The rails a reader can show or hide, in order — the header that holds the menu is not one of them. */
-export const RAILS = [["control", "Controls"], ["transport", "Transport"], ["palette", "Notes"], ["utility", "Key · time · clef · marks"], ["expression", "Dynamics · hairpins · text"], ["form", "Form · repeats · tempo"]]; // expression marks arm a cursor and land on half-beats (docs/COMPOSE_EXPRESSIONS_DESIGN.md)
-export const DEFAULT_RAILS = { control: true, transport: true, palette: true, utility: false, expression: false, form: false };
+export const RAILS = [["control", "Controls"], ["transport", "Transport"], ["palette", "Notes"], ["utility", "Key · time · clef · marks"], ["expression", "Dynamics · hairpins · text"], ["form", "Form · repeats · tempo"], ["piano", "Piano · pedal · 8va · fingering"]]; // expression marks arm a cursor and land on half-beats (docs/COMPOSE_EXPRESSIONS_DESIGN.md)
+export const DEFAULT_RAILS = { control: true, transport: true, palette: true, utility: false, expression: false, form: false, piano: false };
+export const FINGERS = [1, 2, 3, 4, 5];
 /** The Form rail (docs/COMPOSE_FORM_DESIGN.md §3): barline pictures, the ending numbers, the jump rows — each arms a tap on a bar. */
 export const BARLINES = [["single", "barSingle", "single barline (clears a repeat or double bar)"], ["double", "barDouble", "double barline"], ["final", "barFinal", "final barline"], ["repeat-start", "repeatLeft", "repeat start"], ["repeat", "repeatRight", "repeat end"], ["both", "repeatBoth", "repeat end and a repeat start on the next bar"]];
 export const ENDINGS = [1, 2, 3];
@@ -188,6 +189,14 @@ export function buildRails(host, { title, onAction }) {
       <span class="cp-sep" aria-hidden="true"></span>
       <button type="button" class="cp-btn cp-sq cp-rehearsal-btn" data-act="rehearsal" aria-pressed="false" aria-label="rehearsal mark — tap the bar"><b class="cp-rehearsal-pic">A</b></button>
       <button type="button" class="cp-btn cp-tempo-mark-btn" data-act="tempo-mark" aria-pressed="false" aria-label="tempo mark — say the tempo, then tap the bar it starts at"><span class="cp-glyph cp-glyph-xs">${G.metQuarter}</span><span id="cp-tempo-mark-lbl">= tempo</span></button>
+    </div>
+    <div class="cp-rail cp-piano" id="cp-piano" role="toolbar" aria-label="pedal, octave lines and fingering" data-rail="piano" hidden>
+      <button type="button" class="cp-btn cp-sq cp-pedal-btn" data-act="pedal" aria-pressed="false" aria-label="pedal — tap where it goes down, then where it lifts"><span class="cp-glyph cp-glyph-pedal">${G.pedal}</span></button>
+      <span class="cp-sep" aria-hidden="true"></span>
+      <button type="button" class="cp-btn cp-sq cp-ottava-btn" data-act="ottava" data-dir="1" aria-pressed="false" aria-label="8va — tap the first note it covers, then the last"><span class="cp-glyph cp-glyph-ottava">${G.ottavaAlta}</span></button>
+      <button type="button" class="cp-btn cp-sq cp-ottava-btn" data-act="ottava" data-dir="-1" aria-pressed="false" aria-label="8vb — tap the first note it covers, then the last"><span class="cp-glyph cp-glyph-ottava">${G.ottavaBassa}</span></button>
+      <span class="cp-sep" aria-hidden="true"></span>
+      ${FINGERS.map((n) => `<button type="button" class="cp-btn cp-sq cp-finger-btn" data-act="finger" data-n="${n}" aria-pressed="false" aria-label="finger ${n} — on the selected notes, or tap the notes"><b>${n}</b></button>`).join("")}
     </div>`;
   const moreBtn = host.querySelector(".cp-dur-more"), accMoreBtn = host.querySelector(".cp-acc-more");
   const tupMore = host.querySelector("#cp-tup-more"), tupBtn = host.querySelector(".cp-tuplet");
@@ -223,6 +232,8 @@ export function buildRails(host, { title, onAction }) {
     if (act === "tuplet") { onAction("tuplet", b.dataset.n ? Number(b.dataset.n) : undefined); return; }
     if (act === "barline" || act === "sign" || act === "jump") { onAction(act, b.dataset.kind); return; }
     if (act === "ending") { onAction("ending", Number(b.dataset.n)); return; }
+    if (act === "ottava") { onAction("ottava", Number(b.dataset.dir)); return; }
+    if (act === "finger") { onAction("finger", Number(b.dataset.n)); return; }
     onAction(act);
   });
   // hold the tuplet button for the other sizes; hold a voice button for the voice menu
@@ -307,6 +318,10 @@ export function buildRails(host, { title, onAction }) {
         const tm = pending?.kind === "tempo-mark" ? pending.value : null;
         host.querySelector(".cp-tempo-mark-btn").setAttribute("aria-pressed", String(!!tm));
         const tl = host.querySelector("#cp-tempo-mark-lbl"), want = tm ? `= ${tm.bpm}${tm.text ? ` ${tm.text}` : ""}` : "= tempo"; if (tl.textContent !== want) tl.textContent = want; }
+      // the Piano rail (WSHED-125): the armed line or finger is lit
+      host.querySelector(".cp-pedal-btn").setAttribute("aria-pressed", String(pending?.kind === "pedal"));
+      for (const b of host.querySelectorAll(".cp-ottava-btn")) b.setAttribute("aria-pressed", String(pending?.kind === "ottava" && pending.value === Number(b.dataset.dir)));
+      for (const b of host.querySelectorAll(".cp-finger-btn")) b.setAttribute("aria-pressed", String(pending?.kind === "finger" && pending.value === Number(b.dataset.n)));
       // the armed change (key / time / clef waiting for a tap) shows on its picker and its button
       const key = pending?.kind === "key" ? KEYS.find((k) => k.fifths === pending.value) : null;
       host.querySelector("#cp-key-val").textContent = key ? `${key.major} / ${key.minor}m` : "";

@@ -61,17 +61,21 @@ export function thingAt(L, x, y, handles = new Set()) {
   // expressions (docs/COMPOSE_EXPRESSIONS_DESIGN.md §4): after the notes, which are small and sit on the staff
   for (const dy of L.dynamics) if (Math.abs(x - dy.x) <= 1.2 && Math.abs(y - dy.y + 0.3) <= 0.9) return { type: "dyn", ev: dy.id, bar: dy.bar, staff: dy.staff, x: dy.x, y: dy.y };
   for (const tx of L.texts) if (x >= tx.x - 0.3 && x <= tx.x + 0.6 * tx.text.length && y >= tx.y - 1.1 && y <= tx.y + 0.3) return { type: "text", ev: tx.id, bar: tx.bar, staff: tx.staff, x: tx.x, y: tx.y };
-  for (const hp of L.hairpins) {
+  for (const hp of spans(L)) { // hairpins, pedal lines, octave lines (docs/COMPOSE_PIANO_DESIGN.md §6) answer alike
     if (Math.abs(y - hp.y) > 0.9 || x < hp.x1 - 0.6 || x > hp.x2 + 0.6) continue;
-    const t = { type: "hairpin", ev: hp.id, bar: hp.bar, staff: hp.staff, x: (hp.x1 + hp.x2) / 2, y: hp.y };
-    if (handles.has(hp.id)) { // a selected hairpin: its real ends are handles (an open half has no handle at the break)
-      if (hp.half !== "in" && hp.half !== "both" && Math.abs(x - hp.x1) <= 1.0) return { ...t, type: "hairpin-start" };
-      if (hp.half !== "out" && hp.half !== "both" && Math.abs(x - hp.x2) <= 1.0) return { ...t, type: "hairpin-end" };
+    const t = { type: hp.type, ev: hp.id, bar: hp.bar, staff: hp.staff, x: (hp.x1 + hp.x2) / 2, y: hp.y };
+    if (handles.has(hp.id)) { // a selected span: its real ends are handles (an open half has no handle at the break)
+      if (hp.half !== "in" && hp.half !== "both" && Math.abs(x - hp.x1) <= 1.0) return { ...t, type: `${hp.type}-start` };
+      if (hp.half !== "out" && hp.half !== "both" && Math.abs(x - hp.x2) <= 1.0) return { ...t, type: `${hp.type}-end` };
     }
     return t;
   }
   return null;
 }
+/** Every span the layout drew (hairpins, pedals, octave lines), each piece carrying its `type`. */
+export const spans = (L) => [...L.hairpins, ...(L.pedals ?? []), ...(L.ottavas ?? [])];
+/** Whether a thing type is a selected span's end handle. */
+export const isHandle = (type) => /-(start|end)$/.test(type ?? "");
 
 /** Every selectable drawn thing with its anchor point (in S): heads, rests, dynamics, texts, hairpins. */
 export function things(L) {
@@ -83,7 +87,7 @@ export function things(L) {
   for (const dy of L.dynamics) out.push({ type: "dyn", ev: dy.id, bar: dy.bar, staff: dy.staff, x: dy.x, y: dy.y - 0.3 });
   for (const tx of L.texts) out.push({ type: "text", ev: tx.id, bar: tx.bar, staff: tx.staff, x: tx.x + 0.3 * tx.text.length, y: tx.y - 0.4 });
   const seen = new Set();
-  for (const hp of L.hairpins) { if (seen.has(hp.id)) continue; seen.add(hp.id); out.push({ type: "hairpin", ev: hp.id, bar: hp.bar, staff: hp.staff, x: (hp.x1 + hp.x2) / 2, y: hp.y }); } // a split hairpin is one thing, anchored on its first half
+  for (const hp of spans(L)) { if (seen.has(hp.id)) continue; seen.add(hp.id); out.push({ type: hp.type, ev: hp.id, bar: hp.bar, staff: hp.staff, x: (hp.x1 + hp.x2) / 2, y: hp.y }); } // a split span is one thing, anchored on its first half
   return out;
 }
 /** Ray-casting point-in-polygon; poly is [{ x, y }, …]. */
