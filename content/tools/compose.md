@@ -3,7 +3,7 @@ name: Compose
 order: 7
 route: compose
 title: "Free music notation for piano — tap to write, play back, export PDF and MusicXML | Chopinly"
-description: "Write piano music on an iPad or a phone without handwriting recognition: pick a note value, tap the staff, and the note lands exactly there on an engraved grand staff. Chords, ties, tuplets, voices, dynamics and hairpins, playback, vector PDF into your scores, MusicXML export and import for Sibelius, MuseScore and Finale. Free, offline, no sign-up."
+description: "Write piano music on an iPad or a phone without handwriting recognition: pick a note value, tap the staff, and the note lands exactly there on an engraved grand staff. Chords, ties, tuplets, voices, dynamics and hairpins, repeats and endings, D.C. and coda jumps, tempo changes, playback that follows the form, vector PDF into your scores, MusicXML export and import for Sibelius, MuseScore and Finale. Free, offline, no sign-up."
 short: "Tap-to-write notation on a grand staff: playback, PDF into your scores, MusicXML both ways."
 h1: "Compose"
 lede: "A grand staff that takes a tap where a pen would go. Choose the value, touch the line or the space, and the note is there — engraved, in time, ready to play back, print or hand to Sibelius."
@@ -16,7 +16,9 @@ cta: "Open compose"
 
 **Change anything anywhere.** Key, time and clef changes go on the bar or the beat you tap, and the music re-flows to fit: a change to 3/4 re-cuts the bars with tied notes where they have to split. Dynamics, hairpins and text sit on beats and half-beats of their own, so they can be selected, dragged in time, lifted or lowered, and deleted like anything else.
 
-**Hear it.** Play, pause, stop, skip by the bar, drag the playhead, set a tempo. Dynamics and hairpins shape the velocities; slurs play legato; rolled chords roll.
+**Shape the form.** A Form rail puts double and final barlines, repeats with first and second endings, segno and coda signs, *D.C.* and *D.S. al Fine* or *al Coda*, *To Coda*, *Fine*, rehearsal letters and tempo changes (*Adagio ♩ = 60*) on the bar you tap.
+
+**Hear it.** Play, pause, stop, skip by the bar, drag the playhead, set a tempo. Playback follows the form — repeats twice, endings in turn, the jumps — and slows or quickens at each tempo mark; dynamics and hairpins shape the velocities; slurs play legato; rolled chords roll.
 
 **Keep it.** Pieces save as you write and, with an account, follow you between devices. Undo reaches back two hundred steps.
 

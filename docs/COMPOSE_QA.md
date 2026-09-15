@@ -21,6 +21,14 @@ phase's card (WSHED-115 … 122).
 - [ ] Dynamics and text land on the beat or half-beat tapped; a hairpin takes three taps (button, start, end) and stretches across a barline.
 - [ ] A mark can be tapped, lassoed, dragged sideways across bars, lifted or lowered in whole steps, deleted, undone.
 
+## Form (WSHED-124)
+- [ ] Rails ▾ → Form. Barline ▾ → `:|` then tap bar 8: repeat dots on both staves; `|:` on bar 5; `‖` on bar 4; `|.` on the last bar. The same picture on the same bar again clears it.
+- [ ] Ending ▾ → 1., tap bar 7 then bar 8; 2., tap bar 9 twice: two brackets with their numbers, the first closed at the repeat.
+- [ ] Segno on bar 3, Jump ▾ → D.S. al Coda at bar 12, To Coda at bar 6, coda sign on bar 13, Fine somewhere: each lands where tapped; the same tap removes; undo restores.
+- [ ] Rehearsal A on bar 1, B on bar 9; ♩= → "Adagio 60" → tap bar 9: the word and the metronome mark sit above the bar.
+- [ ] Play: the repeat plays twice with ending 1 then ending 2; the playhead jumps back; from the D.S. the music returns to the segno, skips ending 1, jumps at To Coda; Adagio slows the bar it starts at.
+- [ ] Export PDF: barlines, brackets, signs and words are on paper. Export MusicXML → Sibelius shows the repeats, endings and jumps; Sibelius → import keeps them.
+
 ## Voices (WSHED-120)
 - [ ] `voice ▾` → 2, tap: the second voice's stems point down; rests of the two voices sit apart; a rest drags up or down.
 - [ ] ⌘⇧↑ / ↓ (or the menu) sends a note to the other staff and its beam follows.

@@ -6,7 +6,7 @@
 import { keyAlterations, keySignatureGlyphs, CLEFS, staffStep } from "../music.js";
 import { ticks, capacity, groupSize } from "./ticks.js";
 import { timeAt, keyAt, clefAt, evTicks } from "./model.js";
-import { onsets, diatonicOf, nextEvent, slurEnd, expressionsOf, barStarts } from "./engine.js";
+import { onsets, diatonicOf, nextEvent, slurEnd, expressionsOf, barStarts, formMarksOf } from "./engine.js";
 import { xOfTicks } from "./hit.js";
 
 export const STAFF_GAP = 8;      // S between the treble's bottom line and the bass's top line
@@ -68,8 +68,9 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
       if (c) { c.clefs.push(ch); c.clefPad = 2.6; } else tailClefs.push(ch);
     }
     const tailPad = tailClefs.length ? 2.6 : 0;
+    const startPad = m.barline?.start ? 1.6 : 0, endPad = m.barline?.end ? 1.0 : 0; // room for a repeat sign opening the bar / a double, final or repeat barline closing it (docs/COMPOSE_FORM_DESIGN.md §5)
     const clefFor = (st, t) => ((m.clefChanges ?? []).length ? clefAt(doc, bi, st, t) : clefs[st]);
-    return { index: bi, time, key, clefs, clefFor, cap, cols, tailClefs, tailPad, allRest, nVoices, showTime: bi === 0 || !!m.time, showKey: !!m.key, showClef: !!m.clefs, m };
+    return { index: bi, time, key, clefs, clefFor, cap, cols, tailClefs, tailPad, startPad, endPad, allRest, nVoices, showTime: bi === 0 || !!m.time, showKey: !!m.key, showClef: !!m.clefs, m };
   });
 
   // -- accidentals, collisions + pads (per bar, per drawn staff: key alterations, then a memory that resets at the barline) --
@@ -143,7 +144,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     const ts = b.showTime ? 3.0 : 0;
     return clef + ks + ts + (clef || ks || ts ? 0.6 : 0);
   };
-  const bodyW = (b) => Math.max(MIN_BAR, 1.0 + b.cols.reduce((n, c) => n + c.w + c.clefPad + c.accPad + c.arpPad + c.dotPad + c.collPad, 0) + b.tailPad + 1.0);
+  const bodyW = (b) => Math.max(MIN_BAR, 1.0 + b.startPad + b.cols.reduce((n, c) => n + c.w + c.clefPad + c.accPad + c.arpPad + c.dotPad + c.collPad, 0) + b.tailPad + b.endPad + 1.0);
 
   // -- pack bars into systems --
   const systems = [];
@@ -171,6 +172,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
   const drawn = [], beams = [], ties = [], clefs = [];
   const clefY = (topY, clef) => topY + (8 - (CLEFS[clef].line - 1) * 2) / 2;
   const hit = { systems: [] };
+  const barPlace = []; // bar index → { hbar, si, sys, first } once placed
   systems.forEach((sys, si) => {
     const sysTop = TOP_PAD + si * SYS_H;
     const staffTop = (st) => sysTop + st * (4 + STAFF_GAP);
@@ -200,7 +202,8 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
       const bodyStart = cursor;
       const bw = bodyW(b) * sys.scale;
       const hbar = { index: b.index, x0: barX0, x1: bodyStart + bw, bodyX0: bodyStart, cols: [], cap: b.cap };
-      let off = 1.0;
+      barPlace[b.index] = { hbar, si, sys, first };
+      let off = 1.0 + b.startPad;
       for (const c of b.cols) {
         for (const ch of c.clefs) clefs.push({ x: bodyStart + off * sys.scale + 0.15, y: clefY(staffTop(ch.staff), ch.clef), glyph: CLEFS[ch.clef].glyph, staff: ch.staff, bar: b.index, at: ch.at, system: si });
         const x = bodyStart + (off + c.clefPad + c.arpPad + c.accPad) * sys.scale;
@@ -252,10 +255,10 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
         }
         off += c.w + c.clefPad + c.arpPad + c.accPad + c.dotPad + c.collPad;
       }
-      for (const ch of b.tailClefs) clefs.push({ x: hbar.x1 - b.tailPad * sys.scale + 0.15, y: clefY(staffTop(ch.staff), ch.clef), glyph: CLEFS[ch.clef].glyph, staff: ch.staff, bar: b.index, at: ch.at, system: si });
+      for (const ch of b.tailClefs) clefs.push({ x: hbar.x1 - (b.tailPad + b.endPad) * sys.scale + 0.15, y: clefY(staffTop(ch.staff), ch.clef), glyph: CLEFS[ch.clef].glyph, staff: ch.staff, bar: b.index, at: ch.at, system: si });
       cursor = hbar.x1;
       hsys.bars.push(hbar);
-      sys.barlines.push({ x: cursor, final: b.index === bars.length - 1 });
+      sys.barlines.push({ x: cursor, final: b.index === bars.length - 1, ...(b.m.barline?.end ? { kind: b.m.barline.end } : {}), ...(b.m.barline?.start ? { startX: bodyStart } : {}) });
     });
     if (sys.courtesy) {
       const nb = sys.courtesy.key ?? sys.courtesy.time ?? sys.courtesy.clef;
@@ -457,11 +460,39 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     const bracket = !(notes.length === list.length && notes.every((d) => d.beamed && d.beamRun === notes[0].beamRun));
     tuplets.push({ x1, x2, y, above, n: first.tupletN, bracket, system: first.system });
   }
+  // -- form (docs/COMPOSE_FORM_DESIGN.md §5): a lane above the top staff — signs, rehearsal box, tempo at a bar's start; Fine / To Coda / jumps at its end; ending brackets --
+  const FORM_Y = 3.2, ENDING_Y = 5.6, CH_W = 0.55 * 1.15; // baselines above the top staff (the bracket lane stays inside TOP_PAD on the first system); the estimated width of a serif character at size 1.15
+  const JUMP_TEXT = { dc: "D.C.", ds: "D.S.", dcAlFine: "D.C. al Fine", dsAlFine: "D.S. al Fine", dcAlCoda: "D.C. al Coda", dsAlCoda: "D.S. al Coda", fine: "Fine", toCoda: "To Coda" };
+  const form = [], endings = [];
+  const laneY = (si) => systems[si].staffTop[0] - FORM_Y;
+  const startX = new Map(); // bar → the next free x at its start
+  for (const { bar, x, letter } of formMarksOf(doc)) {
+    const place = barPlace[bar];
+    if (!place) continue;
+    const { hbar, si, first } = place, y = laneY(si);
+    if (JUMP_TEXT[x.kind]) { form.push({ kind: "words", text: JUMP_TEXT[x.kind], x: hbar.x1 - 0.3, y, system: si, mark: x.kind, bar }); continue; }
+    let sx = startX.get(bar) ?? ((first ? hbar.x0 : hbar.bodyX0) + (doc.measures[bar].ending ? 2.4 : 0.2)); // past an ending's number when the bar starts one
+    if (x.kind === "rehearsal") { form.push({ kind: "rehearsal", text: letter, x: sx, y, w: 1.2 + 0.7 * letter.length, system: si, bar }); sx += 1.2 + 0.7 * letter.length + 0.7; }
+    else if (x.kind === "segno" || x.kind === "coda") { form.push({ kind: "sign", sign: x.kind, x: sx, y: y + (x.kind === "coda" ? 0.4 : 0), system: si, bar }); sx += x.kind === "segno" ? 2.2 : 3.2; } // signs at 0.75 scale keep clear of the bracket lane; the coda's ring hangs below its baseline
+    else if (x.kind === "tempo") { const tw = x.text ? x.text.length * CH_W + 0.5 : 0; form.push({ kind: "tempo", text: x.text ?? "", bpm: x.bpm, x: sx, y, noteX: sx + tw, system: si, bar }); sx += tw + 1.6 + (0.6 + String(x.bpm).length * 0.62); }
+    startX.set(bar, sx);
+  }
+  doc.measures.forEach((m, a) => {
+    if (!m.ending) return;
+    const b = Math.min(m.ending.end, doc.measures.length - 1);
+    const closed = !!doc.measures[b].barline?.end && doc.measures[b].barline.end === "repeat";
+    for (let si = barPlace[a]?.si ?? -1; si >= 0 && si <= (barPlace[b]?.si ?? -1); si++) {
+      const sys = systems[si], firstBar = sys.bars[0].index, lastBar = sys.bars[sys.bars.length - 1].index;
+      const from = Math.max(a, firstBar), to = Math.min(b, lastBar);
+      const x1 = barPlace[from].hbar.bodyX0 - (from === a ? 0.2 : 0.6), x2 = barPlace[to].hbar.x1 - (to === b ? 0.3 : 0);
+      endings.push({ n: m.ending.n, x1, x2, y: sys.staffTop[0] - ENDING_Y, system: si, hookStart: from === a, hookEnd: to === b && closed, half: from > a ? (to < b ? "both" : "in") : to < b ? "out" : null, bar: a });
+    }
+  });
   const height = (TOP_PAD + systems.length * SYS_H - SYS_GAP + BOTTOM_PAD) * S;
   /** The expression line of a staff in a system over [a, b) absolute ticks, and the text line at `a` — where a ghost mark would land. */
   const exprLineAt = (si, staff, a, b) => exprLine(si, staff, under(staff, a, b, si));
   const textLineAt = (si, staff, a) => Math.min(systems[si].staffTop[staff] - 2.3, ...under(staff, a, a + 1, si).map((d) => aboveOf(d) - 1.3));
-  return { S, unit: S, width, height, systems, drawn, beams, ties, slurs, tuplets, marks, glisses, arps, dynamics, hairpins, texts, clefs, hit, nStaves, exprLine: exprLineAt, textLine: textLineAt };
+  return { S, unit: S, width, height, systems, drawn, beams, ties, slurs, tuplets, marks, glisses, arps, dynamics, hairpins, texts, clefs, form, endings, hit, nStaves, exprLine: exprLineAt, textLine: textLineAt };
 }
 
 function restBetween(drawn, a, b) {

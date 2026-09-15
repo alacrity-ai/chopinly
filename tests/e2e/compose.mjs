@@ -414,7 +414,7 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   if ((await page.locator("#cp-file-more .cp-menu-row:disabled").count()) !== 1 || (await page.locator("#cp-file-more .cp-menu-row:not(:disabled)").count()) !== 3) throw new Error("file menu: two PDF rows and MusicXML live, MIDI a placeholder");
   await page.click("[data-pop=cp-file-more]");
   await page.click("[data-pop=cp-rails-more]");
-  if ((await page.locator("#cp-rails-more .cp-rail-row").count()) !== 5) throw new Error("rail rows"); // controls · transport · notes · utility · expression
+  if ((await page.locator("#cp-rails-more .cp-rail-row").count()) !== 6) throw new Error("rail rows"); // controls · transport · notes · utility · expression · form
   await page.click(".cp-rail-row[data-rail=transport]");
   if (!(await page.locator(".cp-transport").isHidden()) || (await page.locator("#cp-rails-more").isHidden())) throw new Error("transport should hide and the menu stay open");
   await page.click(".cp-rail-row[data-rail=transport]");
@@ -895,6 +895,60 @@ await step("export: File ▾ → Export PDF opens the sheet with a page-1 previe
   await page.keyboard.press("Escape"); await page.waitForTimeout(350);
   if (await page.locator(".cp-export-wrap:not(.closing)").count()) await page.click(".cp-export-wrap .lb-close");
   await page.waitForFunction(() => !document.querySelector(".cp-export-wrap"), null, { timeout: 3000 });
+});
+
+await step("form rail: Rails ▾ → Form; a repeat end on bar 4 draws dots on both staves; endings 1. and 2.; D.C. al Fine, Fine, a segno, a rehearsal letter and Adagio ♩ = 60 land by tap; the same tap removes; the form unrolls; export → import keeps it", async () => {
+  await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
+  if ((await state()).mode !== "place") await page.keyboard.press("v");
+  await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
+  await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=form]"); await page.click("[data-pop=cp-rails-more]");
+  if (await page.locator("#cp-form").isHidden()) throw new Error("the Form rail did not open");
+  const barTap = (bar) => tapAt({ bar, staff: 0, ticks: PPQ + 300, step: 4 });
+  const form = () => page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures.map((m, b) => `${b + 1}:${m.barline ? JSON.stringify(m.barline) : ""}${m.ending ? `E${m.ending.n}-${m.ending.end + 1}` : ""}${m.form ? m.form.map((f) => f.kind + (f.bpm ? `=${f.bpm}${f.text ? ` ${f.text}` : ""}` : "")).join(",") : ""}`).filter((x) => x.length > 2).join(" "));
+  await page.click("[data-pop=cp-bar-more]"); await page.click(".cp-bar[data-kind=repeat]");
+  if ((await state()).pending?.kind !== "barline") throw new Error("barline not armed");
+  await barTap(3);
+  if ((await page.locator(".cp-svg .cp-repeat-dots").count()) !== 2) throw new Error("repeat dots " + (await page.locator(".cp-svg .cp-repeat-dots").count()));
+  await page.click("[data-pop=cp-ending-more]"); await page.click(".cp-ending[data-n='1']"); await barTap(3); await barTap(3);
+  await page.click("[data-pop=cp-ending-more]"); await page.click(".cp-ending[data-n='2']"); await barTap(4); await barTap(4);
+  await page.click("[data-pop=cp-jump-more]"); await page.click(".cp-jump-row[data-kind=dcAlFine]"); await barTap(5);
+  await page.click("[data-pop=cp-jump-more]"); await page.click(".cp-jump-row[data-kind=fine]"); await barTap(1);
+  await page.click(".cp-sign-btn[data-kind=segno]"); await barTap(0);
+  await page.click(".cp-rehearsal-btn"); await barTap(0);
+  await page.evaluate(() => { window.__prompt = window.prompt; window.prompt = () => "Adagio 60"; });
+  await page.click(".cp-tempo-mark-btn");
+  if ((await state()).pending?.value?.bpm !== 60) throw new Error("tempo mark not armed: " + JSON.stringify((await state()).pending));
+  await barTap(4);
+  await page.evaluate(() => { window.prompt = window.__prompt; });
+  const want = '1:rehearsal,segno 2:fine 4:{"end":"repeat"}E1-4 5:E2-5tempo=60 Adagio 6:dcAlFine';
+  if ((await form()) !== want) throw new Error(`form ${await form()} ≠ ${want}`);
+  if ((await page.locator(".cp-svg .cp-form").count()) !== 5 || (await page.locator(".cp-svg .cp-ending").count()) !== 2) throw new Error("drawn form " + (await page.locator(".cp-svg .cp-form").count()) + " / " + (await page.locator(".cp-svg .cp-ending").count()));
+  await page.screenshot({ path: `${S}/cp-22-form.png` });
+  // the same tap again removes; undo brings it back
+  await page.click(".cp-rehearsal-btn"); await barTap(0);
+  if (!(await form()).startsWith("1:segno ")) throw new Error("rehearsal mark not removed: " + (await form()));
+  await page.click("[data-act=undo]");
+  if ((await form()) !== want) throw new Error("undo: " + (await form()));
+  // the form plays: |: 1 2 3 4 :| with ending 1 on bar 4 and 2 on bar 5, D.C. al Fine at 6, Fine at 2
+  const passes = await page.evaluate(async () => { const E = await import("/js/lib/compose/engine.js"); return E.unroll(document.querySelector(".cp-editor").__editor.state.doc).map((p) => `${p.bar + 1}${p.pass > 1 ? "'" : ""}`).join(" "); });
+  if (passes !== "1 2 3 4 1' 2' 3' 5' 6 1 2") throw new Error("unroll " + passes);
+  // MusicXML keeps it
+  await page.click("[data-pop=cp-file-more]");
+  const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 20000 }), page.click("#cp-file-more [data-act=export-xml]")]);
+  const xml = readFileSync(await dl.path(), "utf8");
+  if (!/<repeat direction="backward"\/>/.test(xml) || !/<ending number="2" type="discontinue"\/>/.test(xml) || !/<words>D\.C\. al Fine<\/words>/.test(xml) || !/<rehearsal>A<\/rehearsal>/.test(xml)) throw new Error("form missing from the MusicXML");
+  const cid = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.id);
+  await page.click("[data-act=back]");
+  await page.waitForSelector("#cp-import-file", { state: "attached" });
+  await page.setInputFiles("#cp-import-file", await dl.path());
+  await page.waitForFunction(() => document.querySelector(".lb-toast.show")?.textContent.includes("imported"), null, { timeout: 10000 });
+  await page.waitForSelector(".cp-editor .cp-svg");
+  if ((await form()) !== want) throw new Error(`imported form ${await form()} ≠ ${want}`);
+  const imp = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.id);
+  await page.evaluate(async (id) => { const { logbook } = await import("/js/lib/logbook.js"); document.querySelector(".cp-editor").__editor.close({ silent: true }); logbook.removeComposition(id); }, imp);
+  await page.goto(`${BASE}/?app=1&t=9#/compose/${cid}`);
+  await page.waitForSelector(".cp-editor .cp-svg");
+  await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
 });
 
 await step("MusicXML: File ▾ → Export MusicXML downloads a part-wise 4.0 file; import on the list (plain and .mxl) makes new compositions with the same bars; the file menu's Share… path hands over the file", async () => {

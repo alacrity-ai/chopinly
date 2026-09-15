@@ -11,6 +11,12 @@ export const MAX_VOICES = 4;
 export const REST_Y_MAX = 12;
 /** How far an expression (dynamic, text, hairpin) may be nudged off its automatic line, in staff steps (`x.dy`, positive = up). */
 export const EXPR_Y_MAX = 20;
+/** Form (docs/COMPOSE_FORM_DESIGN.md §1): closing barlines, the jumps, every mark kind, a tempo word's length. */
+export const BARLINE_ENDS = ["double", "final", "repeat"];
+export const JUMPS = ["dc", "ds", "dcAlFine", "dsAlFine", "dcAlCoda", "dsAlCoda"];
+export const FORM_KINDS = ["segno", "coda", "toCoda", "fine", ...JUMPS, "rehearsal", "tempo"];
+export const TEMPO_TEXT_MAX = 20;
+export const ENDING_MAX = 9;
 export const DEFAULT_BARS = 8;
 export const DEFAULT_TEMPO = 100, MIN_TEMPO = 20, MAX_TEMPO = 300;
 /** The playback tempo of a document (older documents carry none). */
@@ -119,6 +125,29 @@ export function validate(doc) {
       if (prev && (prev.at > x.at || (prev.at === x.at && prev.staff > x.staff))) throw new Error(`bar ${bi + 1}: expressions out of order`);
       if (prev && prev.at === x.at && prev.staff === x.staff && prev.kind === x.kind && x.kind !== "hairpin") throw new Error(`bar ${bi + 1}: two ${x.kind}s on one slot`);
       prev = x;
+    }
+    // form (docs/COMPOSE_FORM_DESIGN.md §1): barlines, an ending over bars, marks on the bar
+    if (m.barline !== undefined) {
+      if (typeof m.barline !== "object" || !m.barline || (m.barline.start === undefined && m.barline.end === undefined)) throw new Error(`bar ${bi + 1}: an empty barline record`);
+      if (m.barline.start !== undefined && m.barline.start !== "repeat") throw new Error(`bar ${bi + 1}: a barline can only start a repeat`);
+      if (m.barline.end !== undefined && !BARLINE_ENDS.includes(m.barline.end)) throw new Error(`bar ${bi + 1}: no such barline`);
+    }
+    if (m.ending !== undefined) {
+      if (!Number.isInteger(m.ending.n) || m.ending.n < 1 || m.ending.n > ENDING_MAX || !Number.isInteger(m.ending.end) || m.ending.end < bi || m.ending.end >= doc.measures.length) throw new Error(`bar ${bi + 1}: an ending needs a number 1–${ENDING_MAX} and a last bar in the piece`);
+      for (let b = 0; b < bi; b++) if (doc.measures[b].ending && doc.measures[b].ending.end >= bi) throw new Error(`bar ${bi + 1}: endings overlap`);
+    }
+    if (m.form !== undefined) {
+      if (!Array.isArray(m.form) || !m.form.length) throw new Error(`bar ${bi + 1}: an empty form list`);
+      const kinds = new Set();
+      let jumps = 0;
+      for (const f of m.form) {
+        if (!FORM_KINDS.includes(f.kind) || kinds.has(f.kind)) throw new Error(`bar ${bi + 1}: form mark ${f.kind}`);
+        kinds.add(f.kind);
+        if (JUMPS.includes(f.kind) && ++jumps > 1) throw new Error(`bar ${bi + 1}: two jumps on one bar`);
+        if (f.kind === "tempo" && (!Number.isInteger(f.bpm) || f.bpm < MIN_TEMPO || f.bpm > MAX_TEMPO || (f.text !== undefined && (typeof f.text !== "string" || !f.text.trim() || f.text.length > TEMPO_TEXT_MAX)))) throw new Error(`bar ${bi + 1}: a tempo mark needs ${MIN_TEMPO}–${MAX_TEMPO} and at most ${TEMPO_TEXT_MAX} letters`);
+        if (f.kind !== "tempo" && (f.bpm !== undefined || f.text !== undefined)) throw new Error(`bar ${bi + 1}: only a tempo mark carries a value`);
+      }
+      for (let i = 1; i < m.form.length; i++) if (m.form[i - 1].kind > m.form[i].kind) throw new Error(`bar ${bi + 1}: form marks out of order`);
     }
     m.staves.forEach((s, si) => s.voices.forEach((v, vi) => {
       if (vi >= MAX_VOICES) throw new Error(`bar ${bi + 1} staff ${si}: more than ${MAX_VOICES} voices`);

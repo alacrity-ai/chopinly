@@ -113,8 +113,10 @@ reward the wrong thing.
   value, tap the grand staff, the note lands there engraved; chords, ties,
   tuplets, accidentals, articulations, ornaments, slurs, rolled chords, up to
   four voices per staff with cross-staff notes, key / time / clef changes on any
-  bar or beat, dynamics, hairpins and text on the beats. Playback with tempo and
-  velocities. Export a vector PDF into Scores (or to a file), and MusicXML both
+  bar or beat, dynamics, hairpins and text on the beats; repeats, endings,
+  double and final barlines, segno / coda / D.C. / D.S. jumps, rehearsal letters
+  and tempo changes on a Form rail. Playback follows the form and the tempo
+  marks. Export a vector PDF into Scores (or to a file), and MusicXML both
   ways: *Export MusicXML* for Sibelius / MuseScore / Finale / Dorico, *import* a
   `.musicxml` / `.xml` / `.mxl` as a new composition. Synced with an account.
 - **Logbook** — goals, the clock, notes, today, history, analytics.

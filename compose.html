@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Free music notation for piano — tap to write, play back, export PDF and MusicXML | Chopinly</title>
-  <meta name="description" content="Write piano music on an iPad or a phone without handwriting recognition: pick a note value, tap the staff, and the note lands exactly there on an engraved grand staff. Chords, ties, tuplets, voices, dynamics and hairpins, playback, vector PDF into your scores, MusicXML export and import for Sibelius, MuseScore and Finale. Free, offline, no sign-up.">
+  <meta name="description" content="Write piano music on an iPad or a phone without handwriting recognition: pick a note value, tap the staff, and the note lands exactly there on an engraved grand staff. Chords, ties, tuplets, voices, dynamics and hairpins, repeats and endings, D.C. and coda jumps, tempo changes, playback that follows the form, vector PDF into your scores, MusicXML export and import for Sibelius, MuseScore and Finale. Free, offline, no sign-up.">
   <link rel="canonical" href="https://chopinly.com/compose">
   <link rel="alternate" type="application/rss+xml" title="Chopinly — the blog" href="https://chopinly.com/rss.xml">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Chopinly">
   <meta property="og:title" content="Free music notation for piano — tap to write, play back, export PDF and MusicXML | Chopinly">
-  <meta property="og:description" content="Write piano music on an iPad or a phone without handwriting recognition: pick a note value, tap the staff, and the note lands exactly there on an engraved grand staff. Chords, ties, tuplets, voices, dynamics and hairpins, playback, vector PDF into your scores, MusicXML export and import for Sibelius, MuseScore and Finale. Free, offline, no sign-up.">
+  <meta property="og:description" content="Write piano music on an iPad or a phone without handwriting recognition: pick a note value, tap the staff, and the note lands exactly there on an engraved grand staff. Chords, ties, tuplets, voices, dynamics and hairpins, repeats and endings, D.C. and coda jumps, tempo changes, playback that follows the form, vector PDF into your scores, MusicXML export and import for Sibelius, MuseScore and Finale. Free, offline, no sign-up.">
   <meta property="og:url" content="https://chopinly.com/compose">
   <meta property="og:image" content="https://chopinly.com/og/chopinly.png">
   <meta property="og:image:width" content="1200">
@@ -18,7 +18,7 @@
   <meta property="og:image:alt" content="Chopinly — practice assistant">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Free music notation for piano — tap to write, play back, export PDF and MusicXML | Chopinly">
-  <meta name="twitter:description" content="Write piano music on an iPad or a phone without handwriting recognition: pick a note value, tap the staff, and the note lands exactly there on an engraved grand staff. Chords, ties, tuplets, voices, dynamics and hairpins, playback, vector PDF into your scores, MusicXML export and import for Sibelius, MuseScore and Finale. Free, offline, no sign-up.">
+  <meta name="twitter:description" content="Write piano music on an iPad or a phone without handwriting recognition: pick a note value, tap the staff, and the note lands exactly there on an engraved grand staff. Chords, ties, tuplets, voices, dynamics and hairpins, repeats and endings, D.C. and coda jumps, tempo changes, playback that follows the form, vector PDF into your scores, MusicXML export and import for Sibelius, MuseScore and Finale. Free, offline, no sign-up.">
   <meta name="twitter:image" content="https://chopinly.com/og/chopinly.png">
   <meta name="theme-color" content="#191410">
   <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
@@ -36,7 +36,7 @@
       "@id": "https://chopinly.com/compose#app",
       "name": "Compose — Chopinly",
       "url": "https://chopinly.com/compose",
-      "description": "Write piano music on an iPad or a phone without handwriting recognition: pick a note value, tap the staff, and the note lands exactly there on an engraved grand staff. Chords, ties, tuplets, voices, dynamics and hairpins, playback, vector PDF into your scores, MusicXML export and import for Sibelius, MuseScore and Finale. Free, offline, no sign-up.",
+      "description": "Write piano music on an iPad or a phone without handwriting recognition: pick a note value, tap the staff, and the note lands exactly there on an engraved grand staff. Chords, ties, tuplets, voices, dynamics and hairpins, repeats and endings, D.C. and coda jumps, tempo changes, playback that follows the form, vector PDF into your scores, MusicXML export and import for Sibelius, MuseScore and Finale. Free, offline, no sign-up.",
       "applicationCategory": "MusicApplication",
       "operatingSystem": "Any — runs in the browser, installs as a PWA",
       "browserRequirements": "Requires JavaScript and Web Audio",
@@ -103,7 +103,8 @@
 <h2 id="what-it-does">What it does</h2>
 <p><strong>Write by tapping.</strong> Pick a note value on the rail — whole to sixty-fourth, dots, rests — and tap the staff where the note goes. It lands on that line or space at that beat, spelled for the key, with the rests around it re-grouped the way an engraver would group them. Tap the same beat again for a chord; drag a head up or down to re-pitch it; select a run and make it a triplet, a quintuplet, a tie, a slur. Accidentals, articulations, ornaments, glissandi and rolled chords are one tap on a selection. Up to four voices per staff, with notes that cross to the other staff when a passage asks for it.</p>
 <p><strong>Change anything anywhere.</strong> Key, time and clef changes go on the bar or the beat you tap, and the music re-flows to fit: a change to 3/4 re-cuts the bars with tied notes where they have to split. Dynamics, hairpins and text sit on beats and half-beats of their own, so they can be selected, dragged in time, lifted or lowered, and deleted like anything else.</p>
-<p><strong>Hear it.</strong> Play, pause, stop, skip by the bar, drag the playhead, set a tempo. Dynamics and hairpins shape the velocities; slurs play legato; rolled chords roll.</p>
+<p><strong>Shape the form.</strong> A Form rail puts double and final barlines, repeats with first and second endings, segno and coda signs, <em>D.C.</em> and <em>D.S. al Fine</em> or <em>al Coda</em>, <em>To Coda</em>, <em>Fine</em>, rehearsal letters and tempo changes (<em>Adagio ♩ = 60</em>) on the bar you tap.</p>
+<p><strong>Hear it.</strong> Play, pause, stop, skip by the bar, drag the playhead, set a tempo. Playback follows the form — repeats twice, endings in turn, the jumps — and slows or quickens at each tempo mark; dynamics and hairpins shape the velocities; slurs play legato; rolled chords roll.</p>
 <p><strong>Keep it.</strong> Pieces save as you write and, with an account, follow you between devices. Undo reaches back two hundred steps.</p>
 <h2 id="out-of-chopinly">Out of Chopinly</h2>
 <p><strong>PDF.</strong> The export sheet shows page one at the staff size you choose, on Letter or A4, with the margins and a title block, then saves the file to the device or shares it. <em>Add to Scores</em> puts the same PDF into your <a href="/scores">Scores</a> library with the title, composer and tags, so the piece you wrote is the piece you practise, with bookmarks and Pencil ink like any other score; send it again after a change and the library copy is replaced in place.</p>

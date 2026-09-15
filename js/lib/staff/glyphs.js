@@ -23,6 +23,9 @@ export const G = {
   // dynamics and the text hairpins (buttons); engraved hairpins are drawn as lines
   dynPP: cp(0xe52b), dynP: cp(0xe520), dynMP: cp(0xe52c), dynMF: cp(0xe52d), dynF: cp(0xe522), dynFF: cp(0xe52f), hairpinCresc: cp(0xe53e), hairpinDim: cp(0xe53f),
   arpeggio: cp(0xe63c), arpeggioUp: cp(0xe634), arpeggioDown: cp(0xe635), wiggleArpUp: cp(0xeaa9), wiggleArpDown: cp(0xeaaa), wiggleArpUpArrow: cp(0xeaad), wiggleArpDownArrow: cp(0xeaae),
+  // form (WSHED-124): repeat dots (origin on the bottom line, dots in spaces 2 and 3), the signs, the barline pictures for the rail
+  repeatDots: cp(0xe043), segno: cp(0xe047), coda: cp(0xe048),
+  barSingle: cp(0xe030), barDouble: cp(0xe031), barFinal: cp(0xe032), repeatLeft: cp(0xe040), repeatRight: cp(0xe041), repeatBoth: cp(0xe042),
   // palette pictures (SMuFL "metronome" notes: head + stem + flags in one glyph)
   metDblWhole: cp(0xeca0), metWhole: cp(0xeca2), metHalf: cp(0xeca3), metQuarter: cp(0xeca5),
   met8th: cp(0xeca7), met16th: cp(0xeca9), met32nd: cp(0xecab), met64th: cp(0xecad),
