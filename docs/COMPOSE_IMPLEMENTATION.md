@@ -349,6 +349,14 @@ an old piece opens with its marks in place.
   subsetting fails, the fallback is embedding the whole font (~1 MB per PDF) —
   a size cost, never a fidelity cost. Raster is not a fallback.
 
+## Phase 14 — Gesture v2, the chevrons — LANDED v103 (WSHED-131, 2026-09-15)
+
+The first shape: ∧ arms the next shorter note value, ∨ the next longer, through the palette's own path
+(`act("dur")`, so a selection is retyped first). Design and as-built: docs/COMPOSE_DESIGN.md §8.5k.
+`js/lib/compose/gesture.js` `chevron(pts)` (geometry only; `tests/compose-gesture-shapes.test.mjs`),
+`editor.js` `LADDER` + `stepDur`, checked first at the lift of a Gesture-mode stroke (chevron → strike → lasso);
+the E2E step "v103: the chevrons". Further shapes: add a recogniser to gesture.js and a mapping in `lassoEnd`.
+
 ## Phase 13 — Gesture mode v1 — LANDED v102 (WSHED-130, 2026-09-15)
 
 Leif: a toggle for two Place-mode strokes — drag to lasso, a line through selected notes or dynamics to delete.

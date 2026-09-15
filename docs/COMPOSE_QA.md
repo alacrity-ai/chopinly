@@ -107,3 +107,10 @@ phase's card (WSHED-115 … 122).
 - Touch mode: slide a finger at once and it draws a lasso; hold it half a second first and it aims (v101).
 - Off: a drag in Place mode does nothing, as before. Select and Pan are unchanged either way.
 
+## Gesture v2 — the chevrons (WSHED-131, v103)
+
+- Gesture on: draw an up arrowhead (∧) on empty staff and the palette arms the next shorter value (quarter → eighth → sixteenth …); a V (∨) walks back up (eighth → quarter → half …). A toast names the value; at either end it says "already the shortest / longest".
+- Select some notes first and the chevron retypes them (as a palette tap does) and arms the value.
+- A line, a loop, a flat or lopsided stroke is not a chevron: lasso and strike behave as before.
+- Works with the Pencil, a mouse, or a finger in Touch (slide at once). Gesture off: unchanged.
+

@@ -403,7 +403,7 @@ carries the accidental, then the button clears.
     the finger. A second finger still lets go.
 - **Gesture** on (v102, §8.5j): in Place mode a stroke on empty staff that travels
   is a lasso; in either edit mode a stroke through *selected* heads or dynamics
-  is a strike that deletes them. A Touch-mode finger that slides at once draws a
+  is a strike that deletes them; a chevron (v103, §8.5k) steps the armed value. A Touch-mode finger that slides at once draws a
   gesture; one held first aims.
 - Pan uses the reader's swipe logic with inertia and pinch-to-zoom; zoom is
   applied by re-laying out at the new S (no CSS transform — text stays crisp).
@@ -600,6 +600,33 @@ things to delete them. Shapes that change the note type are v2 and are not here.
 - **Pen | Touch.** Pen mode: fingers rest, gestures come from the pencil or the mouse. Touch
   mode: slide at once → gesture; hold `AIM_MS` then slide → aim (v101).
 - **Off** leaves every mode exactly as before; Pan is unchanged either way.
+
+### 8.5k Gesture v2 — the chevrons (v103, WSHED-131)
+
+The first shape. Leif: "if you draw a V shape (a down arrow head) it will switch to a longer
+note type; if you draw an up arrow head, it will switch to the next highest note type — on an
+eighth, an up arrowhead switches to a sixteenth."
+
+- **What it does.** Exactly what tapping the neighbouring duration button does: `stepDur(dir)`
+  walks `LADDER` (double whole, whole, half, quarter, eighth, sixteenth, 32nd, 64th — the main
+  row and the ▾ row together) one step from `armed.base` and calls `act("dur", base)`, so an
+  all-notes selection is retyped first and the value is armed, and a chevron in Select mode
+  lands in Place as a palette tap does. **∧** ("up") = shorter, **∨** ("down") = longer. Past
+  either end a toast says "already the shortest / longest" and nothing changes.
+- **Recognition** — `js/lib/compose/gesture.js` `chevron(pts, minHeight = 2)`, points in S,
+  geometry only. The vertex is the stroke's point farthest from the chord between its ends. It
+  is a chevron when both legs are nearly straight (every point within 15 % of its leg's length
+  of the leg's line), of comparable length (the shorter ≥ 40 % of the longer), meet at 20°–130°,
+  the tips are level within half the height, the vertex sits between the tips (20 % slack) and
+  the height is ≥ 2 S. Vertex below both tips → "down", above both → "up"; otherwise null.
+  Drawing direction does not matter.
+- **Precedence** at the lift of an active Gesture-mode stroke: chevron → strike → lasso. A
+  deliberately drawn shape wins over a strike through selected things; a chevron is open, so
+  `isLine` would have lassoed nothing anyway.
+- **Where.** Place and Select mode with Gesture on; pencil, mouse, or a Touch-mode finger that
+  slides at once. In Select mode start the stroke on empty staff (a stroke that starts on a
+  rest or a head grabs it, as ever). Gesture off: nothing new.
+- **Next shapes** belong here too: the recogniser returns a name, the editor maps it.
 
 ### 8.6 Transport (v70) and the rails' look (v71)
 
