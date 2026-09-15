@@ -100,9 +100,12 @@ export function buildRails(host, { title, onAction }) {
         <button type="button" class="cp-btn cp-mode" data-act="select" aria-pressed="false">${icon("cursor")}<span class="cp-word">Select</span></button>
         <button type="button" class="cp-btn cp-mode" data-act="pan" aria-pressed="false" aria-label="pan — one finger scrolls, two zoom">${icon("hand")}<span class="cp-word">Pan</span></button>
       </span>
-      <span class="cp-group cp-switch cp-input" role="group" aria-label="what draws"${TOUCHY ? "" : " hidden"}>
+      <span class="cp-group cp-switch cp-setting cp-input" role="group" aria-label="what draws"${TOUCHY ? "" : " hidden"}>
         <button type="button" class="cp-btn cp-inp" data-act="input" data-input="pen" aria-pressed="false" aria-label="the pencil draws — fingers rest">${icon("nib")}<span class="cp-word">Pen</span></button>
         <button type="button" class="cp-btn cp-inp" data-act="input" data-input="touch" aria-pressed="false" aria-label="a finger draws">${icon("finger")}<span class="cp-word">Touch</span></button>
+      </span>
+      <span class="cp-group cp-switch cp-setting cp-gesture" role="group" aria-label="gestures">
+        <button type="button" class="cp-btn cp-gest" data-act="gesture" aria-pressed="false" aria-label="gesture mode — drag to lasso, a line through selected notes deletes them">${icon("gesture")}<span class="cp-word">Gesture</span></button>
       </span>
       <span class="cp-tray">
         <button type="button" class="cp-btn cp-sq" data-act="delete" aria-label="delete the selection" disabled>${icon("trash")}</button>
@@ -376,6 +379,7 @@ export function buildRails(host, { title, onAction }) {
     const act = b.dataset.act;
     if (act === "rail") { onAction("rail", b.dataset.rail); return; } // the menu stays open: several rails can be toggled in one go
     if (act === "input") { onAction("input", b.dataset.input); return; } // Pen | Touch (v101)
+    if (act === "gesture") { onAction("gesture"); return; } // Gesture mode (v102)
     closeMore();
     if (act === "dur") { onAction("dur", Number(b.dataset.base)); return; }
     if (act === "key") { onAction("key", Number(b.dataset.fifths)); return; }
@@ -451,9 +455,10 @@ export function buildRails(host, { title, onAction }) {
       if (bpm !== undefined) host.querySelector("#cp-bpm").textContent = String(bpm);
     },
     /** Reflect the editor's state: { armed, mode, canUndo, canRedo, hasSelection, title }. */
-    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, rails = DEFAULT_RAILS, pending = null, title, voice = 0, used = new Set([0]), sel = {}, tempoUnit = { base: 4, dots: 0 }, hands = "en", pedalStyle = "line", input = "touch" }) {
+    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, rails = DEFAULT_RAILS, pending = null, title, voice = 0, used = new Set([0]), sel = {}, tempoUnit = { base: 4, dots: 0 }, hands = "en", pedalStyle = "line", input = "touch", gesture = false }) {
       let shown = false;
       for (const b of host.querySelectorAll(".cp-inp")) b.setAttribute("aria-pressed", String(b.dataset.input === input)); // Pen | Touch (v101, docs/COMPOSE_DESIGN.md §8.5i)
+      host.querySelector(".cp-gest").setAttribute("aria-pressed", String(!!gesture)); // Gesture mode (v102, §8.5j)
       // the voice picker (v90: one ▾ button, not four squares — the rail wrapped on many devices): the active voice's number in its colour;
       // the menu's rows: the active one lit, voices the piece uses in full ink, the rest dim; the rows follow the selection
       { const pick = host.querySelector(".cp-voice-pick"); pick.dataset.v = String(voice); pick.querySelector(".cp-voice-n").textContent = String(voice + 1); }

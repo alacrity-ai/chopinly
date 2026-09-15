@@ -16,7 +16,7 @@ page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resourc
 page.on("dialog", (d) => d.accept(d.type() === "prompt" ? d.defaultValue() : undefined));
 const step = async (name, f) => { try { await f(); console.log("ok  ", name, errors.length ? `(${errors.length} page errors so far)` : ""); } catch (e) { console.log("FAIL", name, "—", e.message); if (errors.length) console.log("  page errors:", errors.join("\n  ")); try { console.log("  toast:", await page.evaluate(() => document.querySelector(".lb-toast")?.textContent), "url:", page.url()); } catch { /* gone */ } try { console.log("  state:", JSON.stringify(await state())); } catch { /* no editor */ } await page.screenshot({ path: `${S}/fail-compose.png` }); throw e; } };
 const lb = (fn, ...args) => page.evaluate(async ([src, a]) => { const m = await import("/js/lib/logbook.js"); return (new Function("m", "a", src))(m, a); }, [`return (${fn})(m, a)`, args]);
-const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, voice: s.voice, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging, lassoing: s.lassoing, pasting: s.pasting, hasClip: s.hasClip, pending: s.pending, input: s.input, penSeen: s.penSeen }; });
+const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, voice: s.voice, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging, lassoing: s.lassoing, pasting: s.pasting, hasClip: s.hasClip, pending: s.pending, input: s.input, penSeen: s.penSeen, gesture: s.gesture }; });
 /** Every visible icon/glyph button (.cp-sq) is one exact square per rail height: the header's own, the lanes' shared one. */
 const squares = () => page.evaluate(() => {
   const out = { header: new Set(), lanes: new Set(), n: 0, bad: [] };
@@ -1452,6 +1452,88 @@ await step("v101: Pen | Touch — a wide finger rests in Pen and draws in Touch;
   const d = await dp.evaluate(() => ({ touch: navigator.maxTouchPoints, hidden: document.querySelector(".cp-input").hidden, seen: getComputedStyle(document.querySelector(".cp-input")).display }));
   if (d.touch !== 0 || !d.hidden || d.seen !== "none") throw new Error("a mouse-only device should have no switch: " + JSON.stringify(d));
   await desk.close();
+});
+
+await step("v102: gesture mode — off, a Place-mode drag does nothing; on, a pen stroke lassoes (and an empty one clears), a plain tap still places, a line through selected heads strikes them out (undo restores), a line over unselected heads does nothing, a selected dynamic strikes out; Touch: slide at once lassoes, hold first aims; remembered across a reload", async () => {
+  // still on the "Touch" piece from the v101 step, Place mode, Touch input; bars 5–8 are free
+  const SS = (await state()).S;
+  const pen = (type, o) => synth(type, { pointerType: "pen", pointerId: 150, width: 1, height: 1, pressure: 0.5, ...o });
+  const fat = (type, o) => synth(type, { pointerType: "touch", pointerId: 151, width: 50, height: 50, ...o });
+  const stroke = async (who, pts) => { await who("pointerdown", { clientX: pts[0].x, clientY: pts[0].y }); for (const q of pts.slice(1)) await who("pointermove", { clientX: q.x, clientY: q.y }); const l = pts[pts.length - 1]; await who("pointerup", { clientX: l.x, clientY: l.y }); };
+  const tap = async (who, q) => { await who("pointerdown", { clientX: q.x, clientY: q.y }); await who("pointerup", { clientX: q.x, clientY: q.y }); };
+  const pitchAt = (bar, i) => page.evaluate(([b, i]) => { const e = document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[0].voices[0][i]; return e.pitches?.map((p) => p.step + p.octave).join("+") ?? e.kind; }, [bar, i]);
+  const exprs = (b) => page.evaluate((b) => (document.querySelector(".cp-editor").__editor.state.doc.measures[b].expressions ?? []).map((x) => x.kind + ":" + (x.value ?? "")), b);
+  const pressed = () => page.locator(".cp-gest").getAttribute("aria-pressed");
+  if ((await state()).gesture || (await pressed()) !== "false") throw new Error("gesture should start off");
+  // two quarters in bar 5 by pen taps (gesture off)
+  await tap(pen, await point({ bar: 4, staff: 0, ticks: 0, step: 4 })); // the bar re-spaces after each placement: take each point fresh
+  await tap(pen, await point({ bar: 4, staff: 0, ticks: PPQ, step: 4 }));
+  if ((await kinds(4)) !== "n4 n4 r2") throw new Error("pen taps: " + (await kinds(4)));
+  // every placement re-spaces the system, so the geometry around bar 5's two heads is taken fresh each time it is used
+  const geom = async () => { const a = await point({ bar: 4, staff: 0, ticks: 0, step: 4 }), b = await point({ bar: 4, staff: 0, ticks: PPQ, step: 4 }); return { a, b, box: [{ x: a.x - SS, y: a.y - 3 * SS }, { x: b.x + 2 * SS, y: a.y - 3 * SS }, { x: b.x + 2 * SS, y: a.y + 3 * SS }, { x: a.x - SS, y: a.y + 3 * SS }, { x: a.x - SS, y: a.y - 3 * SS }], line: [{ x: a.x - SS, y: a.y }, { x: (a.x + b.x) / 2, y: a.y + 2 }, { x: b.x + 2 * SS, y: a.y }] }; };
+  let g = await geom();
+  // off: a pen drag on empty staff in Place mode changes nothing — the selection the v101 step left (one head) stays as it is
+  const sel0 = JSON.stringify((await state()).selection);
+  await stroke(pen, g.box);
+  let s = await state();
+  if (JSON.stringify(s.selection) !== sel0 || (await kinds(4)) !== "n4 n4 r2" || s.mode !== "place") throw new Error("gesture off: a drag did something: " + JSON.stringify(s.selection) + " vs " + sel0 + " " + (await kinds(4)));
+  // on: the same drag lassoes both; the mode stays Place and the quarter stays armed
+  await page.click("[data-act=gesture]");
+  if (!(await state()).gesture || (await pressed()) !== "true") throw new Error("toggle did not turn on");
+  await stroke(pen, g.box);
+  s = await state();
+  if (s.selection.length !== 2 || s.mode !== "place" || s.armed.base !== 4) throw new Error("Place-mode lasso: " + JSON.stringify({ sel: s.selection, mode: s.mode, armed: s.armed }));
+  // an empty lasso (over bar 7's empty staff) clears the selection
+  const e7 = await point({ bar: 6, staff: 0, ticks: PPQ, step: 4 });
+  await stroke(pen, [{ x: e7.x - SS, y: e7.y - 2 * SS }, { x: e7.x + SS, y: e7.y - 2 * SS }, { x: e7.x + SS, y: e7.y + 2 * SS }, { x: e7.x - SS, y: e7.y + 2 * SS }, { x: e7.x - SS, y: e7.y - 2 * SS }]);
+  if ((await state()).selection.length !== 0 || (await kinds(6)) !== "r1") throw new Error("empty lasso should clear and place nothing: " + JSON.stringify((await state()).selection) + " " + (await kinds(6)));
+  // a plain pen tap still places (bar 7 beat 1)
+  const c = await point({ bar: 6, staff: 0, ticks: 0, step: 2 });
+  await tap(pen, c);
+  if ((await kinds(6)) !== "n4 r4 r2" || (await pitchAt(6, 0)) !== "G4") throw new Error("a plain tap with gestures on: " + (await kinds(6)));
+  // a line through unselected heads strikes nothing and encloses nothing
+  g = await geom(); // bar 7's quarter re-spaced the system
+  await stroke(pen, g.line);
+  if ((await state()).selection.length !== 0 || (await kinds(4)) !== "n4 n4 r2") throw new Error("a line over unselected heads changed something: " + (await kinds(4)));
+  // lasso both, strike through both → rests come back; one undo restores
+  await stroke(pen, g.box);
+  if ((await state()).selection.length !== 2) throw new Error("re-lasso: " + JSON.stringify((await state()).selection) + " " + (await kinds(4)));
+  await stroke(pen, g.line);
+  if ((await kinds(4)) !== "r1" || (await state()).selection.length !== 0) throw new Error("strike: " + (await kinds(4)) + " " + JSON.stringify((await state()).selection));
+  await page.click("[data-act=undo]");
+  if ((await kinds(4)) !== "n4 n4 r2") throw new Error("undo of a strike: " + (await kinds(4)));
+  // a dynamic: f on bar 5 beat 1, lasso it, strike it out
+  if (await page.locator("#cp-expression").isHidden()) { await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=expression]"); await page.click("[data-pop=cp-rails-more]"); }
+  g = await geom(); // undo re-laid the system out
+  await page.click(".cp-dyn-btn[data-dyn=f]");
+  await tap(pen, g.a);
+  if ((await exprs(4)).join() !== "dyn:f") throw new Error("f did not land: " + (await exprs(4)));
+  const d = await page.evaluate(() => { const ed = document.querySelector(".cp-editor").__editor, dy = ed.layout.dynamics.find((x) => x.bar === 4), r = document.querySelector(".cp-svg").getBoundingClientRect(), S = ed.layout.S; return { x: r.left + dy.x * S, y: r.top + (dy.y - 0.3) * S }; });
+  await stroke(pen, [{ x: d.x - 1.5 * SS, y: d.y - 1.4 * SS }, { x: d.x + 1.5 * SS, y: d.y - 1.4 * SS }, { x: d.x + 1.5 * SS, y: d.y + 1.2 * SS }, { x: d.x - 1.5 * SS, y: d.y + 1.2 * SS }, { x: d.x - 1.5 * SS, y: d.y - 1.4 * SS }]);
+  s = await state();
+  if (s.selection.length !== 1 || s.selection[0].includes(":")) throw new Error("lasso around the dynamic: " + JSON.stringify(s.selection));
+  await stroke(pen, [{ x: d.x - 1.5 * SS, y: d.y }, { x: d.x + 1.5 * SS, y: d.y }]);
+  if ((await exprs(4)).length !== 0 || (await state()).selection.length !== 0) throw new Error("strike through the dynamic: " + (await exprs(4)));
+  if ((await kinds(4)) !== "n4 n4 r2") throw new Error("the strike touched the notes: " + (await kinds(4)));
+  // Touch: a 50 px finger that slides at once lassoes the two heads; one held first aims and places (bar 6 beat 1, B4)
+  g = await geom(); // the dynamic came and went
+  await stroke(fat, g.box);
+  if ((await state()).selection.length !== 2) throw new Error("finger lasso in Place mode: " + JSON.stringify((await state()).selection));
+  const t = await point({ bar: 5, staff: 0, ticks: 0, step: 4 });
+  await fat("pointerdown", { clientX: t.x, clientY: t.y + AIM }); await page.waitForTimeout(650);
+  await fat("pointermove", { clientX: t.x + 3, clientY: t.y + AIM + 2 }); await fat("pointermove", { clientX: t.x, clientY: t.y + AIM });
+  await fat("pointerup", { clientX: t.x, clientY: t.y + AIM });
+  if ((await kinds(5)) !== "n4 r4 r2" || (await pitchAt(5, 0)) !== "B4") throw new Error("hold-then-slide should still aim: " + (await kinds(5)) + " " + (await pitchAt(5, 0)));
+  await page.screenshot({ path: `${S}/cp-28-gesture.png`, clip: { x: 0, y: 0, width: 1024, height: 200 } });
+  // remembered across a reload; off again → a drag does nothing
+  await page.reload(); await page.waitForSelector(".cp-editor .cp-svg");
+  if (!(await state()).gesture || (await pressed()) !== "true") throw new Error("gesture should survive a reload");
+  await page.click("[data-act=gesture]");
+  if ((await state()).gesture) throw new Error("toggle did not turn off");
+  const a2 = await point({ bar: 4, staff: 0, ticks: 0, step: 4 }), b2 = await point({ bar: 4, staff: 0, ticks: PPQ, step: 4 });
+  await stroke(pen, [{ x: a2.x - SS, y: a2.y - 3 * SS }, { x: b2.x + 2 * SS, y: a2.y - 3 * SS }, { x: b2.x + 2 * SS, y: a2.y + 3 * SS }, { x: a2.x - SS, y: a2.y + 3 * SS }]);
+  if ((await state()).selection.length !== 0 || (await kinds(4)) !== "n4 n4 r2") throw new Error("gesture off after reload: a drag did something");
+  await noWiden();
 });
 
 await step("phone width: the rails scroll, nothing widens, the editor still places", async () => {

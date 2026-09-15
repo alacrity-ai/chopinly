@@ -2133,12 +2133,12 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-pick-ic b { font: 600 0.95rem var(--serif); }
 .cp-pick-ic i { font: italic 500 0.95rem var(--serif); }
 .cp-pick-ic .cp-glyph-clef { font-size: 1rem; }
-.cp-mode, .cp-inp { padding: 0 0.85rem 0 0.65rem; }
-.cp-mode .cp-word, .cp-inp .cp-word { font-size: 0.9rem; }
+.cp-mode, .cp-inp, .cp-gest { padding: 0 0.85rem 0 0.65rem; }
+.cp-mode .cp-word, .cp-inp .cp-word, .cp-gest .cp-word { font-size: 0.9rem; }
 .cp-input[hidden] { display: none; } /* Pen | Touch (v101): absent where nothing can touch the score */
-/* the lit side of Pen | Touch is a setting, not an armed action: a quiet fill in full ink, the other side dim — the accent stays for what the next tap does */
-.cp-input > .cp-btn[aria-pressed="true"] { background: var(--bg-edge); color: var(--fg); }
-.cp-input > .cp-btn[aria-pressed="false"] { color: var(--fg-dim); }
+/* a setting (Pen | Touch, Gesture) is not an armed action: its lit side is a quiet fill in full ink, the other side dim — the accent stays for what the next tap does */
+.cp-setting > .cp-btn[aria-pressed="true"] { background: var(--bg-edge); color: var(--fg); }
+.cp-setting > .cp-btn[aria-pressed="false"] { color: var(--fg-dim); }
 .cp-zoom { font-size: 1.35rem; }
 /* Bravura in a button: a zero-height inline box whose ink is slid to the centre by --dy (rails.js measures it) */
 .cp-glyph { font-family: "Bravura"; font-size: 1.9rem; line-height: 0; display: inline-block; height: 0; transform: translateY(var(--dy, -0.4rem)); pointer-events: none; }
@@ -2344,7 +2344,7 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
   .cp-group { border-radius: 0.6rem; }
   .cp-btn .ic { width: 1.3rem; height: 1.3rem; }
   .cp-glyph { font-size: 1.6rem; }
-  .cp-tempo-mark, .cp-mode .cp-word, .cp-inp .cp-word { display: none; }
+  .cp-tempo-mark, .cp-mode .cp-word, .cp-inp .cp-word, .cp-gest .cp-word { display: none; }
   /* a picker shows its glyph, not its word (never a bare chevron); once armed the value stands in for both */
   .cp-rail:not(.cp-header) .cp-pick-label { display: none; }
   .cp-pick-ic { display: inline-flex; }

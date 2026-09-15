@@ -349,6 +349,16 @@ an old piece opens with its marks in place.
   subsetting fails, the fallback is embedding the whole font (~1 MB per PDF) —
   a size cost, never a fidelity cost. Raster is not a fallback.
 
+## Phase 13 — Gesture mode v1 — LANDED v102 (WSHED-130, 2026-09-15)
+
+Leif: a toggle for two Place-mode strokes — drag to lasso, a line through selected notes or dynamics to delete.
+Design and as-built: docs/COMPOSE_DESIGN.md §8.5j (§8.3, §4.3 `gesture`). `rails.js`: a one-segment `.cp-setting`
+toggle after Pen | Touch (`icon("gesture")`); `editor.js`: `gestureOn` per device (off by default), Place-mode
+`lassoStart` for pen / mouse and for a Touch-mode finger that slides before the aim hold, `lassoEnd` routing a
+travel-less stroke to `tapAt` and an active one through `struck` (hit.js: segment-vs-box slab clipping) →
+`strike` (`remove` + `removeExpressions`, one undo step); `tests/compose-gesture.test.mjs`; the E2E step
+"v102: gesture mode". v2 (shapes that change the note type) is not here.
+
 ## Phase 12 — the Pen | Touch switch — LANDED v101 (WSHED-129, 2026-09-15)
 
 Leif: with no Pencil a finger could not place, lasso or move a note. Design and as-built: docs/COMPOSE_DESIGN.md §8.5i
