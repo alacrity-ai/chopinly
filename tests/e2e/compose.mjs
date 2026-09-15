@@ -1285,7 +1285,68 @@ await step("back → the list shows the composition with composer, bars and tags
   if (glyphs !== 9) throw new Error("sight-singing staff glyphs " + glyphs); // clef + 1 sharp + 2 time digits + 5 heads
 });
 
-await step("phone width: the rails wrap, nothing widens, the editor still places", async () => {
+await step("v100: a rail never wraps — one line at every width, slides under a finger, menus stay on screen", async () => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto(`${BASE}/?app=1&t=3#/compose`);
+  await page.waitForSelector(".sc-row");
+  await page.click(".sc-open");
+  await page.waitForSelector(".cp-editor .cp-svg");
+  for (const rail of ["utility", "expression", "form", "piano", "notes2"]) if (await page.locator(`#cp-${rail}`).isHidden()) { await page.click("[data-pop=cp-rails-more]"); await page.click(`.cp-rail-row[data-rail=${rail}]`); await page.click("[data-pop=cp-rails-more]"); }
+  const lines = () => page.evaluate(() => {
+    const rails = [];
+    for (const r of document.querySelectorAll(".cp-rail")) {
+      const rr = r.getBoundingClientRect(); if (!rr.height) continue;
+      const tallest = Math.max(...[...r.querySelectorAll(".cp-btn, .cp-group")].map((b) => b.getBoundingClientRect().height));
+      const cap = r.querySelector(".cp-cap");
+      rails.push({ rail: r.dataset.rail ?? "header", h: Math.round(rr.height), tallest: Math.round(tallest), over: r.scrollWidth > r.clientWidth + 1, fade: r.parentElement.dataset.over ?? "", cap: !!cap && getComputedStyle(cap).display !== "none" && cap.getBoundingClientRect().width > 0 });
+    }
+    return { rails, stack: Math.round(document.querySelector("#cp-rails").getBoundingClientRect().height), seps: document.querySelectorAll(".cp-sep").length, groups: document.querySelectorAll(".cp-group").length, holds: document.querySelectorAll(".cp-hold").length, chev: document.querySelectorAll(".cp-rail .cp-chev").length, tri: [...document.querySelectorAll(".cp-rail .cp-btn")].filter((b) => /▾/.test(b.textContent)).length };
+  });
+  const heights = {};
+  for (const [w, h] of [[1024, 768], [768, 1024], [390, 844]]) {
+    await page.setViewportSize({ width: w, height: h }); await page.waitForTimeout(250);
+    await noWiden();
+    const L = await lines();
+    const wrapped = L.rails.filter((r) => r.h > r.tallest + 4);
+    if (wrapped.length) throw new Error(`${w}×${h}: a rail wrapped: ${JSON.stringify(wrapped)}`);
+    if (L.seps || L.tri) throw new Error(`${w}×${h}: separators ${L.seps}, text triangles ${L.tri}`);
+    if (L.groups < 20 || L.holds < 13 || L.chev < 12) throw new Error(`${w}×${h}: groups ${L.groups}, hold dots ${L.holds}, chevrons ${L.chev}`);
+    const capped = L.rails.filter((r) => r.cap).length;
+    if (w > 480 ? capped !== 6 : capped !== 0) throw new Error(`${w}×${h}: captions ${capped}`);
+    for (const r of L.rails) if (r.over !== /right|left/.test(r.fade)) throw new Error(`${w}×${h}: fade ${JSON.stringify(r)}`);
+    if (w === 390 && !L.rails.some((r) => r.over)) throw new Error("390: nothing overflows — the rails did not need to scroll?");
+    heights[`${w}×${h}`] = L.stack;
+  }
+  console.log("  rails stack with every rail on:", JSON.stringify(heights));
+  // a finger slides an overflowing rail (CDP touch: Playwright's mouse cannot scroll a touch surface)
+  const railSel = await page.evaluate(() => { const r = [...document.querySelectorAll(".cp-rail[data-rail]")].find((x) => x.scrollWidth > x.clientWidth + 1 && x.getBoundingClientRect().height); return r ? `.cp-rail[data-rail="${r.dataset.rail}"]` : null; });
+  const bb = await page.locator(railSel).boundingBox();
+  const cdp = await page.context().newCDPSession(page);
+  const y = bb.y + bb.height / 2, x0 = bb.x + bb.width - 30;
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: x0, y }] });
+  for (let i = 1; i <= 8; i++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: x0 - i * 30, y }] });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await page.waitForTimeout(350);
+  const slid = await page.evaluate((sel) => { const r = document.querySelector(sel); return { left: r.scrollLeft, fade: r.parentElement.dataset.over ?? "" }; }, railSel);
+  if (slid.left < 40 || !/left/.test(slid.fade)) throw new Error("finger drag did not slide the rail: " + JSON.stringify(slid));
+  // menus are fixed on the screen: a hold menu at the left and the Rails menu at the right both stay inside the viewport
+  const hold = async (sel) => { const b = await page.locator(sel).first().boundingBox(); await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down(); await page.waitForTimeout(600); await page.mouse.up(); await page.waitForTimeout(160); };
+  await page.evaluate(() => { document.querySelector('.cp-rail[data-rail="expression"]').scrollLeft = 0; });
+  await hold(".cp-hold-pp");
+  for (const [sel, name] of [["#cp-pp-more", "pp hold menu"]]) { const m = await page.locator(sel).boundingBox(); if (!m || m.x < 0 || m.x + m.width > 390 || m.y < 0 || m.y + m.height > 844) throw new Error(`${name} off screen: ${JSON.stringify(m)}`); }
+  await page.keyboard.press("Escape"); await page.mouse.click(200, 800);
+  await page.click("[data-pop=cp-rails-more]");
+  { const m = await page.locator("#cp-rails-more").boundingBox(); if (!m || m.x < 0 || m.x + m.width > 390) throw new Error("rails menu off screen: " + JSON.stringify(m)); }
+  await page.click("[data-pop=cp-rails-more]");
+  // no picker is a bare chevron at phone width
+  const bare = await page.evaluate(() => [...document.querySelectorAll(".cp-rail:not(.cp-header) .cp-pick")].filter((b) => b.getBoundingClientRect().width && ![...b.children].some((c) => !c.classList.contains("cp-chev") && c.getBoundingClientRect().width > 0)).map((b) => b.getAttribute("aria-label")));
+  if (bare.length) throw new Error("bare chevrons at phone width: " + JSON.stringify(bare));
+  await page.screenshot({ path: `${S}/cp-26-phone-rails.png` });
+  await page.setViewportSize({ width: 1024, height: 768 }); await page.waitForTimeout(200);
+  await page.screenshot({ path: `${S}/cp-26-facelift.png` });
+});
+
+await step("phone width: the rails scroll, nothing widens, the editor still places", async () => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE}/?app=1&t=3#/compose`);
   await page.waitForSelector(".sc-row");

@@ -25,6 +25,7 @@ export const G = {
   arpeggio: cp(0xe63c), arpeggioUp: cp(0xe634), arpeggioDown: cp(0xe635), wiggleArpUp: cp(0xeaa9), wiggleArpDown: cp(0xeaaa), wiggleArpUpArrow: cp(0xeaad), wiggleArpDownArrow: cp(0xeaae),
   // form (WSHED-124): repeat dots (origin on the bottom line, dots in spaces 2 and 3), the signs, the barline pictures for the rail
   repeatDots: cp(0xe043), segno: cp(0xe047), coda: cp(0xe048),
+  timeSigCommon: cp(0xe08a),
   barSingle: cp(0xe030), barDouble: cp(0xe031), barFinal: cp(0xe032), repeatLeft: cp(0xe040), repeatRight: cp(0xe041), repeatBoth: cp(0xe042),
   // the Piano rail (WSHED-125): the pedal sign, the octave signs, the fingering digits
   pedal: cp(0xe650), ottavaAlta: cp(0xe512), ottavaBassa: cp(0xe51c),

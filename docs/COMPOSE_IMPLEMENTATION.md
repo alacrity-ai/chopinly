@@ -349,6 +349,10 @@ an old piece opens with its marks in place.
   subsetting fails, the fallback is embedding the whole font (~1 MB per PDF) —
   a size cost, never a fidelity cost. Raster is not a fallback.
 
+## Phase 11 — the rails facelift — LANDED v100 (WSHED-128, 2026-09-15)
+
+Leif's review of the v99 rails, all of it approved plus his rule that **a rail never wraps** (docs/COMPOSE_DESIGN.md §8.5h). CSS (`.cp-lane`, `.cp-rail` as a hidden-scrollbar horizontal scroller, `.cp-group`, `.cp-tray`, `.cp-cap`, `.cp-hold`, `.cp-chev`, `.cp-pick-ic`, `--cp-h`), `rails.js` (groups and trays in the markup, lanes wrapped after build, fixed-position menus placed on open, overflow fades from `scrollLeft`, the lit button revealed), `icons.js` (`chev`), `glyphs.js` (`timeSigCommon`, re-baked into `export/bravura.js`). E2E: a step that turns every rail on at 1024 × 768, 768 × 1024 and 390 × 844 and asserts one line per rail, no separators or text triangles, 22 groups, hold dots, chevrons, captions on tablet only, fades matching overflow, a CDP finger drag that slides a rail, menus inside the viewport, no bare chevrons. Rails stack with everything on: 560 → 489 px at 1024 × 768.
+
 ## Phase 10 — the rails filled out — LANDED v98 (WSHED-127, 2026-09-15)
 
 Leif's brainstorm after v97 ("a few more buttons" on four rails), landed as one release. Design and as-built:

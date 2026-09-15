@@ -78,3 +78,14 @@ phase's card (WSHED-115 … 122).
 - [ ] Export the piece from Sibelius as MusicXML (compressed `.mxl` and uncompressed) → Chopinly → *import* on the compositions list: it opens as a new composition tagged *imported* with the bars intact; the toast names the bar count. Play it.
 - [ ] Import a piece with something Compose does not hold (a repeat, lyrics, a grace note): it still imports; the omission is only logged.
 - [ ] Import a file that is not MusicXML (a PDF renamed): a toast says why and nothing is added.
+
+## The rails facelift (WSHED-128, v100)
+
+- A rail never wraps. Turn every rail on (⠿ Rails ▾) and narrow the window, or open on a phone: each rail stays one line and slides sideways under a finger; a fade shows on the side there is more. Nothing widens the page.
+- Groups, not tiles: note values, dot · tie · tuplet, accidentals, marks, ornaments, dynamics, hairpins, signs, pedals, octave lines, fingers, hands, stems and beams each sit in one bordered group with hairlines between. Undo / redo, delete / copy / cut / paste, the transport and zoom are borderless icons. Select / Pan is a switch.
+- A hold dot (lower-right corner) marks every button that opens a menu on a hold: pp, ff, both hairpins, A, ♩= tempo, %, Ped., 8va, 8vb, r.h., the tuplet, Grace.
+- The palette rails carry a caption at the left (NOTES, KEY · TIME, DYNAMICS, FORM, PIANO, MARKS) that stays while the rail slides; none at phone width.
+- At phone width no picker is a bare chevron: Key shows ♯♭, Time 𝄴, Clef 𝄞, Barline a double bar, Ending "1.", Jump "D.S.".
+- A menu opened from a rail near the right edge (Rails, File, or a hold on a scrolled rail) stays inside the screen; scrolling the rail closes it.
+- A button that needs a selection is dim in its ink, its tile intact; select a note and it lights.
+- All five skins: the groups, fades, captions and hold dots follow the skin's panel and ink colours.
