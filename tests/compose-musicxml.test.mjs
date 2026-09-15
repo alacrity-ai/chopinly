@@ -159,7 +159,7 @@ test("import: overlapping notes in one voice refuse with the bar; an unreadable 
   assert.throws(() => fromMusicXml("<html><body/></html>", { id: "b" }), /not a MusicXML score/);
 });
 
-test("import: directions — dynamics fold, words trim, a wedge pairs by number, a stray wedge and grace notes warn, tempo from <sound>, offsets and off-grid ticks snap", () => {
+test("import: directions — dynamics fold, words trim, a wedge pairs by number, a stray wedge warns, a grace note rides the next note, tempo from <sound>, offsets and off-grid ticks snap", () => {
   const dir = (inner, more = "") => `<direction placement="below"><direction-type>${inner}</direction-type>${more}<staff>1</staff></direction>`;
   const xml = score([
     `${dir("<dynamics><fff/></dynamics>")}${dir("<words>  dolce   assai </words>")}${dir('<wedge type="crescendo" number="2"/>')}${note("C", 4, 4, "quarter")}<note><grace/><pitch><step>D</step><octave>4</octave></pitch><voice>1</voice><type>16th</type><staff>1</staff></note>${dir("<dynamics><sfz/></dynamics>", "<offset>1</offset>")}${note("D", 4, 4, "quarter")}${dir('<wedge type="stop" number="2"/>')}${dir('<wedge type="diminuendo"/>')}${note("E", 4, 8, "half")}<sound tempo="88"/>`,
@@ -170,7 +170,8 @@ test("import: directions — dynamics fold, words trim, a wedge pairs by number,
   assert.deepEqual(x, ["dyn:ff@0", "hairpin:cresc@0→0:13440", "text:dolce assai@0", "dyn:f@10080"], "the sfz a division past beat 2 lands on the & of 2; the wedge ends where its stop is written");
   assert.equal(doc.measures[1].expressions, undefined, "niente is not a dynamic Compose holds");
   assert.equal(doc.tempo, 88);
-  assert.deepEqual(warnings.sort(), ["a hairpin without an end was dropped", "grace notes skipped"]);
+  assert.deepEqual(warnings.sort(), ["a hairpin without an end was dropped"]);
+  assert.deepEqual(doc.measures[0].staves[0].voices[0][1].graces, [{ base: 16, pitches: [{ step: "D", alter: 0, octave: 4 }] }], "the grace note rides the D that follows it (v97)");
   validate(doc);
 });
 

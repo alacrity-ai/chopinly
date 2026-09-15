@@ -116,7 +116,9 @@ reward the wrong thing.
   bar or beat, dynamics, hairpins and text on the beats; repeats, endings,
   double and final barlines, segno / coda / D.C. / D.S. jumps, rehearsal letters
   and tempo changes on a Form rail; pedal lines, 8va / 8vb and fingering on a
-  Piano rail. Playback follows the form, the tempo marks and the pedal. Export a
+  Piano rail; grace notes, tremolo, marcato and staccatissimo on a second Notes
+  rail. Playback follows the form, the tempo marks, the pedal, the graces and
+  the tremolos. Export a
   vector PDF into Scores (or to a file), and MusicXML both
   ways: *Export MusicXML* for Sibelius / MuseScore / Finale / Dorico, *import* a
   `.musicxml` / `.xml` / `.mxl` as a new composition. Synced with an account.

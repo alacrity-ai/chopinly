@@ -64,10 +64,12 @@ export function timeline(doc, { tempo } = {}) {
   const pedaled = pedalsBy.map(() => []); // per staff: [{ from, to }] in performance ticks, adjacent pieces merged
   let perf = 0, prevBar = -2;
   let open = new Map(); // "staff:voice:midi" → the note still sounding through a tie
+  let prev = new Map(); // "staff:voice" → the notes of the line's previous onset (a slashed grace run cuts them short)
+  const GRACE = PPQ / 8; // a slashed grace is a thirty-second before the beat (docs/COMPOSE_NOTES2_DESIGN.md §6)
   let depth = new Map(); // open slurs per staff + voice: notes under a slur play legato (no air before the next note); the slur's last note breathes
   for (const { bar: b, pass } of unroll(doc)) {
     const len = capacity(timeOfBar(doc, b));
-    if (b !== prevBar + 1) { open = new Map(); depth = new Map(); } // a jump or a repeat: nothing carries across
+    if (b !== prevBar + 1) { open = new Map(); depth = new Map(); prev = new Map(); } // a jump or a repeat: nothing carries across
     if (!tempos.length || tempos[tempos.length - 1].bpm !== bpms[b]) tempos.push({ at: perf, bpm: bpms[b] });
     passes.push({ bar: b, pass, perfStart: perf, docStart: starts[b], len });
     pedalsBy.forEach((list, staff) => { for (const pd of list) { // the pedal's piece inside this bar, in performance time
@@ -83,19 +85,34 @@ export function timeline(doc, { tempo } = {}) {
         if (o.ev.kind !== "note") continue;
         for (const x of o.ev.slurs ?? []) depth.set(line, Math.max(0, (depth.get(line) ?? 0) + (x.at === "start" ? 1 : -1)));
         const legato = (depth.get(line) ?? 0) > 0;
-        const at = perf + o.start;
+        let at = perf + o.start, len = o.len;
+        const v0 = vel.get(o.ev) ?? VEL.mf;
+        // grace notes: a slashed run steals a thirty-second each from before the beat (the previous notes of the line end early); a plain run takes the first half of the principal
+        if (o.ev.graces?.length) {
+          const gs = o.ev.graces, n = gs.length;
+          if (gs[0].slash) { const total = n * GRACE; for (const pn of prev.get(line) ?? []) if (pn.at + pn.len > at - total) pn.len = Math.max(PPQ / 16, at - total - pn.at); gs.forEach((g, i) => { for (const p of g.pitches) notes.push({ at: at - total + i * GRACE, len: GRACE, midi: midiOf(p), staff, vel: v0, grace: true }); }); }
+          else { const half = Math.floor(len / 2), each = Math.floor(half / n); gs.forEach((g, i) => { for (const p of g.pitches) notes.push({ at: at + i * each, len: each, midi: midiOf(p), staff, vel: v0, grace: true }); }); at += half; len -= half; }
+        }
         // a rolled chord: its pitches enter one after another (up = low to high, down = high to low) and end together
-        const roll = o.ev.arp && o.ev.pitches.length > 1 ? Math.min(ROLL_MAX, Math.floor(o.len / (4 * o.ev.pitches.length))) : 0;
+        const roll = o.ev.arp && o.ev.pitches.length > 1 ? Math.min(ROLL_MAX, Math.floor(len / (4 * o.ev.pitches.length))) : 0;
         const order = roll ? [...o.ev.pitches].sort((p1, p2) => (o.ev.arp === "down" ? midiOf(p2) - midiOf(p1) : midiOf(p1) - midiOf(p2))) : o.ev.pitches;
+        const mine = [];
         for (const [pi, p] of order.entries()) {
           const midi = midiOf(p), k = `${line}:${midi}`, lag = roll * pi;
+          if (o.ev.trem) { // a tremolo re-strikes the pitch every PPQ / 2^n ticks; it neither joins nor opens a tie
+            const slice = Math.max(1, Math.min(len, PPQ / 2 ** o.ev.trem));
+            for (let t = at; t < at + len; t += slice) { const n = { at: t, len: Math.min(slice, at + len - t), midi, staff, vel: v0, ...(legato ? { legato: true } : {}) }; notes.push(n); mine.push(n); }
+            open.delete(k);
+            continue;
+          }
           const held = open.get(k);
           const startsTie = p.tie === "start" || p.tie === "both";
-          if (held && held.at + held.len === at) { held.len += o.len; if (!startsTie) open.delete(k); continue; }
-          const n = { at: at + lag, len: o.len - lag, midi, staff, vel: vel.get(o.ev) ?? VEL.mf, ...(legato ? { legato: true } : {}) };
-          notes.push(n);
+          if (held && held.at + held.len === at) { held.len += len; if (!startsTie) open.delete(k); continue; }
+          const n = { at: at + lag, len: len - lag, midi, staff, vel: v0, ...(legato ? { legato: true } : {}) };
+          notes.push(n); mine.push(n);
           if (startsTie) open.set(k, n); else open.delete(k);
         }
+        prev.set(line, mine);
       }
     }));
     perf += len;

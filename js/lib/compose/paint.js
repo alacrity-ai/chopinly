@@ -65,6 +65,25 @@ export function paintScore(L, p) {
     const t = b.dir === "up" ? b.t : -b.t;
     p.polygon([[b.x1, b.y1], [b.x2, b.y2], [b.x2, b.y2 + t], [b.x1, b.y1 + t]], `beam${vcls(b.voice)}`);
   }
+  // grace notes (docs/COMPOSE_NOTES2_DESIGN.md §5): small heads, stems up, a flag or a shared flat beam, a slash on a slashed run, then the small slur to the principal
+  for (const b of L.graceBeams ?? []) for (let k = 0; k < b.levels; k++) { const y = b.y + k * 0.45; p.polygon([[b.x1, y], [b.x2, y], [b.x2, y + 0.3], [b.x1, y + 0.3]], "beam cp-grace-beam"); }
+  for (const g of L.graces ?? []) {
+    p.group("cp-grace", { ev: g.ev, gi: g.gi });
+    for (const l of g.ledgers) p.line(l.x - 0.25, l.y, l.x + g.headW + 0.25, l.y, "sline");
+    p.rect(g.stemX - 0.05, g.stemTipY, 0.1, g.stemFromY - g.stemTipY, "stem");
+    if (g.flag) p.glyph(g.stemX - 0.05, g.stemTipY, flagGlyph(g.base, true), "glyph head-part", { scale: 0.6 });
+    if (g.slash && g.gi === 0) p.line(g.stemX - 0.55, g.botY - 0.85, g.stemX + 0.65, g.botY - 1.95, "cp-grace-slash");
+    for (const h of g.heads) { if (h.acc !== null && h.acc !== undefined) p.glyph(h.x - 0.85, h.y, G[h.acc], "glyph head-part", { scale: 0.6 }); p.glyph(h.x, h.y, G.black, "glyph head", { scale: 0.6 }); }
+    p.end();
+  }
+  for (const t of L.graceSlurs ?? []) {
+    const sgn = t.dir === "up" ? -1 : 1, len = Math.max(0.6, t.x2 - t.x1);
+    const x1 = t.x1 + 0.05, x2 = t.x2 - 0.05, y1 = t.y1 + 0.5 * sgn, y2 = t.y2 + 0.5 * sgn;
+    const b = Math.max(0.5, Math.min(1.1, len / 4)) * sgn, b2 = b - 0.2 * sgn, cx = Math.min(len * 0.3, 2);
+    p.path([["M", x1, y1], ["C", x1 + cx, y1 + b, x2 - cx, y2 + b, x2, y2], ["C", x2 - cx, y2 + b2, x1 + cx, y1 + b2, x1, y1], ["Z"]], "cp-grace-slur");
+  }
+  // tremolo bars: slanted parallelograms on the stem
+  for (const t of L.trems ?? []) for (const y of t.bars) p.polygon([[t.x - 0.55, y + 0.25], [t.x + 0.55, y - 0.25], [t.x + 0.55, y + 0.1], [t.x - 0.55, y + 0.6]], "cp-trem");
   // notes + rests
   for (const d of L.drawn) {
     if (!d.rest) for (const l of d.ledgers) p.line(l.x - 0.35, l.y, l.x + d.headW + 0.35, l.y, "sline");

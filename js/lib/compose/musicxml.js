@@ -4,7 +4,7 @@
 // keeping what Compose can hold and refusing, with the bar number, anything that would corrupt a
 // bar. Pure — node-testable; the .mxl container is `mxl.js`.
 import { PPQ, ticks, capacity, fromTicks, splitRest, groupSize, exprGrid } from "./ticks.js";
-import { newComposition, newMeasure, noteEvent, restEvent, barRests, timeAt, keyAt, clefAt, evTicks, voicesOf, tempoOf, validate, eid, DYNAMICS, HAIRPINS, SPAN_KINDS, FINGER_MAX, TEXT_MAX, EXPR_Y_MAX, REST_Y_MAX, MAX_VOICES, MIN_TEMPO, MAX_TEMPO, DEFAULT_BARS } from "./model.js";
+import { newComposition, newMeasure, noteEvent, restEvent, barRests, timeAt, keyAt, clefAt, evTicks, voicesOf, tempoOf, validate, eid, DYNAMICS, HAIRPINS, SPAN_KINDS, FINGER_MAX, GRACE_BASES, TREM_MAX, TEXT_MAX, EXPR_Y_MAX, REST_Y_MAX, MAX_VOICES, MIN_TEMPO, MAX_TEMPO, DEFAULT_BARS } from "./model.js";
 import { onsets, normalizeBar, cleanTies, cleanExpressions, trimBars, decompose, diatonicOf, MARKS, formMarksOf } from "./engine.js";
 import { keyAlterations, CLEFS, parsePitch } from "../music.js";
 import { parseXml, child, children, textOf, numOf, esc } from "./xml.js";
@@ -17,8 +17,8 @@ const TYPE_OF_BASE = { 0: "breve", 1: "whole", 2: "half", 4: "quarter", 8: "eigh
 const BASE_OF_TYPE = Object.fromEntries(Object.entries(TYPE_OF_BASE).map(([b, t]) => [t, Number(b)]));
 const ACC_NAME = { "-2": "flat-flat", "-1": "flat", 0: "natural", 1: "sharp", 2: "double-sharp" };
 /** Our marks → where they live in <notations> and what they are called. */
-const ART_XML = { staccato: ["articulations", "staccato"], accent: ["articulations", "accent"], tenuto: ["articulations", "tenuto"], fermata: ["fermata", null], trill: ["ornaments", "trill-mark"], mordent: ["ornaments", "inverted-mordent"], lowerMordent: ["ornaments", "mordent"], turn: ["ornaments", "turn"] };
-const ART_OF = { staccato: "staccato", staccatissimo: "staccato", accent: "accent", "strong-accent": "accent", tenuto: "tenuto", "detached-legato": "tenuto", "trill-mark": "trill", "inverted-mordent": "mordent", mordent: "lowerMordent", turn: "turn", "delayed-turn": "turn", "inverted-turn": "turn" };
+const ART_XML = { staccato: ["articulations", "staccato"], accent: ["articulations", "accent"], tenuto: ["articulations", "tenuto"], fermata: ["fermata", null], trill: ["ornaments", "trill-mark"], mordent: ["ornaments", "inverted-mordent"], lowerMordent: ["ornaments", "mordent"], turn: ["ornaments", "turn"], marcato: ["articulations", "strong-accent"], staccatissimo: ["articulations", "staccatissimo"] };
+const ART_OF = { staccato: "staccato", staccatissimo: "staccatissimo", accent: "accent", "strong-accent": "marcato", tenuto: "tenuto", "detached-legato": "tenuto", "trill-mark": "trill", "inverted-mordent": "mordent", mordent: "lowerMordent", turn: "turn", "delayed-turn": "turn", "inverted-turn": "turn" };
 /** MusicXML dynamics → ours: the six as they are, the extremes folded in, the accents to f. */
 const DYN_IN = { ...Object.fromEntries(DYNAMICS.map((d) => [d, d])), ppp: "pp", pppp: "pp", ppppp: "pp", pppppp: "pp", fff: "ff", ffff: "ff", fffff: "ff", ffffff: "ff", sf: "f", sfz: "f", fz: "f", rf: "f", rfz: "f", sffz: "f", fp: "f", sfp: "f", sfpp: "f", pf: "f" };
 const WEDGE_OF = { cresc: "crescendo", dim: "diminuendo" }, WEDGE_IN = { crescendo: "cresc", diminuendo: "dim" };
@@ -176,7 +176,9 @@ export function toMusicXml(doc, { title = doc.title, composer = doc.composer ?? 
             for (const a of ev.art ?? []) { const [where, name] = ART_XML[a] ?? []; if (!where) continue; if (where === "fermata") fermata = "<fermata/>"; else groups[where].push(`<${name}/>`); }
             if (fermata) first.push(fermata);
             if (groups.articulations.length) first.push(`<articulations>${groups.articulations.join("")}</articulations>`);
+            if (ev.trem) groups.ornaments.push(`<tremolo type="single">${ev.trem}</tremolo>`);
             if (groups.ornaments.length) first.push(`<ornaments>${groups.ornaments.join("")}</ornaments>`);
+            for (const g of ev.graces ?? []) g.pitches.forEach((p, pi) => w(`      <note><grace${g.slash ? ' slash="yes"' : ""}/>${pi ? "<chord/>" : ""}<pitch><step>${p.step}</step>${p.alter ? `<alter>${p.alter}</alter>` : ""}<octave>${p.octave}</octave></pitch><voice>${voiceNo}</voice><type>${TYPE_OF_BASE[g.base]}</type><staff>${si + 1 + (ev.cross ?? 0)}</staff></note>`)); // docs/COMPOSE_NOTES2_DESIGN.md §7
             const arp = ev.arp ? `<arpeggiate${ev.arp === "plain" ? "" : ` direction="${ev.arp}"`}/>` : "";
             ev.pitches.forEach((p, pi) => {
               const tie = `${p.tie === "stop" || p.tie === "both" ? '<tie type="stop"/>' : ""}${p.tie === "start" || p.tie === "both" ? '<tie type="start"/>' : ""}`;
@@ -251,6 +253,8 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
       const bar = bars[bi];
       if (mx.attrs.implicit === "yes") bar.implicit = true;
       let cursor = 0, last = null; // `last`: the previous note record, for <chord/>
+      const pendingGraces = new Map(); // "voice:staff" → graces waiting for the next note of that voice (docs/COMPOSE_NOTES2_DESIGN.md §7)
+      let lastGrace = null;
       const scale = (n) => (n * PPQ) / st.div;
       for (const el of mx.children) {
         if (el.name === "attributes") {
@@ -266,7 +270,17 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
             if (cursor <= 0) bar.clefs[si] = name; else bar.clefChanges.push({ staff: si, at: Math.round(cursor), clef: name });
           }
         } else if (el.name === "note") {
-          if (child(el, "grace")) { warnings.add("grace notes skipped"); continue; }
+          if (child(el, "grace")) {
+            const gp = child(el, "pitch"), gsi = ourStaff(part, numOf(el, "staff", 1)), gbase = BASE_OF_TYPE[textOf(el, "type", "eighth")];
+            if (!gp || gsi < 0 || !GRACE_BASES.includes(gbase) || child(el, "unpitched")) { warnings.add("some grace notes were skipped"); continue; }
+            const pitch = { step: textOf(gp, "step"), alter: numOf(gp, "alter", 0), octave: numOf(gp, "octave", 4) };
+            if (!/^[A-G]$/.test(pitch.step) || !Number.isInteger(pitch.alter) || Math.abs(pitch.alter) > 2 || !Number.isInteger(pitch.octave)) { warnings.add("some grace notes were skipped"); continue; }
+            if (child(el, "chord") && lastGrace) { lastGrace.pitches.push(pitch); continue; }
+            const key = `${numOf(el, "voice", 1)}:${gsi}`, g = { base: gbase, pitches: [pitch], ...(child(el, "grace").attrs.slash === "yes" ? { slash: true } : {}) };
+            pendingGraces.set(key, [...(pendingGraces.get(key) ?? []), g]); lastGrace = g;
+            continue;
+          }
+          lastGrace = null;
           const durX = numOf(el, "duration"); if (durX === null) refuse(`bar ${bi + 1}: a note without a duration`);
           const dur = scale(durX);
           const chord = !!child(el, "chord"), restEl = child(el, "rest");
@@ -282,7 +296,8 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
           if (chord && last && pitch) { last.pitches.push(pitch); if (children(not, "arpeggiate").length && !last.arp) last.arp = children(not, "arpeggiate")[0].attrs.direction ?? "plain"; continue; }
           if (!pitch && !restEl) { if (!chord) cursor += dur; continue; }
           const voiceNo = numOf(el, "voice", 1);
-          const rec = { part, voiceNo, si, onset: cursor, dur, kind: pitch ? "note" : "rest", pitches: pitch ? [pitch] : null, type: textOf(el, "type", ""), dots: children(el, "dot").length, tm: null, tStart: false, tStop: false, slurs: [], gliss: false, art: [], arp: null, hidden: el.attrs["print-object"] === "no", display: null, wholeBar: restEl?.attrs.measure === "yes" };
+          const rec = { part, voiceNo, si, onset: cursor, dur, kind: pitch ? "note" : "rest", pitches: pitch ? [pitch] : null, type: textOf(el, "type", ""), dots: children(el, "dot").length, tm: null, tStart: false, tStop: false, slurs: [], gliss: false, art: [], arp: null, trem: null, graces: null, hidden: el.attrs["print-object"] === "no", display: null, wholeBar: restEl?.attrs.measure === "yes" };
+          if (pitch) { const gk = `${voiceNo}:${si}`; if (pendingGraces.has(gk)) { rec.graces = pendingGraces.get(gk); pendingGraces.delete(gk); } }
           const tm = child(el, "time-modification"); if (tm) rec.tm = { n: numOf(tm, "actual-notes", 1), in: numOf(tm, "normal-notes", 1) };
           if (restEl && child(restEl, "display-step")) rec.display = { step: textOf(restEl, "display-step"), octave: numOf(restEl, "display-octave", 4) };
           for (const t of children(not, "tuplet")) { if (t.attrs.type === "start") rec.tStart = true; if (t.attrs.type === "stop") rec.tStop = true; }
@@ -292,7 +307,10 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
             else if (s.attrs.type === "stop" && slurOpen.has(n)) { rec.slurs.push({ id: slurOpen.get(n), at: "stop" }); slurOpen.delete(n); }
           }
           for (const g of [...children(not, "glissando"), ...children(not, "slide")]) if (g.attrs.type === "start") rec.gliss = true;
-          for (const grp of ["articulations", "ornaments"]) for (const a of child(not, grp)?.children ?? []) { const m = ART_OF[a.name]; if (m && !rec.art.includes(m)) rec.art.push(m); }
+          for (const grp of ["articulations", "ornaments"]) for (const a of child(not, grp)?.children ?? []) {
+            if (a.name === "tremolo") { const n = parseInt(a.text, 10); if ((a.attrs.type ?? "single") === "single" && n >= 1 && n <= TREM_MAX) rec.trem = n; else warnings.add("a two-note tremolo was skipped"); continue; }
+            const m = ART_OF[a.name]; if (m && !rec.art.includes(m)) rec.art.push(m);
+          }
           if (children(not, "fermata").length) rec.art.push("fermata");
           const arp = children(not, "arpeggiate")[0]; if (arp) rec.arp = arp.attrs.direction === "up" || arp.attrs.direction === "down" ? arp.attrs.direction : "plain";
           bar.notes.push(rec);
@@ -340,6 +358,7 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
         else if (el.name === "harmony" || el.name === "figured-bass") warnings.add("chord symbols ignored");
         bar.len = Math.max(bar.len, cursor);
       }
+      if (pendingGraces.size) warnings.add("a grace note with no note after it was dropped");
     });
   }
   // pass 2: each voice's home staff per bar, and a stable voice index per staff across the piece
@@ -484,7 +503,7 @@ function buildVoice(grp, si, vi, nV, bi, time, shift, doc0, refuse) {
     durs.forEach((d, k) => {
       const ev = r.kind === "rest" ? restEvent(d) : noteEvent(d, r.pitches.map((p) => { const q = { step: p.step, alter: p.alter, octave: p.octave }; if (p.tie === "start" || p.tie === "both") { if (k === durs.length - 1) q.tie = p.tie; else q.tie = k === 0 && p.tie === "both" ? "both" : "start"; } else if (p.tie === "stop" && k === 0) q.tie = "stop"; if (k < durs.length - 1) q.tie = q.tie === "stop" || q.tie === "both" ? "both" : "start"; if (p.accShown && k === 0) q.accShown = true; if (p.finger) q.finger = p.finger; return q; }).sort((a, b) => diatonicOf(a) - diatonicOf(b)));
       if (r.kind === "note") {
-        if (k === 0) { if (r.art.length) ev.art = r.art.filter((a) => MARKS.includes(a)); if (r.arp) ev.arp = r.arp; if (r.slurs.some((s) => s.at === "start")) ev.slurs = r.slurs.filter((s) => s.at === "start"); }
+        if (k === 0) { if (r.art.length) ev.art = r.art.filter((a) => MARKS.includes(a)); if (r.arp) ev.arp = r.arp; if (r.trem) ev.trem = r.trem; if (r.graces?.length) ev.graces = r.graces; if (r.slurs.some((s) => s.at === "start")) ev.slurs = r.slurs.filter((s) => s.at === "start"); }
         if (k === durs.length - 1) { if (r.gliss) ev.gliss = "start"; if (r.slurs.some((s) => s.at === "stop")) ev.slurs = [...(ev.slurs ?? []), ...r.slurs.filter((s) => s.at === "stop")]; }
         if (r.si !== si) ev.cross = r.si - si;
       } else {

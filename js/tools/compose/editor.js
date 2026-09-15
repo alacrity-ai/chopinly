@@ -10,11 +10,11 @@ import { haptic } from "../logbook/motion.js";
 import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt, lasso, spans as spansOfLayout, isHandle } from "../../lib/compose/hit.js";
-import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, addPedal, addOttava, finger, moveExpressions, moveSpanEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, setPitch, retype, toRests, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, addPedal, addOttava, finger, graceAt, toggleGrace, tremolo, pitchFromStep, moveExpressions, moveSpanEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { createPlayer } from "../../lib/compose/play.js";
-import { clefAt, timeAt, tempoOf, usedVoices, MAX_VOICES, MIN_TEMPO, MAX_TEMPO } from "../../lib/compose/model.js";
+import { clefAt, keyAt, timeAt, tempoOf, usedVoices, MAX_VOICES, MIN_TEMPO, MAX_TEMPO, GRACE_BASES } from "../../lib/compose/model.js";
 import { ticks as ticksOf, capacity, groupSize, exprGrid, WHOLE } from "../../lib/compose/ticks.js";
 import { CLEFS } from "../../lib/music.js";
 import { buildRails, MAIN_BASES, MORE_BASES, KEYS, RAILS, DEFAULT_RAILS, JUMP_LABEL, durName, tupletName } from "./rails.js";
@@ -195,6 +195,7 @@ export function openEditor({ id, ctx, onClose }) {
     const slot = slotAt(L, x, y);
     if (!slot) return null;
     if (pending.kind === "finger") return { bar: slot.bar, x, y };
+    if (pending.kind === "grace") return { bar: slot.bar, staff: slot.staff, ticks: slot.ticks, step: slot.step };
     if (isExprPending()) { const s = exprSlot(doc, slot.bar, slot.ticks); return { bar: s.bar, at: s.at, staff: pending.start ? pending.start.staff : slot.staff }; }
     if (pending.kind !== "clef") return { bar: slot.bar };
     const time = timeAt(doc, slot.bar), beat = groupSize(time), cap = capacity(time);
@@ -203,6 +204,7 @@ export function openEditor({ id, ctx, onClose }) {
     return { bar, staff: slot.staff, at };
   }
   const isExprPending = () => pending && (pending.kind === "dyn" || pending.kind === "text" || SPAN_PENDING.has(pending.kind));
+  const graceBase = () => (GRACE_BASES.includes(armed.base) ? armed.base : 8); // the palette's value is the grace's; a longer one reads as an eighth
   const absOf = (bar, at) => barStarts(doc).starts[bar] + at;
   /** "beat 2" / "the & of 2" of a bar, for toasts. */
   const slotName = (bar, at) => { const beat = WHOLE / timeAt(doc, bar).unit, n = Math.floor(at / beat) + 1; return `${at % beat ? `the & of ${n}` : `beat ${n}`} of bar ${bar + 1}`; };
@@ -222,6 +224,13 @@ export function openEditor({ id, ctx, onClose }) {
       return R.showGhost({ hairpin: pending.value, x1: sx, x2: Math.max(sx + 0.5, x2), y: L.exprLine(ssi, s.staff, sAbs, Math.max(sAbs + 1, abs)) });
     }
     if (pending.kind === "finger") { R.showGhost(null); return R.showTarget(null); } // the head under the pen is the target; nothing to preview
+    if (pending.kind === "grace") { // a small ghost head at the tapped step, left of the note it would grace
+      R.showTarget(null);
+      const g = graceAt(doc, { bar: t.bar, staff: t.staff, ticks: t.ticks, voice }), hb = g && barAt(L, g.bar);
+      if (!hb) return R.showGhost(null);
+      const d = L.drawn.find((x) => x.id === g.ev.id), n = g.ev.graces?.length ?? 0;
+      return R.showGhost({ x: (d ? Math.min(d.accLeft, ...d.heads.map((h) => h.x)) : xOfTicks(hb.bar, g.start)) - 1.5 - 0.3, y: stepY(hb.sys, t.staff, t.step), base: graceBase(), stemUp: true, onLine: t.step % 2 === 0, small: true, ledgers: [] });
+    }
     if (pending.kind !== "clef") { const hb = barAt(L, t.bar); R.showGhost(null); return R.showTarget(hb ? { hbar: hb.bar, sys: hb.sys } : null); }
     R.showTarget(null);
     const hb = barAt(L, t.bar);
@@ -255,6 +264,14 @@ export function openEditor({ id, ctx, onClose }) {
         const args = { staff: p.start.staff, bar: p.start.bar, at: p.start.at, end: { bar: t.bar, at: t.at } };
         commit(p.kind === "pedal" ? addPedal(doc, args).doc : addOttava(doc, { ...args, dir: p.value }).doc);
         toast(`${p.kind === "pedal" ? "pedal" : LINE_NAME[p.value]} from ${slotName(p.start.bar, p.start.at)} to ${slotName(t.bar, t.at)}`);
+      } else if (p.kind === "grace") { // the extended Notes rail (WSHED-126): stays on; the tap names the pitch and the next note of the voice takes the grace (the same pitch again removes it)
+        const g = graceAt(doc, { bar: t.bar, staff: t.staff, ticks: t.ticks, voice });
+        if (!g) { toast("no note to grace"); return; }
+        const pitch = pitchFromStep(t.step, clefAt(doc, g.bar, t.staff, g.start), keyAt(doc, g.bar));
+        const r = toggleGrace(doc, g.ev.id, { pitch, base: graceBase(), slash: !!p.value.slash });
+        commit(r.doc); haptic(6);
+        if (r.added) { sound.play([pitch], 140); toast(`grace note before ${slotName(g.bar, g.start)}`); } else toast("grace note removed");
+        return;
       } else if (p.kind === "finger") { // stays armed: every tap on a head stamps it (the same digit there again clears it)
         const th = thingAt(L, t.x, t.y);
         if (!th || th.type !== "head") { toast("tap a notehead"); return; }
@@ -728,6 +745,18 @@ export function openEditor({ id, ctx, onClose }) {
       case "ottava": {
         if (pending?.kind === "ottava" && pending.value === arg) { setPending(null); return; }
         setPending({ kind: "ottava", value: arg, start: null }); toast(`${LINE_NAME[arg]} — tap the first note it covers, then the last`);
+        return;
+      }
+      case "grace": { // the extended Notes rail (WSHED-126): a toggle — on, a tap places a grace note; arg picks slashed (true) / plain (false) from the hold menu
+        if (arg === undefined && pending?.kind === "grace") { setPending(null); return; }
+        const slash = arg === undefined ? (pending?.value?.slash ?? true) : !!arg;
+        setPending({ kind: "grace", value: { slash } }); toast(`${slash ? "slashed" : "plain"} grace notes — tap before the note, the ${durName(graceBase())} value`);
+        return;
+      }
+      case "trem": {
+        if (!selection.size) { toast("select the notes for the tremolo"); return; }
+        try { const next = tremolo(doc, selEvIds(), Number(arg)); if (next === doc) return; commit(next); toast(selEvIds().every((id) => find(next, id).ev.trem === Number(arg)) ? `tremolo, ${arg} ${Number(arg) === 1 ? "stroke" : "strokes"}` : "tremolo cleared"); haptic(8); }
+        catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
         return;
       }
       case "finger": { // with heads selected: stamps them (the same digit on all → cleared); else arms the digit for taps on heads

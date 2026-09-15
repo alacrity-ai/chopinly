@@ -2163,6 +2163,12 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-form .cp-rehearsal-pic { font: 700 1rem var(--sans); border: 1.5px solid currentColor; border-radius: 0.2rem; padding: 0.05rem 0.35rem; }
 .cp-form .cp-tempo-mark-btn { padding: 0 0.6rem 0 0.35rem; gap: 0.2rem; }
 .cp-form .cp-jump-row i, .cp-form #cp-jump-val { font-style: italic; }
+/* the extended Notes rail (WSHED-126) */
+.cp-notes2 .cp-sep { margin: 0 0.15rem; }
+.cp-notes2 .cp-glyph-grace { font-size: 2.3rem; }
+.cp-notes2 .cp-glyph-trem { font-size: 1.9rem; }
+.cp-notes2 .cp-art-btn .cp-glyph { font-size: 2.1rem; }
+.cp-notes2 .cp-trem-btn { padding: 0 0.5rem 0 0.6rem; gap: 0.15rem; }
 /* the Piano rail (WSHED-125) */
 .cp-piano .cp-sep { margin: 0 0.15rem; }
 .cp-piano .cp-glyph-pedal { font-size: 1.5rem; }
@@ -2262,6 +2268,9 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-svg .cp-expr.sel .cp-pedal-line, .cp-svg .cp-expr.sel .cp-ottava-line { stroke: var(--hi); }
 .cp-svg .cp-expr.sel .cp-pedal-sign, .cp-svg .cp-expr.sel .cp-ottava-sign { fill: var(--hi); }
 .cp-overlay .cp-ghost-sign { fill: var(--fg); opacity: 0.42; }
+/* the extended Notes rail (WSHED-126): grace notes, their slur, tremolo bars */
+.cp-svg .cp-grace .head, .cp-svg .cp-grace .head-part, .cp-svg .cp-grace .stem, .cp-svg .cp-grace-beam, .cp-svg .cp-grace-slur, .cp-svg .cp-trem { fill: var(--fg); }
+.cp-svg .cp-grace-slash { stroke: var(--fg); stroke-width: 1.3; stroke-linecap: round; }
 .cp-overlay .cp-pedal-line { fill: none; stroke: var(--fg); stroke-width: 1.3; stroke-linecap: round; opacity: 0.42; }
 .cp-overlay .cp-ottava-line { fill: none; stroke: var(--fg); stroke-width: 1.2; stroke-dasharray: 4 3; opacity: 0.42; }
 .cp-handle { fill: var(--bg); stroke: var(--hi); stroke-width: 1.6; }

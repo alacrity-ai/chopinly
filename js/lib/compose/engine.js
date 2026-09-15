@@ -2,8 +2,8 @@
 // clones the document, changes it, re-normalises the touched bar and returns
 // the new document; a refused edit throws Nudge(sentence) and the document is
 // untouched. Pure — node-testable.
-import { groupSize, ticks, capacity, splitRest, fromTicks, exprGrid } from "./ticks.js";
-import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, tempoOf, MAX_VOICES, REST_Y_MAX, EXPR_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, HAIRPINS, SPAN_KINDS, FINGER_MAX, TEXT_MAX, BARLINE_ENDS, JUMPS, FORM_KINDS, TEMPO_TEXT_MAX, ENDING_MAX, MIN_TEMPO, MAX_TEMPO, eid } from "./model.js";
+import { groupSize, ticks, capacity, splitRest, fromTicks, exprGrid, PPQ } from "./ticks.js";
+import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, tempoOf, MAX_VOICES, REST_Y_MAX, EXPR_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, HAIRPINS, SPAN_KINDS, FINGER_MAX, GRACE_BASES, TREM_MAX, TEXT_MAX, BARLINE_ENDS, JUMPS, FORM_KINDS, TEMPO_TEXT_MAX, ENDING_MAX, MIN_TEMPO, MAX_TEMPO, eid } from "./model.js";
 import { parsePitch, keyAlterations, CLEFS } from "../music.js";
 
 export class Nudge extends Error { constructor(msg, { bar = null } = {}) { super(msg); this.name = "Nudge"; this.bar = bar; } }
@@ -88,6 +88,7 @@ export function setPitch(doc, items, delta) {
       const np = pitchFromStep(step, clef, key);
       p.step = np.step; p.alter = np.alter; p.octave = np.octave; delete p.acc;
     }
+    if (f.ev.graces && targets.length === f.ev.pitches.length) for (const g of f.ev.graces) for (const gp of g.pitches) { const st = stepOf(gp, clef) + delta; if (st < STEP_MIN || st > STEP_MAX) throw new Nudge("off the staff", { bar: f.bar }); const np = pitchFromStep(st, clef, key); gp.step = np.step; gp.alter = np.alter; gp.octave = np.octave; } // a whole note moved takes its grace notes along
     const seen = new Set();
     for (const q of f.ev.pitches) { const k = q.step + q.octave; if (seen.has(k)) throw new Nudge("that note is already in the chord", { bar: f.bar }); seen.add(k); }
     f.ev.pitches.sort((a, b) => diatonicOf(a) - diatonicOf(b));
@@ -719,7 +720,7 @@ export function paste(doc, clip, { bar, ticks: t, staff = 0, voice = 0 }) {
 // --- key / time / clef anywhere; articulations; glissando (docs/COMPOSE_DESIGN.md §7.1, P2) ---
 
 /** The marks a note can carry. `mordent` is the plain one (SMuFL ornamentShortTrill); `lowerMordent` has the line through it (ornamentMordent). */
-export const MARKS = ["staccato", "accent", "tenuto", "fermata", "trill", "mordent", "lowerMordent", "turn"];
+export const MARKS = ["staccato", "accent", "tenuto", "fermata", "trill", "mordent", "lowerMordent", "turn", "marcato", "staccatissimo"]; // marcato and staccatissimo since v97 (WSHED-126)
 export const TIME_UNITS = [1, 2, 4, 8, 16, 32];
 
 /** A key change at a bar (fifths −7 … 7); the key already in force there removes the change instead. */
@@ -1265,6 +1266,57 @@ export function hideRest(doc, evIds) {
 
 // --- form (docs/COMPOSE_FORM_DESIGN.md §2): barlines, endings, signs, jumps, rehearsal letters, tempo marks ---
 /** A bar's barlines: `start` "repeat" | null, `end` "double" | "final" | "repeat" | null; an absent key keeps what is there. */
+// --- the extended Notes rail (docs/COMPOSE_NOTES2_DESIGN.md §2): grace notes on the note they precede, tremolo, the two marks via `articulate` ---
+/** The note of a voice at or after a tick of a bar on a staff (into later bars), as { ev, bar, start }, or null. The voice falls back to voice 1 where it is absent. */
+export function graceAt(doc, { bar, staff, ticks: t, voice: vi = 0 }) {
+  for (let b = bar; b < doc.measures.length; b++) {
+    const st = doc.measures[b].staves[staff], v = st.voices[vi] ?? st.voices[0];
+    if (!v) continue;
+    for (const o of onsets(v)) if (o.ev.kind === "note" && (b > bar || o.start >= t - GRACE_TOL)) return { ev: o.ev, bar: b, start: o.start }; // a tap a hair past a note's onset still means that note
+  }
+  return null;
+}
+const GRACE_TOL = PPQ / 4;
+const samePitchName = (a, b) => a.step === b.step && a.octave === b.octave && (a.alter ?? 0) === (b.alter ?? 0);
+/**
+ * Toggle a grace note on a note → { doc, added }: a grace of that pitch already there goes (the whole grace when it
+ * was its only pitch), else one is appended — `base` 8 / 16 / 32, `slash` for an acciaccatura.
+ */
+export function toggleGrace(doc, evId, { pitch, base = 8, slash = true }) {
+  if (!GRACE_BASES.includes(base)) throw new Nudge("a grace note is an eighth, a sixteenth or a thirty-second");
+  const f = find(doc, evId);
+  if (!f || f.ev.kind !== "note") throw new Nudge("a grace note goes before a note");
+  const d = clone(doc), ev = d.measures[f.bar].staves[f.staff].voices[f.voice][f.index];
+  const had = (ev.graces ?? []).findIndex((g) => g.pitches.some((p) => samePitchName(p, pitch)));
+  if (had >= 0) {
+    const g = ev.graces[had], rest = g.pitches.filter((p) => !samePitchName(p, pitch));
+    ev.graces = rest.length ? ev.graces.map((x, i) => (i === had ? { ...x, pitches: rest } : x)) : ev.graces.filter((_, i) => i !== had);
+    if (!ev.graces.length) delete ev.graces;
+    return { doc: d, added: false };
+  }
+  const p = { step: pitch.step, octave: pitch.octave, alter: pitch.alter ?? 0 };
+  ev.graces = [...(ev.graces ?? []), { base, pitches: [p], ...(slash ? { slash: true } : {}) }];
+  return { doc: d, added: true };
+}
+/** Drop every grace note of the named notes; nothing to drop → the same document. */
+export function removeGraces(doc, evIds) {
+  const fs = [...new Set(evIds)].map((id) => find(doc, id)).filter((f) => f && f.ev.graces);
+  if (!fs.length) return doc;
+  const d = clone(doc);
+  for (const f of fs) delete d.measures[f.bar].staves[f.staff].voices[f.voice][f.index].graces;
+  return d;
+}
+/** Tremolo: `n` strokes (1–3) on the named notes; the same `n` on every one of them, or `null`, clears. */
+export function tremolo(doc, evIds, n) {
+  if (n !== null && !(Number.isInteger(n) && n >= 1 && n <= TREM_MAX)) throw new Nudge(`a tremolo has 1 to ${TREM_MAX} strokes`);
+  const fs = [...new Set(evIds)].map((id) => find(doc, id)).filter((f) => f && f.ev.kind === "note");
+  if (!fs.length) throw new Nudge("pick notes for the tremolo");
+  const want = n !== null && fs.every((f) => f.ev.trem === n) ? null : n;
+  if (fs.every((f) => (f.ev.trem ?? null) === want)) return doc;
+  const d = clone(doc);
+  for (const f of fs) { const ev = d.measures[f.bar].staves[f.staff].voices[f.voice][f.index]; if (want === null) delete ev.trem; else ev.trem = want; }
+  return d;
+}
 /**
  * Fingering (docs/COMPOSE_PIANO_DESIGN.md §2): stamp digit `n` (1–5) on the named heads — `{ ev, pi }`
  * a head, `{ ev }` every pitch of the note; `null` clears. When every named head already carries `n`

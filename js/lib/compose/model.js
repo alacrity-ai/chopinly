@@ -7,6 +7,8 @@ export const DYNAMICS = ["pp", "p", "mp", "mf", "f", "ff"];
 export const HAIRPINS = ["cresc", "dim"];
 export const SPAN_KINDS = ["hairpin", "pedal", "ottava"]; // expressions with an end (docs/COMPOSE_PIANO_DESIGN.md §1): one kind on one staff never overlaps itself
 export const FINGER_MAX = 5;
+export const GRACE_BASES = [8, 16, 32]; // a grace note's value (docs/COMPOSE_NOTES2_DESIGN.md §1)
+export const TREM_MAX = 3;
 export const TEXT_MAX = 40;
 export const MAX_VOICES = 4;
 /** How far a rest may be dragged from its automatic place, in staff steps (`ev.restY`). */
@@ -166,6 +168,11 @@ export function validate(doc) {
         ids.add(ev.id);
         if (ev.kind === "note" && !(ev.pitches?.length > 0)) throw new Error(`note ${ev.id} without pitches`);
         if (ev.kind === "note") for (const p of ev.pitches) if (p.finger !== undefined && !(Number.isInteger(p.finger) && p.finger >= 1 && p.finger <= FINGER_MAX)) throw new Error(`${ev.id}: a finger is 1–${FINGER_MAX}`);
+        if (ev.graces !== undefined) { // docs/COMPOSE_NOTES2_DESIGN.md §1: grace notes ride the note they precede
+          if (ev.kind !== "note" || !Array.isArray(ev.graces) || !ev.graces.length) throw new Error(`${ev.id}: graces belong on a note, at least one`);
+          for (const g of ev.graces) if (!GRACE_BASES.includes(g.base) || !(g.pitches?.length > 0) || g.pitches.some((p) => !/^[A-G]$/.test(p.step) || !Number.isInteger(p.octave) || !Number.isInteger(p.alter ?? 0) || Math.abs(p.alter ?? 0) > 2)) throw new Error(`${ev.id}: a grace note needs a value of 8, 16 or 32 and pitches`);
+        }
+        if (ev.trem !== undefined && (ev.kind !== "note" || !Number.isInteger(ev.trem) || ev.trem < 1 || ev.trem > TREM_MAX)) throw new Error(`${ev.id}: a tremolo is 1–${TREM_MAX} strokes on a note`);
         if (ev.kind === "rest" && ev.pitches) throw new Error(`rest ${ev.id} with pitches`);
         if (ev.hidden && ev.kind !== "rest") throw new Error(`note ${ev.id} marked hidden`);
         if (v3 && (ev.dyn !== undefined || ev.hairpin !== undefined || ev.text !== undefined)) throw new Error(`${ev.id}: a v3 document keeps its marks in expressions`);

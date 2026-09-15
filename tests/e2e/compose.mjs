@@ -414,7 +414,7 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   if ((await page.locator("#cp-file-more .cp-menu-row:disabled").count()) !== 1 || (await page.locator("#cp-file-more .cp-menu-row:not(:disabled)").count()) !== 3) throw new Error("file menu: two PDF rows and MusicXML live, MIDI a placeholder");
   await page.click("[data-pop=cp-file-more]");
   await page.click("[data-pop=cp-rails-more]");
-  if ((await page.locator("#cp-rails-more .cp-rail-row").count()) !== 7) throw new Error("rail rows"); // controls · transport · notes · utility · expression · form · piano
+  if ((await page.locator("#cp-rails-more .cp-rail-row").count()) !== 8) throw new Error("rail rows"); // controls · transport · notes · utility · expression · form · piano · notes2
   await page.click(".cp-rail-row[data-rail=transport]");
   if (!(await page.locator(".cp-transport").isHidden()) || (await page.locator("#cp-rails-more").isHidden())) throw new Error("transport should hide and the menu stay open");
   await page.click(".cp-rail-row[data-rail=transport]");
@@ -1015,6 +1015,67 @@ await step("piano rail (WSHED-125, via Rails ▾): a pedal by three taps draws P
   await page.goto(`${BASE}/?app=1&t=9#/compose/${cid}`);
   await page.waitForSelector(".cp-editor .cp-svg");
   await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
+});
+
+await step("extended Notes rail (WSHED-126, via Rails ▾): Grace on, a tap before a note adds a small slashed grace (the palette's value), the same tap removes it; Trem ▾ 2 on a selected note draws two bars; marcato on the selection; export → import keeps all three", async () => {
+  await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
+  if ((await state()).mode !== "place") await page.keyboard.press("v");
+  await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
+  await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=notes2]"); await page.click("[data-pop=cp-rails-more]");
+  if (await page.locator("#cp-notes2").isHidden()) throw new Error("the Notes + rail did not open");
+  const b = await page.evaluate(() => { const d = document.querySelector(".cp-editor").__editor.state.doc; return d.measures.findIndex((m) => m.staves[0].voices[0].some((e) => e.kind === "note" && !e.dur.tuplet)); });
+  const noteAt0 = () => page.evaluate((b) => { const d = document.querySelector(".cp-editor").__editor.state.doc; const v = d.measures[b].staves[0].voices[0]; let t = 0; for (const e of v) { if (t === 0 && e.kind === "note") return { id: e.id, graces: e.graces ?? null, trem: e.trem ?? null, art: e.art ?? null }; t += 1; } return null; }, b);
+  const before = await noteAt0();
+  if (!before) throw new Error("no note on beat 1 of bar " + (b + 1));
+  // Grace on: the button lights; a tap on the bar's start at a high step adds a grace to the beat-1 note with the armed (eighth) value
+  await page.click(".cp-dur[data-base='8']");
+  await page.click(".cp-grace-btn");
+  if ((await state()).pending?.kind !== "grace" || (await page.getAttribute(".cp-grace-btn", "aria-pressed")) !== "true") throw new Error("grace did not arm: " + JSON.stringify((await state()).pending));
+  await tapAt({ bar: b, staff: 0, ticks: 0, step: 9 });
+  let now = await noteAt0();
+  if (!now.graces || now.graces.length !== 1 || now.graces[0].base !== 8 || !now.graces[0].slash) throw new Error("grace not added: " + JSON.stringify(now));
+  if ((await page.locator(".cp-svg .cp-grace").count()) !== 1 || (await page.locator(".cp-svg .cp-grace-slur").count()) !== 1) throw new Error("grace not drawn");
+  if ((await state()).pending?.kind !== "grace") throw new Error("grace did not stay on");
+  await tapAt({ bar: b, staff: 0, ticks: 0, step: 9 });
+  now = await noteAt0();
+  if (now.graces) throw new Error("the same tap did not remove the grace: " + JSON.stringify(now));
+  await tapAt({ bar: b, staff: 0, ticks: 0, step: 9 }); // back on for the round trip
+  await page.keyboard.press("Escape");
+  if ((await state()).pending) throw new Error("Escape did not turn grace off");
+  // tremolo and marcato on a selection
+  const head = await page.evaluate((id) => { const ed = document.querySelector(".cp-editor").__editor, d = ed.layout.drawn.find((x) => x.id === id), r = document.querySelector(".cp-svg").getBoundingClientRect(); return { x: r.left + (d.x + d.headW / 2) * ed.layout.S, y: r.top + d.heads[0].y * ed.layout.S }; }, before.id);
+  await page.mouse.click(head.x, head.y);
+  if (!(await state()).selection.length) throw new Error("head not selected");
+  await page.click("[data-pop=cp-trem-more]"); await page.click(".cp-trem-row[data-n='2']");
+  now = await noteAt0();
+  if (now.trem !== 2 || (await page.locator(".cp-svg .cp-trem").count()) !== 2) throw new Error("tremolo: " + JSON.stringify(now) + " bars " + (await page.locator(".cp-svg .cp-trem").count()));
+  await page.click(".cp-notes2 .cp-art-btn[data-mark=marcato]");
+  now = await noteAt0();
+  if (!now.art?.includes("marcato")) throw new Error("marcato: " + JSON.stringify(now));
+  await page.keyboard.press("Escape");
+  await page.screenshot({ path: `${S}/cp-24-notes2.png` });
+  // MusicXML keeps the three
+  const want = JSON.stringify(await noteAt0());
+  await page.click("[data-pop=cp-file-more]");
+  const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 20000 }), page.click("#cp-file-more [data-act=export-xml]")]);
+  const xml = readFileSync(await dl.path(), "utf8");
+  if (!/<grace slash="yes"\/>/.test(xml) || !/<tremolo type="single">2<\/tremolo>/.test(xml) || !/<strong-accent\/>/.test(xml)) throw new Error("grace / tremolo / marcato missing from the MusicXML");
+  const cid = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.id);
+  await page.click("[data-act=back]");
+  await page.waitForSelector("#cp-import-file", { state: "attached" });
+  await page.setInputFiles("#cp-import-file", await dl.path());
+  await page.waitForFunction(() => document.querySelector(".lb-toast.show")?.textContent.includes("imported"), null, { timeout: 10000 });
+  await page.waitForSelector(".cp-editor .cp-svg");
+  const got = await noteAt0();
+  const canon = (a) => JSON.stringify({ graces: a.graces?.map((g) => ({ base: g.base, slash: !!g.slash, pitches: g.pitches.map((p) => `${p.step}${p.alter ?? 0}${p.octave}`) })), trem: a.trem, art: a.art });
+  const same = (a, c) => canon(a) === canon(c);
+  if (!same(JSON.parse(want), got)) throw new Error(`imported ${JSON.stringify(got)} ≠ ${want}`);
+  const imp = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.id);
+  await page.evaluate(async (id) => { const { logbook } = await import("/js/lib/logbook.js"); document.querySelector(".cp-editor").__editor.close({ silent: true }); logbook.removeComposition(id); }, imp);
+  await page.goto(`${BASE}/?app=1&t=9#/compose/${cid}`);
+  await page.waitForSelector(".cp-editor .cp-svg");
+  await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
+  await page.click(".cp-dur[data-base='4']");
 });
 
 await step("MusicXML: File ▾ → Export MusicXML downloads a part-wise 4.0 file; import on the list (plain and .mxl) makes new compositions with the same bars; the file menu's Share… path hands over the file", async () => {

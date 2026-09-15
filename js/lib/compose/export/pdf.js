@@ -20,7 +20,7 @@ const TITLE_PT = 20, COMPOSER_PT = 12, RUN_PT = 9;
 const HEADER_PT = 66, RUN_HEAD_PT = 22; // the room the title block / running head take at the top
 const AIR = 3;                          // S of air above a page's first staff (slurs, marks, the 8va of a high note)
 // paper line weights in S (Bravura's engraving defaults are of this order; the screen uses fixed CSS px)
-const W = { sline: 0.1, "cp-tuplet-line": 0.12, "cp-gliss-line": 0.13, "cp-hairpin": 0.12, "cp-pedal-line": 0.12, "cp-ottava-line": 0.11, "cp-pedal-ghost": 0.12 };
+const W = { sline: 0.1, "cp-tuplet-line": 0.12, "cp-gliss-line": 0.13, "cp-hairpin": 0.12, "cp-pedal-line": 0.12, "cp-ottava-line": 0.11, "cp-grace-slash": 0.12 };
 
 /** Normalise the sheet's choices. */
 export function exportOptions(opts = {}) {
