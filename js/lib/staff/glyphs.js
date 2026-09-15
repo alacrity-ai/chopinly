@@ -29,6 +29,9 @@ export const G = {
   // the Piano rail (WSHED-125): the pedal sign, the octave signs, the fingering digits
   pedal: cp(0xe650), ottavaAlta: cp(0xe512), ottavaBassa: cp(0xe51c),
   finger1: cp(0xed11), finger2: cp(0xed12), finger3: cp(0xed13), finger4: cp(0xed14), finger5: cp(0xed15),
+  // the extended Notes rail (WSHED-126): marcato, staccatissimo, the grace picture, the tremolo pictures
+  marcatoAbove: cp(0xe4ac), marcatoBelow: cp(0xe4ad), staccatissimoAbove: cp(0xe4a6), staccatissimoBelow: cp(0xe4a7),
+  graceSlash: cp(0xe560), trem1: cp(0xe220), trem2: cp(0xe221), trem3: cp(0xe222),
   // palette pictures (SMuFL "metronome" notes: head + stem + flags in one glyph)
   metDblWhole: cp(0xeca0), metWhole: cp(0xeca2), metHalf: cp(0xeca3), metQuarter: cp(0xeca5),
   met8th: cp(0xeca7), met16th: cp(0xeca9), met32nd: cp(0xecab), met64th: cp(0xecad),
@@ -45,7 +48,7 @@ export const flagGlyph = (base, up) => ({ 8: up ? G.flagUp : G.flagDown, 16: up 
 /** Palette picture for a base. */
 export const metGlyph = (base) => ({ 0: G.metDblWhole, 1: G.metWhole, 2: G.metHalf, 4: G.metQuarter, 8: G.met8th, 16: G.met16th, 32: G.met32nd, 64: G.met64th })[base];
 /** Articulation glyph for a mark on the given side. */
-export const artGlyph = (mark, above) => ({ staccato: above ? G.staccatoAbove : G.staccatoBelow, accent: above ? G.accentAbove : G.accentBelow, tenuto: above ? G.tenutoAbove : G.tenutoBelow, fermata: above ? G.fermataAbove : G.fermataBelow, trill: G.trill, mordent: G.mordent, lowerMordent: G.lowerMordent, turn: G.turn })[mark];
+export const artGlyph = (mark, above) => ({ staccato: above ? G.staccatoAbove : G.staccatoBelow, accent: above ? G.accentAbove : G.accentBelow, tenuto: above ? G.tenutoAbove : G.tenutoBelow, fermata: above ? G.fermataAbove : G.fermataBelow, marcato: above ? G.marcatoAbove : G.marcatoBelow, staccatissimo: above ? G.staccatissimoAbove : G.staccatissimoBelow, trill: G.trill, mordent: G.mordent, lowerMordent: G.lowerMordent, turn: G.turn })[mark];
 
 /** The Bravura glyph of a dynamic mark (pp … ff). */
 export const fingerGlyph = (n) => G[`finger${n}`];

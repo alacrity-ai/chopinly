@@ -349,6 +349,15 @@ an old piece opens with its marks in place.
   subsetting fails, the fallback is embedding the whole font (~1 MB per PDF) —
   a size cost, never a fidelity cost. Raster is not a fallback.
 
+## Phase 9 — the extended Notes rail (grace notes, tremolo, marcato, staccatissimo) — LANDED v97 (WSHED-126, 2026-09-15)
+
+Leif's shape: grace as a toggle on the palette's value, on a second Notes lane. Design and as-built:
+`docs/COMPOSE_NOTES2_DESIGN.md`. Model: `graces` and `trem` on a note, two new `MARKS`; engine
+`graceAt` / `toggleGrace` / `removeGraces` / `tremolo`; the engraver's grace column, beam, slash and slur,
+tremolo bars; playback steals / splits time for graces and re-strikes tremolos; the Notes + lane in
+`rails.js`; MusicXML both ways; `tests/compose-notes2.test.mjs`; the E2E step. Next from WSHED-123:
+rit. / accel. that shape playback, then small marks + pickup bars, then engraving control.
+
 ## Phase 8 — the Piano rail (pedal lines, 8va / 8vb, fingering) — LANDED v96 (WSHED-125, 2026-09-15)
 
 Leif's pick from WSHED-123 after v95. Design and as-built: `docs/COMPOSE_PIANO_DESIGN.md`. Model:

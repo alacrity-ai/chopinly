@@ -95,10 +95,11 @@ export function renderComposition(container, L) {
     }
     if (spec.glyph) { const gg = glyphOf(spec.x, spec.y, G[spec.glyph], "glyph"); if (spec.small) gg.setAttribute("style", `font-size:${(fs * 0.8).toFixed(1)}px`); return [gg]; }
     if (spec.rest) { const out = [glyphOf(spec.x, spec.y, restGlyph(spec.base), "glyph rest")]; for (let i = 0; i < (spec.dots ?? 0); i++) out.push(glyphOf(spec.x + 1.5 + i * 0.7, spec.y - 0.5, G.dot, "glyph head-part")); return out; }
-    const out = [], headW = spec.base <= 1 ? 1.7 : 1.18;
-    if (spec.base >= 2 && spec.stem !== false) { const up = spec.stemUp, sx = up ? spec.x + headW - 0.07 : spec.x + 0.07; out.push(el("rect", { x: px(sx - 0.065), y: px(up ? spec.y - 3.5 : spec.y), width: px(0.13), height: px(3.5), class: "stem" })); }
+    const k = spec.small ? 0.6 : 1, out = [], headW = (spec.base <= 1 ? 1.7 : 1.18) * k; // a grace ghost is the small note
+    if (spec.base >= 2 && spec.stem !== false) { const up = spec.stemUp, sx = up ? spec.x + headW - 0.07 : spec.x + 0.07; out.push(el("rect", { x: px(sx - 0.065), y: px(up ? spec.y - 3.5 * k : spec.y), width: px(0.13), height: px(3.5 * k), class: "stem" })); }
     for (const ly of spec.ledgers ?? []) out.push(el("line", { x1: px(spec.x - 0.35), y1: px(ly), x2: px(spec.x + headW + 0.35), y2: px(ly), class: "sline" }));
-    out.push(glyphOf(spec.x, spec.y, headGlyph(spec.base), "glyph head"));
+    const head = glyphOf(spec.x, spec.y, headGlyph(spec.base), "glyph head"); if (spec.small) head.setAttribute("style", `font-size:${(fs * k).toFixed(1)}px`);
+    out.push(head);
     for (let i = 0; i < (spec.dots ?? 0); i++) out.push(glyphOf(spec.x + headW + 0.4 + i * 0.7, spec.onLine ? spec.y - 0.5 : spec.y, G.dot, "glyph head-part"));
     return out;
   };

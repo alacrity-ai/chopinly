@@ -37,6 +37,13 @@ phase's card (WSHED-115 … 122).
 - [ ] Play a bar under a pedal: the notes ring until the pedal lifts.
 - [ ] Export PDF: the lines, signs and digits are on paper (the octave line dashed). Export MusicXML → Sibelius shows the pedal, the octave line and the fingering; Sibelius → import keeps them.
 
+## Notes + (WSHED-126)
+- [ ] Rails ▾ → Notes +. Eighth armed, Grace on (lit): tap just left of a note at a step above it: a small slashed eighth with a slur to the note; tap the same spot: gone; two taps at different steps: two graces under one beam. Sixteenth armed: the grace is a sixteenth. Hold Grace → plain: no slash. Esc turns Grace off.
+- [ ] Select a note, Trem ▾ → 2: two bars on the stem; 2 again: gone; on a whole note the bars sit above the head. Play: the note re-strikes in sixteenths.
+- [ ] Marcato and staccatissimo on a selection: the wedge above, the teardrop beside the head; the same again clears.
+- [ ] Play a bar with a slashed grace: it sounds just before the beat and the previous note ends early; a plain grace takes the first half of its note.
+- [ ] Drag a graced note up a step: the grace moves with it. Export PDF: graces, beams, slashes, slurs and tremolo bars are on paper. Export MusicXML → Sibelius shows them; Sibelius → import keeps them.
+
 ## Voices (WSHED-120)
 - [ ] `voice ▾` → 2, tap: the second voice's stems point down; rests of the two voices sit apart; a rest drags up or down.
 - [ ] ⌘⇧↑ / ↓ (or the menu) sends a note to the other staff and its beam follows.

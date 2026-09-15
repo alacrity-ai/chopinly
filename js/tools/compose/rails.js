@@ -43,8 +43,9 @@ const ARP_ROWS = [["plain", G.arpeggio, "rolled"], ["up", G.arpeggioUp, "rolled 
 /** What the mark buttons say; a mark not listed reads as its id. */
 const MARK_NAMES = { lowerMordent: "lower mordent — the one with the line through it" };
 /** The rails a reader can show or hide, in order — the header that holds the menu is not one of them. */
-export const RAILS = [["control", "Controls"], ["transport", "Transport"], ["palette", "Notes"], ["utility", "Key · time · clef · marks"], ["expression", "Dynamics · hairpins · text"], ["form", "Form · repeats · tempo"], ["piano", "Piano · pedal · 8va · fingering"]]; // expression marks arm a cursor and land on half-beats (docs/COMPOSE_EXPRESSIONS_DESIGN.md)
-export const DEFAULT_RAILS = { control: true, transport: true, palette: true, utility: false, expression: false, form: false, piano: false };
+export const RAILS = [["control", "Controls"], ["transport", "Transport"], ["palette", "Notes"], ["utility", "Key · time · clef · marks"], ["expression", "Dynamics · hairpins · text"], ["form", "Form · repeats · tempo"], ["piano", "Piano · pedal · 8va · fingering"], ["notes2", "Grace · tremolo · marks"]]; // expression marks arm a cursor and land on half-beats (docs/COMPOSE_EXPRESSIONS_DESIGN.md)
+export const DEFAULT_RAILS = { control: true, transport: true, palette: true, utility: false, expression: false, form: false, piano: false, notes2: false };
+export const TREMS = [1, 2, 3];
 export const FINGERS = [1, 2, 3, 4, 5];
 /** The Form rail (docs/COMPOSE_FORM_DESIGN.md §3): barline pictures, the ending numbers, the jump rows — each arms a tap on a bar. */
 export const BARLINES = [["single", "barSingle", "single barline (clears a repeat or double bar)"], ["double", "barDouble", "double barline"], ["final", "barFinal", "final barline"], ["repeat-start", "repeatLeft", "repeat start"], ["repeat", "repeatRight", "repeat end"], ["both", "repeatBoth", "repeat end and a repeat start on the next bar"]];
@@ -197,10 +198,24 @@ export function buildRails(host, { title, onAction }) {
       <button type="button" class="cp-btn cp-sq cp-ottava-btn" data-act="ottava" data-dir="-1" aria-pressed="false" aria-label="8vb — tap the first note it covers, then the last"><span class="cp-glyph cp-glyph-ottava">${G.ottavaBassa}</span></button>
       <span class="cp-sep" aria-hidden="true"></span>
       ${FINGERS.map((n) => `<button type="button" class="cp-btn cp-sq cp-finger-btn" data-act="finger" data-n="${n}" aria-pressed="false" aria-label="finger ${n} — on the selected notes, or tap the notes"><b>${n}</b></button>`).join("")}
+    </div>
+    <div class="cp-rail cp-notes2" id="cp-notes2" role="toolbar" aria-label="grace notes, tremolo and more marks" data-rail="notes2" hidden>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-sq cp-grace-btn" data-act="grace" aria-pressed="false" aria-label="grace notes — on, a tap before a note adds one of the armed value; hold for slashed or plain"><span class="cp-glyph cp-glyph-grace">${G.graceSlash}</span></button>
+        <span class="cp-more cp-menu" id="cp-grace-more" hidden>${[["1", "slashed — acciaccatura, before the beat"], ["0", "plain — appoggiatura, on the beat"]].map(([s, label]) => `<button type="button" class="cp-btn cp-menu-row cp-grace-row" data-act="grace" data-slash="${s}" aria-pressed="false"><span>${label}</span></button>`).join("")}</span>
+      </span>
+      <span class="cp-sep" aria-hidden="true"></span>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-trem-btn" data-pop="cp-trem-more" aria-label="tremolo — pick the strokes for the selected notes" aria-expanded="false" disabled><span class="cp-glyph cp-glyph-trem">${G.trem2}</span>&#9662;</button>
+        <span class="cp-more cp-menu" id="cp-trem-more" hidden>${TREMS.map((n) => `<button type="button" class="cp-btn cp-menu-row cp-trem-row" data-act="trem" data-n="${n}"><span class="cp-glyph cp-glyph-trem">${G[`trem${n}`]}</span><span>${n} ${n === 1 ? "stroke" : "strokes"}</span></button>`).join("")}</span>
+      </span>
+      <span class="cp-sep" aria-hidden="true"></span>
+      ${["marcato", "staccatissimo"].map((m) => `<button type="button" class="cp-btn cp-sq cp-art-btn" data-act="art" data-mark="${m}" aria-label="${m}"><span class="cp-glyph">${artGlyph(m, true)}</span></button>`).join("")}
     </div>`;
   const moreBtn = host.querySelector(".cp-dur-more"), accMoreBtn = host.querySelector(".cp-acc-more");
   const tupMore = host.querySelector("#cp-tup-more"), tupBtn = host.querySelector(".cp-tuplet");
-  const pops = [...host.querySelectorAll("[data-pop]")].map((b) => [host.querySelector(`#${b.dataset.pop}`), b]).concat([[tupMore, tupBtn]]);
+  const graceMore = host.querySelector("#cp-grace-more"), graceBtn = host.querySelector(".cp-grace-btn");
+  const pops = [...host.querySelectorAll("[data-pop]")].map((b) => [host.querySelector(`#${b.dataset.pop}`), b]).concat([[tupMore, tupBtn], [graceMore, graceBtn]]);
   // Bravura glyphs sit on a musical anchor, not a typographic centre: measure each one's ink and
   // slide it so the ink is centred in its button (re-done whenever a glyph's text changes).
   const centreAll = () => { for (const g of host.querySelectorAll(".cp-glyph")) centreGlyph(g); };
@@ -234,6 +249,8 @@ export function buildRails(host, { title, onAction }) {
     if (act === "ending") { onAction("ending", Number(b.dataset.n)); return; }
     if (act === "ottava") { onAction("ottava", Number(b.dataset.dir)); return; }
     if (act === "finger") { onAction("finger", Number(b.dataset.n)); return; }
+    if (act === "grace") { onAction("grace", b.dataset.slash === undefined ? undefined : b.dataset.slash === "1"); return; }
+    if (act === "trem") { onAction("trem", Number(b.dataset.n)); return; }
     onAction(act);
   });
   // hold the tuplet button for the other sizes; hold a voice button for the voice menu
@@ -242,6 +259,7 @@ export function buildRails(host, { title, onAction }) {
     for (const t of ["pointerup", "pointercancel", "pointerleave"]) btn.addEventListener(t, () => clearTimeout(timer));
   };
   hold(tupBtn, () => toggle(tupMore, tupBtn));
+  hold(graceBtn, () => toggle(graceMore, graceBtn)); // hold Grace for slashed / plain
   // typing in the text box: Enter sets; the editor's shortcuts stay out of inputs
   { const inp = host.querySelector("#cp-text-in");
     inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); closeMore(); onAction("text", inp.value); inp.value = ""; inp.blur(); } else if (e.key === "Escape") { closeMore(); inp.blur(); } }); // the words are armed: focus leaves the box so the pen (and Escape) go to the staff
@@ -293,7 +311,10 @@ export function buildRails(host, { title, onAction }) {
         host.querySelector(`.cp-rail-row[data-rail="${k}"]`).setAttribute("aria-checked", String(on));
       }
       if (shown) centreAll(); // a lane that was display:none had no metrics to measure
-      for (const b of host.querySelectorAll(".cp-art-btn, .cp-gliss-btn, .cp-arp-btn, .cp-slur-btn")) b.disabled = !hasSelection;
+      for (const b of host.querySelectorAll(".cp-art-btn, .cp-gliss-btn, .cp-arp-btn, .cp-slur-btn, .cp-trem-btn")) b.disabled = !hasSelection;
+      // the extended Notes rail (WSHED-126): Grace is lit while on; the hold menu shows which kind
+      graceBtn.setAttribute("aria-pressed", String(pending?.kind === "grace"));
+      for (const r of host.querySelectorAll(".cp-grace-row")) r.setAttribute("aria-pressed", String(pending?.kind === "grace" && (r.dataset.slash === "1") === !!pending.value?.slash));
       // the expression buttons always work: they arm a cursor (WSHED-122), or retype a selection of their own kind; the armed one is lit
       for (const b of host.querySelectorAll(".cp-dyn-btn")) b.setAttribute("aria-pressed", String(pending?.kind === "dyn" && pending.value === b.dataset.dyn));
       for (const b of host.querySelectorAll(".cp-hairpin-btn")) b.setAttribute("aria-pressed", String(pending?.kind === "hairpin" && pending.value === b.dataset.kind));

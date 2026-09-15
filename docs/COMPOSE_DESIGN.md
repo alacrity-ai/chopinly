@@ -175,6 +175,7 @@ An **event** (one voice slot):
   slurs?: [ { id, at: "start" | "stop" } ],                    // v84: a slur is the pair sharing an id; several may start or end here
   arp?: "plain" | "up" | "down",                                // v83: a rolled chord
   // v85's dyn / hairpin / text on the event are gone since v91 (schema v3): see `expressions` on the bar; `upgrade()` lifts them
+  // v97 (WSHED-126, COMPOSE_NOTES2_DESIGN.md): a note may carry `graces: [{ base: 8 | 16 | 32, pitches, slash? }]` (grace notes before it) and `trem: 1–3`
 }
 ```
 
