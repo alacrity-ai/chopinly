@@ -349,6 +349,14 @@ an old piece opens with its marks in place.
   subsetting fails, the fallback is embedding the whole font (~1 MB per PDF) —
   a size cost, never a fidelity cost. Raster is not a fallback.
 
+## Phase 16 — beams: a tight stack, a head never lost in them — LANDED v105 (WSHED-134, 2026-09-15)
+
+`layout.js`: `BEAM_T` 0.45, `BEAM_GAP` 0.3, `stemFloor(levels)`; `makeBeam` shifts the run so the
+shortest stem clears the whole beam stack, `makeCrossBeam` applies the floor on the side under the
+secondaries. Design and as-built: docs/COMPOSE_DESIGN.md §6.5 and §8.5m. Tests: two in
+`tests/compose-layout.test.mjs` (F5 F5 C4 F5 at 16ths and 32nds, the mirror, an eighth pair unchanged,
+the cross-staff side); the layout golden regenerated on purpose.
+
 ## Phase 15 — bars and the honest export preview — LANDED v104 (WSHED-132 + WSHED-133, 2026-09-15)
 
 Two lines of work, one release. **WSHED-132**: insert / delete a bar from the Form rail

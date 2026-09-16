@@ -279,9 +279,16 @@ Reset at the barline (courtesy accidentals in the following bar are `acc:
 ### 6.5 Beams, flags, tuplets
 
 - Eighths and shorter beam with neighbours in the same beat group and voice;
-  rests break a beam; a lone one gets a flag. Primary beam 0.5S thick; secondary
-  beams for sixteenths and finer, with partial beams at the ends of a group.
+  rests break a beam; a lone one gets a flag. Beams 0.45S thick, 0.3S apart
+  (v105; convention is 0.5 / 0.25); secondary beams for sixteenths and finer
+  stack inward from the primary, with partial beams at the ends of a group.
 - Beam slope from the outer noteheads, clamped to ±1S; stems extend to reach it.
+- **A head is never lost in the beams** (v105, WSHED-134, §8.5m): the shortest
+  stem in a run is 2.75S from the head's centre to the stem tip for an eighth
+  run, plus one beam-and-gap (0.75S) for every further beam level, so the bare
+  stem between the head and the innermost beam never shrinks. The whole run
+  shifts away from the heads to satisfy it. The cross-staff beam applies the
+  same floor on the side that carries the secondary beams.
 - Tuplet: a bracket over (or under, with the stems) the run, the number in
   Bravura tuplet digits centred; the bracket is omitted when the run is one
   beamed group (the number sits on the beam).
@@ -627,6 +634,33 @@ eighth, an up arrowhead switches to a sixteenth."
   slides at once. In Select mode start the stroke on empty staff (a stroke that starts on a
   rest or a head grabs it, as ever). Gesture off: nothing new.
 - **Next shapes** belong here too: the recogniser returns a name, the editor maps it.
+
+### 8.5m Beams — a tight stack, and a head never lost in them (v105, WSHED-134)
+
+Leif (2026-09-15): "8th, and moreso, 16th, and 32nd note beams are perhaps slightly too thick, and
+slightly too spaced … narrowing their width by a small amount, maybe 10%, and then making them a bit
+more tightly spaced together. Secondly, and much more pernicious … Imagine 4x 16th notes, F5, F5, C4,
+F5 … the C4 has no gap between its head, and the 16th note beams, so it is being covered by the beams."
+
+- **Root cause, named before the code.** `layout.js` had beam thickness 0.5S and gap 0.75S
+  (convention: 0.5 / 0.25). The minimum-stem rule (2.75S from the head's centre) was measured to the
+  **stem tip**, which is the primary beam's outer edge, while every extra beam stacks inward from
+  there toward the heads. The 16th beam therefore ate 1.25S of the reserve and the 32nd beam 2.5S:
+  clearance from the C4's head edge to the innermost beam was 1.75S for eighths, 0.5S for sixteenths
+  and none for thirty-seconds (the beam ran through the head).
+- **The rule (Gould).** A beamed note's minimum stem is the *bare* stem between the head and the
+  innermost beam; the beam stack sits beyond it. Extra beams lengthen the stem, never shorten the
+  bare part. As built: `stemFloor(levels) = 2.75 + (levels − 1) · (0.45 + 0.3)` over the run's
+  deepest level, in `makeBeam` (the whole run shifts) and in `makeCrossBeam` (the side under the
+  secondaries). Eighth-note groups are pixel-identical to v104; sixteenth runs lengthen by 0.75S and
+  thirty-second runs by 1.5S where the floor binds.
+- **Constants.** Thickness 0.5 → 0.45S (Leif's tenth), gap 0.75 → 0.3S (a hair over convention so a
+  tablet at a small staff size keeps daylight between the beams). Measured after: every beam 0.45S,
+  levels 0.75S apart, the C4 head 1.8S clear of the nearest beam at 16ths and at 32nds, and in the
+  mirror (C4 C4 F5 C4, stems up) the F5 head 1.8S clear.
+- The PDF paints from the same layout, so the export follows; marks and dynamics below a beam hang
+  off the stem tip and move with it. The layout golden was regenerated on purpose (13 values: beam
+  thickness and one sixteenth run's stems).
 
 ### 8.5l Bars — insert and delete (v104, WSHED-132)
 
