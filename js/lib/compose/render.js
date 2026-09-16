@@ -76,6 +76,29 @@ class SvgPainter {
   }
 }
 
+/** The SVG painter that keeps only the primitives `keep(y)` allows: one page of a plan (docs §10.1). Groups stay, so selection classes and data still nest. */
+class PageSvgPainter extends SvgPainter {
+  constructor(L, keep) { super(L); this.keep = keep; }
+  line(x1, y1, x2, y2, cls) { if (this.keep(y1)) super.line(x1, y1, x2, y2, cls); }
+  rect(x, y, w, h, cls) { if (this.keep(y)) super.rect(x, y, w, h, cls); }
+  polygon(points, cls) { if (this.keep(points[0][1])) super.polygon(points, cls); }
+  polyline(points, cls) { if (this.keep(points[0][1])) super.polyline(points, cls); }
+  path(segs, cls) { if (this.keep(segs[0][2])) super.path(segs, cls); }
+  circle(cx, cy, r, cls) { if (this.keep(cy)) super.circle(cx, cy, r, cls); }
+  glyph(x, y, ch, cls, opts) { if (this.keep(y)) super.glyph(x, y, ch, cls, opts); }
+  text(x, y, str, cls, opts) { if (this.keep(y)) super.text(x, y, str, cls, opts); }
+}
+/**
+ * One page's ink as an SVG in the layout's own coordinates: exactly the primitives `keep(y)`
+ * admits — the export sheet passes the plan's `pageAt(y) === k`, the same routing the PDF painter
+ * uses, so the preview of a page is the page (WSHED-133).
+ */
+export function renderPage(L, keep) {
+  const painter = new PageSvgPainter(L, keep);
+  paintScore(L, painter);
+  return painter.svg;
+}
+
 export function renderComposition(container, L) {
   const S = L.S, px = (v) => (v * S).toFixed(2), fs = 4 * S;
   const glyphOf = (x, y, ch, cls = "glyph") => el("text", { x: px(x), y: px(y), class: cls }, ch);

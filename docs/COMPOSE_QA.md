@@ -68,6 +68,8 @@ phase's card (WSHED-115 … 122).
 
 ## Export (WSHED-121)
 - [ ] File ▾ → Export PDF: the preview shows page 1 at the chosen size; − / + change the page count; Letter / A4 and the margins re-plan.
+- [ ] (v104, WSHED-133) The preview is the page: the systems it shows are the systems that page of the PDF carries — a size or margin that pushes a system to page 2 takes it off the preview of page 1 and a pager appears (‹ page 1 of 2 ›); step to page 2 and see it there with the running head. A tempo word over the first bar, a pedal line under the last system: visible in the preview and in the PDF, never in a margin.
+- [ ] (v104) The PDF ends at the music: no empty bar after the last one you wrote (the editor keeps one to write into; the file does not).
 - [ ] Save PDF → *Save to device* lands in Files (Downloads); *Share…* offers AirDrop / Mail / Files. In the home-screen app the download lands too.
 - [ ] Add to Scores → the piece opens in the reader with ink; change a note, send again → the same score, new pages, bookmarks kept.
 
@@ -114,3 +116,11 @@ phase's card (WSHED-115 … 122).
 - A line, a loop, a flat or lopsided stroke is not a chevron: lasso and strike behave as before.
 - Works with the Pencil, a mouse, or a finger in Touch (slide at once). Gesture off: unchanged.
 
+
+## Bars — insert and delete (WSHED-132, v104)
+- [ ] Rails ▾ → Form → the bars group: **insert** then tap bar 3 → an empty bar 3, the old bar 3 is bar 4; **delete** then tap it → gone; undo / redo each one step.
+- [ ] Delete a bar carrying a key or time change → the next bar shows the change; delete bar 1 → the new bar 1 carries the signatures.
+- [ ] Delete the empty last bar → gone; write in the new last bar → a fresh empty bar is appended as before.
+- [ ] A hairpin ending in a deleted bar now ends in the bar before; one starting there is gone; an ending bracket over it shrinks.
+- [ ] The last bar of a piece refuses to go (a nudge).
+- [ ] (fixed in v104) Open a piece, place one note, wait a second, undo → the note goes (it used to stay once the save had run).

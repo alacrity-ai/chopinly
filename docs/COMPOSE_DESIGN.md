@@ -628,6 +628,40 @@ eighth, an up arrowhead switches to a sixteenth."
   rest or a head grabs it, as ever). Gesture off: nothing new.
 - **Next shapes** belong here too: the recogniser returns a name, the editor maps it.
 
+### 8.5l Bars — insert and delete (v104, WSHED-132)
+
+Leif (2026-09-15): "We don't have the capability to delete a measure … if there is a stray measure at
+the end of the song, even if it's empty, it gets presented in the export … Being able to insert a
+measure in between two measures is very useful as well. I would probably add measure deletion, and
+measure insert, to the FORM rail."
+
+- **Two buttons on the Form rail**, a group "bars" before the bar repeat: **insert** (two barlines
+  with a plus) and **delete** (with a minus). The Form rail's grammar: the button arms, the next tap
+  on a bar acts, the button again or Esc disarms, one undo step. Insert puts an empty bar **before**
+  the tapped bar; delete takes the tapped bar. (Decided here: no selection form and no "append past
+  the end" — the editor already keeps an empty bar after the music to write into, and a tap names a
+  bar without ambiguity.)
+- **Engine** (`engine.js`): `insertBar(doc, at)` — the new bar takes the metre in force there;
+  before bar 1 it becomes bar 1 and carries the key, time and clefs bar 1 must; every bar-index
+  reference at or after `at` moves along (a span's `end.bar`, an ending's `end`); a two-bar repeat
+  the new bar would split is dropped. `deleteBar(doc, bar)` — the bar and what it carried go
+  (notes, marks, spans starting in it, its form); a span ending in it ends at the previous bar's
+  last slot (or goes when nothing is left); later ends and endings shift left; a key, time or
+  clef change it carried stays in force from the next bar (the clef in force at its end, so a
+  change inside it counts); a bar repeat that pointed at it goes; the last bar of a piece cannot
+  go (Nudge). Ties, slurs and glissandi into the gone bar are cleaned.
+- **Found on the way, fixed here: undo after a save.** The editor's history was seeded with the
+  stored composition object itself, and every save (`flush` → `put({ measures })`) overwrote that
+  object's measures — so undoing back to the opening state (the first edit of a session, once its
+  300 ms save had fired) restored the saved state and looked like nothing happened. The history now
+  starts from a `structuredClone` of the stored piece. The v104 E2E's insert → delete → undo → undo
+  sequence is what caught it.
+- **The file ends at the music.** `trimBars(doc)` now trims to the **last used bar** (a note, a
+  mark, a span's end, form) — no empty bar after the music in the PDF or the MusicXML; an empty
+  piece still prints its eight bars of manuscript. `trimBars(doc, { forEditing: true })` is the
+  editor's close policy as before: one empty bar after the music to write into, never below eight.
+  A MusicXML import still adds the bar to write into.
+
 ### 8.6 Transport (v70) and the rails' look (v71)
 
 A third rail sits between the control rail and the palette: **stop · a bar back · play/pause · a bar forward · position slider (bar N of M) · tempo (♩= − / +, hold to repeat, tap the number to type)**. `Space` toggles play, `Home` stops. Playback (`play.js`) turns the document into a timeline of absolute-tick notes (ties merge into one sounding note), sequences them 180 ms ahead on the audio clock through the piano voice, and a playhead line on the overlay follows; the view scrolls only when the playing system leaves it. The tempo is saved with the piece (`tempo`, default 100, 20–300) and is *not* an undoable edit. Editing while playing re-sequences from the current position.
@@ -678,6 +712,28 @@ As built (the text below replaced the plan on 2026-09-14; the spike that decided
   every primitive to its page by the system band its y falls in. Trailing empty bars are trimmed
   first (`trimBars`); an empty piece prints its eight bars. Hidden rests and halos are skipped,
   voice tints are ink. `pdf.save({ useObjectStreams: false })`.
+- **The plan measures the ink and routes every painter (v104, WSHED-133).** Leif (2026-09-15):
+  "the preview … is not accurate to the ground truth of the final export" — with normal margins
+  the readout said 2 pages and the PDF had 2, while the preview showed the piece on one. Two
+  causes, both in the sheet: the preview painted **every** system of the piece onto page 1 (a
+  system the plan had moved to page 2 still showed on page 1, clipped a little by the margin
+  box), and it **clipped at the printable box** while the PDF never clips (a tempo word above the
+  first staff or a pedal line under the last vanished in the preview and printed in the margin).
+  As built: `inkExtents(L)` paints the layout through a measuring painter (`InkMeter`: glyphs by
+  their baked outline boxes, words estimated) and reports, per system, how far the ink hangs
+  above the first staff / below the last; `planPages` keeps that room — a page's first system
+  starts under the header (or the margin) by at least `AIR` = 3 S *or its own overhang*, and the
+  last system's ink ends inside the box — so nothing prints in a margin. The plan carries
+  `pageOf(system)` / `pageAt(y)` (`layout.js` `systemAt`: the band around a block, split halfway
+  through the gap), and **both painters route by it**: the PDF painter's `pageAt` is the plan's,
+  and the sheet paints page *k* with `render.js` `renderPage(L, (y) => plan.pageAt(y) === k)` — a
+  page-scoped SVG painter over the same `paintScore`. The page SVG has no clip short of the page's
+  edge (`overflow: visible` on the score) and a **pager** (‹ page 1 of 3 ›) under the paper when
+  the plan has more than one page, with the running head and page number on later pages as the
+  PDF sets them. Tests: `inkExtents` on a decorated piece, every page's ink inside the box across
+  every size / page / margin / header, `pageAt` routing of every primitive; the E2E counts the
+  systems on each preview page against the plan, measures the ink against the box, steps to page
+  2, and matches the PDF's page count (`paper.__plan` exposes the plan the preview was drawn from).
 - **The sheet** (`js/tools/compose/exportsheet.js`): size − / + through the eight staff
   spaces with a readout in staff mm + page count; page, margins, header; a live **page-1
   preview** = the screen's own SVG at the print S inside a page-shaped SVG with the header as

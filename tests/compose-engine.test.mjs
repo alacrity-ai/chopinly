@@ -93,13 +93,14 @@ test("remove: a whole event becomes rests; a pitch leaves its chord; unknown ids
   assert.equal(remove(gone, [{ ev: "nope" }]), gone);
 });
 
-test("the last bar getting a note appends a new empty bar; trimBars keeps one trailing empty bar and never fewer than eight", () => {
+test("the last bar getting a note appends a new empty bar; trimBars ends a file at the music and keeps the editor's trailing bar (never fewer than eight) for editing", () => {
   const d = place(fresh(), { bar: 7, staff: 1, ticks: 0, step: 4 }, Q).doc;
   assert.equal(d.measures.length, 9);
   assert.ok(isEmptyBar(d.measures[8]));
   validate(d);
   let e = d; for (let i = 0; i < 5; i++) e = { ...e, measures: [...e.measures, ...fresh().measures.slice(0, 1)] };
-  assert.equal(trimBars(e).measures.length, 9);
+  assert.equal(trimBars(e).measures.length, 8, "a file ends at bar 8, the last with a note (v104)");
+  assert.equal(trimBars(e, { forEditing: true }).measures.length, 9, "the editor keeps one bar to write into");
   assert.equal(trimBars(fresh()).measures.length, 8);
 });
 
@@ -692,9 +693,9 @@ test("expressions: a metre change carries them by tick (a hairpin's end too, one
   let t = fresh();
   for (let b = 8; b < 14; b++) t.measures.push(newMeasure(2));
   t = addExpression(t, { kind: "dyn", staff: 0, bar: 11, at: 0, value: "p" }).doc;
-  assert.equal(trimBars(t).measures.length, 13, "the bar it sits in plus one");
+  assert.equal(trimBars(t).measures.length, 12, "the bar it sits in is the last (a file ends at the music, v104)"); assert.equal(trimBars(t, { forEditing: true }).measures.length, 13, "storage keeps one after it");
   t = addHairpin(t, { staff: 1, bar: 10, at: 0, dir: "dim", end: { bar: 12, at: 2 * g } }).doc;
-  assert.equal(trimBars(t).measures.length, 14, "the bar the hairpin ends in plus one");
+  assert.equal(trimBars(t).measures.length, 13, "the bar the hairpin ends in");
   assert.equal(trimBars(fresh()).measures.length, 8);
 });
 

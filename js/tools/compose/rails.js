@@ -248,6 +248,10 @@ export function buildRails(host, { title, onAction }) {
         <span class="cp-more cp-menu" id="cp-tempo-unit-more" hidden>${TEMPO_UNIT_ROWS.map(([base, dots, label]) => `<button type="button" class="cp-btn cp-menu-row cp-tempo-unit-row" data-act="tempo-unit" data-base="${base}" data-dots="${dots}" aria-pressed="false"><span class="cp-glyph cp-glyph-xs">${metGlyph(base)}${dots ? G.dot : ""}</span><span>${label} =</span></button>`).join("")}</span>
       </span>
       </span>
+      <span class="cp-group" role="group" aria-label="bars">
+      <button type="button" class="cp-btn cp-sq cp-bar-insert" data-act="bar-insert" aria-pressed="false" aria-label="insert a bar — tap the bar the new one goes before">${icon("barPlus")}</button>
+      <button type="button" class="cp-btn cp-sq cp-bar-delete" data-act="bar-delete" aria-pressed="false" aria-label="delete a bar — tap it">${icon("barMinus")}</button>
+      </span>
       <span class="cp-group" role="group" aria-label="bar repeat">
       <span class="cp-more-wrap">
         <button type="button" class="cp-btn cp-sq cp-simile-btn" data-act="simile" data-n="1" aria-pressed="false" aria-label="bar repeat — tap an empty bar: it plays the bar before it; hold for two bars"><span class="cp-glyph cp-glyph-sm">${G.repeat1Bar}</span></button>
@@ -395,6 +399,7 @@ export function buildRails(host, { title, onAction }) {
     if (act === "cross") { onAction("cross", Number(b.dataset.dir)); return; }
     if (act === "tuplet") { onAction("tuplet", b.dataset.n ? Number(b.dataset.n) : undefined); return; }
     if (act === "barline" || act === "sign" || act === "jump") { onAction(act, b.dataset.kind); return; }
+    if (act === "bar-insert" || act === "bar-delete") { onAction(act); return; } // bars (v104, WSHED-132)
     if (act === "ending") { onAction("ending", Number(b.dataset.n)); return; }
     if (act === "ottava") { onAction("ottava", { dir: Number(b.dataset.dir), size: Number(b.dataset.size ?? 8) }); return; }
     if (act === "finger") { onAction("finger", Number(b.dataset.n)); return; }
@@ -522,6 +527,8 @@ export function buildRails(host, { title, onAction }) {
         host.querySelector("[data-pop=cp-jump-more]").setAttribute("aria-pressed", String(!!jp));
         for (const b of host.querySelectorAll(".cp-jump-row")) b.setAttribute("aria-pressed", String(b.dataset.kind === jp));
         host.querySelector(".cp-rehearsal-btn").setAttribute("aria-pressed", String(pending?.kind === "rehearsal"));
+        host.querySelector(".cp-bar-insert").setAttribute("aria-pressed", String(pending?.kind === "bar-insert"));
+        host.querySelector(".cp-bar-delete").setAttribute("aria-pressed", String(pending?.kind === "bar-delete"));
         const tm = pending?.kind === "tempo-mark" ? pending.value : null;
         host.querySelector(".cp-tempo-mark-btn").setAttribute("aria-pressed", String(!!tm));
         const tl = host.querySelector("#cp-tempo-mark-lbl"), want = tm ? `= ${tm.bpm}${tm.text ? ` ${tm.text}` : ""}` : "= tempo"; if (tl.textContent !== want) tl.textContent = want; }

@@ -2363,7 +2363,10 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .lb-sheet-wrap.cp-export-wrap .lb-sheet { max-width: 40rem; margin: 0 auto; }
 .cp-export-grid { display: flex; flex-direction: column; gap: 0.7rem; }
 .cp-export-controls { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
-.cp-export-preview { display: flex; justify-content: center; padding: 0.25rem 0 0.2rem; }
+.cp-export-preview { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; padding: 0.25rem 0 0.2rem; }
+.cp-export-pager { display: flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
+.cp-export-pager .cp-btn { height: 2.2rem; min-width: 2.2rem; width: 2.2rem; }
+.cp-export-pager[hidden] { display: none; }
 .cp-paper { --fg: #151515; --staff-line: #2a2a2a; --voice-2: #151515; --voice-3: #151515; --voice-4: #151515; width: min(100%, 15rem); border-radius: 2px; box-shadow: 0 8px 26px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(0, 0, 0, 0.25); overflow: hidden; }
 .cp-paper .cp-page { display: block; width: 100%; height: auto; }
 .cp-paper .cp-page-bg { fill: #fff; }
@@ -2371,6 +2374,7 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-paper .cp-page-text.it { font-style: italic; }
 .cp-paper .cp-svg text { fill: var(--fg); }
 .cp-paper .cp-hidden { display: none; }
+.cp-paper .cp-svg { overflow: visible; } /* the page's edge is the only clip, as on paper */
 .cp-export-row { display: flex; align-items: center; gap: 0.8rem; min-height: 2.6rem; }
 .cp-export-label { flex: 0 0 4.2rem; color: var(--fg-dim); font-size: 0.85rem; }
 .cp-export-seg { display: inline-flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }

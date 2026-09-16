@@ -16,7 +16,7 @@ import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt, lasso, spans as spansOfLayout, isHandle, struck } from "../../lib/compose/hit.js";
 import { chevron } from "../../lib/compose/gesture.js";
-import { place, remove, snap, trimBars, find, setPitch, retype, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, addPedal, addOttava, addTextLine, finger, graceAt, toggleGrace, tremolo, setTrill, setStem, beamBreak, setSimile, pitchFromStep, moveExpressions, moveSpanEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, setPitch, retype, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, addPedal, addOttava, addTextLine, finger, graceAt, toggleGrace, tremolo, setTrill, setStem, beamBreak, setSimile, pitchFromStep, moveExpressions, moveSpanEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, insertBar, deleteBar, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { createPlayer } from "../../lib/compose/play.js";
@@ -44,8 +44,8 @@ export function openEditor({ id, ctx, onClose }) {
   if (!stored) { toast("that composition is gone"); onClose?.(); return null; }
   const c = upgrade(stored); // a v1 / v2 piece: its note-attached marks become expressions (docs/COMPOSE_EXPRESSIONS_DESIGN.md §1.1)
   const { store, setRunning, getAudio } = ctx;
-  const history = createHistory(c);
-  let doc = c;
+  const history = createHistory(structuredClone(c)); // a snapshot of its own: the stored object's measures are overwritten by every save, and the history's first entry must not be (found by v104's E2E — undoing the first edit after a save did nothing)
+  let doc = history.present;
   let S = Math.max(S_MIN, Math.min(S_MAX, store.get("zoom", 12)));
   const savedArm = store.get("armed", null);
   // what the next tap places: base, dots and tuplet persist; an accidental is one-shot (the Rest toggle left in v99: rests are what is left when a note goes)
@@ -305,7 +305,9 @@ export function openEditor({ id, ctx, onClose }) {
         else next = setBarline(doc, b, { end: m.barline?.end === k ? null : k, ...(k === "repeat" ? { times: null } : {}) });
         if (next === doc) { toast("already so"); setPending(null); return; }
         commit(next); toast(k === "single" ? `plain barline on bar ${b + 1}` : k === "repeat-start" ? `${next.measures[b].barline?.start ? "repeat starts at" : "no repeat start on"} bar ${b + 1}` : k === "both" ? `repeat ends on bar ${b + 1} and starts again on bar ${b + 2}` : times ? (next.measures[b].barline?.times ? `repeat ×${times} on bar ${b + 1}` : `plain barline on bar ${b + 1}`) : `${next.measures[b].barline?.end ? `${k} barline on` : "plain barline on"} bar ${b + 1}`);
-      } else if (p.kind === "ending") {
+      } else if (p.kind === "bar-insert") { commit(insertBar(doc, t.bar)); toast(`a bar before bar ${t.bar + 1}`); }
+      else if (p.kind === "bar-delete") { const next = deleteBar(doc, t.bar); selection.clear(); commit(next); toast(`bar ${t.bar + 1} deleted`); }
+      else if (p.kind === "ending") {
         if (p.start === undefined) { pending = { ...p, start: t.bar }; toast(`ending ${p.value} from bar ${t.bar + 1} — now tap its last bar`); haptic(6); sync(); return; }
         const a = Math.min(p.start, t.bar), b = Math.max(p.start, t.bar);
         const next = setEnding(doc, a, p.value, b);
@@ -746,7 +748,7 @@ export function openEditor({ id, ctx, onClose }) {
       case "back": close(); return;
       case "details": { // title · composer · tags in the shared modal; the header follows a rename, a delete leaves the editor
         flush();
-        openCompositionDetails(id).then((r) => { if (closed) return; if (r.deleted) { close(); return; } if (r.saved) { title = r.saved.title; composer = r.saved.composer ?? ""; held = logbook.composition(id); el.setAttribute("aria-label", heading()); sync(); } });
+        openCompositionDetails(id).then((r) => { if (closed) return; if (r.deleted) { close(); return; } if (r.saved) { title = r.saved.title; composer = r.saved.composer ?? ""; held = logbook.composition(id); doc = history.replace({ ...doc, title, composer, tags: [...(r.saved.tags ?? [])] }); el.setAttribute("aria-label", heading()); sync(); } }); // the working document carries the identity too (it is a snapshot of its own since v104, not the stored object)
         return;
       }
       case "export-pdf": case "save-pdf": { // the export sheet: size, page, margins, header, preview → Save PDF / Add to Scores (WSHED-121)
@@ -801,6 +803,11 @@ export function openEditor({ id, ctx, onClose }) {
       case "barline": { // the Form rail (WSHED-124): every button arms a tap on a bar; the armed one again → off
         if (pending?.kind === "barline" && pending.value === arg) { setPending(null); return; }
         setPending({ kind: "barline", value: arg }); toast(`${arg === "single" ? "plain barline" : arg === "repeat-start" ? "repeat start" : arg === "both" ? "repeat end + start" : `${arg} barline`} — tap the bar`);
+        return;
+      }
+      case "bar-insert": case "bar-delete": { // bars (v104, WSHED-132): arm; the next tap names the bar
+        if (pending?.kind === name) { setPending(null); return; }
+        setPending({ kind: name }); toast(name === "bar-insert" ? "insert a bar — tap the bar it goes before" : "delete a bar — tap it");
         return;
       }
       case "ending": {
@@ -1111,7 +1118,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (closed) return;
     closed = true;
     flush();
-    const trimmed = trimBars(doc);
+    const trimmed = trimBars(doc, { forEditing: true }); // one empty bar stays to write into; a file ends at the music (WSHED-132)
     if (trimmed.measures.length !== doc.measures.length && logbook.composition(id)) put({ measures: trimmed.measures, v: doc.v });
     offRemote();
     document.removeEventListener("keydown", onKey);
@@ -1129,7 +1136,7 @@ export function openEditor({ id, ctx, onClose }) {
   const api = {
     id, close,
     /** For tests: the live state. */
-    get state() { return { mode, armed, voice, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, pending, rails: railsOn, title, doc, input, penSeen, gesture: gestureOn }; },
+    get state() { return { mode, armed, voice, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, pending, rails: railsOn, title, doc, input, penSeen, gesture: gestureOn, canUndo: history.canUndo, canRedo: history.canRedo }; },
     /** For tests: the current layout. */
     get layout() { return L; },
     /** For tests: the client point of a musical place. */

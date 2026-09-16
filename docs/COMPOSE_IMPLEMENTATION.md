@@ -349,6 +349,19 @@ an old piece opens with its marks in place.
   subsetting fails, the fallback is embedding the whole font (~1 MB per PDF) —
   a size cost, never a fidelity cost. Raster is not a fallback.
 
+## Phase 15 — bars and the honest export preview — LANDED v104 (WSHED-132 + WSHED-133, 2026-09-15)
+
+Two lines of work, one release. **WSHED-132**: insert / delete a bar from the Form rail
+(`engine.js` `insertBar`, `deleteBar`; `rails.js` group "bars"; `editor.js` pending kinds
+`bar-insert` / `bar-delete`; icons `barPlus` / `barMinus`), and the file ends at the music
+(`trimBars` trims to the last used bar; `{ forEditing: true }` keeps the editor's bar to write into).
+**WSHED-133**: the export preview is the plan's page — `export/pdf.js` `inkExtents` + a plan that
+keeps room for ink above and below the staves and routes every painter through `plan.pageAt`;
+`render.js` `renderPage`; the sheet's pager. Design and as-built: docs/COMPOSE_DESIGN.md §8.5l and
+§10.1. Tests: `tests/compose-bars.test.mjs`, the planner tests in `tests/compose-export.test.mjs`,
+the E2E step "v104: bars …". Old-policy assertions (a trailing empty bar in files) were updated and
+the MusicXML golden regenerated.
+
 ## Phase 14 — Gesture v2, the chevrons — LANDED v103 (WSHED-131, 2026-09-15)
 
 The first shape: ∧ arms the next shorter note value, ∨ the next longer, through the palette's own path

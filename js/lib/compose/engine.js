@@ -594,15 +594,89 @@ function ensureTrailingBar(doc) {
   return doc;
 }
 
-/** Drop trailing empty bars beyond one, never below the default eight. */
-export function trimBars(doc) {
+/**
+ * Drop the unused bars at the end. A bar is used when it holds a note, a mark, a span's end, or
+ * form. For a file (`forEditing` false — the PDF, MusicXML) the piece ends at its last used bar:
+ * no stray empty bar after the music (WSHED-132); an empty piece keeps its eight bars of
+ * manuscript. For storage (`forEditing` true, the editor's close) one empty bar stays after the
+ * music to write into, never below the default eight.
+ */
+export function trimBars(doc, { forEditing = false } = {}) {
   const d = clone(doc);
   let last = d.measures.length - 1;
   while (last > 0 && isEmptyBar(d.measures[last])) last--;
-  for (const e of expressionsOf(d)) last = Math.max(last, e.bar, isSpan(e.x) ? e.x.end.bar : 0); // a bar a mark sits in, or a span ends in, is used
-  d.measures.forEach((m, b) => { if (m.form || m.barline || m.simile) last = Math.max(last, b + (m.simile === 2 ? 1 : 0)); if (m.ending) last = Math.max(last, m.ending.end); }); // so is a bar the form uses
-  const keep = Math.max(DEFAULT_BARS, last + 2);
+  let used = !isEmptyBar(d.measures[last]);
+  for (const e of expressionsOf(d)) { last = Math.max(last, e.bar, isSpan(e.x) ? e.x.end.bar : 0); used = true; } // a bar a mark sits in, or a span ends in, is used
+  d.measures.forEach((m, b) => { if (m.form || m.barline || m.simile) { last = Math.max(last, b + (m.simile === 2 ? 1 : 0)); used = true; } if (m.ending) { last = Math.max(last, m.ending.end); used = true; } }); // so is a bar the form uses
+  const keep = forEditing ? Math.max(DEFAULT_BARS, last + 2) : used ? last + 1 : DEFAULT_BARS;
   if (d.measures.length > keep) d.measures.length = keep;
+  return d;
+}
+
+// --- bars (WSHED-132): insert one before a bar, delete one ---
+
+/** The clef in force on a staff when a bar ends. */
+const clefAtEnd = (doc, bar, staff) => clefAt(doc, bar, staff, Number.MAX_SAFE_INTEGER);
+/**
+ * Insert an empty bar before `at` (`at` = the bar count appends). The new bar takes the metre in
+ * force there; before bar 1 it becomes bar 1 and carries the key, time and clefs bar 1 must. Every
+ * bar-index reference at or after `at` moves along: a span's end, an ending's last bar. A two-bar
+ * repeat the new bar would split is dropped.
+ */
+export function insertBar(doc, at) {
+  if (!Number.isInteger(at) || at < 0 || at > doc.measures.length) throw new Nudge("no such bar");
+  const d = clone(doc);
+  const m = newMeasure(d.parts[0].staves, timeAt(d, Math.max(0, at - 1)));
+  if (at === 0) { const m0 = d.measures[0]; m.key = m0.key; m.time = m0.time; m.clefs = m0.clefs; delete m0.key; delete m0.time; delete m0.clefs; }
+  for (const om of d.measures) {
+    for (const x of om.expressions ?? []) if (isSpan(x) && x.end.bar >= at) x.end.bar++;
+    if (om.ending && om.ending.end >= at) om.ending.end++;
+  }
+  if (at > 0 && d.measures[at - 1].simile === 2) delete d.measures[at - 1].simile;
+  d.measures.splice(at, 0, m);
+  return d;
+}
+/**
+ * Delete a bar. What it carried goes with it: its notes, marks, spans starting in it, its form.
+ * A span ending in it ends at the previous bar's last slot (or goes when nothing is left); later
+ * ends and endings shift left; a key, time or clef change it carried stays in force from the next
+ * bar. A bar repeat that pointed at it is dropped. The last bar of a piece cannot go.
+ */
+export function deleteBar(doc, bar) {
+  if (!doc.measures[bar]) throw new Nudge("no such bar");
+  if (doc.measures.length === 1) throw new Nudge("a piece keeps one bar", { bar });
+  const d = clone(doc), m = d.measures[bar], next = d.measures[bar + 1], nStaves = d.parts[0].staves;
+  if (next) { // what the bar carried forward stays in force
+    if (m.key && !next.key) next.key = m.key;
+    if (m.time && !next.time) next.time = m.time;
+    for (let st = 0; st < nStaves; st++) {
+      const after = clefAtEnd(d, bar, st), before = bar > 0 ? clefAtEnd(d, bar - 1, st) : null;
+      if (after !== before && !next.clefs?.[st]) next.clefs = { ...(next.clefs ?? {}), [st]: after };
+    }
+    if (next.simile) delete next.simile; // it repeated the bar that is going
+  }
+  if (bar > 0 && d.measures[bar - 1].simile === 2) delete d.measures[bar - 1].simile; // its pair is going
+  const prev = bar > 0 ? d.measures[bar - 1] : null;
+  d.measures.forEach((om, ob) => {
+    if (ob === bar) return;
+    if (om.expressions) {
+      const kept = [];
+      for (const x of om.expressions) {
+        if (!isSpan(x)) { kept.push(x); continue; }
+        if (x.end.bar > bar) { x.end.bar--; kept.push(x); continue; }
+        if (x.end.bar < bar) { kept.push(x); continue; }
+        // ends in the bar that is going: back to the previous bar's last slot, if that is still after its start
+        if (!prev || ob > bar) continue;
+        const t = timeAt(d, bar - 1), end = { bar: bar - 1, at: capacity(t) - exprGrid(t) };
+        if (end.bar === ob && end.at <= x.at) continue;
+        x.end = end; kept.push(x);
+      }
+      if (kept.length) om.expressions = kept; else delete om.expressions;
+    }
+    if (om.ending && om.ending.end >= bar) om.ending.end--;
+  });
+  d.measures.splice(bar, 1);
+  cleanTies(d); cleanSlurs(d); cleanExpressions(d);
   return d;
 }
 
