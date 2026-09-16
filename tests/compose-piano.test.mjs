@@ -102,8 +102,11 @@ test("layout: heads under an 8va draw seven steps lower (an 8vb seven higher), t
   assert.equal(L.fingers.length, 3);
   const fl = L.fingers.filter((f) => f.ev === ch.id).sort((a, b) => a.y - b.y), fu = L.fingers.find((f) => f.ev === up.id);
   assert.deepEqual(fl.map((f) => f.n), [3, 1], "below the lower staff the digits keep the notes' order: the upper head's 3 nearest the staff, the lower head's 1 under it");
-  assert.ok(fl[0].y > L.drawn.find((x) => x.id === ch.id).botY + 1, "under the chord");
-  assert.ok(fu.y < L.drawn.find((x) => x.id === up.id).topY - 1 && fu.n === 2, "above the upper staff's note");
+  const chd = L.drawn.find((x) => x.id === ch.id), upd = L.drawn.find((x) => x.id === up.id);
+  const chOuter = chd.stem === "down" ? chd.stemTipY : chd.botY, upOuter = upd.stem === "up" ? upd.stemTipY : upd.topY;
+  assert.ok(Math.abs(fl[0].y - (chOuter + 1.91)) < 1e-9, `under the chord: the digit's baseline 1.91 S below the outer edge (ink 0.91 tall → a space of air), got ${(fl[0].y - chOuter).toFixed(2)}`);
+  assert.ok(Math.abs(fl[1].y - fl[0].y - 1.25) < 1e-9, "the stack steps 1.25 S");
+  assert.ok(Math.abs(fu.y - (upOuter - 1.0)) < 1e-9 && fu.n === 2, `above the upper staff's note: the baseline a space above the outer edge, got ${(upOuter - fu.y).toFixed(2)}`);
   // hit: the pedal line answers as a pedal, its ends as handles when selected; things() lists the spans once
   const t = thingAt(L, (p1.x1 + p1.x2) / 2 + 1.5, p1.y);
   assert.equal(t?.type, "pedal");

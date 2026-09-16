@@ -80,8 +80,10 @@ rubber band a hairpin shows. Toasts: "pedal from beat 1 of bar 3 to beat 1 of ba
   with a 1 S up-hook at the release; y = the staff's expression line + 2.2 (under the dynamics). A retake
   draws the join as a **notch** (down-up V) instead of hook + sign. Split across systems like a hairpin.
 - **Fingers** (`L.fingers`): a digit per head at the head's centre x; upper staff above the note
-  (`aboveOf − 0.5`, each next 1.25 S higher), lower staff below (`belowOf + 1.45`, each next 1.25 S
-  lower). A chord's digits keep the notes' own order — the digit nearest the staff belongs to the head
+  (baseline at `aboveOf − 1.0`, each next 1.25 S higher), lower staff below (baseline at
+  `belowOf + 1.0 + 0.91`, the digit's ink height, each next 1.25 S lower), so the ink clears a head's
+  edge by half a space and a stem tip by a whole one (v106, WSHED-135; v105 had the ink touching the
+  head: `aboveOf − 0.5` / `belowOf + 1.45`, Leif: "crammed right up against the notes"). A chord's digits keep the notes' own order — the digit nearest the staff belongs to the head
   nearest it — as fingering is printed. `aboveOf` / `belowOf` include the digits, so text and expression
   lines clear them.
 - `dy` lifts a pedal or octave line whole, like a hairpin.
