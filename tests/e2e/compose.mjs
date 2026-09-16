@@ -1697,6 +1697,31 @@ await step("v104: bars — Insert puts an empty bar before the tapped one, Delet
   await noWiden();
 });
 
+await step("v107: a two-digit time signature — Time → 12/8 on a fresh piece draws the numerator as two digit glyphs with the 8 centred under them (never the + glyph U+E08C), the leading block widens 1.8 S, and Save PDF still downloads a PDF (WSHED-143)", async () => {
+  await page.goto(`${BASE}/?app=1&t=5#/compose`);
+  await page.waitForSelector("#cp-new");
+  await page.click("#cp-new"); await page.waitForSelector("#cp-d-title"); await page.fill("#cp-d-title", "Twelve"); await page.click("#cp-d-save");
+  await page.waitForSelector(".cp-editor .cp-svg");
+  const sig = () => page.evaluate(() => { const ed = document.querySelector(".cp-editor").__editor, S = ed.state.S; const ts = [...document.querySelectorAll(".cp-sys:first-of-type text.glyph")].map((t) => ({ s: [...t.textContent].map((c) => c.codePointAt(0)), x: +t.getAttribute("x"), y: +t.getAttribute("y") })).filter((t) => t.s.every((c) => c >= 0xe080 && c <= 0xe08f)).sort((a, b) => a.y - b.y).slice(0, 2); /* the upper staff's two rows (the lower staff repeats them) */ return { S, leadW: ed.layout.systems[0].leading[0].w, ts: ts.map((t) => ({ d: t.s.map((c) => c - 0xe080).join(""), x: t.x })) }; });
+  const before = await sig();
+  if (before.ts.length !== 2 || before.ts[0].d !== "4" || before.ts[1].d !== "4") throw new Error("a fresh piece starts 4/4: " + JSON.stringify(before.ts));
+  await page.click("[data-pop=cp-time-more]"); await page.click(".cp-time[data-beats='12'][data-unit='8']");
+  await tapAt({ bar: 0, staff: 0, ticks: 200, step: 4 });
+  const after = await sig();
+  if (after.ts.length !== 2 || after.ts[0].d !== "12" || after.ts[1].d !== "8") throw new Error("12/8 as digit glyphs (0xE080 + 12 is the + glyph): " + JSON.stringify(after.ts));
+  const want = (((334 + 446 - 436) / 2) * 4 / 1000) * after.S; // the 8 centred under the 12 by Bravura's advances
+  if (Math.abs(after.ts[1].x - after.ts[0].x - want) > 1) throw new Error(`the 8 sits ${after.ts[1].x - after.ts[0].x} px right of the 12, wanted ${want.toFixed(1)}`);
+  if (Math.abs(after.leadW - before.leadW - 1.8) > 1e-6) throw new Error(`leading block ${before.leadW} → ${after.leadW}, wanted +1.8 S`);
+  await page.click("[data-pop=cp-file-more]"); await page.click("#cp-file-more [data-act=export-pdf]");
+  await page.waitForSelector(".cp-export-wrap .cp-paper .cp-page");
+  const dlp = page.waitForEvent("download", { timeout: 20000 });
+  await page.click("#cp-x-save");
+  const way = page.locator(".cp-saveway-wrap #cp-x-way-device");
+  try { await way.waitFor({ timeout: 1500 }); await way.click(); } catch {}
+  const dl = await dlp;
+  if (readFileSync(await dl.path()).subarray(0, 5).toString() !== "%PDF-") throw new Error("Save PDF of a 12/8 piece is not a PDF");
+});
+
 await step("phone width: the rails scroll, nothing widens, the editor still places", async () => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE}/?app=1&t=3#/compose`);

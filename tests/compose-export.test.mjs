@@ -6,8 +6,8 @@ import { planPages, renderPdf, exportOptions, outlineOps, STAFF_MM, PAGES, MARGI
 import { BRAVURA } from "../js/lib/compose/export/bravura.js";
 import { SYS_H, BLOCK_H } from "../js/lib/compose/layout.js";
 import { newComposition } from "../js/lib/compose/model.js";
-import { place, hideRest, nudgeRest } from "../js/lib/compose/engine.js";
-import { G, timeDigit, tupletDigit } from "../js/lib/staff/glyphs.js";
+import { place, hideRest, nudgeRest, setTime } from "../js/lib/compose/engine.js";
+import { G, timeDigit, timeSig, tupletDigit } from "../js/lib/staff/glyphs.js";
 import { goldenDoc } from "./fixtures/compose-golden.mjs";
 import { PPQ } from "../js/lib/compose/ticks.js";
 
@@ -34,6 +34,21 @@ test("every glyph the engraver can ask for has a baked outline (Bravura 1000 upm
   for (const cp of cps) assert.ok(BRAVURA.glyphs[cp]?.d, `U+${cp} has no outline — run dev/bake-bravura.mjs`);
   assert.equal(BRAVURA.upm, 1000);
   assert.equal(BRAVURA.glyphs.e0a4.a, 295, "the black head's advance is 295 units = 1.18 staff spaces, the layout's HEAD_W");
+});
+
+test("a two-digit time signature is two digit glyphs, never U+E08C (0xE080 + 12 is timeSigPlus); the rows centre on each other; 12/8 exports (WSHED-143)", async () => {
+  assert.deepEqual([...timeDigit(12)].map((c) => c.codePointAt(0).toString(16)), ["e081", "e082"]);
+  assert.equal([...timeDigit(4)].length, 1);
+  const t = timeSig(12, 8);
+  assert.equal(t.topDx, 0, "the wider row stays put");
+  assert.ok(Math.abs(t.botDx - ((334 + 446 - 436) / 2) * 4 / 1000) < 1e-9, "the 8 moves right by half the difference in advances: " + t.botDx);
+  assert.equal(t.extra, 1.8, "one more digit = 1.8 S more leading width");
+  assert.equal(timeSig(3, 4).extra, 0);
+  let d = newComposition({ id: "t128", title: "Twelve", now: 1 });
+  d = setTime(d, 0, { beats: 12, unit: 8 }).doc;
+  d = place(d, { bar: 0, staff: 0, ticks: 0, step: 4 }, { base: 4, dots: 1, rest: false }).doc;
+  const bytes = await renderPdf(planPages(d, { staffMm: 1.8, page: "letter" }), libs, { title: "Twelve", composer: "", now: new Date(0) });
+  assert.equal(text(bytes).slice(0, 5), "%PDF-", "the PDF renders — before the fix the painter threw on the numerator");
 });
 
 test("outlineOps: absolute M/L/C/Q/Z become PDF path operators (quadratics as cubics), scaled, then a fill", () => {

@@ -4,6 +4,7 @@
 // so they align tick for tick. Pure — node-testable; render.js turns the result
 // into SVG.
 import { keyAlterations, keySignatureGlyphs, CLEFS, staffStep } from "../music.js";
+import { timeSig } from "../staff/glyphs.js";
 import { ticks, capacity, groupSize } from "./ticks.js";
 import { timeAt, keyAt, clefAt, evTicks } from "./model.js";
 import { onsets, diatonicOf, nextEvent, slurEnd, expressionsOf, spansOf, barStarts, formMarksOf, simileTail } from "./engine.js";
@@ -162,7 +163,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
   const leadingW = (b, first) => {
     const clef = first || b.showClef ? 3.4 : 0;
     const ks = first || b.showKey ? Math.max(...b.clefs.map((_, si) => keysigW(b, si))) * 1.15 + (Math.max(...b.clefs.map((_, si) => keysigW(b, si))) ? 0.8 : 0) : 0;
-    const ts = b.showTime ? 3.0 : 0;
+    const ts = b.showTime ? 3.0 + timeSig(b.time.beats, b.time.unit).extra : 0; // a two-digit row (12/8) is 1.8 S wider
     return clef + ks + ts + (clef || ks || ts ? 0.6 : 0);
   };
   const bodyW = (b) => Math.max(MIN_BAR, 1.0 + b.startPad + b.cols.reduce((n, c) => n + c.w + c.clefPad + c.gracePad + c.accPad + c.arpPad + c.dotPad + c.collPad, 0) + b.tailPad + b.endPad + 1.0);
@@ -184,7 +185,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     const body = sum - lead;
     // a courtesy key / time at the end when the next system opens with a change
     const nb = bars[i];
-    sys.courtesy = nb && (nb.showKey || nb.showTime || nb.showClef) ? { clef: nb.showClef ? nb : null, key: nb.showKey ? nb : null, time: nb.showTime ? nb : null, w: (nb.showClef ? 2.8 : 0) + (nb.showKey ? Math.max(...nb.clefs.map((_, si) => keysigW(nb, si))) * 1.15 + 0.8 : 0) + (nb.showTime ? 3.0 : 0) + 1.0 } : null;
+    sys.courtesy = nb && (nb.showKey || nb.showTime || nb.showClef) ? { clef: nb.showClef ? nb : null, key: nb.showKey ? nb : null, time: nb.showTime ? nb : null, w: (nb.showClef ? 2.8 : 0) + (nb.showKey ? Math.max(...nb.clefs.map((_, si) => keysigW(nb, si))) * 1.15 + 0.8 : 0) + (nb.showTime ? 3.0 + timeSig(nb.time.beats, nb.time.unit).extra : 0) + 1.0 } : null;
     sys.scale = Math.min((avail - lead - (sys.courtesy?.w ?? 0)) / body, i >= bars.length ? 1.25 : 10);
     systems.push(sys);
   }
