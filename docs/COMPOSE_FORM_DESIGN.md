@@ -60,6 +60,7 @@ measure.form?:    [ { kind: "segno" | "coda" | "toCoda" | "fine" | "dc" | "ds" |
 | **Jump ▾** — D.C., D.C. al Fine, D.C. al Coda, D.S., D.S. al Fine, D.S. al Coda, To Coda, Fine | the mark | on the bar's end; the same → off; another jump → replaced |
 | **A** rehearsal | a rehearsal mark | on the bar's start; letters run A, B, C … in score order; again → off |
 | **♩=** tempo | asks `120` or `Allegro 120` | on the bar's start; the same → off; a different value → replaced |
+| **⫿+ / ⫿−** bars (v104, WSHED-132) | insert / delete | insert: an empty bar before the tapped bar; delete: the tapped bar goes (its marks, spans starting in it, its form; a signature change it carried stays in force); the last bar of a piece stays — docs/COMPOSE_DESIGN.md §8.5l |
 
 The armed thing shows on its picker (`aria-pressed`, a value label) and the bar under the pen is
 highlighted like a key change (`showTarget`). Toasts say what landed ("repeat end on bar 8",

@@ -14,6 +14,8 @@ export const SYS_GAP = 10;       // S between systems
 export const TOP_PAD = 6, BOTTOM_PAD = 4;
 export const BLOCK_H = 4 + STAFF_GAP + 4; // one grand-staff block
 export const SYS_H = BLOCK_H + SYS_GAP;
+/** Which of n systems a layout y belongs to: the band around its block, split halfway through the gap (paper routes ink to pages by it). */
+export const systemAt = (y, n) => Math.max(0, Math.min(n - 1, Math.floor((y - TOP_PAD + SYS_GAP / 2) / SYS_H)));
 const MAX_BARS_PER_SYSTEM = 6;
 const STEM_LEN = 3.5, BEAM_T = 0.5, BEAM_GAP = 0.75, MIN_STEM = 2.75;
 const HEAD_W = { dblWhole: 2.1, whole: 1.7, half: 1.18, black: 1.18 };

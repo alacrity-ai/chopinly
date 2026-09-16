@@ -88,10 +88,5 @@
       <note><pitch><step>A</step><octave>3</octave></pitch><duration>6720</duration><voice>5</voice><type>quarter</type><staff>2</staff></note>
       <note><pitch><step>B</step><octave>3</octave></pitch><duration>6720</duration><voice>5</voice><type>quarter</type><staff>2</staff></note>
     </measure>
-    <measure number="9">
-      <note><rest measure="yes"/><duration>26880</duration><voice>1</voice><staff>1</staff></note>
-      <backup><duration>26880</duration></backup>
-      <note><rest measure="yes"/><duration>26880</duration><voice>5</voice><staff>2</staff></note>
-    </measure>
   </part>
 </score-partwise>

@@ -95,12 +95,12 @@ test("trimBars keeps a bar the form uses; a piece with no form is unchanged", ()
   let d = newComposition({ id: "t" });
   d = place(d, { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
   for (let i = 0; i < 6; i++) d.measures.push(structuredClone(d.measures[7]));
-  assert.equal(trimBars(d).measures.length, 8);
+  assert.equal(trimBars(d).measures.length, 1, "one bar of music: a file holds one bar (v104)"); assert.equal(trimBars(d, { forEditing: true }).measures.length, 8);
   d = toggleFormMark(d, 11, { kind: "fine" });
-  assert.equal(trimBars(d).measures.length, 13, "bar 12 carries a mark: kept, plus one after it");
+  assert.equal(trimBars(d).measures.length, 12, "bar 12 carries a mark: kept, the last");
   d = toggleFormMark(d, 11, { kind: "fine" });
   d = setEnding(d, 9, 1, 12);
-  assert.equal(trimBars(d).measures.length, 14);
+  assert.equal(trimBars(d).measures.length, 13, "the ending's last bar is the last");
 });
 
 test("unroll: a plain piece plays straight; a repeat plays its span twice; endings by pass; repeat start at the piece's start when there is none", () => {

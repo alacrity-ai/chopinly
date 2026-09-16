@@ -1582,6 +1582,108 @@ await step("v103: the chevrons — ∧ arms the next shorter value, ∨ the next
   await noWiden();
 });
 
+await step("v104: bars — Insert puts an empty bar before the tapped one, Delete takes a bar (the stray last one too), undo / redo; the export preview is the plan's page: only that page's systems, ink above and below the staves kept, page 2 steps into view, the PDF has the plan's pages (WSHED-132 / 133)", async () => {
+  await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
+  if ((await state()).mode !== "place") await page.keyboard.press("v");
+  if (await page.locator("#cp-form").isHidden()) { await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=form]"); await page.click("[data-pop=cp-rails-more]"); }
+  if (await page.locator("#cp-form").isHidden()) throw new Error("the Form rail did not open");
+  const barsN = async () => (await state()).bars;
+  const sig = () => page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures.map((m) => m.staves.reduce((n, s) => n + s.voices.reduce((k, v) => k + (v ? v.filter((e) => e.kind === "note").length : 0), 0), 0)).join("."));
+  const before = await sig(), n0 = await barsN();
+  await page.evaluate(() => { document.querySelector("#cp-form").scrollLeft = 9999; });
+  await page.click(".cp-bar-insert");
+  if ((await state()).pending?.kind !== "bar-insert") throw new Error("insert not armed: " + JSON.stringify((await state()).pending));
+  if ((await page.getAttribute(".cp-bar-insert", "aria-pressed")) !== "true") throw new Error("insert button not lit");
+  await tapAt({ bar: 2, staff: 0, ticks: PPQ + 300, step: 4 });
+  const parts = before.split(".");
+  const wantIns = [...parts.slice(0, 2), "0", ...parts.slice(2)].join(".");
+  if ((await barsN()) !== n0 + 1 || (await sig()) !== wantIns) throw new Error(`insert: ${n0} → ${await barsN()} bars, ${before} → ${await sig()}`);
+  if ((await state()).pending) throw new Error("insert stayed armed");
+  await page.screenshot({ path: `${S}/cp-30-bar-inserted.png`, clip: { x: 0, y: 0, width: 1024, height: 620 } });
+  await page.click(".cp-bar-delete");
+  if ((await state()).pending?.kind !== "bar-delete") throw new Error("delete not armed");
+  await tapAt({ bar: 2, staff: 0, ticks: PPQ + 300, step: 4 });
+  if ((await barsN()) !== n0 || (await sig()) !== before) throw new Error(`delete: ${await barsN()} bars, ${await sig()}`);
+  await page.keyboard.press("Control+z");
+  if ((await sig()) !== wantIns) throw new Error("undo did not bring the bar back: " + (await sig()));
+  await page.keyboard.press("Control+z");
+  if ((await sig()) !== before) throw new Error("undo did not take the inserted bar away: " + (await sig()));
+  await page.keyboard.press("Control+Shift+z"); await page.keyboard.press("Control+Shift+z");
+  if ((await sig()) !== before || (await barsN()) !== n0) throw new Error("redo: " + (await sig()));
+  // the stray empty last bar goes too (Leif's case): delete the last bar, then undo
+  const lastEmpty = await page.evaluate(() => { const d = document.querySelector(".cp-editor").__editor.state.doc; const m = d.measures[d.measures.length - 1]; return m.staves.every((s) => s.voices.every((v) => !v || v.every((e) => e.kind === "rest"))); });
+  if (!lastEmpty) throw new Error("the piece should end with an empty bar to write into");
+  await page.click(".cp-bar-delete");
+  await tapAt({ bar: n0 - 1, staff: 0, ticks: PPQ + 300, step: 4 });
+  if ((await barsN()) !== n0 - 1) throw new Error("the last bar did not go: " + (await barsN()));
+  await page.keyboard.press("Control+z");
+  if ((await barsN()) !== n0) throw new Error("undo after deleting the last bar: " + (await barsN()));
+  // fourteen empty bars before bar 1 (insert before the first bar hands the signatures on) so the piece needs more than one page at 10 mm
+  const sigBefore = await page.evaluate(() => { const m = document.querySelector(".cp-editor").__editor.state.doc.measures[0]; return JSON.stringify([m.key, m.time, m.clefs]); });
+  for (let i = 0; i < 14; i++) { await page.click(".cp-bar-insert"); await tapAt({ bar: 0, staff: 0, ticks: PPQ + 300, step: 4 }); }
+  if ((await barsN()) !== n0 + 14) throw new Error("fourteen bars before bar 1: " + (await barsN()));
+  const sigNow = await page.evaluate(() => { const d = document.querySelector(".cp-editor").__editor.state.doc; const m = d.measures[0], m8 = d.measures[8]; return JSON.stringify([[m.key, m.time, m.clefs], [m8.key, m8.time, m8.clefs]]); });
+  if (sigNow !== JSON.stringify([JSON.parse(sigBefore), [undefined, undefined, undefined]]).replace(/null/g, "null")) { const [a, b] = JSON.parse(sigNow); if (JSON.stringify(a) !== sigBefore || b.some((x) => x != null)) throw new Error("the signatures did not move to the new bar 1: " + sigNow); }
+  // --- the export preview is the plan's page (WSHED-133) ---
+  await page.click("[data-pop=cp-file-more]");
+  await page.click("#cp-file-more [data-act=export-pdf]");
+  await page.waitForSelector(".cp-export-wrap .cp-paper .cp-page");
+  if (!(await page.isChecked("#cp-x-header"))) await page.click("#cp-x-header");
+  await page.click("[data-page=letter]"); await page.click("[data-margins=normal]");
+  for (let i = 0; i < 8 && (await page.getAttribute("#cp-x-larger", "disabled")) === null; i++) await page.click("#cp-x-larger");
+  const readout = () => page.textContent("#cp-x-size");
+  const pagesOf = async () => Number((await readout()).match(/(\d+) pages?/)[1]);
+  const plan = () => page.evaluate(() => { const p = document.querySelector("#cp-x-paper").__plan; return { pages: p.pages.map((q) => ({ first: q.first, last: q.last, top: q.top, dy: q.dy })), n: p.L.systems.length, S: p.S, h: p.page.h, m: p.margin, height: p.height, ink: p.ink }; });
+  const sysOnPage = () => page.evaluate(() => [...document.querySelectorAll(".cp-paper .cp-sys")].filter((g) => g.querySelector("line")).length);
+  /** The preview's geometric ink (lines, rects, curves — text boxes lie) in page points. */
+  const inkBox = () => page.evaluate(() => { const inner = document.querySelector(".cp-paper .cp-svg"); const y0 = Number(inner.getAttribute("y")), x0 = Number(inner.getAttribute("x")); let top = Infinity, bottom = -Infinity, left = Infinity, right = -Infinity; for (const el of inner.querySelectorAll("line, rect, polyline, polygon, path")) { const b = el.getBBox(); top = Math.min(top, y0 + b.y); bottom = Math.max(bottom, y0 + b.y + b.height); left = Math.min(left, x0 + b.x); right = Math.max(right, x0 + b.x + b.width); } return { top, bottom, left, right }; });
+  const checkPage = async (k) => {
+    const P = await plan(), pg = P.pages[k];
+    const shown = await sysOnPage();
+    if (shown !== pg.last - pg.first + 1) throw new Error(`page ${k + 1} shows ${shown} systems, the plan puts ${pg.last - pg.first + 1} there (${JSON.stringify(pg)})`);
+    const box = await inkBox();
+    const headPt = P.m + (k ? 22 : 66);
+    if (box.top < headPt - 1 || box.bottom > P.h - P.m + 1) throw new Error(`page ${k + 1}: ink from ${box.top.toFixed(1)} to ${box.bottom.toFixed(1)} pt is not inside the box ${headPt}–${(P.h - P.m).toFixed(1)}`);
+    if (!/of \d+$/.test(await page.getAttribute(".cp-paper .cp-page", "aria-label"))) throw new Error("page label");
+    return P;
+  };
+  let P = await checkPage(0);
+  if ((await pagesOf()) !== P.pages.length) throw new Error(`readout ${await readout()} vs plan ${P.pages.length}`);
+  if (P.pages.length < 2) throw new Error("the E2E piece at 10 mm should need more than one page: " + JSON.stringify(P.pages));
+  if (await page.locator("#cp-x-pager").isHidden()) throw new Error("no pager for a multi-page plan");
+  if ((await page.getAttribute("#cp-x-prev", "disabled")) === null) throw new Error("‹ should be disabled on page 1");
+  await page.screenshot({ path: `${S}/cp-31-preview-p1.png` });
+  await page.click("#cp-x-next");
+  await checkPage(1);
+  if (!/page 2 of/.test(await page.textContent("#cp-x-pageno"))) throw new Error("page number " + (await page.textContent("#cp-x-pageno")));
+  const run = await page.evaluate(() => [...document.querySelectorAll(".cp-paper .cp-page-text")].map((t) => t.textContent));
+  if (!run.includes("2")) throw new Error("page 2 shows no running page number: " + JSON.stringify(run));
+  const total = await page.evaluate(() => document.querySelectorAll(".cp-paper .cp-sys").length);
+  if (total !== P.n) throw new Error("the page SVG should hold every system's group, ink only on its own page");
+  await page.screenshot({ path: `${S}/cp-32-preview-p2.png` });
+  await page.click("#cp-x-prev");
+  await checkPage(0);
+  // the same piece with narrow margins: the plan re-routes and the preview follows (Leif's 2026-09-15 case)
+  await page.click("[data-margins=narrow]");
+  const N = await checkPage(0);
+  if (N.pages.length > P.pages.length) throw new Error("narrow margins never need more pages");
+  await page.click("[data-margins=normal]");
+  P = await checkPage(0);
+  // the PDF carries the plan's pages
+  const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 20000 }), page.click("#cp-x-save")]);
+  const txt = readFileSync(await dl.path()).toString("latin1");
+  const nPages = (txt.match(/\/Type \/Page(?!s)/g) ?? []).length;
+  if (nPages !== P.pages.length || nPages !== (await pagesOf())) throw new Error(`the PDF has ${nPages} pages, the plan ${P.pages.length}, the readout ${await pagesOf()}`);
+  // the file ends at the music: the plan's bar count is the last used bar, not the editor's trailing empty one
+  const editorBars = await barsN();
+  const planBars = await page.evaluate(() => document.querySelector("#cp-x-paper").__plan.doc.measures.length);
+  if (planBars !== editorBars - 1) throw new Error(`the file holds ${planBars} bars, the editor ${editorBars} (one to write into)`);
+  await page.click("[data-margins=wide]"); await page.click("#cp-x-smaller"); await page.click("#cp-x-smaller"); await page.click("#cp-x-smaller"); // back to 7.2 mm
+  await page.click(".cp-export-wrap .lb-close");
+  await page.waitForFunction(() => !document.querySelector(".cp-export-wrap"), null, { timeout: 5000 });
+  await noWiden();
+});
+
 await step("phone width: the rails scroll, nothing widens, the editor still places", async () => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE}/?app=1&t=3#/compose`);

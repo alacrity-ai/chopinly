@@ -1,6 +1,6 @@
 // The export sheet (docs/COMPOSE_DESIGN.md §10.1, WSHED-121): staff size − / + like the editor's
-// zoom, page (Letter / A4), margins, header, a live preview of page 1 — the same SVG the screen
-// draws, scaled onto a page — and two ways out: Save PDF (the share sheet with a file where there is
+// zoom, page (Letter / A4), margins, header, a live preview of any page — the plan's own page:
+// the systems the PDF puts there, nothing clipped at the margins (WSHED-133) — and two ways out: Save PDF (the share sheet with a file where there is
 // one, a download elsewhere) and Add to Scores (the bytes go through the Scores importer; a later
 // send replaces the linked score's file in place). Choices are remembered per device.
 import { logbook } from "../../lib/logbook.js";
@@ -8,7 +8,7 @@ import { makeStore } from "../../lib/store.js";
 import { icon } from "../../lib/icons.js";
 import { esc, toast, openSheet, plural } from "../logbook/util.js";
 import { haptic, stamp } from "../logbook/motion.js";
-import { renderComposition } from "../../lib/compose/render.js";
+import { renderPage } from "../../lib/compose/render.js";
 import { planPages, renderPdf, exportOptions, PAGES, STAFF_MM, MARGINS } from "../../lib/compose/export/pdf.js";
 import { loadPdfLib } from "../../lib/compose/export/pdflib.js";
 import { importFile } from "../scores/library.js";
@@ -16,7 +16,7 @@ import { saveFile } from "./savefile.js";
 
 const store = makeStore("compose");
 const SVG = "http://www.w3.org/2000/svg";
-const TITLE_PT = 20, COMPOSER_PT = 12; // as export/pdf.js draws them
+const TITLE_PT = 20, COMPOSER_PT = 12, RUN_PT = 9; // as export/pdf.js draws them
 /** "Composer – Title.pdf" with nothing a file system minds. */
 export const pdfFileName = (c) => {
   const raw = [c.composer, c.title].filter(Boolean).join(" – ");
@@ -33,7 +33,8 @@ export function openExportSheet({ id, doc, primary = "export-pdf" }) {
     title: "export",
     cls: "lb-acct-wrap cp-export-wrap",
     html: `<div class="cp-export-grid">
-      <div class="cp-export-preview"><div class="cp-paper" id="cp-x-paper" aria-label="page 1 preview"></div></div>
+      <div class="cp-export-preview"><div class="cp-paper" id="cp-x-paper" aria-label="page preview"></div>
+        <div class="cp-export-pager" id="cp-x-pager" hidden><button type="button" class="cp-btn cp-sq" id="cp-x-prev" aria-label="previous page">${icon("back")}</button><output id="cp-x-pageno" aria-live="polite"></output><button type="button" class="cp-btn cp-sq" id="cp-x-next" aria-label="next page">${icon("next")}</button></div></div>
       <div class="cp-export-controls">
       <div class="cp-export-row"><span class="cp-export-label">size</span>
         <span class="cp-export-seg cp-export-size"><button type="button" class="cp-btn cp-sq" id="cp-x-smaller" aria-label="smaller staff">−</button><output id="cp-x-size" aria-live="polite"></output><button type="button" class="cp-btn cp-sq" id="cp-x-larger" aria-label="larger staff">+</button></span></div>
@@ -53,31 +54,33 @@ export function openExportSheet({ id, doc, primary = "export-pdf" }) {
   const { body, close, closed } = sheet;
   const $ = (sel) => body.querySelector(sel);
   const paper = $("#cp-x-paper");
-  let plan = null, busy = false;
+  let plan = null, busy = false, pageNo = 0;
 
-  /** Page 1 as the screen's own SVG on a page: the engraver at the print S, the header as text. */
+  /** Page k as the paper will carry it: the plan's systems for that page through the screen painter, the header as text; nothing is clipped short of the page's edge. */
   function preview() {
     plan = planPages(doc, opts);
-    const { page: pg, margin: m, S, L } = plan, p0 = plan.pages[0];
-    const tmp = document.createElement("div");
-    const R = renderComposition(tmp, L);
-    const score = R.svg;
-    for (const a of ["width", "height"]) score.removeAttribute(a);
-    score.setAttribute("x", m); score.setAttribute("y", m + p0.dy * S); score.setAttribute("width", L.width); score.setAttribute("height", L.height);
-    const page = document.createElementNS(SVG, "svg");
-    page.setAttribute("class", "cp-page"); page.setAttribute("viewBox", `0 0 ${pg.w} ${pg.h}`); page.setAttribute("role", "img");
-    const clipId = `cp-x-clip-${id.replace(/[^a-z0-9]/gi, "")}`;
-    page.innerHTML = `<defs><clipPath id="${clipId}"><rect x="${m}" y="${m}" width="${plan.width}" height="${plan.height}"/></clipPath></defs><rect class="cp-page-bg" x="0" y="0" width="${pg.w}" height="${pg.h}"/>`;
-    if (opts.header) {
-      const t = document.createElementNS(SVG, "text");
-      t.setAttribute("class", "cp-page-text"); t.setAttribute("x", pg.w / 2); t.setAttribute("y", m + TITLE_PT); t.setAttribute("text-anchor", "middle"); t.setAttribute("font-size", TITLE_PT); t.textContent = c.title || "Untitled";
-      page.append(t);
-      if (c.composer) { const k = document.createElementNS(SVG, "text"); k.setAttribute("class", "cp-page-text it"); k.setAttribute("x", pg.w - m); k.setAttribute("y", m + TITLE_PT + COMPOSER_PT + 8); k.setAttribute("text-anchor", "end"); k.setAttribute("font-size", COMPOSER_PT); k.textContent = c.composer; page.append(k); }
-    }
-    const g = document.createElementNS(SVG, "g"); g.setAttribute("clip-path", `url(#${clipId})`); g.append(score); page.append(g);
-    paper.replaceChildren(page);
     const n = plan.pages.length;
+    pageNo = Math.max(0, Math.min(n - 1, pageNo));
+    const { page: pg, margin: m, S, L } = plan, pk = plan.pages[pageNo], k = pageNo;
+    const score = renderPage(L, (y) => plan.pageAt(y) === k);
+    for (const a of ["width", "height"]) score.removeAttribute(a);
+    score.setAttribute("x", m); score.setAttribute("y", m + pk.dy * S); score.setAttribute("width", L.width); score.setAttribute("height", L.height); score.setAttribute("overflow", "visible");
+    const page = document.createElementNS(SVG, "svg");
+    page.setAttribute("class", "cp-page"); page.setAttribute("viewBox", `0 0 ${pg.w} ${pg.h}`); page.setAttribute("role", "img"); page.setAttribute("aria-label", `page ${k + 1} of ${n}`);
+    page.innerHTML = `<rect class="cp-page-bg" x="0" y="0" width="${pg.w}" height="${pg.h}"/>`;
+    const words = (x, y, str, cls, size, anchor) => { const t = document.createElementNS(SVG, "text"); t.setAttribute("class", cls); t.setAttribute("x", x); t.setAttribute("y", y); t.setAttribute("text-anchor", anchor); t.setAttribute("font-size", size); t.textContent = str; page.append(t); };
+    if (opts.header) {
+      const t = c.title || "Untitled";
+      if (k === 0) { words(pg.w / 2, m + TITLE_PT, t, "cp-page-text", TITLE_PT, "middle"); if (c.composer) words(pg.w - m, m + TITLE_PT + COMPOSER_PT + 8, c.composer, "cp-page-text it", COMPOSER_PT, "end"); }
+      else { words(m, m + RUN_PT, t, "cp-page-text it", RUN_PT, "start"); words(pg.w - m, m + RUN_PT, String(k + 1), "cp-page-text", RUN_PT, "end"); }
+    }
+    page.append(score);
+    paper.replaceChildren(page);
+    paper.__plan = plan; // the E2E reads the plan the preview was drawn from
     $("#cp-x-size").textContent = `staff ${(opts.staffMm * 4).toFixed(1)} mm · ${plural(n, "page")}`;
+    $("#cp-x-pager").hidden = n < 2;
+    $("#cp-x-pageno").textContent = `page ${k + 1} of ${n}`;
+    $("#cp-x-prev").disabled = k === 0; $("#cp-x-next").disabled = k === n - 1;
     $("#cp-x-smaller").disabled = STAFF_MM.indexOf(opts.staffMm) === 0;
     $("#cp-x-larger").disabled = STAFF_MM.indexOf(opts.staffMm) === STAFF_MM.length - 1;
     for (const b of body.querySelectorAll("[data-page]")) b.setAttribute("aria-pressed", String(b.dataset.page === opts.page));
@@ -85,6 +88,8 @@ export function openExportSheet({ id, doc, primary = "export-pdf" }) {
     $("#cp-x-header").checked = opts.header;
     $("#cp-x-fine").textContent = `${PAGES[opts.page].label} · ${opts.margins} margins (${MARGINS[opts.margins]} mm) · ${plural(plan.doc.measures.length, "bar")} on ${plural(plan.L.systems.length, "system")}`;
   }
+  $("#cp-x-prev").addEventListener("click", () => { pageNo--; haptic(3); preview(); });
+  $("#cp-x-next").addEventListener("click", () => { pageNo++; haptic(3); preview(); });
   const set = (patch) => { opts = exportOptions({ ...opts, ...patch }); store.set("export", opts); haptic(3); preview(); };
   $("#cp-x-smaller").addEventListener("click", () => set({ staffMm: STAFF_MM[Math.max(0, STAFF_MM.indexOf(opts.staffMm) - 1)] }));
   $("#cp-x-larger").addEventListener("click", () => set({ staffMm: STAFF_MM[Math.min(STAFF_MM.length - 1, STAFF_MM.indexOf(opts.staffMm) + 1)] }));

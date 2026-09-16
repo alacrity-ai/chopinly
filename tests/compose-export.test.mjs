@@ -69,7 +69,7 @@ test("planPages: systems page in order without splitting, page 1 keeps the heade
   const noHeader = planPages(doc, { header: false });
   assert.equal(noHeader.pages[0].top, 3, "no header: only the air above the first staff");
   const one = planPages(goldenDoc(), {});
-  assert.equal(one.pages.length, 1); assert.equal(one.doc.measures.length, 9, "trailing empty bars trimmed to one past the last note");
+  assert.equal(one.pages.length, 1); assert.equal(one.doc.measures.length, 8, "the file ends at the last bar with music: no stray empty bar (v104)");
 });
 
 test("renderPdf: a real vector PDF — page count, Fraunces subsets embedded, Bravura outlines as form XObjects, no raster images, title metadata", async () => {
@@ -83,7 +83,7 @@ test("renderPdf: a real vector PDF — page count, Fraunces subsets embedded, Br
   assert.match(t, /\/BaseFont \/Fraunces-Italic/, "Fraunces Italic embedded");
   assert.equal((t.match(/\/FontFile2 /g) ?? []).length, 2, "two TrueType programs embedded");
   assert.ok(bytes.length > 20_000 && bytes.length < 110_000, `four pages of outlines plus two font subsets (the whole faces alone are 157 KB): ${bytes.length} bytes`);
-  assert.equal((t.match(/\/Subtype \/Form/g) ?? []).length, 6, "one form XObject per distinct glyph: brace, G clef, F clef, the digit 4, black head, and the whole rest of the trailing empty bar");
+  assert.equal((t.match(/\/Subtype \/Form/g) ?? []).length, 5, "one form XObject per distinct glyph: brace, G clef, F clef, the digit 4, black head — no trailing empty bar, so no whole rest (v104)");
   assert.doesNotMatch(t, /\/Subtype \/Image/, "vector only");
 });
 
@@ -99,4 +99,83 @@ test("paper leaves hidden rests out and follows a dragged rest; an empty piece p
   assert.equal(empty.doc.measures.length, 8);
   const bytes = await renderPdf(empty, libs, { title: "Manuscript" });
   assert.equal(pageCount(bytes), 1);
+});
+
+// --- the plan measures the ink and routes every painter (WSHED-133, v104) ---
+import { inkExtents } from "../js/lib/compose/export/pdf.js";
+import { TOP_PAD, systemAt } from "../js/lib/compose/layout.js";
+import { toggleFormMark, addPedal, addOttava, addExpression, setEnding } from "../js/lib/compose/engine.js";
+import { paintScore } from "../js/lib/compose/paint.js";
+
+/** The long piece with ink hanging outside the staves: a tempo word over bar 1, an ending bracket, a pedal line, an 8vb, a dynamic under every system's first bar. */
+function decorated() {
+  let d = longPiece(24);
+  d = toggleFormMark(d, 0, { kind: "tempo", bpm: 72, text: "Adagio" });
+  d = setEnding(d, 2, 1, 3);
+  for (let b = 0; b < 24; b += 2) d = addPedal(d, { staff: 1, bar: b, at: 0, end: { bar: b + 1, at: 3 * PPQ } }).doc;
+  d = addOttava(d, { staff: 1, bar: 4, at: 0, dir: -1, end: { bar: 5, at: 3 * PPQ } }).doc;
+  for (let b = 0; b < 24; b += 3) d = addExpression(d, { kind: "dyn", staff: 0, bar: b, at: 0, value: "ff" }).doc;
+  return d;
+}
+/** Every primitive's y, through a recording painter — what the painters see. */
+function inkYs(L) {
+  const ys = [], skip = { n: 0 };
+  const p = { group(cls) { if (skip.n || /\bcp-hidden\b/.test(cls)) skip.n++; }, end() { if (skip.n) skip.n--; }, circle() {},
+    line: (x1, y1) => { if (!skip.n) ys.push(y1); }, rect: (x, y) => { if (!skip.n) ys.push(y); }, polygon: (pts) => { if (!skip.n) ys.push(pts[0][1]); }, polyline: (pts) => { if (!skip.n) ys.push(pts[0][1]); },
+    path: (segs) => { if (!skip.n) ys.push(segs[0][2]); }, glyph: (x, y) => { if (!skip.n) ys.push(y); }, text: (x, y) => { if (!skip.n) ys.push(y); } };
+  paintScore(L, p);
+  return ys;
+}
+
+test("inkExtents: what hangs above the first staff and below the last, per system — the tempo word and the ending on system 1, the pedal lines below", () => {
+  const plan = planPages(decorated(), { staffMm: 1.8 });
+  const ink = inkExtents(plan.L);
+  assert.equal(ink.length, plan.L.systems.length);
+  assert.ok(ink[0].above > 5, `the ending bracket lane (5.6 S) and the tempo word rise above system 1: ${ink[0].above.toFixed(1)} S`);
+  assert.ok(ink[0].below > 3, `a pedal line hangs under system 1: ${ink[0].below.toFixed(1)} S`);
+  for (const e of ink) { assert.ok(e.above >= 0 && e.below >= 0 && e.left >= 0 && e.right >= 0); assert.ok(e.above < 12 && e.below < 12, "nothing absurd"); }
+  const plain = inkExtents(planPages(longPiece(4), {}).L);
+  assert.ok(plain[0].above < ink[0].above && plain[0].below < ink[0].below, "a plain piece hangs less");
+});
+
+test("planPages keeps every page's ink inside the printable box — first system under the header, last system's pedal above the margin — at every size, page and margin", () => {
+  const d = decorated();
+  let checked = 0;
+  for (const page of Object.keys(PAGES)) for (const margins of Object.keys(MARGINS)) for (const staffMm of STAFF_MM) for (const header of [true, false]) {
+    const plan = planPages(d, { page, staffMm, margins, header });
+    const availS = plan.height / plan.S, n = plan.L.systems.length;
+    assert.equal(plan.pages[0].first, 0); assert.equal(plan.pages[plan.pages.length - 1].last, n - 1);
+    plan.pages.forEach((p, k) => {
+      if (k) assert.equal(p.first, plan.pages[k - 1].last + 1, "contiguous");
+      const headS = (header ? (k ? 22 : 66) : 0) / plan.S;
+      const topInk = p.top - plan.ink[p.first].above, botInk = p.top + (p.last - p.first) * SYS_H + BLOCK_H + plan.ink[p.last].below;
+      assert.ok(topInk >= headS - 1e-9, `${page} ${margins} ${staffMm} ${header}: page ${k + 1}'s first ink (${topInk.toFixed(1)} S) is under the header (${headS.toFixed(1)} S)`);
+      assert.ok(botInk <= availS + 1e-9, `${page} ${margins} ${staffMm} ${header}: page ${k + 1}'s last ink (${botInk.toFixed(1)} S) is inside ${availS.toFixed(1)} S`);
+      if (p.last < n - 1) { const nextBot = p.top + (p.last + 1 - p.first) * SYS_H + BLOCK_H + Math.max(3, plan.ink[p.last + 1].below); assert.ok(nextBot > availS, "the page is as full as it can be"); }
+      for (let i = p.first; i <= p.last; i++) assert.equal(plan.pageOf(i), k);
+      checked++;
+    });
+  }
+  assert.ok(checked > 100);
+  // the case Leif hit (2026-09-15): narrow margins fit on one page, normal margins need two — the plan says so and the routing follows it
+  const narrow = planPages(longPiece(14), { staffMm: 2.0, margins: "narrow" }), normal = planPages(longPiece(14), { staffMm: 2.0, margins: "normal" });
+  assert.ok(normal.pages.length >= narrow.pages.length, `${narrow.pages.length} vs ${normal.pages.length}`);
+});
+
+test("pageAt: every primitive the painters draw lands on the page of its system — the same routing the preview and the PDF share", () => {
+  const plan = planPages(decorated(), { staffMm: 2.2, margins: "wide" });
+  assert.ok(plan.pages.length >= 2, "more than one page: " + plan.pages.length);
+  const n = plan.L.systems.length, ys = inkYs(plan.L);
+  assert.ok(ys.length > 500);
+  const perPage = plan.pages.map(() => 0);
+  for (const y of ys) { const k = plan.pageAt(y); assert.equal(k, plan.pageOf(systemAt(y, n))); assert.ok(k >= 0 && k < plan.pages.length); perPage[k]++; }
+  assert.ok(perPage.every((c) => c > 0), "every page carries ink: " + perPage.join(","));
+  assert.equal(systemAt(TOP_PAD, n), 0); assert.equal(systemAt(TOP_PAD + SYS_H * (n - 1) + BLOCK_H + 8, n), n - 1);
+  // the ink on a page, drawn at that page's dy, sits inside the page: from under the header to above the bottom margin
+  plan.pages.forEach((p, k) => {
+    const onPage = ys.filter((y) => plan.pageAt(y) === k).map((y) => y + p.dy);
+    const headS = (k ? 22 : 66) / plan.S;
+    assert.ok(Math.min(...onPage) >= headS - 1.5, `page ${k + 1}: ${Math.min(...onPage).toFixed(1)} S under ${headS.toFixed(1)}`); // a glyph's anchor may sit a touch above its ink's top
+    assert.ok(Math.max(...onPage) <= plan.height / plan.S + 1e-9, `page ${k + 1}: ${Math.max(...onPage).toFixed(1)} S inside ${(plan.height / plan.S).toFixed(1)}`);
+  });
 });
