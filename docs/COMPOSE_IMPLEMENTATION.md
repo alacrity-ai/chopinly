@@ -349,6 +349,12 @@ an old piece opens with its marks in place.
   subsetting fails, the fallback is embedding the whole font (~1 MB per PDF) —
   a size cost, never a fidelity cost. Raster is not a fallback.
 
+## Phase 17 — fingering air — LANDED v106 (WSHED-135, 2026-09-15)
+
+`layout.js` `FINGER_AIR` 1.0 / `FINGER_INK` 0.91: a digit's baseline sits one space beyond the note's
+outer edge (head centre or stem tip), so the ink clears a head by half a space and a stem tip by a
+whole one, above and below. docs/COMPOSE_PIANO_DESIGN.md §4; the piano layout test asserts the distances.
+
 ## Phase 16 — beams: a tight stack, a head never lost in them — LANDED v105 (WSHED-134, 2026-09-15)
 
 `layout.js`: `BEAM_T` 0.45, `BEAM_GAP` 0.3, `stemFloor(levels)`; `makeBeam` shifts the run so the

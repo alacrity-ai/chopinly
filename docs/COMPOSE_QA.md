@@ -117,6 +117,10 @@ phase's card (WSHED-115 … 122).
 - Works with the Pencil, a mouse, or a finger in Touch (slide at once). Gesture off: unchanged.
 
 
+## Fingering air (WSHED-135, v106)
+
+- [ ] Finger a stem-down note on the upper staff and a stem-up note on the lower: the digit sits clear of the head (about half a space of daylight), not touching it. Finger a stem-up upper note: the digit sits a space above the stem tip. A chord's digits stack 1.25 S apart. Export PDF: the same on paper.
+
 ## Beams (WSHED-134, v105)
 
 - [ ] Sixteenth armed: tap F5, F5, C4, F5 on one beat. Stems down; the two beams are a tight band (thinner than v104, closer together); the C4's head sits well clear of the lower beam with bare stem between. Thirty-second armed, the same shape: three beams, the C4 still clear. Mirror it (C4, C4, F5, C4): stems up, the F5 clear.

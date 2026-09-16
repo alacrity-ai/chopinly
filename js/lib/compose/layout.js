@@ -455,13 +455,15 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
   const hbarOf = new Map(); hit.systems.forEach((hs, si) => hs.bars.forEach((hb) => hbarOf.set(hb.index, { si, hb })));
   const belowOf = (d) => Math.max(d.fingerBot ?? -Infinity, d.rest ? d.y + 1 : Math.max(d.botY, d.stem === "down" ? d.stemTipY : d.botY) + (d.art?.some((m) => !ABOVE_MARKS.has(m) && !AFTER_MARKS.has(m)) && d.stem !== "down" ? 1.3 : 0));
   const aboveOf = (d) => Math.min(d.fingerTop ?? Infinity, (d.rest ? d.y - 1 : Math.min(d.topY, d.stem === "up" ? d.stemTipY : d.topY)) - (d.rest ? 0 : (d.art ?? []).reduce((n, m) => n + (m === "fermata" ? 1.8 : ABOVE_MARKS.has(m) ? 1.4 : 0), 0) + (d.trill?.alter !== undefined ? 1.6 : 0)));
-  // -- fingering (docs/COMPOSE_PIANO_DESIGN.md §4): a digit per head, above the upper staff's notes and below the lower's, stacked in the notes' own order (the digit nearest the staff belongs to the head nearest it), 1.25 S apart --
-  const FINGER_STEP = 1.25;
+  // -- fingering (docs/COMPOSE_PIANO_DESIGN.md §4): a digit per head, above the upper staff's notes and below the lower's, stacked in the notes' own order (the digit nearest the staff belongs to the head nearest it), 1.25 S apart.
+  //    A digit is 0.91 S tall on its baseline (Bravura fingering at scale 0.9); the baseline sits FINGER_AIR beyond the note's outer edge
+  //    (the head's centre or the stem tip) so the ink clears a head by half a space and a stem tip by a whole one (v106, WSHED-135) --
+  const FINGER_STEP = 1.25, FINGER_AIR = 1.0, FINGER_INK = 0.91;
   for (const d of drawn) {
     if (d.rest || !d.fingers) continue;
     const above = d.drawStaff === 0, x = d.x + d.headW / 2;
     const heads = d.heads.filter((h) => d.fingers[h.pi]).sort((p, q) => (above ? p.step - q.step : q.step - p.step));
-    let y = above ? aboveOf(d) - 0.5 : belowOf(d) + 1.45;
+    let y = above ? aboveOf(d) - FINGER_AIR : belowOf(d) + FINGER_AIR + FINGER_INK;
     for (const h of heads) { fingers.push({ x, y, n: d.fingers[h.pi], ev: d.id, pi: h.pi, system: d.system }); y += above ? -FINGER_STEP : FINGER_STEP; }
     if (above) d.fingerTop = y + FINGER_STEP - 1.15; else d.fingerBot = y - FINGER_STEP + 0.25;
   }
