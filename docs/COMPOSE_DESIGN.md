@@ -689,7 +689,13 @@ measure insert, to the FORM rail."
   object's measures — so undoing back to the opening state (the first edit of a session, once its
   300 ms save had fired) restored the saved state and looked like nothing happened. The history now
   starts from a `structuredClone` of the stored piece. The v104 E2E's insert → delete → undo → undo
-  sequence is what caught it.
+  sequence is what caught it. Leif reported the same bug from the user's side the same day
+  (WSHED-136: "the first few actions on a fresh score are not undoable — only until you're a few
+  actions in"): with one corrupt entry at the bottom of the stack, undo right after the first
+  action does nothing, and after two actions one undo works and the next does nothing. Reproduced
+  on the v103 tree, not reproducible from v104 on (mouse and finger, signed out and in, new and
+  reloaded); the E2E step "the very first tap on a brand-new score is undoable after its save"
+  pins it.
 - **The file ends at the music.** `trimBars(doc)` now trims to the **last used bar** (a note, a
   mark, a span's end, form) — no empty bar after the music in the PDF or the MusicXML; an empty
   piece still prints its eight bars of manuscript. `trimBars(doc, { forEditing: true })` is the
