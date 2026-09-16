@@ -415,3 +415,67 @@ test("a dragged rest draws restY half-spaces higher (or lower), the whole-bar re
   const S1 = layoutComposition(nudgeRest(s, [sr.id], 2), { unit: 12, width: 1024 }).drawn.find((x) => x.id === sr.id).y;
   assert.ok(Math.abs((S0 - S1) - 1) < 1e-9);
 });
+
+// -- v105 (WSHED-134): beams stack tightly and a head is never lost in the beams ----------------------------
+/** The innermost beam's near edge (the edge toward the heads) at x, over the beams of one run. */
+const innerEdge = (L, run, x) => {
+  const bs = L.beams.filter((b) => b.x1 - 1e-6 <= x && x <= b.x2 + 1e-6 && b.voice === run.voice && !b.cross);
+  const at = (b) => b.y1 + ((x - b.x1) / Math.max(1e-6, b.x2 - b.x1)) * (b.y2 - b.y1);
+  return run.stem === "down" ? Math.min(...bs.map((b) => at(b) - b.t)) : Math.max(...bs.map((b) => at(b) + b.t));
+};
+const daylight = (L, d) => (d.stem === "down" ? innerEdge(L, d, d.stemX) - (d.botY + 0.5) : (d.topY - 0.5) - innerEdge(L, d, d.stemX));
+
+test("beams: 0.45S thick, 0.3S apart; F5 F5 C4 F5 as sixteenths (stems down) and as thirty-seconds keeps the C4 head clear of the beams; the mirror (stems up) too; eighths are unchanged", () => {
+  for (const base of [16, 32]) {
+    let d = fresh();
+    [8, 8, -2, 8].forEach((step, i) => { d = put(d, 0, 0, i * ((4 * PPQ) / base), step, V(0, base)); });
+    const L = layoutComposition(d, { unit: 12, width: 1024 });
+    const run = L.drawn.filter((x) => !x.rest && x.staff === 0).sort((a, b) => a.ticks - b.ticks);
+    assert.ok(run.every((x) => x.stem === "down" && x.beamed), "stems down, all beamed");
+    const c4 = run[2];
+    assert.equal(c4.heads[0].step, -2);
+    for (const b of L.beams) assert.equal(b.t, 0.45);
+    const levels = new Set(L.beams.map((b) => Math.round((b.y1 - L.beams[0].y1) * 100) / 100));
+    assert.equal(levels.size, base === 16 ? 2 : 3, "one beam per level: " + [...levels]);
+    const sorted = [...levels].sort((a, b) => a - b);
+    for (let i = 1; i < sorted.length; i++) assert.ok(Math.abs(Math.abs(sorted[i] - sorted[i - 1]) - 0.75) < 1e-9, "levels 0.75S apart");
+    const gap = daylight(L, c4);
+    assert.ok(gap >= 1.75, `${base}: the C4 head is ${gap.toFixed(2)}S clear of the innermost beam`);
+    assert.ok(c4.stemTipY - c4.botY >= 2.75 + (base === 16 ? 0.75 : 1.5) - 1e-9, "the stem grows by the stack");
+  }
+  // the mirror: C4 C4 F5 C4 as sixteenths → stems up, the F5 head clear of the beams stacked below the primary
+  let m = fresh();
+  [-2, -2, 8, -2].forEach((step, i) => { m = put(m, 0, 0, i * (PPQ / 4), step, V(0, 16)); });
+  let L = layoutComposition(m, { unit: 12, width: 1024 });
+  const up = L.drawn.filter((x) => !x.rest && x.staff === 0).sort((a, b) => a.ticks - b.ticks);
+  assert.ok(up.every((x) => x.stem === "up"), "stems up");
+  const f5 = up[2], gapUp = daylight(L, f5);
+  assert.ok(gapUp >= 1.75, `mirror: the F5 head is ${gapUp.toFixed(2)}S clear`);
+  // eighths: a pair F5 C4 keeps the 2.75S minimum stem exactly as before
+  let e = fresh();
+  e = put(e, 0, 0, 0, 8, V(0, 8)); e = put(e, 0, 0, PPQ / 2, -2, V(0, 8));
+  L = layoutComposition(e, { unit: 12, width: 1024 });
+  const pair = L.drawn.filter((x) => !x.rest && x.staff === 0).sort((a, b) => a.ticks - b.ticks);
+  const shortest = Math.min(...pair.map((x) => (x.stem === "up" ? x.topY - x.stemTipY : x.stemTipY - x.botY)));
+  assert.ok(Math.abs(shortest - 2.75) < 1e-9, `an eighth pair's shortest stem is still 2.75S (${shortest})`);
+});
+
+test("cross-staff beam: the side that carries the secondary beams gets the longer stems, so its heads stay clear (WSHED-134)", () => {
+  // four sixteenths on the lower staff; the first (an E4) crossed up → three below carry the secondaries (dir up), the beam sits ≥ floor above their heads
+  let e = fresh();
+  for (let i = 0; i < 4; i++) e = put(e, 0, 1, i * (PPQ / 4), i === 0 ? 10 : 6, V(0, 16));
+  const ids = e.measures[0].staves[1].voices[0].filter((x) => x.kind === "note").map((x) => x.id);
+  e = crossStaff(e, ids.slice(0, 1), -1);
+  const L = layoutComposition(e, { unit: 12, width: 1024 });
+  const prim = L.beams.find((b) => b.cross);
+  assert.ok(prim, "a cross-staff beam");
+  const lower = L.drawn.filter((x) => !x.rest && x.staff === 1 && x.drawStaff === 1);
+  assert.equal(lower.length, 3);
+  for (const d of lower) {
+    assert.equal(d.stem, "up");
+    assert.ok(d.topY - d.stemTipY >= 2.75 + 0.75 - 1e-9, `a lower stem reaches past the stack: ${(d.topY - d.stemTipY).toFixed(2)}S`);
+    const sec = L.beams.filter((b) => !b.cross && b.x1 - 1e-6 <= d.stemX && d.stemX <= b.x2 + 1e-6);
+    assert.equal(sec.length, 1, "the secondary beam runs under the three lower notes");
+    assert.ok((d.topY - 0.5) - (sec[0].y1 + sec[0].t) >= 1.75, "the head is clear of the secondary beam");
+  }
+});

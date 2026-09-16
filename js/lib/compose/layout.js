@@ -17,7 +17,10 @@ export const SYS_H = BLOCK_H + SYS_GAP;
 /** Which of n systems a layout y belongs to: the band around its block, split halfway through the gap (paper routes ink to pages by it). */
 export const systemAt = (y, n) => Math.max(0, Math.min(n - 1, Math.floor((y - TOP_PAD + SYS_GAP / 2) / SYS_H)));
 const MAX_BARS_PER_SYSTEM = 6;
-const STEM_LEN = 3.5, BEAM_T = 0.5, BEAM_GAP = 0.75, MIN_STEM = 2.75;
+const STEM_LEN = 3.5, BEAM_T = 0.45, BEAM_GAP = 0.3, MIN_STEM = 2.75;
+/** The shortest stem a beamed note may have when `levels` beams stack inward from its tip (WSHED-134, Gould):
+ *  the bare stem between the head and the innermost beam never shrinks — every extra beam lengthens the stem. */
+const stemFloor = (levels) => MIN_STEM + Math.max(0, levels - 1) * (BEAM_T + BEAM_GAP);
 const HEAD_W = { dblWhole: 2.1, whole: 1.7, half: 1.18, black: 1.18 };
 const LEFT = 1.6; // S: brace + margin before the leading symbols
 const MIN_BAR = 8; // S: an empty bar
@@ -603,9 +606,11 @@ function makeBeam(run, beams) {
   const dy = Math.max(-1, Math.min(1, y2 - y1));
   const mid = (y1 + y2) / 2; y1 = mid - dy / 2; y2 = mid + dy / 2;
   const lineY = (x) => y1 + ((x - a.stemX) / Math.max(1e-6, b.stemX - a.stemX)) * (y2 - y1);
-  // every stem at least 2.75S long: shift the whole beam away from the heads
+  // every stem at least 2.75S long past the whole beam stack (a 16th run stacks one more beam toward the heads,
+  // a 32nd run two): shift the whole beam away from the heads
+  const floor = stemFloor(Math.max(...run.map((d) => d.beams)));
   let shift = 0;
-  for (const d of run) { const need = dir === "up" ? (outer(d) - MIN_STEM) - lineY(d.stemX) : lineY(d.stemX) - (outer(d) + MIN_STEM); if (need < 0) shift = Math.max(shift, -need); }
+  for (const d of run) { const need = dir === "up" ? (outer(d) - floor) - lineY(d.stemX) : lineY(d.stemX) - (outer(d) + floor); if (need < 0) shift = Math.max(shift, -need); }
   if (dir === "up") { y1 -= shift; y2 -= shift; } else { y1 += shift; y2 += shift; }
   for (const d of run) { d.stemTipY = lineY(d.stemX); d.beamed = true; d.beamRun = beams.length; }
   beamLevels(run, beams, lineY, dir, dir === "up" ? 1 : -1);
@@ -619,7 +624,9 @@ function makeBeam(run, beams) {
 function makeCrossBeam(run, beams) {
   const top = Math.min(...run.map((d) => d.drawStaff));
   const upper = run.filter((d) => d.drawStaff === top), lower = run.filter((d) => d.drawStaff !== top);
-  const yMin = Math.max(...upper.map((d) => d.botY)) + MIN_STEM, yMax = Math.min(...lower.map((d) => d.topY)) - MIN_STEM;
+  const dir = lower.length >= upper.length ? "up" : "down"; // which side the secondary beams take
+  const floor = stemFloor(Math.max(...run.map((d) => d.beams))); // the side under the stack needs the longer stems
+  const yMin = Math.max(...upper.map((d) => d.botY)) + (dir === "down" ? floor : MIN_STEM), yMax = Math.min(...lower.map((d) => d.topY)) - (dir === "up" ? floor : MIN_STEM);
   const y = yMin <= yMax ? Math.max(yMin, Math.min(yMax, (Math.max(...upper.map((d) => d.botY)) + Math.min(...lower.map((d) => d.topY))) / 2)) : (yMin + yMax) / 2;
   for (const d of run) {
     d.stem = d.drawStaff === top ? "down" : "up";
@@ -627,7 +634,6 @@ function makeCrossBeam(run, beams) {
     d.stemFromY = d.stem === "up" ? d.botY : d.topY;
     d.stemTipY = y; d.beamed = true; d.beamRun = beams.length; d.crossBeam = true;
   }
-  const dir = lower.length >= upper.length ? "up" : "down"; // which side the secondary beams take
   beamLevels(run, beams, () => y, dir, dir === "up" ? 1 : -1, true);
 }
 /** The primary beam and each secondary level (a fragment hooks toward the run when a single note carries it). */

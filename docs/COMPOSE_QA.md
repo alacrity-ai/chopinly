@@ -117,6 +117,11 @@ phase's card (WSHED-115 … 122).
 - Works with the Pencil, a mouse, or a finger in Touch (slide at once). Gesture off: unchanged.
 
 
+## Beams (WSHED-134, v105)
+
+- [ ] Sixteenth armed: tap F5, F5, C4, F5 on one beat. Stems down; the two beams are a tight band (thinner than v104, closer together); the C4's head sits well clear of the lower beam with bare stem between. Thirty-second armed, the same shape: three beams, the C4 still clear. Mirror it (C4, C4, F5, C4): stems up, the F5 clear.
+- [ ] Eighth pairs look exactly as before. Export PDF: the same on paper.
+
 ## Bars — insert and delete (WSHED-132, v104)
 - [ ] Rails ▾ → Form → the bars group: **insert** then tap bar 3 → an empty bar 3, the old bar 3 is bar 4; **delete** then tap it → gone; undo / redo each one step.
 - [ ] Delete a bar carrying a key or time change → the next bar shows the change; delete bar 1 → the new bar 1 carries the signatures.
