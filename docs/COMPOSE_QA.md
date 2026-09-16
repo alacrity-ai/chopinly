@@ -117,6 +117,10 @@ phase's card (WSHED-115 … 122).
 - Works with the Pencil, a mouse, or a finger in Touch (slide at once). Gesture off: unchanged.
 
 
+## Undo on a fresh score (WSHED-136)
+
+- [ ] New score, one tap, wait a second (the save), undo: the bar is a whole rest again; redo brings the note back. Reload the score, tap once, wait, undo: the same. (Before v104 the first edit of a session could never be undone once it had saved.)
+
 ## Fingering air (WSHED-135, v106)
 
 - [ ] Finger a stem-down note on the upper staff and a stem-up note on the lower: the digit sits clear of the head (about half a space of daylight), not touching it. Finger a stem-up upper note: the digit sits a space above the stem tip. A chord's digits stack 1.25 S apart. Export PDF: the same on paper.

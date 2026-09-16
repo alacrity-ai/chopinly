@@ -64,6 +64,19 @@ await step("new composition → the editor opens on a blank piano score, eight b
   await page.screenshot({ path: `${S}/cp-02-blank.png` });
 });
 
+await step("the very first tap on a brand-new score is undoable after its save, and redoable (WSHED-136: the history was seeded with the stored object, which every save overwrote — fixed in v104)", async () => {
+  await tapAt({ bar: 0, staff: 0, ticks: 200, step: 4 });
+  if ((await kinds(0)) !== "n4 r4 r2") throw new Error("first tap: " + (await kinds(0)));
+  await page.waitForTimeout(450); // past the 300 ms debounced save — the case Leif hit
+  if ((await lb((m) => m.logbook.compositions()[0].measures[0].staves[0].voices[0].length)) !== 3) throw new Error("not saved yet");
+  await page.click("[data-act=undo]");
+  if ((await kinds(0)) !== "r1") throw new Error("undo of the first edit after its save: " + (await kinds(0)));
+  await page.click("[data-act=redo]");
+  if ((await kinds(0)) !== "n4 r4 r2") throw new Error("redo: " + (await kinds(0)));
+  await page.click("[data-act=undo]");
+  if ((await kinds(0)) !== "r1" || (await page.getAttribute("[data-act=undo]", "disabled")) === null) throw new Error("back to the blank bar with undo spent: " + (await kinds(0)));
+});
+
 await step("tap ×4 on bar 1 → four quarters; tap bar 2 beat 1 → a quarter and rests; tap the last bar → a bar is appended", async () => {
   for (const t of [0, PPQ, 2 * PPQ, 3 * PPQ]) await tapAt({ bar: 0, staff: 0, ticks: t + 200, step: 4 + (t / PPQ) });
   if ((await kinds(0)) !== "n4 n4 n4 n4") throw new Error("bar 1: " + (await kinds(0)));
