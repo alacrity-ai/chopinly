@@ -349,6 +349,17 @@ an old piece opens with its marks in place.
   subsetting fails, the fallback is embedding the whole font (~1 MB per PDF) —
   a size cost, never a fidelity cost. Raster is not a fallback.
 
+## Phase 18 — two-digit time signatures — LANDED v107 (WSHED-143, 2026-09-16)
+
+Found by the composing pipeline on a 12/8 siciliano: `timeDigit(12)` was `cp(0xE080 + 12)` = the
+*plus* glyph on screen, and the PDF painter threw "no baked outline for U+E08C" — Save PDF did
+nothing, silently. Now `timeDigit` returns one glyph per decimal digit, `timeSig(beats, unit)`
+gives both rows with the offsets that centre each on the wider (Bravura's advances baked into
+`glyphs.js`) and the extra leading width (1.8 S per digit past one); `layout.js` widens the
+leading and courtesy blocks by it; `paint.js` draws the rows with the offsets. Tests in
+`compose-export.test.mjs` (the glyphs, the offsets, a 12/8 piece renders) and
+`compose-layout.test.mjs` (the width); an E2E step (Time → 12/8, the glyphs, the width, the download).
+
 ## Phase 17 — fingering air — LANDED v106 (WSHED-135, 2026-09-15)
 
 `layout.js` `FINGER_AIR` 1.0 / `FINGER_INK` 0.91: a digit's baseline sits one space beyond the note's

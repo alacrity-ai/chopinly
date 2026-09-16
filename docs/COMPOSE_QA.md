@@ -121,6 +121,10 @@ phase's card (WSHED-115 … 122).
 
 - [ ] New score, one tap, wait a second (the save), undo: the bar is a whole rest again; redo brings the note back. Reload the score, tap once, wait, undo: the same. (Before v104 the first edit of a session could never be undone once it had saved.)
 
+## Two-digit time signatures (WSHED-143, v107)
+
+- [ ] New piece, Time ▾ → 12/8, tap bar 1: the signature reads 12 over 8 (digits, not a plus sign), the 8 centred under the 12, the first bar starting a little further right. File ▾ → Export PDF → Save PDF downloads a real PDF with the same signature. 9/8 and 6/8 look as before.
+
 ## Fingering air (WSHED-135, v106)
 
 - [ ] Finger a stem-down note on the upper staff and a stem-up note on the lower: the digit sits clear of the head (about half a space of daylight), not touching it. Finger a stem-up upper note: the digit sits a space above the stem tip. A chord's digits stack 1.25 S apart. Export PDF: the same on paper.

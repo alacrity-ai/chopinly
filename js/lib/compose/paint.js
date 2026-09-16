@@ -3,7 +3,7 @@
 // export/pdf.js (paper). Every coordinate is in S (staff spaces); a Bravura glyph's em is
 // 4 S and its origin sits on its musical anchor. Paper differences are the painter's:
 // hidden rests and halos are skipped, voice tints are ink.
-import { G, timeDigit, tupletDigit, restGlyph, headGlyph, flagGlyph, artGlyph, dynGlyph, fingerGlyph, metGlyph } from "../staff/glyphs.js";
+import { G, timeSig, tupletDigit, restGlyph, headGlyph, flagGlyph, artGlyph, dynGlyph, fingerGlyph, metGlyph } from "../staff/glyphs.js";
 
 const TRILL_SEG = 0.948; // S per wiggleTrill segment at scale 1
 const CH_W = 0.63;       // S per italic character at size 1.15 (the text line's dashes start after its words)
@@ -40,7 +40,7 @@ export function paintScore(L, p) {
         const topY = st.topY;
         if (lead.clef) { const clefStep = (st.clef.line - 1) * 2; p.glyph(lead.x + 0.2, topY + (8 - clefStep) / 2, G[st.clef.glyph], "glyph", lead.small ? { scale: 0.8 } : {}); }
         if (lead.key) st.keysig.forEach((k, i) => p.glyph(lead.keyX + i * 1.15, topY + (8 - k.step) / 2, G[k.acc], "glyph"));
-        if (lead.time) { const b = sys.bars[sys.leading.indexOf(lead)]; p.glyph(lead.timeX, topY + 1, timeDigit(b.time.beats), "glyph"); p.glyph(lead.timeX, topY + 3, timeDigit(b.time.unit), "glyph"); }
+        if (lead.time) { const b = sys.bars[sys.leading.indexOf(lead)], t = timeSig(b.time.beats, b.time.unit); p.glyph(lead.timeX + t.topDx, topY + 1, t.top, "glyph"); p.glyph(lead.timeX + t.botDx, topY + 3, t.bottom, "glyph"); }
       });
     }
     // courtesy key / time at the system's end when the next system opens with a change
@@ -49,7 +49,7 @@ export function paintScore(L, p) {
       c.staves.forEach((st) => {
         if (st.clef) p.glyph(c.x + 0.15, st.clef.y, G[st.clef.glyph], "glyph cp-courtesy", { scale: 0.8 });
         st.keysig.forEach((k, i) => p.glyph(c.keyX + i * 1.15, st.topY + (8 - k.step) / 2, G[k.acc], "glyph cp-courtesy"));
-        if (c.time) { p.glyph(c.timeX, st.topY + 1, timeDigit(c.beats), "glyph cp-courtesy"); p.glyph(c.timeX, st.topY + 3, timeDigit(c.unit), "glyph cp-courtesy"); }
+        if (c.time) { const t = timeSig(c.beats, c.unit); p.glyph(c.timeX + t.topDx, st.topY + 1, t.top, "glyph cp-courtesy"); p.glyph(c.timeX + t.botDx, st.topY + 3, t.bottom, "glyph cp-courtesy"); }
       });
     }
     // barlines spanning both staves (docs/COMPOSE_FORM_DESIGN.md §5): thin; double = two thin; final = thin + thick; repeat = dots + thin + thick (mirrored to open a bar)

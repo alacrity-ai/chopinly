@@ -479,3 +479,12 @@ test("cross-staff beam: the side that carries the secondary beams gets the longe
     assert.ok((d.topY - 0.5) - (sec[0].y1 + sec[0].t) >= 1.75, "the head is clear of the secondary beam");
   }
 });
+
+test("a two-digit time signature widens the leading block by 1.8 S (12/8 vs 6/8), on the courtesy block too (WSHED-143)", () => {
+  const w = (beats, unit) => layoutComposition(setTime(fresh(), 0, { beats, unit }).doc, { unit: 12, width: 1024 }).systems[0].leading[0].w;
+  assert.ok(Math.abs(w(12, 8) - w(6, 8) - 1.8) < 1e-9, `${w(12, 8)} vs ${w(6, 8)}`);
+  assert.ok(Math.abs(w(9, 8) - w(6, 8)) < 1e-9, "single digits share a width");
+  const at6 = setTime(fresh(), 6, { beats: 6, unit: 8 }).doc, at12 = setTime(fresh(), 6, { beats: 12, unit: 8 }).doc;
+  const cw = (d) => layoutComposition(d, { unit: 12, width: 1024 }).systems.find((s) => s.courtesy?.time)?.courtesy.w;
+  assert.ok(cw(at6) && Math.abs(cw(at12) - cw(at6) - 1.8) < 1e-9, `courtesy ${cw(at12)} vs ${cw(at6)}`);
+});

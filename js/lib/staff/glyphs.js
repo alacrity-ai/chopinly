@@ -44,7 +44,16 @@ export const G = {
   metDblWhole: cp(0xeca0), metWhole: cp(0xeca2), metHalf: cp(0xeca3), metQuarter: cp(0xeca5),
   met8th: cp(0xeca7), met16th: cp(0xeca9), met32nd: cp(0xecab), met64th: cp(0xecad),
 };
-export const timeDigit = (n) => cp(0xe080 + n);
+// Bravura's advances (1/1000 em) of timeSig0–timeSig9; an em is 4 S, so a digit is 1.3–1.9 S wide
+const TIME_ADV = [470, 334, 446, 421, 470, 403, 434, 441, 436, 434];
+/** The time-signature glyphs of a number: one glyph per decimal digit ("12" is two glyphs, never U+E08C). */
+export const timeDigit = (n) => String(n).split("").map((d) => cp(0xe080 + Number(d))).join("");
+export const timeSigW = (n) => String(n).split("").reduce((w, d) => w + (TIME_ADV[Number(d)] * 4) / 1000, 0);
+/** A time signature's two rows: glyphs, the x offsets (S) that centre each row on the wider one, and the leading width past a single digit's 3.0 S. */
+export function timeSig(beats, unit) {
+  const wb = timeSigW(beats), wu = timeSigW(unit), w = Math.max(wb, wu);
+  return { top: timeDigit(beats), bottom: timeDigit(unit), topDx: (w - wb) / 2, botDx: (w - wu) / 2, extra: 1.8 * (Math.max(String(beats).length, String(unit).length) - 1) };
+}
 export const tupletDigit = (n) => cp(0xe880 + n);
 
 /** Rest glyph for a duration base (0 = double whole … 64). */

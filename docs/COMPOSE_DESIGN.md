@@ -247,6 +247,10 @@ the PDF chooses its own S in mm). Steps are half-spaces from line 1, as in
   the next; **6S** top padding on the first (title space is the export's job).
 - Leading symbols per system: clef per staff, key signature per staff, time
   signature on system 1 and wherever it changes.
+- A time signature's rows are digit glyphs, one per decimal digit (12/8 is two
+  glyphs over one — `0xE080 + 12` is the *plus* glyph, the bug behind WSHED-143);
+  each row is centred on the wider by Bravura's advances, and a two-digit row adds
+  1.8 S to the leading block and to a courtesy block (v107).
 
 ### 6.2 Columns
 
