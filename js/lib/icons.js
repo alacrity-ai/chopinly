@@ -26,6 +26,8 @@ const P = {
   check: `<path d="M5 12.5l4.2 4.2L19 7.5" stroke-width="2.4"/>`,
   // the pickers' chevron (WSHED-128): a small down caret instead of the ▾ text glyph
   chev: `<path d="M7 10l5 5 5-5" stroke-width="2.3"/>`,
+  // Favorites (v109, WSHED-148): the panel's ×
+  close: `<path d="M6.5 6.5l11 11M17.5 6.5l-11 11" stroke-width="2.2"/>`,
   // Gesture mode (v102, WSHED-130): a drawn stroke
   gesture: `<path d="M3.6 15.6c2.3-7.6 5-7.6 6.2 0s3.7 7.6 6.2 0"/><path d="M16 15.6l2 1.7 2-2.2"/>`,
   // Pen | Touch (v101, WSHED-129): a pencil and a pointing finger

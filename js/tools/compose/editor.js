@@ -8,7 +8,9 @@
 // grow to a fingertip, and holding or sliding aims with a lifted ghost. Gesture mode
 // (v102, §8.5j) lets a Place-mode stroke lasso, and a stroke through selected heads
 // or dynamics strike them out; its shapes (v103, §8.5k) begin with the chevrons —
-// ∧ arms the next shorter note value, ∨ the next longer, as the palette would.
+// ∧ arms the next shorter note value, ∨ the next longer, as the palette would. Favorites
+// (v109, §8.5o): a Place-mode pointer held still for two seconds summons the floating palette
+// to the hand — shown there, or moved there — and the lift places nothing.
 import { logbook } from "../../lib/logbook.js";
 import { toast } from "../logbook/util.js";
 import { haptic } from "../logbook/motion.js";
@@ -27,10 +29,12 @@ import { buildRails, MAIN_BASES, MORE_BASES, KEYS, RAILS, DEFAULT_RAILS, JUMP_LA
 import { openCompositionDetails } from "./details.js";
 import { openExportSheet } from "./exportsheet.js";
 import { saveFile } from "./savefile.js";
+import { createFavorites } from "./favorites.js";
 import { toMusicXml, musicXmlFileName, MUSICXML_TYPE } from "../../lib/compose/musicxml.js";
 
 const TAP_MS = 300, TAP_PX = 10, PALM_PX = 40, S_MIN = 8, S_MAX = 22, SAVE_MS = 300, LASSO_PX = 6;
 const FINGER_PX = 22, AIM_PX = 40, AIM_MS = 500; // Touch mode (v101): a hit answers from a fingertip away; a finger held this long (or slid) aims with a ghost floating this far above it
+const FAV_MS = 2000; // Favorites (v109): a Place-mode pointer held still this long summons the panel
 const TOUCHY = typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
 const KEY_BASE = { 1: 64, 2: 32, 3: 16, 4: 8, 5: 4, 6: 2, 7: 1 };
 const EXPR_TYPES = new Set(["dyn", "text", "hairpin", "hairpin-start", "hairpin-end", "pedal", "pedal-start", "pedal-end", "ottava", "ottava-start", "ottava-end", "textline", "textline-start", "textline-end"]); // the selectable expressions and a selected span's two handles
@@ -80,7 +84,9 @@ export function openEditor({ id, ctx, onClose }) {
   el.innerHTML = `<div class="cp-rails" id="cp-rails"></div><div class="cp-view" id="cp-view" data-mode="place"><div class="cp-sheet" id="cp-sheet"></div></div>`;
   document.body.append(el);
   const view = el.querySelector("#cp-view"), sheet = el.querySelector("#cp-sheet");
-  const rails = buildRails(el.querySelector("#cp-rails"), { title: heading(), onAction: act });
+  const rails = buildRails(el.querySelector("#cp-rails"), { title: heading(), onAction: act, onCapture: (b) => fav.capture(b) });
+  const fav = createFavorites({ host: el, rails: el.querySelector("#cp-rails"), store, onChange: () => sync() }); // Favorites (v109, §8.5o)
+  el.appendChild(fav.el);
   setRunning?.(true);
   // every write goes through `put`, so the logbook listener below can tell our own saves from a
   // change that arrived from another device (sync replaces the stored object; we mutate it in place)
@@ -121,7 +127,8 @@ export function openEditor({ id, ctx, onClose }) {
     return { any: fs.length > 0, exprs, dyns: exprs && xs.every((f) => f.x.kind === "dyn"), texts: exprs && xs.every((f) => f.x.kind === "text"), notes: notes.length > 0, rests: rests.length > 0, hidden: rests.length > 0 && rests.every((f) => f.ev.hidden), up: notes.some((f) => f.staff + (f.ev.cross ?? 0) - 1 >= 0 && Math.abs((f.ev.cross ?? 0) - 1) <= 1), down: notes.some((f) => f.staff + (f.ev.cross ?? 0) + 1 < n && Math.abs((f.ev.cross ?? 0) + 1) <= 1) };
   }
   function sync() {
-    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title: heading(), voice, used: usedVoices(doc), sel: selFacts(), tempoUnit, hands, pedalStyle, input, gesture: gestureOn });
+    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title: heading(), voice, used: usedVoices(doc), sel: selFacts(), tempoUnit, hands, pedalStyle, input, gesture: gestureOn, favorites: fav.on });
+    fav.sync(); // the slots mirror their rail buttons' state
     view.dataset.mode = mode; view.classList.toggle("pasting", pasting); view.classList.toggle("arming", !!pending);
     syncTransport();
   }
@@ -256,7 +263,7 @@ export function openEditor({ id, ctx, onClose }) {
     R.showGhost({ glyph: clef.glyph, small: t.at > 0, x: xOfTicks(hb.bar, t.at) - (t.at > 0 ? 2.9 : 0.6), y: stepY(hb.sys, t.staff, (clef.line - 1) * 2) });
   }
   function setPending(next) {
-    pending = next;
+    pending = next; favDisarm();
     if (pending) { if (drag) grabEnd({ pointerId: drag.id }, { cancel: true }); if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true }); if (mode === "pan") setMode("place"); pasting = false; }
     R?.showGhost(null); R?.showTarget(null); sync();
   }
@@ -394,7 +401,7 @@ export function openEditor({ id, ctx, onClose }) {
   }
   function cutSelection() { if (!selection.size) return; copySelection(); deleteSelection(); }
   function setPasting(on) {
-    pasting = !!on && !!clipboard;
+    pasting = !!on && !!clipboard; favDisarm();
     if (pasting) { if (drag) grabEnd({ pointerId: drag.id }, { cancel: true }); if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true }); if (mode === "pan") setMode("place"); pending = null; }
     R?.showGhost(null); R?.showTarget(null); sync();
   }
@@ -517,11 +524,12 @@ export function openEditor({ id, ctx, onClose }) {
     const { x, y } = toS(e.clientX, e.clientY);
     lassoState = { id: e.pointerId, type: e.pointerType, x0: e.clientX, y0: e.clientY, pts: [{ x, y }], active: false, t: performance.now() };
     try { view.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
+    favArm(e);
   }
   function lassoMove(e) {
     if (!lassoState || lassoState.id !== e.pointerId) return;
     if (!lassoState.active && Math.hypot(e.clientX - lassoState.x0, e.clientY - lassoState.y0) < LASSO_PX) return;
-    if (!lassoState.active) { R.showGhost(null); R.showTarget(null); } // the stroke is a gesture now, not a tap
+    if (!lassoState.active) { R.showGhost(null); R.showTarget(null); favDisarm(); } // the stroke is a gesture now, not a tap
     lassoState.active = true;
     lassoState.pts.push(toS(e.clientX, e.clientY));
     R.showLasso(lassoState.pts);
@@ -618,9 +626,32 @@ export function openEditor({ id, ctx, onClose }) {
     gesture.aim = true; haptic(4); ghostAt(gesture.lx, gesture.ly - AIM_PX);
   }
 
+  // --- Favorites (v109, §8.5o): a Place-mode pointer held still FAV_MS summons the panel to the hand ---
+  let favHold = null; // { id, x, y, timer }
+  const favDisarm = () => { if (favHold) { clearTimeout(favHold.timer); favHold = null; } };
+  /** Arm the hold for this pointer (a tap, a Gesture-mode lasso start, a Touch-mode finger); only in Place mode with nothing armed. */
+  function favArm(e) {
+    favDisarm();
+    if (mode !== "place" || pasting || pending) return;
+    const id = e.pointerId, x = e.clientX, y = e.clientY;
+    favHold = { id, x, y, timer: setTimeout(() => favFire(id, x, y), FAV_MS) };
+  }
+  function favFire(id, x, y) {
+    favHold = null;
+    if (mode !== "place" || pasting || pending) return;
+    if (lassoState?.id === id && !lassoState.active) { lassoState = null; R?.showLasso(null); } // a lasso that never travelled: spent
+    else if (gesture?.id === id && gesture.valid) { // a tap or an aim that never slid: spent, the lift places nothing
+      if (gesture.aim && Math.hypot(gesture.lx - gesture.x, gesture.ly - gesture.y) > TAP_PX) return;
+      gesture.valid = false; clearTimeout(gesture.timer);
+    } else return;
+    R?.showGhost(null); R?.showTarget(null);
+    fav.summon(x, y); haptic(8);
+  }
+
   /** The grabbable thing under the pointer: a head in any mode; in Select mode a rest or an expression (and a selected hairpin's handles) as well. */
   const headUnder = (e) => { if (!L) return null; const { x, y } = toS(e.clientX, e.clientY); const t = thingAt(L, x, y, mode === "select" ? selectedSpans() : undefined, mode === "select" ? tolOf(e) : 0); return t?.type === "head" || (mode === "select" && t && (t.type === "rest" || EXPR_TYPES.has(t.type))) ? t : null; };
   view.addEventListener("pointerdown", (e) => {
+    favDisarm(); // a second contact of any kind is not a held one
     if (e.pointerType === "pen" && !penSeen) { // the first pencil on this device: fingers rest from here on, once, unless the user says otherwise (§8.5i)
       penSeen = true; store.set("penSeen", true);
       if (input === "touch") { input = "pen"; store.set("input", "pen"); if (TOUCHY) toast("Pencil — fingers rest now. Tap Touch to draw by hand."); sync(); }
@@ -639,6 +670,7 @@ export function openEditor({ id, ctx, onClose }) {
       if (mode === "select" && !pasting && !pending) { gesture = null; lassoStart(e); return; }
       gesture = { id: e.pointerId, type: "touch", x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, t: performance.now(), valid: true, aim: false, timer: trusted ? setTimeout(() => startAim(e.pointerId), AIM_MS) : 0 };
       ghostAt(e.clientX, e.clientY);
+      if (trusted) favArm(e); // Touch mode: the finger is the pen — a still finger past the aim summons (§8.5o)
       return;
     }
     if (e.button && e.button !== 0) return;
@@ -646,6 +678,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (head) { gesture = null; grabStart(e, head); return; }
     if ((mode === "select" || (mode === "place" && gestureOn)) && !pasting && !pending) { gesture = null; lassoStart(e); return; } // Gesture mode (§8.5j): a Place-mode stroke may lasso or strike
     gesture = { id: e.pointerId, type: e.pointerType, x: e.clientX, y: e.clientY, t: performance.now(), valid: true };
+    favArm(e);
   });
   view.addEventListener("pointermove", (e) => {
     if (mode === "pan") { onPanMove(e); return; }
@@ -654,6 +687,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (e.pointerType === "touch") {
       if (gesture?.id !== e.pointerId || !gesture.valid) return;
       gesture.lx = e.clientX; gesture.ly = e.clientY;
+      if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > TAP_PX) favDisarm(); // a finger that travels is aiming or drawing, not summoning
       if (gesture.aim) { ghostAt(e.clientX, e.clientY - AIM_PX); return; } // aiming: the ghost rides above the finger
       if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) <= TAP_PX) return;
       if (input === "touch") {
@@ -670,9 +704,10 @@ export function openEditor({ id, ctx, onClose }) {
       return;
     }
     if (!gesture || gesture.id !== e.pointerId) ghostAt(e.clientX, e.clientY); // hover
-    else if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > TAP_PX) { gesture.valid = false; R?.showGhost(null); R?.showTarget(null); }
+    else if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > TAP_PX) { gesture.valid = false; favDisarm(); R?.showGhost(null); R?.showTarget(null); }
   });
   const up = (e) => {
+    if (favHold?.id === e.pointerId) favDisarm();
     if (mode === "pan") { onPanUp(e); return; }
     if (drag?.id === e.pointerId) { if (e.pointerType === "touch") touches.delete(e.pointerId); grabEnd(e, { cancel: e.type === "pointercancel" }); return; }
     if (lassoState?.id === e.pointerId) { if (e.pointerType === "touch") touches.delete(e.pointerId); lassoEnd(e, { cancel: e.type === "pointercancel" }); return; }
@@ -767,6 +802,7 @@ export function openEditor({ id, ctx, onClose }) {
       case "redo": if (history.canRedo) { doc = history.redo(); dirty = true; pruneSelection(); layout(); flush(); } return;
       case "input": setInput(arg); return; // Pen | Touch (v101)
       case "gesture": setGesture(!gestureOn); return; // Gesture mode (v102)
+      case "favorites": fav.toggle(); return; // Favorites (v109): show / hide the panel
       case "select": setMode(mode === "select" ? "place" : "select"); return;
       case "pan": setMode(mode === "pan" ? "place" : "pan"); return;
       case "delete": deleteSelection(); return;
@@ -1069,6 +1105,7 @@ export function openEditor({ id, ctx, onClose }) {
   }
   function setMode(next) {
     if (mode === next) return;
+    favDisarm();
     if (drag) grabEnd({ pointerId: drag.id }, { cancel: true });
     if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true });
     if (next === "pan") { pasting = false; pending = null; R?.showTarget(null); }
@@ -1092,6 +1129,7 @@ export function openEditor({ id, ctx, onClose }) {
     if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && allExprs()) { e.preventDefault(); act("expr-nudge", e.key === "ArrowLeft" ? -1 : 1); return; }
     if (e.key === " " || e.code === "Space") { e.preventDefault(); act("play"); return; }
     if (e.key === "Home") { e.preventDefault(); act("stop"); return; }
+    if (e.key === "Escape" && fav.state.listening >= 0) { fav.cancel(); return; } // Favorites (v109): a listening slot lets go first
     if (e.key === "Escape" && pending) { setPending(null); return; }
     if (e.key === "Escape" && pasting) { setPasting(false); return; }
     if (e.key === "Escape") { if (selection.size) { selection.clear(); showSel(); sync(); } else setMode(mode === "select" ? "place" : "select"); return; }
@@ -1104,7 +1142,7 @@ export function openEditor({ id, ctx, onClose }) {
     else if (k === "=" || k === "+") act("zoom-in"); else if (k === "-") act("zoom-out");
   };
   document.addEventListener("keydown", onKey);
-  const onResize = () => { if (!closed) layout(); };
+  const onResize = () => { if (!closed) { layout(); fav.relayout(); } };
   window.addEventListener("resize", onResize);
   const onHide = () => flush();
   window.addEventListener("pagehide", onHide);
@@ -1125,7 +1163,9 @@ export function openEditor({ id, ctx, onClose }) {
     window.removeEventListener("resize", onResize);
     window.removeEventListener("pagehide", onHide);
     cancelAnimationFrame(pan?.inertia);
+    favDisarm();
     player.destroy();
+    fav.destroy();
     rails.destroy();
     sound.destroy();
     setRunning?.(false);
@@ -1136,7 +1176,7 @@ export function openEditor({ id, ctx, onClose }) {
   const api = {
     id, close,
     /** For tests: the live state. */
-    get state() { return { mode, armed, voice, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, pending, rails: railsOn, title, doc, input, penSeen, gesture: gestureOn, canUndo: history.canUndo, canRedo: history.canRedo }; },
+    get state() { return { mode, armed, voice, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, pending, rails: railsOn, title, doc, input, penSeen, gesture: gestureOn, favorites: fav.state, canUndo: history.canUndo, canRedo: history.canRedo }; },
     /** For tests: the current layout. */
     get layout() { return L; },
     /** For tests: the client point of a musical place. */

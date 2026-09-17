@@ -16,7 +16,7 @@ page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resourc
 page.on("dialog", (d) => d.accept(d.type() === "prompt" ? d.defaultValue() : undefined));
 const step = async (name, f) => { try { await f(); console.log("ok  ", name, errors.length ? `(${errors.length} page errors so far)` : ""); } catch (e) { console.log("FAIL", name, "—", e.message); if (errors.length) console.log("  page errors:", errors.join("\n  ")); try { console.log("  toast:", await page.evaluate(() => document.querySelector(".lb-toast")?.textContent), "url:", page.url()); } catch { /* gone */ } try { console.log("  state:", JSON.stringify(await state())); } catch { /* no editor */ } await page.screenshot({ path: `${S}/fail-compose.png` }); throw e; } };
 const lb = (fn, ...args) => page.evaluate(async ([src, a]) => { const m = await import("/js/lib/logbook.js"); return (new Function("m", "a", src))(m, a); }, [`return (${fn})(m, a)`, args]);
-const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, voice: s.voice, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging, lassoing: s.lassoing, pasting: s.pasting, hasClip: s.hasClip, pending: s.pending, input: s.input, penSeen: s.penSeen, gesture: s.gesture }; });
+const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, voice: s.voice, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging, lassoing: s.lassoing, pasting: s.pasting, hasClip: s.hasClip, pending: s.pending, input: s.input, penSeen: s.penSeen, gesture: s.gesture, favorites: s.favorites }; });
 /** Every visible icon/glyph button (.cp-sq) is one exact square per rail height: the header's own, the lanes' shared one. */
 const squares = () => page.evaluate(() => {
   const out = { header: new Set(), lanes: new Set(), n: 0, bad: [] };
@@ -1769,6 +1769,145 @@ await step("v108: accidental room — a sharp after beamed eighths widens its co
   if (Math.abs(narrow.scale - wide.scale) < 1e-3) throw new Error(`the two widths stretch the system alike (${wide.scale}) — no test of the stretch`);
   if (Math.abs(w1 - w2) > 1e-6) throw new Error(`the widening changed with the stretch: ${w1.toFixed(3)} → ${w2.toFixed(3)} S`);
   await page.setViewportSize({ width: 1024, height: 768 });
+  await noWiden();
+});
+
+await step("v109: favorites — hidden at first, page 1 seeded; a pen held still 2 s summons the panel to the hand (no note on the lift), held again it moves, a slide before 2 s leaves it; a Touch-mode finger held past the aim summons, one that slides aims; the toggle hides / shows; ◀ ▶ page 1–8 and stop; an empty slot listens, mp from the rail and ppp from a hold menu are captured (not fired), zoom is refused, the slot tap again cancels; a favorite fires its rail button and mirrors it; a 1.5 s hold clears; all remembered across a reload (WSHED-148)", async () => {
+  // still on the "Sharps" piece from the v108 step: Place mode, bar 1 holds four eighths, bars 2–8 are empty
+  const fav = async () => (await state()).favorites;
+  const panel = () => page.evaluate(() => { const p = document.querySelector(".cp-fav"); const r = p.getBoundingClientRect(); const bar = p.querySelector("#cp-fav-bar").getBoundingClientRect(); return { hidden: p.hidden, x: r.left, y: r.top, w: r.width, h: r.height, gripX: bar.left + bar.width / 2, gripY: bar.top + bar.height / 2, page: p.querySelector(".cp-fav-page").textContent, hint: !p.querySelector("#cp-fav-hint").hidden, prev: p.querySelector("[data-fav=prev]").disabled, next: p.querySelector("[data-fav=next]").disabled, slots: [...p.querySelectorAll(".cp-fav-slot")].map((b) => ({ filled: !!b.dataset.filled, pressed: b.getAttribute("aria-pressed"), listen: b.classList.contains("cp-fav-listen"), text: b.textContent.trim() })) }; });
+  const pressed = () => page.locator(".cp-favbtn").getAttribute("aria-pressed");
+  const near = (p, q) => !p.hidden && Math.abs(p.gripX - q.x) <= 2 && (Math.abs(p.gripY - q.y) <= 2 || Math.abs(p.y + p.h - (768 - 8)) <= 1 || Math.abs(p.y - 8) <= 1); // the grabber under the pointer, unless the panel had to be kept on screen
+  const pen = (type, o) => synth(type, { pointerType: "pen", pointerId: 160, width: 1, height: 1, pressure: 0.5, ...o });
+  const fin = (type, o) => synth(type, { pointerType: "touch", pointerId: 161, width: 10, height: 10, ...o });
+  await page.click("[data-act=input][data-input=pen]");
+  if ((await state()).input !== "pen") throw new Error("Pen mode");
+  let f = await fav(), p = await panel();
+  if (f.on || !p.hidden || (await pressed()) !== "false") throw new Error("the panel should start hidden: " + JSON.stringify({ f, p }));
+  if (f.slots.map((k) => k?.act + (k?.alter ?? "")).join(" ") !== "acc1 acc-1 acc0 dot tie tuplet") throw new Error("page 1 seed: " + JSON.stringify(f.slots));
+  // a pen held still 2 s on empty staff: the panel appears with its grabber under the tip; the lift places nothing
+  const k3 = await kinds(3);
+  const a = await point({ bar: 3, staff: 0, ticks: PPQ, step: 6 });
+  await pen("pointerdown", { clientX: a.x, clientY: a.y });
+  await page.waitForTimeout(1200);
+  if (!(await panel()).hidden) throw new Error("the panel came before 2 s");
+  await page.waitForTimeout(1000);
+  p = await panel();
+  if (!near(p, a)) throw new Error("the hold did not summon the panel to the pen: " + JSON.stringify({ p, a }));
+  await pen("pointerup", { clientX: a.x, clientY: a.y });
+  await page.waitForTimeout(100);
+  if ((await kinds(3)) !== k3) throw new Error("the lift placed a note: " + (await kinds(3)));
+  if (!(await fav()).on || (await pressed()) !== "true") throw new Error("the toggle should light");
+  // held again elsewhere: it moves there
+  const b = await point({ bar: 5, staff: 1, ticks: 0, step: 4 });
+  await pen("pointerdown", { clientX: b.x, clientY: b.y }); await page.waitForTimeout(2200);
+  p = await panel();
+  if (!near(p, b)) throw new Error("a second hold did not move the panel: " + JSON.stringify({ p, b }));
+  await pen("pointerup", { clientX: b.x, clientY: b.y });
+  // a slide before 2 s: no summon (the panel stays where it is)
+  await pen("pointerdown", { clientX: a.x, clientY: a.y }); await page.waitForTimeout(700);
+  await pen("pointermove", { clientX: a.x + 60, clientY: a.y + 10 }); await page.waitForTimeout(1600);
+  await pen("pointerup", { clientX: a.x + 60, clientY: a.y + 10 });
+  if (Math.abs((await panel()).gripX - b.x) > 2) throw new Error("a slid pen summoned");
+  // a hold on a head is a grab, never a summon
+  const h = await point({ bar: 0, staff: 0, ticks: 0, step: 4 });
+  await pen("pointerdown", { clientX: h.x, clientY: h.y }); await page.waitForTimeout(2200);
+  if (!(await state()).dragging) throw new Error("a hold on a head should grab");
+  await pen("pointerup", { clientX: h.x, clientY: h.y });
+  if (Math.abs((await panel()).gripX - b.x) > 2) throw new Error("a hold on a head summoned");
+  await page.keyboard.press("Escape"); if ((await state()).mode !== "place") await page.keyboard.press("v");
+  // Touch mode: a still finger aims at half a second, then summons at 2 s and the lift places nothing; a finger that slides is aiming
+  await page.click("[data-act=input][data-input=touch]");
+  const t = await point({ bar: 6, staff: 0, ticks: PPQ, step: 8 });
+  await fin("pointerdown", { clientX: t.x, clientY: t.y }); await page.waitForTimeout(700);
+  if (!(await page.evaluate(() => !!document.querySelector(".cp-overlay .cp-ghost, .cp-ghost")))) console.log("  (no ghost element found to check the aim — continuing)");
+  await page.waitForTimeout(1500);
+  p = await panel();
+  if (!near(p, t)) throw new Error("a Touch-mode hold did not summon: " + JSON.stringify({ p, t }));
+  const k6 = await kinds(6);
+  await fin("pointerup", { clientX: t.x, clientY: t.y - AIM }); await page.waitForTimeout(100);
+  if ((await kinds(6)) !== k6) throw new Error("the lift after a Touch-mode summon placed: " + (await kinds(6)));
+  const t2 = await point({ bar: 6, staff: 0, ticks: 2 * PPQ, step: 4 });
+  await fin("pointerdown", { clientX: t2.x, clientY: t2.y }); await page.waitForTimeout(700);
+  await fin("pointermove", { clientX: t2.x + 30, clientY: t2.y }); await page.waitForTimeout(1600);
+  if (Math.abs((await panel()).gripX - t.x) > 2) throw new Error("a sliding finger summoned");
+  await fin("pointerup", { clientX: t2.x + 30, clientY: t2.y - AIM }); await page.waitForTimeout(100);
+  if ((await kinds(6)) === k6) throw new Error("the aim should still land a note: " + (await kinds(6)));
+  await page.keyboard.press("Control+z");
+  await page.click("[data-act=input][data-input=pen]");
+  // the toggle hides and shows (at the same place)
+  await page.click(".cp-favbtn");
+  if (!(await panel()).hidden || (await fav()).on || (await pressed()) !== "false") throw new Error("the toggle did not hide");
+  await page.click(".cp-favbtn");
+  p = await panel();
+  if (p.hidden || Math.abs(p.gripX - t.x) > 2) throw new Error("the toggle did not show the panel where it was: " + JSON.stringify(p));
+  // pages: 1 / 8 with ◀ dead, ▶ to 8 / 8 and dead, back to 2 / 8
+  if (p.page !== "1 / 8" || !p.prev || p.next) throw new Error("page 1 footer: " + JSON.stringify(p));
+  for (let i = 0; i < 7; i++) await page.click(".cp-fav [data-fav=next]");
+  p = await panel();
+  if (p.page !== "8 / 8" || !p.next || p.prev || p.slots.some((x) => x.filled)) throw new Error("page 8: " + JSON.stringify(p));
+  for (let i = 0; i < 6; i++) await page.click(".cp-fav [data-fav=prev]");
+  if ((await panel()).page !== "2 / 8" || (await fav()).page !== 1) throw new Error("page 2");
+  // an empty slot listens; mp from the Dynamics rail is captured, not fired
+  if (await page.locator("#cp-expression").isHidden()) { await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=expression]"); await page.click("[data-pop=cp-rails-more]"); }
+  await page.click(".cp-fav-slot[data-slot='0']");
+  p = await panel();
+  if (!p.slots[0].listen || !p.hint || (await fav()).listening !== 0) throw new Error("slot 0 should listen: " + JSON.stringify(p));
+  await page.click("[data-act=dyn][data-dyn=mp]");
+  f = await fav(); p = await panel();
+  if (f.listening !== -1 || JSON.stringify(f.slots[0]) !== JSON.stringify({ act: "dyn", dyn: "mp" }) || !p.slots[0].filled || p.hint) throw new Error("mp not captured: " + JSON.stringify({ f, p }));
+  if ((await state()).pending) throw new Error("the captured mp was fired: " + JSON.stringify((await state()).pending));
+  // zoom is refused (the slot keeps listening); the slot tapped again cancels
+  await page.click(".cp-fav-slot[data-slot='1']");
+  const S0 = (await state()).S;
+  await page.click("[data-act=zoom-in]");
+  if ((await state()).S !== S0 || (await fav()).listening !== 1) throw new Error("zoom should be refused and swallowed: " + JSON.stringify(await fav()));
+  if (!/can't be a favorite/.test(await page.evaluate(() => document.querySelector(".lb-toast")?.textContent ?? ""))) throw new Error("no refusal toast");
+  await page.click(".cp-fav-slot[data-slot='1']");
+  if ((await fav()).listening !== -1 || (await panel()).hint) throw new Error("the second tap should cancel");
+  // a hold-menu row: ppp
+  await page.click(".cp-fav-slot[data-slot='1']");
+  await page.evaluate(() => { document.querySelector("#cp-pp-more").hidden = false; });
+  await page.click("#cp-pp-more [data-dyn=ppp]");
+  f = await fav();
+  if (JSON.stringify(f.slots[1]) !== JSON.stringify({ act: "dyn", dyn: "ppp" }) || !(await page.locator("#cp-pp-more").isHidden())) throw new Error("ppp from the hold menu: " + JSON.stringify(f.slots[1]));
+  // a favorite fires its rail button and mirrors it: mp arms, the slot lights; Escape clears both
+  await page.click(".cp-fav-slot[data-slot='0']");
+  let st = await state();
+  if (st.pending?.kind !== "dyn" || st.pending.value !== "mp") throw new Error("the mp favorite did not arm mp: " + JSON.stringify(st.pending));
+  if ((await panel()).slots[0].pressed !== "true" || (await page.getAttribute("[data-act=dyn][data-dyn=mp]", "aria-pressed")) !== "true") throw new Error("the slot should mirror the lit rail button");
+  await page.keyboard.press("Escape");
+  if ((await state()).pending || (await panel()).slots[0].pressed !== "false") throw new Error("Escape should clear the arming on both");
+  // the seed's sharp on page 1 fires the palette's sharp on a selection
+  await page.click(".cp-fav [data-fav=prev]");
+  await page.keyboard.press("v"); await page.click("[data-act=select]");
+  const h0 = await point({ bar: 0, staff: 0, ticks: 0, step: 4 });
+  await pen("pointerdown", { clientX: h0.x, clientY: h0.y }); await pen("pointerup", { clientX: h0.x, clientY: h0.y });
+  if ((await state()).selection.length !== 1) throw new Error("select the first eighth: " + JSON.stringify((await state()).selection));
+  const alter = () => page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures[0].staves[0].voices[0][0].pitches[0].alter ?? 0);
+  await page.click(".cp-fav-slot[data-slot='0']");
+  if ((await alter()) !== 1) throw new Error("the ♯ favorite did not sharpen the selection: " + (await alter()));
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Escape"); if ((await state()).mode !== "place") await page.click("[data-act=select]");
+  // a 1.5 s hold on a filled slot clears it
+  await page.click(".cp-fav [data-fav=next]");
+  const sb = await page.evaluate(() => { const r = document.querySelector(".cp-fav-slot[data-slot='0']").getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+  await page.mouse.move(sb.x, sb.y); await page.mouse.down(); await page.waitForTimeout(1700); await page.mouse.up();
+  f = await fav();
+  if (f.slots[0] !== null || (await panel()).slots[0].filled || (await state()).pending) throw new Error("the hold did not clear slot 0: " + JSON.stringify(f.slots));
+  if (JSON.stringify(f.slots[1]) !== JSON.stringify({ act: "dyn", dyn: "ppp" })) throw new Error("the hold touched slot 1");
+  // remembered across a reload: shown where it was, page 2, ppp in slot 1
+  const before = await panel();
+  await page.reload(); await page.waitForSelector(".cp-editor .cp-svg"); await page.waitForTimeout(150);
+  f = await fav(); p = await panel();
+  if (!f.on || p.hidden || f.page !== 1 || JSON.stringify(f.slots[1]) !== JSON.stringify({ act: "dyn", dyn: "ppp" }) || !p.slots[1].filled || Math.abs(p.x - before.x) > 1 || Math.abs(p.y - before.y) > 1) throw new Error("not remembered: " + JSON.stringify({ f, p, before }));
+  await page.screenshot({ path: `${S}/cp-33-favorites.png`, clip: { x: 0, y: 0, width: 1024, height: 620 } });
+  // the grabber drags it
+  const g0 = await panel();
+  await page.mouse.move(g0.gripX - 40, g0.gripY); await page.mouse.down(); await page.mouse.move(g0.gripX - 240, g0.gripY - 120, { steps: 6 }); await page.mouse.up();
+  p = await panel();
+  if (Math.abs(p.x - (g0.x - 200)) > 2 || Math.abs(p.y - (g0.y - 120)) > 2) throw new Error("the grabber did not move the panel: " + JSON.stringify({ g0, p }));
+  await page.click(".cp-favbtn"); // hidden again for the phone step
   await noWiden();
 });
 
