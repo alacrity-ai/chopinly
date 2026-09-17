@@ -1926,6 +1926,37 @@ await step("v109: favorites — hidden at first, page 1 seeded; a pen held still
   await noWiden();
 });
 
+await step("v111: the ghost wears the armed value — an eighth hovers with a flag, a sixteenth with the sixteenth flag, a dotted eighth with the dot too, a half hollow with a stem, a whole hollow with no stem, a quarter with neither (WSHED-149)", async () => {
+  // still on the "Sharps" piece, Place mode, Pen input; bar 4 is empty
+  const pen = (type, o) => synth(type, { pointerType: "pen", pointerId: 180, width: 1, height: 1, pressure: 0.5, ...o });
+  const glyphs = await page.evaluate(async () => { const { G } = await import("/js/lib/staff/glyphs.js"); return { flag8: [G.flagUp, G.flagDown], flag16: [G.flag16Up, G.flag16Down], dot: G.dot, black: G.black, half: G.half, whole: G.whole }; });
+  const ghost = () => page.evaluate(() => { const g = document.querySelector(".cp-ghost"); return { hidden: g.hasAttribute("hidden"), stems: g.querySelectorAll(".stem").length, head: g.querySelector(".head")?.textContent ?? null, parts: [...g.querySelectorAll(".head-part")].map((t) => t.textContent) }; });
+  const hover = async () => { const p = await point({ bar: 3, staff: 0, ticks: 0, step: 4 }); await pen("pointermove", { clientX: p.x + 3, clientY: p.y }); await page.waitForTimeout(30); return ghost(); };
+  const arm = async (base) => { if (![1, 2, 4, 8, 16].includes(base)) { await page.click("[data-pop=cp-more]"); } await page.click(`[data-act=dur][data-base='${base}']`); if ((await state()).armed.base !== base) throw new Error("arm " + base); };
+  await arm(8);
+  let g = await hover();
+  if (g.hidden || g.stems !== 1 || g.head !== glyphs.black || !g.parts.some((c) => glyphs.flag8.includes(c))) throw new Error("eighth ghost: " + JSON.stringify(g));
+  await arm(16);
+  g = await hover();
+  if (!g.parts.some((c) => glyphs.flag16.includes(c)) || g.parts.some((c) => glyphs.flag8.includes(c))) throw new Error("sixteenth ghost: " + JSON.stringify(g));
+  await arm(8); await page.click("[data-act=dot]");
+  if ((await state()).armed.dots !== 1) throw new Error("dot did not arm");
+  g = await hover();
+  if (!g.parts.some((c) => glyphs.flag8.includes(c)) || !g.parts.includes(glyphs.dot)) throw new Error("dotted eighth ghost: " + JSON.stringify(g));
+  await page.click("[data-act=dot]"); if ((await state()).armed.dots !== 0) await page.click("[data-act=dot]");
+  await arm(2);
+  g = await hover();
+  if (g.stems !== 1 || g.head !== glyphs.half || g.parts.length) throw new Error("half ghost: " + JSON.stringify(g));
+  await arm(1);
+  g = await hover();
+  if (g.stems !== 0 || g.head !== glyphs.whole || g.parts.length) throw new Error("whole ghost: " + JSON.stringify(g));
+  await arm(4);
+  g = await hover();
+  if (g.stems !== 1 || g.head !== glyphs.black || g.parts.length) throw new Error("quarter ghost: " + JSON.stringify(g));
+  await page.screenshot({ path: `${S}/cp-34-ghost-eighth.png`, clip: { x: 0, y: 0, width: 1024, height: 620 } });
+  await noWiden();
+});
+
 await step("phone width: the rails scroll, nothing widens, the editor still places", async () => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE}/?app=1&t=3#/compose`);
