@@ -694,6 +694,72 @@ around them create far more space than is required. I would reduce their bufferi
   2.78S; 15 systems → 13, and bars 1–3 now share a system at scale 1.00 (the pads no longer
   inflate stretched systems). The golden layout fixture was regenerated on purpose (every x moves).
 
+### 8.5o Favorites — a floating palette, summoned by a hold (v109, WSHED-148)
+
+Leif (2026-09-17): *"a little popup, with a grabber on the top (so it can be moved around) … an X to
+close it … maybe 6 buttons, and also a page left, and a page right arrow on the bottom … support 8
+pages. This little popup is the Favorites menu. To make it popup, you have to be in note placement
+mode, you press down the pen (or touch if in touch mode) for 2 seconds (without drawing a lasso …
+just hold down in one spot) … If it is already summoned (visible), it moves to the cursor location …
+we should have, in the controls rail, a toggle button for Favorites, just like … gesture mode."*
+
+- **What it is.** A shortcut layer, nothing more: a favorite *is* a rail button, and tapping it is
+  tapping that button — the module finds the rail button the favorite names and `click()`s it, so
+  every argument, arming, retype-on-selection and toast is the rail's own, and the favorite shows
+  the button's state (`aria-pressed`, `disabled`, `.on`) mirrored after every `sync()`. A favorite
+  is stored as the button's **identity**, not its picture: `{ act, ...data-* }` (`{ act: "acc",
+  alter: "1" }`, `{ act: "dyn", dyn: "mp" }`, `{ act: "tuplet" }` for the plain tuplet button,
+  `{ act: "tuplet", n: "5" }` for the quintuplet row). A slot is drawn by cloning the live
+  button's content (ids stripped), so a Bravura glyph, a tie picture or a *cresc.* chip look as they
+  do on the rail; a favorite whose button no longer exists in a later release draws as empty.
+- **The panel** (`js/tools/compose/favorites.js`, `.cp-fav`, `position: fixed` inside the editor,
+  under the rails' menus and over the score): a **grabber bar** on top — drag it anywhere, pen or
+  finger (pointer capture; clamped to the editor on the lift; the place remembered) — with the
+  word *Favorites* and an **×** that hides it; a **3 × 2 grid** of six `.cp-btn.cp-sq` slots at
+  rail-button size; a **footer** with ◀, *"1 / 8"*, ▶ (stopped and dimmed at the ends, never
+  wrapping). Eight pages of six = 48 slots. Tapping the score does not close it: it stays while
+  you write. The active page is remembered too.
+- **Summon — hold 2 s in one spot.** In **Place mode** only (Select and Pan are not for placing;
+  `pending`, a paste and a grab are not either): a pen or mouse, or a Touch-mode finger, held
+  `FAV_MS` = 2000 ms without travelling `TAP_PX` opens the panel with its grabber under the pointer
+  (clamped on screen), a haptic tick, and the pointer is spent — the lift places nothing. Already
+  visible → it **moves** there. So the hold *pulls* the panel to the hand and shows it, in one motion.
+  The hold is armed in the three Place-mode down paths (a pen or mouse tap, a Gesture-mode lasso
+  start, a Touch-mode finger) and disarmed by travel, a lift, a second finger, or a mode change;
+  it never fires on a head (that is a grab). **Against the aim (§8.5i):** a Touch-mode finger still
+  aims at `AIM_MS` = 500 ms — the ghost lifts — but a finger that has *not slid* by 2 s is not
+  aiming, it is summoning: the aim is abandoned (ghost and target cleared) and the panel opens.
+  A finger that slides is aiming, or lassoing with Gesture on, as before. A Pen-mode finger is a
+  palm and summons nothing.
+- **The toggle.** `Favorites` (`icon("star")`, the word hidden on a phone) in its own one-segment
+  `.cp-group.cp-setting` after Gesture; `aria-pressed` = shown. Shows the panel at its last place
+  (a first show sits under the rails at the right) or hides it. Remembered per device, like Gesture.
+- **Page 1 comes seeded**: ♯, ♭, ♮, dot, tie, tuplet — the six of the palette rail Leif named.
+  Pages 2–8 start empty. The seed is the fallback when the device has nothing stored.
+- **Assigning.** Tap an empty slot: it *listens* (a pulsing outline) and the panel's hint says
+  *"Tap any rail button to put it here. Tap the slot again to cancel."* The rails' dispatcher asks
+  `onCapture(button)` before acting: while a slot listens, the next rail button tapped is captured
+  into the slot — hold-menu rows included (open the menu by hold or ▾, then tap *mp*, *ffff*, a
+  quintuplet, the dashed *cresc.*) — and not fired; the menu closes, the hint clears. **Refused**,
+  with a toast *"that one can't be a favorite"*: anything on the header, control or transport
+  rails (File, Rails, undo / redo, the modes, Pen | Touch, Gesture, Favorites, the clipboard,
+  zoom, play, tempo), a menu opener (`data-pop`), and the *set* button of the text box (it needs
+  the typed words). Everything on the six palette rails is fair: durations, dot, tie, tuplets,
+  accidentals, keys, times, clefs, marks, dynamics, hairpins, text chips, barlines, endings,
+  jumps, rehearsal, tempo units, pedal, ottavas, fingers, grace, tremolo, trills, the voice rows.
+  A tap on the listening slot, on another slot, or on × cancels. The same button may sit in more
+  than one slot; nothing polices that.
+- **Clearing.** Hold a filled slot `FAV_CLEAR_MS` = 1500 ms: it empties, with a haptic tick and the
+  toast *"removed"*; the click that follows the hold is swallowed. A tap fires it; a hold on an
+  empty slot does nothing.
+- **Persistence.** One per-device store key, `favorites`: `{ pages: 8 × [6 × (key | null)], page,
+  pos: { x, y } | null, on }`, normalised on load (a bad shape falls back to the seed). Never
+  synced — a favorite names a rail, and rails are a device's habit, like which rails show.
+- **Tests.** `js/lib/compose/favorites.js` is the pure model (`keyOf`, `sameKey`, `normalize`,
+  `assign`, `clear`, `turn`, `allowed`) with a unit test; the E2E summons by a synthetic pen hold,
+  checks a slide before 2 s and a Touch-mode hold that aims, assigns *mp* through a hold menu,
+  fires it, pages, clears by hold, and reloads to find it all remembered.
+
 ### 8.5l Bars — insert and delete (v104, WSHED-132)
 
 Leif (2026-09-15): "We don't have the capability to delete a measure … if there is a stray measure at

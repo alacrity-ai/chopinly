@@ -349,6 +349,22 @@ an old piece opens with its marks in place.
   subsetting fails, the fallback is embedding the whole font (~1 MB per PDF) —
   a size cost, never a fidelity cost. Raster is not a fallback.
 
+## Phase 20 — Favorites — v109 (WSHED-148, 2026-09-17)
+
+Leif's floating palette (design §8.5o). `js/lib/compose/favorites.js`: the pure model — a
+favorite is a rail button's identity `{ act, ...data }`, eight pages of six, `normalize` /
+`assign` / `clear` / `turn` / `allowed` (the header, control and transport rails, menu openers
+and the text box's *set* are refused). `js/tools/compose/favorites.js`: the panel (`.cp-fav`:
+grabber, ×, 3 × 2 slots cloned from the live rail buttons, ◀ n / 8 ▶), drag by the grabber,
+show / hide / summon-at-a-point, the listening slot + capture, hold-to-clear, per-device store.
+`editor.js`: `FAV_MS` = 2000 — the hold armed on the three Place-mode down paths and disarmed by
+travel, lift, a second finger or a mode change; a Touch-mode hold past the aim abandons the aim;
+`act("favorites")` toggles. `rails.js`: the `Favorites` setting button after Gesture, `onCapture`
+asked before the dispatcher acts, `update({ favorites })`. New module precached in `sw.js`.
+Tests: `tests/compose-favorites.test.mjs` (the model); an E2E step (summon by a pen hold, a
+slide before 2 s, a Touch-mode hold past the aim, assign *mp* from a hold menu, fire, page,
+clear by hold, reload).
+
 ## Phase 19 — accidental room + finer export size — LANDED v108 (WSHED-146, 2026-09-16)
 
 Leif's two enhancements in one release. `layout.js`: `stretchW` / `fixedW` split a bar's width

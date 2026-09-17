@@ -1,6 +1,6 @@
 # Compose — the iPad and phone checklist (WSHED-114)
 
-The automated suite (`tests/e2e/compose.mjs`, 25 steps in headless Chromium with an iPad user
+The automated suite (`tests/e2e/compose.mjs`, 37 steps in headless Chromium with an iPad user
 agent and touch) proves the mechanics on every release, and `npm test` the engine, layout, playback
 and both exports. These are the things only a real device tells you. Run on the iPad (Safari,
 installed to the home screen) with the Pencil, and on the phone; tick, or file the finding on the
@@ -120,6 +120,16 @@ phase's card (WSHED-115 … 122).
 ## Undo on a fresh score (WSHED-136)
 
 - [ ] New score, one tap, wait a second (the save), undo: the bar is a whole rest again; redo brings the note back. Reload the score, tap once, wait, undo: the same. (Before v104 the first edit of a session could never be undone once it had saved.)
+
+## Favorites (WSHED-148, v109)
+
+- [ ] Place mode, Pencil: hold still on empty staff for 2 s → the Favorites panel appears with its grabber under the tip, a tick, and no note on the lift. Hold again elsewhere → it moves there. Slide before 2 s (Gesture on) → a lasso, no panel. Hold on a notehead → a grab, no panel.
+- [ ] Touch mode, finger: hold still 2 s → the ghost lifts at half a second, then at 2 s the panel opens and the lift places nothing; hold half a second then slide → the aim, as before.
+- [ ] The controls rail's Favorites button shows / hides it; reload → still shown where it was. Drag by the grabber with Pencil and finger; × hides.
+- [ ] Page 1: ♯ ♭ ♮ dot tie tuplet — each lights / acts exactly as its rail button. ◀ ▶ page to 8 / 8 and stop; the marker reads *n / 8*.
+- [ ] Tap an empty slot on page 2 → the pulsing outline and the hint; hold *pp* on the Dynamics rail, tap *ppp* → the slot shows *ppp*, nothing was placed; tap the slot → *ppp* arms. Tap an empty slot then Undo → the toast refuses; tap the slot again → cancelled.
+- [ ] Hold a filled slot 1.5 s → "removed", the slot is empty; a tap on it now listens.
+- [ ] Phone: the panel fits, drags, pages; the Favorites button is an icon only.
 
 ## Accidental room + export size steps (WSHED-146, v108)
 
