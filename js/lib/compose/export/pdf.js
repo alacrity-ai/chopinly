@@ -14,8 +14,8 @@ import { trimBars } from "../engine.js";
 import { BRAVURA } from "./bravura.js";
 
 export const PAGES = { letter: { w: 612, h: 792, label: "Letter" }, a4: { w: 595.28, h: 841.89, label: "A4" } };
-/** Staff spaces on offer, in mm (1.8 = a 7.2 mm staff, the piano rastral). */
-export const STAFF_MM = [1.4, 1.5, 1.6, 1.7, 1.8, 2.0, 2.2, 2.5];
+/** Staff spaces on offer, in mm: 1.4–2.5 by 0.05 (a 0.2 mm step in the staff's height; 1.8 = a 7.2 mm staff, the piano rastral). v108 (WSHED-146) — eight coarse steps before. */
+export const STAFF_MM = Array.from({ length: 23 }, (_, i) => Math.round(140 + 5 * i) / 100);
 export const MARGINS = { narrow: 10, normal: 15, wide: 20 }; // mm
 export const DEFAULTS = { page: "letter", staffMm: 1.8, margins: "normal", header: true };
 const PT = 72 / 25.4;

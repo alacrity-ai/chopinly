@@ -349,6 +349,17 @@ an old piece opens with its marks in place.
   subsetting fails, the fallback is embedding the whole font (~1 MB per PDF) —
   a size cost, never a fidelity cost. Raster is not a fallback.
 
+## Phase 19 — accidental room + finer export size — LANDED v108 (WSHED-146, 2026-09-16)
+
+Leif's two enhancements in one release. `layout.js`: `stretchW` / `fixedW` split a bar's width
+into what justification scales and what it never does; `prevInk` + `ACC_X` / `ACC_COL` /
+`ACC_GAP` give an accidental only the deficit past the previous column's white space (design
+§8.5n); `accLeft` is the note's true left ink. `export/pdf.js`: `STAFF_MM` = 1.4–2.5 by 0.05.
+Tests: a layout test measures the widening (< 0.75S, identical at two stretches, 0.4S of air,
+the sign 1.35S from its head); the golden fixture regenerated on purpose; the E2E export step
+expects 7.2 → 7.4 mm a click and walks to 10.0; a v108 E2E step measures the sharp in pixels at
+two widths.
+
 ## Phase 18 — two-digit time signatures — LANDED v107 (WSHED-143, 2026-09-16)
 
 Found by the composing pipeline on a 12/8 siciliano: `timeDigit(12)` was `cp(0xE080 + 12)` = the

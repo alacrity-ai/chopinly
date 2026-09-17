@@ -256,10 +256,13 @@ the PDF chooses its own S in mm). Steps are half-spaces from line 1, as in
 
 For each bar, the **union of onsets** across both staves' voices forms the
 columns. Each column gets an ideal width `w = 2.5 + 1.05 × log2(ticks / 240)`
-(the sight-singing curve with ticks) plus accidental padding (1.4S per stacked
-accidental) and dot padding (0.9S). A bar's ideal width is the sum plus barline
-padding. Systems pack greedily, 1–6 bars, then justify by scaling column widths
-(leading symbols keep natural width). Mid-bar key / time / clef changes are
+(the sight-singing curve with ticks) plus glyph room: dot padding (0.9S) and, since
+v108 (§8.5n), an accidental's *deficit* — the sign first uses the white space the
+previous column leaves after its ink, and the column widens only by what is still
+missing (before v108 every accidental widened it by 1.4S). A bar's ideal width is the
+sum plus barline padding. Systems pack greedily, 1–6 bars, then justify by scaling the
+duration widths and margins only: glyph room (accidentals, dots, clefs, graces, rolls, a
+second voice's offset) and the leading symbols keep their natural width. Mid-bar key / time / clef changes are
 columns of their own.
 
 ### 6.3 Noteheads, stems, chords
@@ -666,6 +669,31 @@ F5 … the C4 has no gap between its head, and the 16th note beams, so it is bei
   off the stem tip and move with it. The layout golden was regenerated on purpose (13 values: beam
   thickness and one sixteenth run's stems).
 
+### 8.5n Accidental room — half the buffering, none of it stretched (v108, WSHED-146)
+
+Leif (2026-09-16): *"Accidentals take up way too much horizontal space… demanding that notes
+around them create far more space than is required. I would reduce their buffering by half or so."*
+
+- **What was wrong.** Every accidental widened its column by a fixed 1.4S, and the justification
+  then multiplied that room by the system's stretch (up to ×1.25 on a last system, more on a
+  short one), while the sign itself stayed 1.35S before its head. The extra opened up *between
+  the previous note and the sign* — in the B minor's bar 1 the F♮ stood 2.4S clear of the F♯.
+- **The rule now.** A bar's width splits into what justification stretches (duration widths,
+  margins) and what it never does (glyph room: `accPad`, `dotPad`, `clefPad`, `gracePad`,
+  `arpPad`, `collPad`). A sign takes the white space the previous column leaves after its ink
+  first — the widest head, a flipped second, a dot, a flag on an up stem when the note stands
+  alone in its beat group (`prevInk`) — and the column widens only by the deficit, keeping
+  `ACC_GAP` = 0.4S of air before the sign; the sign itself stays `ACC_X` = 1.35S before its head,
+  a stacked column `ACC_COL` = 1.15S further. After an eighth or longer the deficit is zero: the
+  column does not widen at all. After a sixteenth it widens by ~0.4S, at a bar's start by ~0.75S
+  (the barline). A column with grace notes or a roll sign keeps the whole room as its own
+  (graces and the wiggle stand left of the signs). `drawn[].accLeft` is now the note's true
+  leftmost ink (the signs included) — trill lines, grace slurs and roll signs read it.
+- **Measured** (the B minor at S = 12 px, width 1240): the air between bar 1's F♯ and the F♮'s
+  sign 4.75S → 1.03S; over the piece's 69 signs the least air 1.86S → 0.43S, the mean 4.73S →
+  2.78S; 15 systems → 13, and bars 1–3 now share a system at scale 1.00 (the pads no longer
+  inflate stretched systems). The golden layout fixture was regenerated on purpose (every x moves).
+
 ### 8.5l Bars — insert and delete (v104, WSHED-132)
 
 Leif (2026-09-15): "We don't have the capability to delete a measure … if there is a stray measure at
@@ -778,8 +806,9 @@ As built (the text below replaced the plan on 2026-09-14; the spike that decided
   every size / page / margin / header, `pageAt` routing of every primitive; the E2E counts the
   systems on each preview page against the plan, measures the ink against the box, steps to page
   2, and matches the PDF's page count (`paper.__plan` exposes the plan the preview was drawn from).
-- **The sheet** (`js/tools/compose/exportsheet.js`): size − / + through the eight staff
-  spaces with a readout in staff mm + page count; page, margins, header; a live **page-1
+- **The sheet** (`js/tools/compose/exportsheet.js`): size − / + through the staff spaces
+  1.4–2.5 mm by 0.05 (23 steps, 0.2 mm of staff height a tick — v108, WSHED-146; eight coarse
+  steps before, which Leif found "ticks too large amounts") with a readout in staff mm + page count; page, margins, header; a live **page-1
   preview** = the screen's own SVG at the print S inside a page-shaped SVG with the header as
   text; choices in `ws.compose.export`. Two columns from 720 px so the actions stay above the
   fold on an iPad on its side. *Save PDF* → where a share sheet exists a small choice, **Save to device** (an `<a download>` → Downloads / Files) or **Share…** (`navigator.share({ files })`), else the download straight away (v89 — Leif: the share sheet alone did not save); *Add to Scores* → `importFile(file, { title, composer, tags, replace })`.

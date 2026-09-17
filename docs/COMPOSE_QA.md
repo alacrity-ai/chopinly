@@ -121,6 +121,13 @@ phase's card (WSHED-115 … 122).
 
 - [ ] New score, one tap, wait a second (the save), undo: the bar is a whole rest again; redo brings the note back. Reload the score, tap once, wait, undo: the same. (Before v104 the first edit of a session could never be undone once it had saved.)
 
+## Accidental room + export size steps (WSHED-146, v108)
+
+- [ ] Eighth armed, tap four B4s on one beat pair, select the fourth, ♯: the sharp sits snug before its head and the four heads stay evenly spaced (the sharp's column no longer opens a gap after the third note). Open a chromatic piece (Invention 8 in B minor): the F♮ in bar 1 is close on the F♯.
+- [ ] Sixteenth armed, four notes, ♭ on the second: the flat still clears the first head (a little air, never touching).
+- [ ] A chord with a second and a sharp on the lower note, then a roll: the wiggle stands left of the sharp as before; a grace note before a sharpened note stands left of the sharp.
+- [ ] File ▾ → Export PDF: + reads 7.2 → 7.4 → 7.6 mm (a step a tap); − back; the ends are still 5.6 and 10.0 mm; the preview re-pages at every step.
+
 ## Two-digit time signatures (WSHED-143, v107)
 
 - [ ] New piece, Time ▾ → 12/8, tap bar 1: the signature reads 12 over 8 (digits, not a plus sign), the 8 centred under the 12, the first bar starting a little further right. File ▾ → Export PDF → Save PDF downloads a real PDF with the same signature. 9/8 and 6/8 look as before.
