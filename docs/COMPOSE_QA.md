@@ -121,7 +121,7 @@ phase's card (WSHED-115 … 122).
 
 - [ ] New score, one tap, wait a second (the save), undo: the bar is a whole rest again; redo brings the note back. Reload the score, tap once, wait, undo: the same. (Before v104 the first edit of a session could never be undone once it had saved.)
 
-## Favorites (WSHED-148, v109)
+## Favorites (WSHED-148, v109; v110 the lift after a drag)
 
 - [ ] Place mode, Pencil: hold still on empty staff for 2 s → the Favorites panel appears with its grabber under the tip, a tick, and no note on the lift. Hold again elsewhere → it moves there. Slide before 2 s (Gesture on) → a lasso, no panel. Hold on a notehead → a grab, no panel.
 - [ ] Touch mode, finger: hold still 2 s → the ghost lifts at half a second, then at 2 s the panel opens and the lift places nothing; hold half a second then slide → the aim, as before.
@@ -130,6 +130,7 @@ phase's card (WSHED-115 … 122).
 - [ ] Tap an empty slot on page 2 → the pulsing outline and the hint; hold *pp* on the Dynamics rail, tap *ppp* → the slot shows *ppp*, nothing was placed; tap the slot → *ppp* arms. Tap an empty slot then Undo → the toast refuses; tap the slot again → cancelled.
 - [ ] Hold a filled slot 1.5 s → "removed", the slot is empty; a tap on it now listens.
 - [ ] Phone: the panel fits, drags, pages; the Favorites button is an icon only.
+- [ ] v110: drag the panel by the grabber with a finger past the bottom or right edge and let go: it snaps back on screen and nothing is pressed — no slot arms, the panel does not close (Leif found the release pressing a button or the ×).
 
 ## Accidental room + export size steps (WSHED-146, v108)
 

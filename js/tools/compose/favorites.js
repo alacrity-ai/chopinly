@@ -10,6 +10,7 @@ import { PAGES, SLOTS, keyOf, sameKey, allowed, normalize, assign, clear, turn }
 
 export const FAV_CLEAR_MS = 1500; // hold a filled slot this long to empty it
 const PAD = 8;                     // the panel keeps this much of the editor's edge
+const DRAG_PX = 4, DRAG_CLICK_MS = 600; // a grab that travelled this far is a drag, and no click inside the panel counts for this long after it ends
 
 /**
  * createFavorites({ host, rails, store, onChange }) — host is the editor element the panel lives in,
@@ -94,20 +95,31 @@ export function createFavorites({ host, rails, store, onChange }) {
   if (st.on) requestAnimationFrame(() => { if (el.isConnected) { if (st.pos) put(st.pos.x, st.pos.y); else firstPlace(); } });
 
   // --- the grabber: pointer capture, the panel follows, clamped on the lift -----------------
-  let drag = null;
+  // The lift after a drag must press nothing (v110, Leif on the iPad: "sometimes it seems to push a random button, or
+  // even close it, on the release"): the clamp can jump the panel back under the finger, and iOS then synthesises the
+  // tap's click on whatever sits there — a slot, the ×. So a click inside the panel within DRAG_CLICK_MS of a drag's end
+  // is swallowed, and the touch's own end is cancelled so no click is synthesised at all.
+  let drag = null, dragEndAt = -Infinity;
   bar.addEventListener("pointerdown", (e) => {
     if (e.target.closest("[data-fav]") || (e.button && e.button !== 0)) return;
     e.preventDefault();
-    drag = { id: e.pointerId, dx: e.clientX - el.offsetLeft, dy: e.clientY - el.offsetTop };
+    drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, dx: e.clientX - el.offsetLeft, dy: e.clientY - el.offsetTop, moved: false };
     try { bar.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
   });
-  bar.addEventListener("pointermove", (e) => { if (drag?.id !== e.pointerId) return; el.style.left = `${e.clientX - drag.dx}px`; el.style.top = `${e.clientY - drag.dy}px`; });
-  const dragEnd = (e) => { if (drag?.id !== e.pointerId) return; drag = null; put(el.offsetLeft, el.offsetTop); save(); };
+  bar.addEventListener("pointermove", (e) => {
+    if (drag?.id !== e.pointerId) return;
+    if (!drag.moved && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > DRAG_PX) drag.moved = true;
+    el.style.left = `${e.clientX - drag.dx}px`; el.style.top = `${e.clientY - drag.dy}px`;
+  });
+  const dragEnd = (e) => { if (drag?.id !== e.pointerId) return; const moved = drag.moved; drag = null; if (moved) dragEndAt = performance.now(); put(el.offsetLeft, el.offsetTop); save(); };
   bar.addEventListener("pointerup", dragEnd); bar.addEventListener("pointercancel", dragEnd);
+  bar.addEventListener("touchend", (e) => { if (drag?.moved || performance.now() - dragEndAt < DRAG_CLICK_MS) e.preventDefault(); }, { passive: false }); // no synthesised click after a drag
+  const afterDrag = () => performance.now() - dragEndAt < DRAG_CLICK_MS;
   el.addEventListener("pointerdown", (e) => e.stopPropagation()); // the editor's document-level listeners are not for the panel
 
   // --- taps: a slot fires its button or starts listening; the footer pages; × hides ---------
   el.addEventListener("click", (e) => {
+    if (afterDrag()) { e.preventDefault(); e.stopPropagation(); return; } // the lift after a drag presses nothing
     const b = e.target.closest("[data-fav], .cp-fav-slot");
     if (!b || b.disabled) return;
     if (swallow) { swallow = false; return; }
@@ -127,7 +139,7 @@ export function createFavorites({ host, rails, store, onChange }) {
   for (const b of slots) {
     let timer = 0;
     b.addEventListener("pointerdown", (e) => {
-      if ((e.button && e.button !== 0) || !b.dataset.filled) return;
+      if ((e.button && e.button !== 0) || !b.dataset.filled || afterDrag()) return;
       clearTimeout(timer);
       timer = setTimeout(() => { swallow = true; st = clear(st, st.page, Number(b.dataset.slot)); listening = -1; save(); render(); haptic(8); toast("removed"); }, FAV_CLEAR_MS);
     });

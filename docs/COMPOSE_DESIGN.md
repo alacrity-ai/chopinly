@@ -752,6 +752,7 @@ we should have, in the controls rail, a toggle button for Favorites, just like �
 - **Clearing.** Hold a filled slot `FAV_CLEAR_MS` = 1500 ms: it empties, with a haptic tick and the
   toast *"removed"*; the click that follows the hold is swallowed. A tap fires it; a hold on an
   empty slot does nothing.
+- **The lift after a drag presses nothing (v110).** Leif on the iPad: the release sometimes pushed a slot or the ×. The clamp can jump the panel back under the finger, and iOS synthesises the tap's click on whatever sits there. So a grab that travelled `DRAG_PX` = 4 is a drag; its `touchend` is cancelled (no synthesised click) and any click inside the panel within `DRAG_CLICK_MS` = 600 of the drag's end is swallowed, hold-to-clear included.
 - **Persistence.** One per-device store key, `favorites`: `{ pages: 8 × [6 × (key | null)], page,
   pos: { x, y } | null, on }`, normalised on load (a bad shape falls back to the seed). Never
   synced — a favorite names a rail, and rails are a device's habit, like which rails show.
