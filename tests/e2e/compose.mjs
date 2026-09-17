@@ -1907,6 +1907,21 @@ await step("v109: favorites — hidden at first, page 1 seeded; a pen held still
   await page.mouse.move(g0.gripX - 40, g0.gripY); await page.mouse.down(); await page.mouse.move(g0.gripX - 240, g0.gripY - 120, { steps: 6 }); await page.mouse.up();
   p = await panel();
   if (Math.abs(p.x - (g0.x - 200)) > 2 || Math.abs(p.y - (g0.y - 120)) > 2) throw new Error("the grabber did not move the panel: " + JSON.stringify({ g0, p }));
+  // v110: the lift after a finger drag presses nothing — dragged off the bottom edge the clamp jumps the panel back under the finger, and the click iOS then synthesises there (a slot, the ×) is swallowed
+  const g1 = await panel();
+  const onBar = (type, x, y) => page.evaluate(([type, x, y]) => { document.querySelector("#cp-fav-bar").dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, isPrimary: true, pointerType: "touch", pointerId: 170, clientX: x, clientY: y })); }, [type, x, y]);
+  const drop = (768 - 8 - g1.h + 90) + (g1.gripY - g1.y); // dropped 90 px past the bottom edge: the clamp lifts the panel so the first slot row sits under the finger
+  await onBar("pointerdown", g1.gripX - 40, g1.gripY);
+  for (let i = 1; i <= 6; i++) await onBar("pointermove", g1.gripX - 40, g1.gripY + (drop - g1.gripY) * i / 6);
+  await onBar("pointerup", g1.gripX - 40, drop);
+  p = await panel();
+  if (p.hidden || p.y + p.h > 768 - 7) throw new Error("the panel should be clamped on screen after the drag: " + JSON.stringify(p));
+  const under = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest?.(".cp-fav-slot")?.dataset.slot ?? null, [g1.gripX - 40, drop]);
+  if (under === null) throw new Error("the probe should end over a slot after the clamp (the check would have no teeth)");
+  await page.evaluate(([x, y]) => { document.elementFromPoint(x, y).dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, clientX: x, clientY: y })); }, [g1.gripX - 40, drop]); // what iOS synthesises at the lift
+  f = await fav(); p = await panel();
+  if (!f.on || p.hidden || f.page !== 1 || f.listening !== -1 || (await state()).pending) throw new Error("the lift after a drag pressed something: " + JSON.stringify({ under, f }));
+  await page.waitForTimeout(650); // the window closes: a plain tap on the × still hides
   await page.click(".cp-favbtn"); // hidden again for the phone step
   await noWiden();
 });
