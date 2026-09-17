@@ -121,6 +121,10 @@ phase's card (WSHED-115 … 122).
 
 - [ ] New score, one tap, wait a second (the save), undo: the bar is a whole rest again; redo brings the note back. Reload the score, tap once, wait, undo: the same. (Before v104 the first edit of a session could never be undone once it had saved.)
 
+## The ghost wears the armed value (WSHED-149, v111)
+
+- [ ] Pencil hovering with an eighth armed: the ghost has a flag; sixteenth: two; dotted eighth: the flag and the dot; half: hollow with a stem; whole: hollow, no stem. Grace armed: the small ghost keeps its small flag. The tap places exactly what hovered.
+
 ## Favorites (WSHED-148, v109; v110 the lift after a drag)
 
 - [ ] Place mode, Pencil: hold still on empty staff for 2 s → the Favorites panel appears with its grabber under the tip, a tick, and no note on the lift. Hold again elsewhere → it moves there. Slide before 2 s (Gesture on) → a lasso, no panel. Hold on a notehead → a grab, no panel.

@@ -2,7 +2,7 @@
 // (shared with the PDF export); this file is the SVG painter — Bravura glyphs as <text>,
 // geometry as primitives — plus a separate overlay for the ghost and the bar flash so
 // pointer moves never touch the score's DOM.
-import { G, restGlyph, headGlyph, dynGlyph } from "../staff/glyphs.js";
+import { G, restGlyph, headGlyph, flagGlyph, dynGlyph } from "../staff/glyphs.js";
 import { paintScore } from "./paint.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -123,7 +123,12 @@ export function renderComposition(container, L) {
     if (spec.glyph) { const gg = glyphOf(spec.x, spec.y, G[spec.glyph], "glyph"); if (spec.small) gg.setAttribute("style", `font-size:${(fs * 0.8).toFixed(1)}px`); return [gg]; }
     if (spec.rest) { const out = [glyphOf(spec.x, spec.y, restGlyph(spec.base), "glyph rest")]; for (let i = 0; i < (spec.dots ?? 0); i++) out.push(glyphOf(spec.x + 1.5 + i * 0.7, spec.y - 0.5, G.dot, "glyph head-part")); return out; }
     const k = spec.small ? 0.6 : 1, out = [], headW = (spec.base <= 1 ? 1.7 : 1.18) * k; // a grace ghost is the small note
-    if (spec.base >= 2 && spec.stem !== false) { const up = spec.stemUp, sx = up ? spec.x + headW - 0.07 : spec.x + 0.07; out.push(el("rect", { x: px(sx - 0.065), y: px(up ? spec.y - 3.5 * k : spec.y), width: px(0.13), height: px(3.5 * k), class: "stem" })); }
+    if (spec.base >= 2 && spec.stem !== false) { // the stem, and the flag of an eighth or shorter at its tip (v111, WSHED-149: the ghost is the note the tap will place, not always a quarter)
+      const up = spec.stemUp, sx = up ? spec.x + headW - 0.07 : spec.x + 0.07, tip = up ? spec.y - 3.5 * k : spec.y + 3.5 * k;
+      out.push(el("rect", { x: px(sx - 0.065), y: px(up ? tip : spec.y), width: px(0.13), height: px(3.5 * k), class: "stem" }));
+      const flag = spec.base >= 8 && flagGlyph(spec.base, up);
+      if (flag) { const f = glyphOf(sx - 0.065, tip, flag, "glyph head-part cp-ghost-flag"); if (spec.small) f.setAttribute("style", `font-size:${(fs * k).toFixed(1)}px`); out.push(f); }
+    }
     for (const ly of spec.ledgers ?? []) out.push(el("line", { x1: px(spec.x - 0.35), y1: px(ly), x2: px(spec.x + headW + 0.35), y2: px(ly), class: "sline" }));
     const head = glyphOf(spec.x, spec.y, headGlyph(spec.base), "glyph head"); if (spec.small) head.setAttribute("style", `font-size:${(fs * k).toFixed(1)}px`);
     out.push(head);

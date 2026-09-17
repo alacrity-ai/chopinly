@@ -422,7 +422,9 @@ carries the accidental, then the button clears.
 - Pan uses the reader's swipe logic with inertia and pinch-to-zoom; zoom is
   applied by re-laying out at the new S (no CSS transform — text stays crisp).
 - Ghost: on `pointermove` (pen / mouse) the hit table gives the slot and step;
-  the ghost notehead draws at that position at 40 % in the armed shape. Touch
+  the ghost notehead draws at that position at 40 % in the armed shape — head, stem, dots
+  and, since v111 (WSHED-149, Leif: "the ghost note is always a quarter"), the flag of an
+  eighth or shorter at the stem's tip, so the ghost is the note the tap will place. Touch
   has no hover; the ghost appears on `pointerdown` and the placement happens on
   `pointerup` at the *down* position (a wobble does not move it).
 
