@@ -833,7 +833,9 @@ await step("export: File ▾ → Export PDF opens the sheet with a page-1 previe
   if (ink < 4) throw new Error("the preview shows no notes: " + ink);
   if ((await page.locator(".cp-paper .cp-page-text").count()) < 1) throw new Error("no title on the preview");
   const p0 = await pagesOf();
-  await page.click("#cp-x-larger"); await page.click("#cp-x-larger"); await page.click("#cp-x-larger"); // 1.8 → 2.0 → 2.2 → 2.5 mm
+  await page.click("#cp-x-larger"); // v108 (WSHED-146): one step is 0.05 mm a space — 0.2 mm of staff: 7.2 → 7.4
+  if (!(await readout()).startsWith("staff 7.4 mm")) throw new Error("one step larger: " + (await readout()));
+  for (let i = 0; i < 40 && (await page.getAttribute("#cp-x-larger", "disabled")) === null; i++) await page.click("#cp-x-larger"); // 1.85 → 2.5 mm, 13 more
   if (!(await readout()).startsWith("staff 10.0 mm")) throw new Error("larger: " + (await readout()));
   if ((await pagesOf()) < p0) throw new Error("a bigger staff never needs fewer pages");
   if (!(await page.getAttribute("#cp-x-larger", "disabled") !== null)) throw new Error("+ should be at its end");
@@ -1643,7 +1645,7 @@ await step("v104: bars — Insert puts an empty bar before the tapped one, Delet
   await page.waitForSelector(".cp-export-wrap .cp-paper .cp-page");
   if (!(await page.isChecked("#cp-x-header"))) await page.click("#cp-x-header");
   await page.click("[data-page=letter]"); await page.click("[data-margins=normal]");
-  for (let i = 0; i < 8 && (await page.getAttribute("#cp-x-larger", "disabled")) === null; i++) await page.click("#cp-x-larger");
+  for (let i = 0; i < 40 && (await page.getAttribute("#cp-x-larger", "disabled")) === null; i++) await page.click("#cp-x-larger");
   const readout = () => page.textContent("#cp-x-size");
   const pagesOf = async () => Number((await readout()).match(/(\d+) pages?/)[1]);
   const plan = () => page.evaluate(() => { const p = document.querySelector("#cp-x-paper").__plan; return { pages: p.pages.map((q) => ({ first: q.first, last: q.last, top: q.top, dy: q.dy })), n: p.L.systems.length, S: p.S, h: p.page.h, m: p.margin, height: p.height, ink: p.ink }; });
@@ -1691,7 +1693,7 @@ await step("v104: bars — Insert puts an empty bar before the tapped one, Delet
   const editorBars = await barsN();
   const planBars = await page.evaluate(() => document.querySelector("#cp-x-paper").__plan.doc.measures.length);
   if (planBars !== editorBars - 1) throw new Error(`the file holds ${planBars} bars, the editor ${editorBars} (one to write into)`);
-  await page.click("[data-margins=wide]"); await page.click("#cp-x-smaller"); await page.click("#cp-x-smaller"); await page.click("#cp-x-smaller"); // back to 7.2 mm
+  await page.click("[data-margins=wide]"); for (let i = 0; i < 40 && !(await page.textContent("#cp-x-size")).startsWith("staff 7.2 mm"); i++) await page.click("#cp-x-smaller"); // back to 7.2 mm (0.2 mm a step since v108)
   await page.click(".cp-export-wrap .lb-close");
   await page.waitForFunction(() => !document.querySelector(".cp-export-wrap"), null, { timeout: 5000 });
   await noWiden();
@@ -1720,6 +1722,54 @@ await step("v107: a two-digit time signature — Time → 12/8 on a fresh piece 
   try { await way.waitFor({ timeout: 1500 }); await way.click(); } catch {}
   const dl = await dlp;
   if (readFileSync(await dl.path()).subarray(0, 5).toString() !== "%PDF-") throw new Error("Save PDF of a 12/8 piece is not a PDF");
+});
+
+await step("v108: accidental room — a sharp after beamed eighths widens its column by less than 0.75 S (1.4 before), keeps 0.4 S of air after the previous head, hugs its own head at 1.35 S on screen, and the room is the same however far the system is stretched (WSHED-146)", async () => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto(`${BASE}/?app=1&t=5#/compose`);
+  await page.waitForSelector("#cp-new");
+  const id = await page.evaluate(async () => { // four beamed eighths, a sharp on the fourth — built through the engine, not tapped (the layout is what this step measures)
+    const { newComposition } = await import("/js/lib/compose/model.js");
+    const { place, accidental } = await import("/js/lib/compose/engine.js");
+    const { logbook } = await import("/js/lib/logbook.js");
+    const A = { base: 8, dots: 0, rest: false, tuplet: null, alter: null };
+    let d = newComposition({ id: crypto.randomUUID(), now: Date.now() });
+    d.title = "Sharps";
+    for (let k = 0; k < 4; k++) d = place(d, { bar: 0, staff: 0, ticks: k * 3360, step: 4 }, A).doc;
+    d = accidental(d, [{ ev: d.measures[0].staves[0].voices[0][3].id, pi: 0 }], 1);
+    logbook.addComposition(d);
+    return d.id;
+  });
+  await page.goto(`${BASE}/?app=1&t=1#/compose/${id}`);
+  await page.waitForSelector(".cp-editor .cp-svg");
+  const measure = () => page.evaluate(() => {
+    const ed = document.querySelector(".cp-editor").__editor, L = ed.layout, S = ed.state.S;
+    const n = L.drawn.filter((d) => !d.rest && d.bar === 0 && d.staff === 0).sort((a, b) => a.ticks - b.ticks);
+    const svg = document.querySelector(".cp-editor .cp-svg").getBoundingClientRect();
+    const px = (sel, f) => [...document.querySelectorAll(".cp-editor svg " + sel)].filter(f ?? (() => true)).map((t) => t.getBoundingClientRect()); // the piece holds four notes and one sign in all
+    const sharp = px("text.head-part", (t) => t.textContent === "\ue262"), heads = px("text.head").sort((a, b) => a.left - b.left).slice(0, 4);
+    return { S, scale: L.systems[0].scale, x: n.map((d) => d.x), headW: n[2].headW, acc: n[3].heads[0].accX, accLeft: n[3].accLeft, sharp: sharp.map((r) => r.left - svg.left), heads: heads.map((r) => r.left - svg.left) };
+  });
+  const check = (m, tag) => {
+    if (m.x.length !== 4 || m.sharp.length !== 1 || m.heads.length !== 4) throw new Error(`${tag}: four heads and one sharp: ${JSON.stringify(m)}`);
+    const [, x2, x3, x4] = m.x, widen = (x4 - x3) - (x3 - x2);
+    if (widen > 0.75 || widen < -1e-6) throw new Error(`${tag}: the sharp's column widened by ${widen.toFixed(2)} S (1.4 S × the stretch before v108)`);
+    if (Math.abs(x4 - m.acc - 1.35) > 1e-6) throw new Error(`${tag}: the sign sits ${(x4 - m.acc).toFixed(2)} S before its head, wanted 1.35`);
+    if (m.acc - (x3 + m.headW) < 0.4 - 1e-6) throw new Error(`${tag}: air after the third head ${(m.acc - x3 - m.headW).toFixed(2)} S, wanted ≥ 0.4`);
+    if (m.accLeft > m.acc + 1e-6) throw new Error(`${tag}: accLeft ${m.accLeft} is not the leftmost ink (sign at ${m.acc})`);
+    // on screen, in pixels: the sharp's ink box starts left of the fourth head by about the glyph's bearing + the air, and right of the third head's ink
+    const gapPx = m.sharp[0] - (m.heads[2] + m.headW * m.S), hugPx = m.heads[3] - m.sharp[0];
+    if (gapPx < 0.35 * m.S || gapPx > 1.6 * m.S) throw new Error(`${tag}: ${gapPx.toFixed(1)} px between the third head and the sharp's ink (S = ${m.S})`);
+    if (hugPx < 1.0 * m.S || hugPx > 1.6 * m.S) throw new Error(`${tag}: the sharp's ink starts ${hugPx.toFixed(1)} px before its head (S = ${m.S})`);
+    return widen;
+  };
+  const wide = await measure(), w1 = check(wide, "1024 px");
+  await page.setViewportSize({ width: 700, height: 768 }); await page.waitForTimeout(400);
+  const narrow = await measure(), w2 = check(narrow, "700 px");
+  if (Math.abs(narrow.scale - wide.scale) < 1e-3) throw new Error(`the two widths stretch the system alike (${wide.scale}) — no test of the stretch`);
+  if (Math.abs(w1 - w2) > 1e-6) throw new Error(`the widening changed with the stretch: ${w1.toFixed(3)} → ${w2.toFixed(3)} S`);
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await noWiden();
 });
 
 await step("phone width: the rails scroll, nothing widens, the editor still places", async () => {

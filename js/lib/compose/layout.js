@@ -23,6 +23,16 @@ const STEM_LEN = 3.5, BEAM_T = 0.45, BEAM_GAP = 0.3, MIN_STEM = 2.75;
  *  the bare stem between the head and the innermost beam never shrinks — every extra beam lengthens the stem. */
 const stemFloor = (levels) => MIN_STEM + Math.max(0, levels - 1) * (BEAM_T + BEAM_GAP);
 const HEAD_W = { dblWhole: 2.1, whole: 1.7, half: 1.18, black: 1.18 };
+const ACC_X = 1.35, ACC_COL = 1.15, ACC_GAP = 0.4; // S: an accidental's left edge before the head, one stacked column further, the air kept before it
+const FLAG_W = 1.05; // S: a flag's reach right of an up stem (Bravura flag8thUp)
+/** The ink the previous column leaves on a drawn staff, from its x: the widest head with a flipped second, a dot, a flag on an up stem when the note stands alone in its beat group. */
+const prevInk = (b, prev, ds) => Math.max(0, ...prev.evs.filter((x) => x.ev.kind === "note" && x.drawStaff === ds).map((x) => {
+  const headW = HEAD_W[headKind(x.ev.dur.base)];
+  const flip = x.stem !== "down" && x.steps.some((s1, k) => k && Math.abs(s1 - x.steps[k - 1]) === 1) ? headW : 0;
+  const alone = !b.cols.some((o) => o !== prev && Math.floor(o.ticks / groupSize(b.time)) === Math.floor(prev.ticks / groupSize(b.time)) && o.evs.some((y) => y.staff === x.staff && y.voice === x.voice && y.ev.kind === "note" && y.ev.dur.base >= 8));
+  const flag = x.stem === "up" && x.ev.dur.base >= 8 && alone ? FLAG_W : 0;
+  return x.dx + headW + Math.max(flip, flag) + (x.ev.dur.dots ? 0.9 : 0);
+}));
 const LEFT = 1.6; // S: brace + margin before the leading symbols
 const MIN_BAR = 8; // S: an empty bar
 /** Rest offsets in steps when a staff holds more than one voice in the bar: voice 1 high, 2 low, 3 higher, 4 lower. */
@@ -147,7 +157,18 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
         others.push(x); placed.set(x.drawStaff, others);
         coll = Math.max(coll, x.dx);
       }
-      c.accPad = acc ? 1.4 + (acc - 1) * 1.15 : 0; c.dotPad = dot ? 0.9 : 0; c.arpPad = arp ? 1.4 : 0; c.collPad = coll; c.gracePad = grace; // the roll sign stands left of the accidentals; graces left of the roll
+      // an accidental first uses the white space the previous column leaves after its ink (head, a flipped second, a dot, a flag);
+      // the column widens only by the deficit (WSHED-146 — before v108 every accidental widened it by 1.4 S, then justification stretched that too)
+      c.accPad = 0;
+      for (const [ds, cols] of stacks) {
+        if (!cols.length) continue;
+        const leftFlip = c.evs.some((x) => x.ev.kind === "note" && x.drawStaff === ds && x.stem === "down" && x.steps.some((s1, k) => k && Math.abs(s1 - x.steps[k - 1]) === 1)) ? HEAD_W.black : 0;
+        const need = leftFlip + ACC_X + (cols.length - 1) * ACC_COL + ACC_GAP;
+        const prev = b.cols[b.cols.indexOf(c) - 1];
+        const avail = prev ? prev.w + prev.dotPad + prev.collPad - prevInk(b, prev, ds) : 1.0 + b.startPad;
+        c.accPad = Math.max(c.accPad, grace || arp ? need - ACC_GAP + 0.05 : need - avail, 0); // graces and a roll sign stand left of the signs' whole room, so it is all the column's own
+      }
+      c.dotPad = dot ? 0.9 : 0; c.arpPad = arp ? 1.4 : 0; c.collPad = coll; c.gracePad = grace; // the roll sign stands left of the accidentals; graces left of the roll
     }
   }
 
@@ -166,7 +187,10 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     const ts = b.showTime ? 3.0 + timeSig(b.time.beats, b.time.unit).extra : 0; // a two-digit row (12/8) is 1.8 S wider
     return clef + ks + ts + (clef || ks || ts ? 0.6 : 0);
   };
-  const bodyW = (b) => Math.max(MIN_BAR, 1.0 + b.startPad + b.cols.reduce((n, c) => n + c.w + c.clefPad + c.gracePad + c.accPad + c.arpPad + c.dotPad + c.collPad, 0) + b.tailPad + b.endPad + 1.0);
+  // a bar's width splits into what justification stretches (the duration widths and margins) and what it does not (glyph room: accidentals, dots, clefs, graces, rolls, a second voice's offset)
+  const fixedW = (b) => b.cols.reduce((n, c) => n + c.clefPad + c.gracePad + c.accPad + c.arpPad + c.dotPad + c.collPad, 0);
+  const stretchW = (b) => Math.max(MIN_BAR, 1.0 + b.startPad + b.cols.reduce((n, c) => n + c.w, 0) + b.tailPad + b.endPad + 1.0);
+  const bodyW = (b) => stretchW(b) + fixedW(b);
 
   // -- pack bars into systems --
   const systems = [];
@@ -182,11 +206,12 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
       sys.bars.push(b); sum += w; i++;
     }
     const lead = sys.bars.reduce((n, b, k) => n + leadingW(b, k === 0), 0);
-    const body = sum - lead;
+    const fixed = sys.bars.reduce((n, b) => n + fixedW(b), 0);
+    const body = sum - lead - fixed;
     // a courtesy key / time at the end when the next system opens with a change
     const nb = bars[i];
     sys.courtesy = nb && (nb.showKey || nb.showTime || nb.showClef) ? { clef: nb.showClef ? nb : null, key: nb.showKey ? nb : null, time: nb.showTime ? nb : null, w: (nb.showClef ? 2.8 : 0) + (nb.showKey ? Math.max(...nb.clefs.map((_, si) => keysigW(nb, si))) * 1.15 + 0.8 : 0) + (nb.showTime ? 3.0 + timeSig(nb.time.beats, nb.time.unit).extra : 0) + 1.0 } : null;
-    sys.scale = Math.min((avail - lead - (sys.courtesy?.w ?? 0)) / body, i >= bars.length ? 1.25 : 10);
+    sys.scale = Math.min((avail - lead - fixed - (sys.courtesy?.w ?? 0)) / body, i >= bars.length ? 1.25 : 10);
     systems.push(sys);
   }
 
@@ -222,13 +247,13 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
       sys.leading.push(lead);
       cursor += lw;
       const bodyStart = cursor;
-      const bw = bodyW(b) * sys.scale;
+      const bw = stretchW(b) * sys.scale + fixedW(b);
       const hbar = { index: b.index, x0: barX0, x1: bodyStart + bw, bodyX0: bodyStart, cols: [], cap: b.cap };
       barPlace[b.index] = { hbar, si, sys, first };
-      let off = 1.0 + b.startPad;
+      let off = 1.0 + b.startPad, fix = 0; // off stretches, fix does not
       for (const c of b.cols) {
-        for (const ch of c.clefs) clefs.push({ x: bodyStart + off * sys.scale + 0.15, y: clefY(staffTop(ch.staff), ch.clef), glyph: CLEFS[ch.clef].glyph, staff: ch.staff, bar: b.index, at: ch.at, system: si });
-        const x = bodyStart + (off + c.clefPad + c.gracePad + c.arpPad + c.accPad) * sys.scale;
+        for (const ch of c.clefs) clefs.push({ x: bodyStart + off * sys.scale + fix + 0.15, y: clefY(staffTop(ch.staff), ch.clef), glyph: CLEFS[ch.clef].glyph, staff: ch.staff, bar: b.index, at: ch.at, system: si });
+        const x = bodyStart + off * sys.scale + fix + c.clefPad + c.gracePad + c.arpPad + c.accPad;
         c.x = x;
         hbar.cols.push({ ticks: c.ticks, x });
         const colNotes = []; // every note of this column, for accidental x by drawn staff
@@ -245,7 +270,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
           const steps = ev.steps;
           const stem = ev.stem;
           const nx = x + ev.dx; // a colliding voice sits right of the other voice's stem
-          const d = { id: ev.ev.id, bar: b.index, staff: st, drawStaff: ds, voice: vi, cross: ev.ev.cross ?? 0, system: si, rest: false, base, dots: ev.ev.dur.dots, kind, headW, x: nx, colX: x, stem, stemForced: ev.stemForced, stemSet: ev.stemSet, beamBreak: ev.ev.beam === "break", trill: ev.ev.trill ?? null, shared: ev.shared, ticks: c.ticks, group: Math.floor(c.ticks / groupSize(b.time)), heads: [], ledgers: [], tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index, pitches: ev.ev.pitches, art: ev.ev.art ?? null, gliss: ev.ev.gliss ?? null, arp: ev.ev.arp ?? null, slurs: ev.ev.slurs ?? null, accLeft: x - c.accPad * sys.scale, ottava: ev.ottava, trem: ev.ev.trem ?? null, graced: !!ev.ev.graces, fingers: ev.ev.pitches.some((p) => p.finger) ? ev.ev.pitches.map((p) => p.finger ?? null) : null };
+          const d = { id: ev.ev.id, bar: b.index, staff: st, drawStaff: ds, voice: vi, cross: ev.ev.cross ?? 0, system: si, rest: false, base, dots: ev.ev.dur.dots, kind, headW, x: nx, colX: x, stem, stemForced: ev.stemForced, stemSet: ev.stemSet, beamBreak: ev.ev.beam === "break", trill: ev.ev.trill ?? null, shared: ev.shared, ticks: c.ticks, group: Math.floor(c.ticks / groupSize(b.time)), heads: [], ledgers: [], tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index, pitches: ev.ev.pitches, art: ev.ev.art ?? null, gliss: ev.ev.gliss ?? null, arp: ev.ev.arp ?? null, slurs: ev.ev.slurs ?? null, accLeft: x - c.accPad, ottava: ev.ottava, trem: ev.ev.trem ?? null, graced: !!ev.ev.graces, fingers: ev.ev.pitches.some((p) => p.finger) ? ev.ev.pitches.map((p) => p.finger ?? null) : null };
           // heads: sorted by step; seconds flip to the other side of the stem
           const order = steps.map((s2, pi) => ({ step: s2, pi })).sort((a, b2) => a.step - b2.step);
           const walk = stem === "down" ? [...order].reverse() : order;
@@ -270,9 +295,9 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
           drawn.push(d);
           colNotes.push(d);
           if (ev.ev.graces) { // small notes right-aligned against the principal's accidentals / roll sign, stems up, a run beamed, a lone one flagged
-            const n = ev.ev.graces.length, gw = HEAD_W.black * GRACE_SCALE, left = x - (c.accPad + c.arpPad) * sys.scale, run = [];
+            const n = ev.ev.graces.length, gw = HEAD_W.black * GRACE_SCALE, left = x - (c.accPad + c.arpPad), run = [];
             ev.ev.graces.forEach((g, gi) => {
-              const gx = left - (n - gi) * GRACE_W * sys.scale + 0.15;
+              const gx = left - (n - gi) * GRACE_W + 0.15;
               const heads = ev.graceSteps[gi].map((step, pi) => ({ pi, step, x: gx, y: yOfStep(ds, step), acc: ev.graceAccs[gi][pi] })).sort((p, q) => p.step - q.step);
               const ledgers = [];
               for (const h of heads) { for (let s2 = -2; s2 >= h.step; s2 -= 2) ledgers.push({ x: h.x, y: yOfStep(ds, s2) }); for (let s2 = 10; s2 <= h.step; s2 += 2) ledgers.push({ x: h.x, y: yOfStep(ds, s2) }); }
@@ -287,9 +312,10 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
         // accidentals stand left of everything the column's voices own on that staff (flipped heads, a colliding voice's offset)
         for (const d of colNotes) {
           const left = Math.min(...colNotes.filter((o) => o.drawStaff === d.drawStaff).flatMap((o) => o.heads.map((h) => h.x).concat(o.colX)));
-          for (const h of d.heads) if (h.acc !== null) h.accX = left - 1.35 - h.accCol * 1.15;
+          for (const h of d.heads) if (h.acc !== null) h.accX = left - ACC_X - h.accCol * ACC_COL;
         }
-        off += c.w + c.clefPad + c.gracePad + c.arpPad + c.accPad + c.dotPad + c.collPad;
+        for (const d of colNotes) d.accLeft = Math.min(d.accLeft, ...colNotes.filter((o) => o.drawStaff === d.drawStaff).flatMap((o) => o.heads.filter((h) => h.acc !== null).map((h) => h.accX))); // the note's leftmost ink: a roll sign, a trill line or a grace slur keeps clear of it
+        off += c.w; fix += c.clefPad + c.gracePad + c.arpPad + c.accPad + c.dotPad + c.collPad;
       }
       for (const ch of b.tailClefs) clefs.push({ x: hbar.x1 - (b.tailPad + b.endPad) * sys.scale + 0.15, y: clefY(staffTop(ch.staff), ch.clef), glyph: CLEFS[ch.clef].glyph, staff: ch.staff, bar: b.index, at: ch.at, system: si });
       cursor = hbar.x1;

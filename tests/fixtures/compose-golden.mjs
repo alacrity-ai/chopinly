@@ -2,7 +2,8 @@
 // a tuplet, ties across a barline, a slur, marks, a dynamic + hairpin, a clef change, a roll,
 // accidentals. tests/compose-layout.test.mjs lays it out and compares against
 // compose-golden.json (written by the code before multi-voice landed, WSHED-120; the expression
-// entries regenerated when marks moved onto slots, WSHED-122), so a piece that never uses voice 2
+// entries regenerated when marks moved onto slots, WSHED-122; every x regenerated when accidental room
+// stopped stretching with the justification, WSHED-146 v108), so a piece that never uses voice 2
 // keeps its exact layout. Regenerate only on purpose:
 //   node -e 'import("./tests/fixtures/compose-golden.mjs").then(m=>m.write())'
 // The MusicXML golden file (WSHED-119) likewise: .then(m=>m.writeXml())

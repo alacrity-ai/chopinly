@@ -488,3 +488,37 @@ test("a two-digit time signature widens the leading block by 1.8 S (12/8 vs 6/8)
   const cw = (d) => layoutComposition(d, { unit: 12, width: 1024 }).systems.find((s) => s.courtesy?.time)?.courtesy.w;
   assert.ok(cw(at6) && Math.abs(cw(at12) - cw(at6) - 1.8) < 1e-9, `courtesy ${cw(at12)} vs ${cw(at6)}`);
 });
+
+// --- v108 (WSHED-146): accidental room ------------------------------------------------------------
+test("accidental room: the sign takes the previous column's white space first, the column widens only by the deficit, and that room never stretches with the justification", () => {
+  const A = { base: 8, dots: 0, rest: false, tuplet: null, alter: null };
+  let d = newComposition({ id: "acc", now: 1 });
+  for (let k = 0; k < 8; k++) d = place(d, { bar: 0, staff: 0, ticks: k * (PPQ / 2), step: 4 + (k % 2) }, A).doc; // eight beamed eighths on one staff
+  const v = d.measures[0].staves[0].voices[0];
+  d = accidental(d, [{ ev: v[3].id, pi: 0 }], 1);                     // a sharp on the fourth
+  const plain = layoutComposition(newComposition({ id: "acc0", now: 1 }), { unit: 12, width: 1024 });
+  const at = (w) => { const L = layoutComposition(d, { unit: 12, width: w }); const n = L.drawn.filter((x) => !x.rest && x.bar === 0); return { L, prev: n[2], it: n[3], scale: L.systems[0].scale }; };
+  const a = at(1024), b = at(1400);
+  assert.ok(a.scale > 1 && b.scale > a.scale, `both systems are stretched (${a.scale}, ${b.scale})`);
+  const acc = (r) => r.it.heads[0].accX, step = (r) => r.it.colX - r.prev.colX, pad = (r) => step(r) - (r.L.drawn.filter((x) => !x.rest && x.bar === 0)[2].colX - r.L.drawn.filter((x) => !x.rest && x.bar === 0)[1].colX);
+  assert.ok(pad(a) < 0.75 && pad(a) > -1e-9, `an eighth before the sign leaves it all its room: the column widens by ${pad(a)} S (1.4 before v108)`);
+  assert.ok(Math.abs(pad(a) - pad(b)) < 1e-9, `the widening is the same at every stretch (${pad(a)} vs ${pad(b)})`);
+  assert.ok(acc(a) - (a.prev.x + a.prev.headW) >= 0.4 - 1e-9, `air before the sign ${acc(a) - (a.prev.x + a.prev.headW)} S`);
+  assert.ok(Math.abs(a.it.colX - acc(a) - 1.35) < 1e-9 && Math.abs(b.it.colX - acc(b) - 1.35) < 1e-9, "the sign hugs its head at every stretch");
+  assert.ok(a.it.accLeft <= acc(a) + 1e-9, "accLeft is the note's leftmost ink");
+  // a sixteenth before the sign has less white space: the deficit widens the column, the air stays
+  let e = newComposition({ id: "acc16", now: 1 });
+  const S16 = { ...A, base: 16 };
+  for (let k = 0; k < 4; k++) e = place(e, { bar: 0, staff: 0, ticks: k * (PPQ / 4), step: 4 }, S16).doc;
+  e = accidental(e, [{ ev: e.measures[0].staves[0].voices[0][1].id, pi: 0 }], -1);
+  const E = layoutComposition(e, { unit: 12, width: 1024 }), n = E.drawn.filter((x) => !x.rest && x.bar === 0);
+  assert.ok(n[1].colX - n[1].accLeft > pad(a), "a sixteenth needs more of the column than an eighth");
+  assert.ok(n[1].heads[0].accX - (n[0].x + n[0].headW) >= 0.4 - 1e-9, "the air before the sign holds");
+  // at a bar's start the sign keeps clear of the barline
+  let f = newComposition({ id: "accbar", now: 1 });
+  f = place(f, { bar: 1, staff: 0, ticks: 0, step: 4 }, { ...A, base: 4 }).doc;
+  f = accidental(f, [{ ev: f.measures[1].staves[0].voices[0][0].id, pi: 0 }], 1);
+  const F = layoutComposition(f, { unit: 12, width: 1024 }), first = F.drawn.find((x) => !x.rest && x.bar === 1), bar = F.hit.systems[0].bars.find((hb) => hb.index === 1);
+  assert.ok(first.heads[0].accX - bar.bodyX0 >= 0.4 - 1e-9, `air after the barline ${first.heads[0].accX - bar.bodyX0} S`);
+  void plain;
+});

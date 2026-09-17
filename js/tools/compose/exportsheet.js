@@ -1,4 +1,4 @@
-// The export sheet (docs/COMPOSE_DESIGN.md §10.1, WSHED-121): staff size − / + like the editor's
+// The export sheet (docs/COMPOSE_DESIGN.md §10.1, WSHED-121): staff size − / + like the editor's (0.05 mm a step since v108, WSHED-146)
 // zoom, page (Letter / A4), margins, header, a live preview of any page — the plan's own page:
 // the systems the PDF puts there, nothing clipped at the margins (WSHED-133) — and two ways out: Save PDF (the share sheet with a file where there is
 // one, a download elsewhere) and Add to Scores (the bytes go through the Scores importer; a later
