@@ -582,6 +582,15 @@ a pen lands in and a finger cannot, so a finger missed the head and got a discar
 - **Unchanged.** Pan (one finger pans, two pinch, in either setting), the mouse, the
   keyboard, the score's pinning in the edit modes.
 
+- **Pen mode owns the score (v112, WSHED-150).** Leif: a palm brushing the score interrupted
+  the pen — the ghost vanished until the pen wiggled, a tap in flight was lost, and a clean
+  narrow contact could still place. The rule now: in Pen mode with the editor in Place or
+  Select, a touch pointer on the score is **ignored entirely** (`fingerRests`: no gesture, no
+  ghost change, no tap, grab or lasso, nothing touched on the pen's way). Pan keeps one finger
+  scrolling and two zooming; the rails are separate elements and take fingers in every mode;
+  Touch mode is unchanged. The v101 loophole — a quick narrow finger tap placing in Pen mode —
+  is closed on purpose: a loophole is where the palm gets in.
+
 ### 8.5j Gesture mode v1 (v102, WSHED-130)
 
 Leif, after v101: a toggle on the control rail for two quality-of-life strokes in Place mode,
