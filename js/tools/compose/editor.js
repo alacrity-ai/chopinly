@@ -650,7 +650,10 @@ export function openEditor({ id, ctx, onClose }) {
 
   /** The grabbable thing under the pointer: a head in any mode; in Select mode a rest or an expression (and a selected hairpin's handles) as well. */
   const headUnder = (e) => { if (!L) return null; const { x, y } = toS(e.clientX, e.clientY); const t = thingAt(L, x, y, mode === "select" ? selectedSpans() : undefined, mode === "select" ? tolOf(e) : 0); return t?.type === "head" || (mode === "select" && t && (t.type === "rest" || EXPR_TYPES.has(t.type))) ? t : null; };
+  /** Pen mode owns the score (v112, §8.5i): in Place or Select a touch pointer on the score is ignored entirely — a palm, a fingertip, a finger tap or drag change nothing and never disturb the pen's gesture or hover. Pan keeps its fingers; the rails are separate elements and take fingers in every mode. */
+  const fingerRests = (e) => e.pointerType === "touch" && input === "pen" && mode !== "pan";
   view.addEventListener("pointerdown", (e) => {
+    if (fingerRests(e)) return;
     favDisarm(); // a second contact of any kind is not a held one
     if (e.pointerType === "pen" && !penSeen) { // the first pencil on this device: fingers rest from here on, once, unless the user says otherwise (§8.5i)
       penSeen = true; store.set("penSeen", true);
@@ -681,6 +684,7 @@ export function openEditor({ id, ctx, onClose }) {
     favArm(e);
   });
   view.addEventListener("pointermove", (e) => {
+    if (fingerRests(e)) return;
     if (mode === "pan") { onPanMove(e); return; }
     if (drag) { grabMove(e); return; }
     if (lassoState) { lassoMove(e); return; }
@@ -707,6 +711,7 @@ export function openEditor({ id, ctx, onClose }) {
     else if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > TAP_PX) { gesture.valid = false; favDisarm(); R?.showGhost(null); R?.showTarget(null); }
   });
   const up = (e) => {
+    if (fingerRests(e)) { touches.delete(e.pointerId); return; } // a finger that landed before Pen mode or Pan let go: forget it, do nothing
     if (favHold?.id === e.pointerId) favDisarm();
     if (mode === "pan") { onPanUp(e); return; }
     if (drag?.id === e.pointerId) { if (e.pointerType === "touch") touches.delete(e.pointerId); grabEnd(e, { cancel: e.type === "pointercancel" }); return; }

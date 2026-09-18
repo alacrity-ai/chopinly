@@ -31,7 +31,8 @@ const squares = () => page.evaluate(() => {
 });
 const kinds = (bar, staff = 0) => page.evaluate(([b, st]) => document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[st].voices[0].map((e) => `${e.kind === "rest" ? "r" : "n"}${e.dur.base}${e.dur.dots ? "." : ""}`).join(" "), [bar, staff]);
 const point = (place) => page.evaluate((p) => document.querySelector(".cp-editor").__editor.pointFor(p), place);
-const tapAt = async (place) => { let p = await point(place); const vr = await page.evaluate(() => { const r = document.querySelector("#cp-view").getBoundingClientRect(); return [r.top, r.bottom]; }); if (p.y > vr[1] - 24 || p.y < vr[0] + 12) { await page.evaluate((y) => { const v = document.querySelector("#cp-view"); v.scrollTop += y - v.getBoundingClientRect().top - v.clientHeight * 0.5; }, p.y); p = await point(place); } if (process.env.DEBUG_TAP) console.log("  tap", JSON.stringify(place), JSON.stringify(p), await page.evaluate(([x, y]) => { const el = document.elementFromPoint(x, y); const v = document.querySelector("#cp-view").getBoundingClientRect(); return { under: el?.closest?.(".cp-ev")?.dataset.ev ?? el?.tagName, view: [v.top, v.bottom], scrollTop: document.querySelector("#cp-view").scrollTop }; }, [p.x, p.y])); await page.touchscreen.tap(Math.round(p.x), Math.round(p.y)); await page.waitForTimeout(80); };
+const tapXY = async (p) => { if ((await state()).input === "pen") { await synth("pointerdown", { pointerType: "pen", pointerId: 199, width: 1, height: 1, pressure: 0.5, clientX: p.x, clientY: p.y }); await synth("pointerup", { pointerType: "pen", pointerId: 199, width: 1, height: 1, pressure: 0, clientX: p.x, clientY: p.y }); } else await page.touchscreen.tap(Math.round(p.x), Math.round(p.y)); await page.waitForTimeout(80); }; // v112: in Pen mode a finger on the score does nothing, so a tap there is the pen's
+const tapAt = async (place) => { let p = await point(place); const vr = await page.evaluate(() => { const r = document.querySelector("#cp-view").getBoundingClientRect(); return [r.top, r.bottom]; }); if (p.y > vr[1] - 24 || p.y < vr[0] + 12) { await page.evaluate((y) => { const v = document.querySelector("#cp-view"); v.scrollTop += y - v.getBoundingClientRect().top - v.clientHeight * 0.5; }, p.y); p = await point(place); } if (process.env.DEBUG_TAP) console.log("  tap", JSON.stringify(place), JSON.stringify(p), await page.evaluate(([x, y]) => { const el = document.elementFromPoint(x, y); const v = document.querySelector("#cp-view").getBoundingClientRect(); return { under: el?.closest?.(".cp-ev")?.dataset.ev ?? el?.tagName, view: [v.top, v.bottom], scrollTop: document.querySelector("#cp-view").scrollTop }; }, [p.x, p.y])); await tapXY(p); };
 const noWiden = async () => { const w = await page.evaluate(() => ({ vw: innerWidth, doc: document.documentElement.scrollWidth })); if (w.doc > w.vw) throw new Error("page widened " + JSON.stringify(w)); };
 const PPQ = 6720, AIM = 40; // AIM: the Touch-mode ghost floats this far above the finger (editor.js AIM_PX)
 /** Synthetic pointer events straight at the view — the only way to fake a palm or a Pencil in Chromium. */
@@ -152,20 +153,23 @@ await step("grab + drag: pen down on a head takes it, dragging up two steps re-p
   // still placing: a tap elsewhere lands a quarter
   await tapAt({ bar: 1, staff: 0, ticks: 2 * PPQ + 60, step: 2 });
   if ((await kinds(1)) !== "n4 r4 n4 r4") throw new Error("placing after a drag: " + (await kinds(1)));
-  // a finger drags too (one contact, narrow)
+  // a finger on a head in Pen mode does nothing (v112, WSHED-150) — Touch mode's finger drag is the v101 step's
   h = await headPt(1, 2 * PPQ, 2);
   const finger = (type, o) => synth(type, { pointerType: "touch", pointerId: 72, width: 3, height: 3, ...o });
   await finger("pointerdown", { clientX: h.x, clientY: h.y });
   await finger("pointermove", { clientX: h.x, clientY: h.y + S });
   await finger("pointerup", { clientX: h.x, clientY: h.y + S });
-  if ((await pitchAt(1, 2)) !== "E4") throw new Error("finger drag " + (await pitchAt(1, 2)));
-  // a clean tap on the selected note deselects it; the bar is unchanged
-  h = await headPt(1, 2 * PPQ, 0);
+  if ((await pitchAt(1, 2)) !== "G4" || (await state()).dragging) throw new Error("a finger dragged in Pen mode: " + (await pitchAt(1, 2)));
+  // a pen tap on the head selects it (the finger no longer did, so it still sits on step 2); a clean tap on the selected note deselects it; the bar is unchanged
+  h = await headPt(1, 2 * PPQ, 2);
+  await pen("pointerdown", { clientX: h.x, clientY: h.y }); await pen("pointerup", { clientX: h.x, clientY: h.y });
+  s = await state();
+  if (s.selection.length !== 1 || !s.selection[0].startsWith(await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures[1].staves[0].voices[0][2].id))) throw new Error("tap on a head should select it: " + JSON.stringify(s.selection));
   await pen("pointerdown", { clientX: h.x, clientY: h.y }); await pen("pointerup", { clientX: h.x, clientY: h.y });
   s = await state();
   if (s.selection.length !== 0) throw new Error("tap on a selected note should let it go: " + JSON.stringify(s.selection));
   if ((await kinds(1)) !== "n4 r4 n4 r4") throw new Error("tap changed the bar");
-  await page.click("[data-act=undo]"); await page.click("[data-act=undo]"); await page.click("[data-act=undo]"); // finger drag, placement, pen drag → bar 1 back to n4 r4 r2, bar 0 to B4
+  await page.click("[data-act=undo]"); await page.click("[data-act=undo]"); // placement, pen drag → bar 1 back to n4 r4 r2, bar 0 to B4
   if ((await kinds(1)) !== "n4 r4 r2" || (await pitchAt(0, 0)) !== "B4") throw new Error("undo chain: " + (await kinds(1)) + " " + (await pitchAt(0, 0)));
 });
 
@@ -257,7 +261,7 @@ await step("clipboard: lasso two notes → copy → paste arms a cursor with a p
   const ghostHeads = await page.evaluate(() => document.querySelector(".cp-ghost").hasAttribute("hidden") ? 0 : document.querySelectorAll(".cp-ghost .head").length);
   if (ghostHeads !== 2) throw new Error("phrase ghost heads " + ghostHeads);
   // drop at bar 4 beat 1 (a tap, via touch — the same tap rule as placing)
-  await page.touchscreen.tap(Math.round(t.x), Math.round(t.y)); await page.waitForTimeout(80);
+  await tapXY(t);
   if ((await kinds(3)) !== "n4 n4 r2") throw new Error("drop: " + (await kinds(3)));
   s = await state();
   if (s.pasting || s.selection.length !== 2) throw new Error("after drop " + JSON.stringify(s));
@@ -270,7 +274,7 @@ await step("clipboard: lasso two notes → copy → paste arms a cursor with a p
   // paste again onto the bass staff of bar 5 — the phrase lands there, the treble is untouched
   await page.click("[data-act=paste]");
   const u = await point({ bar: 4, staff: 1, ticks: 100, step: 4 });
-  await page.touchscreen.tap(Math.round(u.x), Math.round(u.y)); await page.waitForTimeout(80);
+  await tapXY(u);
   if ((await kinds(4, 1)) !== "n4 n4 r2" || (await kinds(4, 0)) !== "r1") throw new Error("bass paste: " + (await kinds(4, 1)) + " / " + (await kinds(4, 0)));
   // a barline straddle: make bar 2's quarter a half (lasso it, palette half), copy it, drop it on beat 4 of bar 6 → toast, nothing changes, still armed; Escape disarms
   const c = await point({ bar: 1, staff: 0, ticks: 0, step: 6 });
@@ -284,7 +288,7 @@ await step("clipboard: lasso two notes → copy → paste arms a cursor with a p
   await page.click("[data-act=copy]");
   await page.click("[data-act=paste]");
   const v = await point({ bar: 5, staff: 0, ticks: 3 * PPQ + 100, step: 4 });
-  await page.touchscreen.tap(Math.round(v.x), Math.round(v.y)); await page.waitForTimeout(80);
+  await tapXY(v);
   await page.waitForFunction(() => document.querySelector(".lb-toast.show")?.textContent.includes("barline"), null, { timeout: 3000 });
   if ((await kinds(5)) !== "r1") throw new Error("straddle changed the bar");
   if (!(await state()).pasting) throw new Error("cursor disarmed on a refusal");
@@ -1954,6 +1958,58 @@ await step("v111: the ghost wears the armed value — an eighth hovers with a fl
   g = await hover();
   if (g.stems !== 1 || g.head !== glyphs.black || g.parts.length) throw new Error("quarter ghost: " + JSON.stringify(g));
   await page.screenshot({ path: `${S}/cp-34-ghost-eighth.png`, clip: { x: 0, y: 0, width: 1024, height: 620 } });
+  await noWiden();
+});
+
+await step("v112: Pen mode owns the score — with the pen hovering (ghost shown) a palm, a fingertip, a narrow finger tap and a finger drag on the score change nothing and leave the ghost where the pen was; the next pen tap lands; a finger on a head in Select mode does not grab; Pan mode still scrolls under a finger; Touch mode still draws (WSHED-150)", async () => {
+  // still on the "Sharps" piece, Place mode, Pen input, quarter armed; bar 5 is empty
+  const pen = (type, o) => synth(type, { pointerType: "pen", pointerId: 190, width: 1, height: 1, pressure: 0.5, ...o });
+  const palm = (type, o) => synth(type, { pointerType: "touch", pointerId: 191, width: 50, height: 50, ...o });
+  const tip = (type, o) => synth(type, { pointerType: "touch", pointerId: 192, width: 8, height: 8, ...o });
+  const ghost = () => page.evaluate(() => { const g = document.querySelector(".cp-ghost"); const h = g.querySelector(".head"); return { hidden: g.hasAttribute("hidden"), x: h ? Number(h.getAttribute("x")) : null, y: h ? Number(h.getAttribute("y")) : null }; });
+  if ((await state()).input !== "pen" || (await state()).mode !== "place") throw new Error("expected Pen + Place");
+  const k5 = await kinds(4), sel0 = JSON.stringify((await state()).selection);
+  const p = await point({ bar: 4, staff: 0, ticks: PPQ, step: 6 });
+  await pen("pointermove", { clientX: p.x + 2, clientY: p.y });
+  const g0 = await ghost();
+  if (g0.hidden) throw new Error("the pen hover should show a ghost");
+  // a palm lands and lifts, a fingertip taps, a fingertip drags across the staff, two fingers at once — the ghost never moves, nothing is placed
+  const q = await point({ bar: 4, staff: 1, ticks: 0, step: 4 }), q2 = await point({ bar: 5, staff: 0, ticks: 0, step: 2 });
+  await palm("pointerdown", { clientX: q.x, clientY: q.y + 20 }); await page.waitForTimeout(120); await palm("pointerup", { clientX: q.x, clientY: q.y + 20 });
+  await tip("pointerdown", { clientX: q2.x, clientY: q2.y }); await tip("pointerup", { clientX: q2.x, clientY: q2.y }); // a clean narrow tap (placed before v112)
+  await tip("pointerdown", { clientX: q2.x, clientY: q2.y }); for (let i = 1; i <= 5; i++) await tip("pointermove", { clientX: q2.x + 20 * i, clientY: q2.y + 4 * i }); await tip("pointerup", { clientX: q2.x + 100, clientY: q2.y + 20 });
+  await palm("pointerdown", { clientX: q.x, clientY: q.y }); await tip("pointerdown", { clientX: q2.x, clientY: q2.y }); await tip("pointerup", { clientX: q2.x, clientY: q2.y }); await palm("pointerup", { clientX: q.x, clientY: q.y });
+  let g = await ghost(), s = await state();
+  if (g.hidden || g.x !== g0.x || g.y !== g0.y) throw new Error("a finger moved or hid the pen's ghost: " + JSON.stringify({ g0, g }));
+  if ((await kinds(4)) !== k5 || (await kinds(5)) !== "r1" || JSON.stringify(s.selection) !== sel0 || s.dragging || s.lassoing || s.pending) throw new Error("a finger did something in Pen mode: " + JSON.stringify({ b5: await kinds(4), b6: await kinds(5), s }));
+  // a palm resting while the pen taps: the tap still lands (the palm is not a second contact any more)
+  await palm("pointerdown", { clientX: q.x, clientY: q.y + 30 });
+  await pen("pointerdown", { clientX: p.x + 2, clientY: p.y }); await pen("pointerup", { clientX: p.x + 2, clientY: p.y });
+  await palm("pointerup", { clientX: q.x, clientY: q.y + 30 });
+  if ((await kinds(4)) === k5) throw new Error("the pen tap under a resting palm did not land: " + (await kinds(4)));
+  // Select mode: a fingertip on that head grabs nothing
+  await page.click("[data-act=select]");
+  const h = await point({ bar: 4, staff: 0, ticks: PPQ, step: 6 });
+  await tip("pointerdown", { clientX: h.x + 4, clientY: h.y });
+  s = await state();
+  if (s.dragging || s.selection.length) throw new Error("a finger grabbed in Pen + Select: " + JSON.stringify(s));
+  await tip("pointerup", { clientX: h.x + 4, clientY: h.y });
+  await page.click("[data-act=select]"); if ((await state()).mode !== "place") throw new Error("back to Place");
+  // Pan mode: a finger still scrolls the score
+  await page.click("[data-act=pan]");
+  const top0 = await page.evaluate(() => document.querySelector("#cp-view").scrollTop);
+  await tip("pointerdown", { clientX: 500, clientY: 600 }); for (let i = 1; i <= 6; i++) await tip("pointermove", { clientX: 500, clientY: 600 - 30 * i }); await tip("pointerup", { clientX: 500, clientY: 420 });
+  await page.waitForTimeout(100);
+  const top1 = await page.evaluate(() => document.querySelector("#cp-view").scrollTop);
+  if (top1 <= top0) throw new Error(`Pan mode: a finger did not scroll (${top0} → ${top1})`);
+  await page.click("[data-act=pan]"); await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
+  // Touch mode: the same narrow tap draws
+  await page.click("[data-act=input][data-input=touch]");
+  const t = await point({ bar: 5, staff: 0, ticks: 0, step: 2 });
+  await tip("pointerdown", { clientX: t.x, clientY: t.y }); await tip("pointerup", { clientX: t.x, clientY: t.y });
+  if ((await kinds(5)) === "r1") throw new Error("Touch mode: a finger should still place");
+  await page.keyboard.press("Control+z"); await page.keyboard.press("Control+z");
+  await page.click("[data-act=input][data-input=pen]");
   await noWiden();
 });
 

@@ -121,6 +121,10 @@ phase's card (WSHED-115 … 122).
 
 - [ ] New score, one tap, wait a second (the save), undo: the bar is a whole rest again; redo brings the note back. Reload the score, tap once, wait, undo: the same. (Before v104 the first edit of a session could never be undone once it had saved.)
 
+## Pen mode owns the score (WSHED-150, v112)
+
+- [ ] Pen mode, Place: hover the Pencil so the ghost shows, then rest the palm on the score, brush it with a finger, tap it with a fingertip, drag a finger across it — the ghost stays where the Pencil is, nothing is placed or selected, and the very next Pencil tap lands. Select mode: a finger on a head does not grab. Pan: one finger scrolls, two zoom. Rails: fingers still work. Touch mode: a finger still draws.
+
 ## The ghost wears the armed value (WSHED-149, v111)
 
 - [ ] Pencil hovering with an eighth armed: the ghost has a flag; sixteenth: two; dotted eighth: the flag and the dot; half: hollow with a stem; whole: hollow, no stem. Grace armed: the small ghost keeps its small flag. The tap places exactly what hovered.
