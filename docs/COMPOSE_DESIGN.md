@@ -627,28 +627,51 @@ things to delete them. Shapes that change the note type are v2 and are not here.
   mode: slide at once → gesture; hold `AIM_MS` then slide → aim (v101).
 - **Off** leaves every mode exactly as before; Pan is unchanged either way.
 
-### 8.5k Gesture v2 — the chevrons (v103, WSHED-131)
+### 8.5k Gesture v2 — the chevrons (v103, WSHED-131; four ways since v114, WSHED-152)
 
-The first shape. Leif: "if you draw a V shape (a down arrow head) it will switch to a longer
-note type; if you draw an up arrow head, it will switch to the next highest note type — on an
-eighth, an up arrowhead switches to a sixteenth."
+The first shape, v103. Leif: "if you draw a V shape (a down arrow head) it will switch to a longer
+note type; if you draw an up arrowhead, it will switch to the next highest note type — on an
+eighth, an up arrowhead switches to a sixteenth." Then v114 (2026-09-18): "add right and left
+arrow head. Right arrowhead should now cycle to the next shortest note (what up arrow does now).
+Left arrow should do what down arrow does now. Up and down arrow, should, if a note is selected,
+adjust accidentals … C, C sharp, C double sharp, and up again does nothing; down: C sharp, C
+natural, C flat, C double flat." A compass: one axis for time, one for pitch spelling.
 
-- **What it does.** Exactly what tapping the neighbouring duration button does: `stepDur(dir)`
-  walks `LADDER` (double whole, whole, half, quarter, eighth, sixteenth, 32nd, 64th — the main
-  row and the ▾ row together) one step from `armed.base` and calls `act("dur", base)`, so an
-  all-notes selection is retyped first and the value is armed, and a chevron in Select mode
-  lands in Place as a palette tap does. **∧** ("up") = shorter, **∨** ("down") = longer. Past
-  either end a toast says "already the shortest / longest" and nothing changes.
+- **> and <** — the duration ladder. Exactly what tapping the neighbouring duration button
+  does: `stepDur(dir)` walks `LADDER` (double whole, whole, half, quarter, eighth, sixteenth,
+  32nd, 64th — the main row and the ▾ row together) one step from `armed.base` and calls
+  `act("dur", base)`, so an all-notes selection is retyped first and the value is armed, and a
+  chevron in Select mode lands in Place as a palette tap does. **>** ("right") = shorter — on the
+  palette the shorter values sit to the right, so the sign points along the rail. **<** ("left")
+  = longer. Past either end a toast says "already the shortest / longest" and nothing changes.
+- **∧ and ∨** — the accidentals. `stepAcc(dir)` → `engine.stepAccidental(doc, items, ±1)`: every
+  selected pitch's `alter` moves one step, clamped to −2 … 2, and is spelled by the same `spell`
+  the ♯ ♭ ♮ buttons use (a result that matches the key shows as a cautionary, one that differs
+  shows its sign, `cleanTies` drops a tie whose ends no longer match). The letter never respells:
+  C𝄪 stays C𝄪, it never becomes D. Each pitch steps from its own alter, so a chord of C♯ and E♭
+  goes to C𝄪 and E♮ in one stroke; a pitch already at the end stays while the others move; only
+  when none can move is it a Nudge ("already double sharp / flat") and nothing changes, no undo
+  step. Rests or dynamics only → the Nudge "pick a note for the accidental". Toast: the one
+  pitch's name ("C♯4") or "3 notes raised / lowered". **With nothing selected** ∧ / ∨ step the
+  one-shot armed accidental the way the palette's buttons do — `act("acc", next)` with next =
+  the armed alter ± 1 (nothing counts as ♮): nothing → ♯ → 𝄪, ♯ → ♮ → ♭ → 𝄫 — and the next tap
+  places it; at an end, "already 𝄪 armed".
 - **Recognition** — `js/lib/compose/gesture.js` `chevron(pts, minHeight = 2)`, points in S,
-  geometry only. The vertex is the stroke's point farthest from the chord between its ends. It
-  is a chevron when both legs are nearly straight (every point within 15 % of its leg's length
-  of the leg's line), of comparable length (the shorter ≥ 40 % of the longer), meet at 20°–130°,
-  the tips are level within half the height, the vertex sits between the tips (20 % slack) and
-  the height is ≥ 2 S. Vertex below both tips → "down", above both → "up"; otherwise null.
-  Drawing direction does not matter.
+  geometry only. The upright test: the vertex is the stroke's point farthest from the chord
+  between its ends; it is a chevron when both legs are nearly straight (every point within 15 %
+  of its leg's length of the leg's line), of comparable length (the shorter ≥ 40 % of the
+  longer), meet at 20°–130°, the tips are level within half the height, the vertex sits between
+  the tips (20 % slack) and the height is ≥ 2 S. Vertex below both tips → "down", above both →
+  "up". The sideways test is the same run on the transposed points: its "up" (the vertex at the
+  smaller x) is "left", its "down" "right". **No stroke passes both** — level tips with the
+  vertex between them and stacked tips with the vertex between them cannot both hold once the
+  vertex pokes out at all — so a diagonal stroke is one shape or none, never a coin toss; the
+  rotation sweep in `tests/compose-gesture-shapes.test.mjs` shows an ∧ turned through 360° read
+  up, right, down, left in order with null on the diagonals. Drawing direction does not matter.
 - **Precedence** at the lift of an active Gesture-mode stroke: chevron → strike → lasso. A
-  deliberately drawn shape wins over a strike through selected things; a chevron is open, so
-  `isLine` would have lassoed nothing anyway.
+  deliberately drawn shape wins over a strike through selected things, so an ∧ drawn over the
+  selected notes edits them rather than striking them out; a chevron is open, so `isLine` would
+  have lassoed nothing anyway.
 - **Where.** Place and Select mode with Gesture on; pencil, mouse, or a Touch-mode finger that
   slides at once. In Select mode start the stroke on empty staff (a stroke that starts on a
   rest or a head grabs it, as ever). Gesture off: nothing new.

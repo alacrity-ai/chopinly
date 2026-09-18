@@ -2,11 +2,23 @@
 // points in S. The recogniser is geometry only; what a shape does belongs to the editor.
 
 /**
- * A chevron: two nearly straight legs of comparable length meeting at a sharp-ish vertex, tips
- * roughly level, the vertex between them. Returns "up" (∧ — the vertex above the tips),
- * "down" (∨ — below), or null. `minHeight` (in S) keeps a wobble from counting.
+ * A chevron: two nearly straight legs of comparable length meeting at a sharp-ish vertex, the
+ * tips roughly level and the vertex between them. Returns "up" (∧ — the vertex above the tips),
+ * "down" (∨ — below), "left" (< — the vertex left of stacked tips), "right" (> — right of them),
+ * or null. The sideways ones are the same test with the axes swapped (v114, WSHED-152). No stroke
+ * passes both ways: level tips with the vertex between them (the upright test) and stacked tips
+ * with the vertex between them (the sideways test) cannot both hold once the vertex pokes out at
+ * all, so a diagonal stroke is one shape or none, never a coin toss. `minHeight` (in S) keeps a
+ * wobble from counting.
  */
 export function chevron(pts, minHeight = 2) {
+  const v = upright(pts, minHeight);
+  if (v) return v;
+  const h = upright(pts?.map((p) => ({ x: p.y, y: p.x })), minHeight);
+  return h === "up" ? "left" : h === "down" ? "right" : null; // the transposed test's "up" is a vertex at a smaller x
+}
+/** The v103 test: "up" | "down" | null. */
+function upright(pts, minHeight) {
   if (!pts || pts.length < 3) return null;
   const a = pts[0], b = pts[pts.length - 1];
   const chord = Math.hypot(b.x - a.x, b.y - a.y);

@@ -18,7 +18,7 @@ import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt, lasso, spans as spansOfLayout, isHandle, struck } from "../../lib/compose/hit.js";
 import { chevron } from "../../lib/compose/gesture.js";
-import { place, remove, snap, trimBars, find, setPitch, retype, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, addPedal, addOttava, addTextLine, finger, graceAt, toggleGrace, tremolo, setTrill, setStem, beamBreak, setSimile, pitchFromStep, moveExpressions, moveSpanEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, insertBar, deleteBar, setShort, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, setPitch, retype, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, addPedal, addOttava, addTextLine, finger, graceAt, toggleGrace, tremolo, setTrill, setStem, beamBreak, setSimile, pitchFromStep, moveExpressions, moveSpanEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, insertBar, deleteBar, setShort, stepAccidental, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { createPlayer } from "../../lib/compose/play.js";
@@ -556,7 +556,7 @@ export function openEditor({ id, ctx, onClose }) {
       if (selection.size) { selection.clear(); showSel(); sync(); }
       return;
     }
-    if (gestureOn) { const dir = chevron(l.pts); if (dir) { stepDur(dir); return; } } // a shape first (§8.5k): a deliberately drawn chevron
+    if (gestureOn) { const dir = chevron(l.pts); if (dir) { if (dir === "left" || dir === "right") stepDur(dir); else stepAcc(dir); return; } } // a shape first (§8.5k): a deliberately drawn chevron — > < walk the duration ladder, ∧ ∨ the accidentals
     if (gestureOn && selection.size) { // the strike (§8.5j): a stroke through selected heads or dynamics deletes them; otherwise it is a lasso
       const hit = struck(l.pts, strikeTargets(tol));
       if (hit.size) { strike(hit); return; }
@@ -568,14 +568,34 @@ export function openEditor({ id, ctx, onClose }) {
     follow(lastHead); // the last head lassoed sets the active voice
     showSel(); sync(); haptic(selection.size ? 6 : 0);
   }
-  /** The chevrons (§8.5k): "up" (∧) arms the next shorter value, "down" (∨) the next longer — the palette's ladder, main row and ▾ row together — through the same path as a palette tap (a selection is retyped first). */
+  /** The sideways chevrons (§8.5k, v114): ">" arms the next shorter value, "<" the next longer — the palette's ladder, main row and ▾ row together — through the same path as a palette tap (a selection is retyped first). */
   const LADDER = [0, ...MAIN_BASES, ...MORE_BASES.filter((b) => b > 0)]; // longest → shortest
   function stepDur(dir) {
-    const i = LADDER.indexOf(armed.base), j = i + (dir === "up" ? 1 : -1);
-    if (j < 0 || j >= LADDER.length) { toast(`already the ${dir === "up" ? "shortest" : "longest"} — ${durName(armed.base)}`); haptic(4); return; }
+    const i = LADDER.indexOf(armed.base), j = i + (dir === "right" ? 1 : -1);
+    if (j < 0 || j >= LADDER.length) { toast(`already the ${dir === "right" ? "shortest" : "longest"} — ${durName(armed.base)}`); haptic(4); return; }
     const had = selection.size;
     act("dur", LADDER[j]);
     if (armed.base === LADDER[j]) toast(`${durName(LADDER[j])}${had ? "" : " armed"}`);
+  }
+  /** The upright chevrons (§8.5k, v114): ∧ raises the selected notes' accidentals one step (C → C♯ → C𝄪), ∨ lowers them (C → C♭ → C𝄫), the letter never respelled; with nothing selected they step the one-shot armed accidental the way the palette's ♯ ♭ ♮ do. */
+  const ACC_GLYPH = { 2: "𝄪", 1: "♯", 0: "♮", "-1": "♭", "-2": "𝄫" };
+  function stepAcc(dir) {
+    const by = dir === "up" ? 1 : -1;
+    if (!selection.size) {
+      const cur = armed.alter ?? 0, next = Math.max(-2, Math.min(2, cur + by));
+      if (next === cur) { toast(`already ${ACC_GLYPH[next]} armed`); haptic(4); return; }
+      act("acc", next); toast(`${ACC_GLYPH[next]} armed — the next note`);
+      return;
+    }
+    const before = selItems().map((it) => find(doc, it.ev)?.ev.pitches?.[it.pi ?? 0]?.alter ?? null);
+    try {
+      const next = stepAccidental(doc, selItems(), by);
+      const items = selItems(), after = items.map((it) => find(next, it.ev)?.ev.pitches?.[it.pi ?? 0]);
+      const moved = after.filter((p, i) => p && (p.alter ?? 0) !== (before[i] ?? 0)).length;
+      commit(next); haptic(8);
+      const one = items.length === 1 && after[0];
+      toast(one ? `${one.step}${ACC_GLYPH[one.alter ?? 0]}${one.octave}` : `${moved} ${moved === 1 ? "note" : "notes"} ${by > 0 ? "raised" : "lowered"}`);
+    } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
   }
   /** The selected heads and dynamics as boxes in S for `struck` — a head 0.75 × 0.5 S, a dynamic 1.2 × 0.9 S, each at least the finger's reach. */
   function strikeTargets(tol) {

@@ -370,6 +370,18 @@ both ways and back, refusals, the 16th pickup, snap / layout / rests, insert / d
 change, playback, the MusicXML round trip); the import test now expects a short bar; one E2E
 step (a 12/8 pickup by tap, the closing bar, fill again, undo / redo, the empty-bar nudge).
 
+## Phase 22 — four chevrons — v114 (WSHED-152, 2026-09-18)
+
+The chevrons become a compass (design §8.5k). `gesture.js`: `chevron()` runs the v103 upright test,
+then the same test on the transposed points for < and > (no stroke passes both; the rotation sweep
+test proves it). `engine.js`: `stepAccidental(doc, items, ±1)` — each selected pitch's alter one
+step, clamped to ±2, spelled by `spell`, ties cleaned, a Nudge when nothing can move. `editor.js`:
+the lift dispatches left / right to `stepDur` (the ladder, unchanged) and up / down to `stepAcc`
+(a selection → the engine step + a toast naming the pitch or the count; none → `act("acc", next)`
+arms the stepped one-shot accidental). Tests: recogniser (sideways, the sweep), engine (the
+ladder up and down, a chord, the ends, rests), the E2E chevron step redrawn to > < ∧ ∨. No schema,
+playback, export or pipeline change. sw.js CACHE + version.js → v114.
+
 ## Phase 20 — Favorites — v109 (WSHED-148, 2026-09-17)
 
 Leif's floating palette (design §8.5o). `js/lib/compose/favorites.js`: the pure model — a

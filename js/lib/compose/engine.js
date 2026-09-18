@@ -320,6 +320,29 @@ export function accidental(doc, items, alter) {
   cleanTies(d);
   return d;
 }
+/**
+ * Step the selected pitches' accidentals one alteration (docs/COMPOSE_DESIGN.md §8.5k, v114):
+ * dir +1 raises (C → C♯ → C𝄪), −1 lowers (C → C♭ → C𝄫); the letter never respells. Each pitch
+ * steps from its own alter through the same spelling as the ♯ ♭ ♮ buttons; one already at the
+ * end stays while the others move. Nudge when no selected note is a note, or none can move.
+ */
+export function stepAccidental(doc, items, dir) {
+  const d = clone(doc);
+  const ts = targets(d, items);
+  if (!ts.length) throw new Nudge("pick a note for the accidental");
+  let moved = 0, top = 0;
+  for (const { f, ps } of ts) {
+    const key = keyAt(d, f.bar);
+    for (const p of ps) {
+      const alter = Math.max(-2, Math.min(2, (p.alter ?? 0) + (dir > 0 ? 1 : -1)));
+      if (alter === (p.alter ?? 0)) { top++; continue; }
+      spell(p, alter, keyAlt(key, p.step)); moved++;
+    }
+  }
+  if (!moved) throw new Nudge(top > 1 ? `already ${dir > 0 ? "double sharp" : "double flat"}` : `already ${dir > 0 ? "double sharp" : "double flat"} — ${ts[0].ps[0].step}${ts[0].ps[0].octave}`);
+  cleanTies(d);
+  return d;
+}
 /** Apply an explicit accidental to a pitch given the key's alteration for its letter. */
 function spell(p, alter, ka) {
   if (p.alter === alter) {
