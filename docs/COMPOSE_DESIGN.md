@@ -654,9 +654,14 @@ natural, C flat, C double flat." A compass: one axis for time, one for pitch spe
   through `act("dur", base)`; past either end "already the shortest / longest" and nothing
   changes.
 - **∧ and ∨** — the accidentals. `stepAcc(dir)` → `engine.stepAccidental(doc, items, ±1)`: every
-  selected pitch's `alter` moves one step, clamped to −2 … 2, and is spelled by the same `spell`
-  the ♯ ♭ ♮ buttons use (a result that matches the key shows as a cautionary, one that differs
-  shows its sign, `cleanTies` drops a tie whose ends no longer match). The letter never respells:
+  selected pitch's `alter` moves one step, clamped to −2 … 2; the step sets the alter and clears
+  any explicit sign, and **the layout decides what to draw** — a sign only where the pitch differs
+  from what is in force (the key, or an earlier accidental on that letter in the bar). So in G a
+  D stepped ♯ → 𝄪 → ♯ → back is a bare D, and it is a natural only after a D♯ earlier in the
+  bar. (v114 spelled through the buttons' `spell` and stamped a cautionary on the way back; Leif,
+  v117 / WSHED-155: "I would rather not have it do redundant (or courtesy) accidentals … if we do
+  want one, we can already do that with the rail accidentals." The rail's ♮ keeps that job.)
+  `cleanTies` drops a tie whose ends no longer match. The letter never respells:
   C𝄪 stays C𝄪, it never becomes D. Each pitch steps from its own alter, so a chord of C♯ and E♭
   goes to C𝄪 and E♮ in one stroke; a pitch already at the end stays while the others move; only
   when none can move is it a Nudge ("already double sharp / flat") and nothing changes, no undo
