@@ -185,3 +185,16 @@ phase's card (WSHED-115 … 122).
 - The header's right button reads **Options** with a sliders icon. Open it: **INPUT** — Pen | Touch spanning the panel (iPad / phone only), then Gesture and Favorites rows each with a switch at the right; a rule; **RAILS** — the eight checkboxes.
 - Flip Gesture: the pill slides and lights, the panel stays open; the control rail no longer has Pen | Touch, Gesture or Favorites — it is undo / redo, Select | Pan, the clipboard, zoom.
 - Phone: the panel fits the screen; Pen and Touch keep their words inside it.
+
+## The Layout step (WSHED-156, v118)
+On the iPad, once **with the Pencil** and once **with a finger only** — they must behave the same.
+- [ ] File ▾ → Export PDF: a **Layout** row above *size*, reading "automatic" on a piece you have never pinned; the PDF of such a piece is what v117 made.
+- [ ] Layout opens the pages full screen. Every barline has a small brass grip dot; a tap anywhere within a fingertip of the barline (not just on the hairline) opens the menu.
+- [ ] *Break the row here* after bars 4, 8 and 11 → rows 1–4 / 5–8 / 9–11, a ⏎ over each; everything after still flows by itself.
+- [ ] *Keep bars N and N+1 together* at the end of a row pulls the next bar up; one too many is refused — the row flashes red, a toast says why, nothing moves.
+- [ ] Drag a barline sideways: the bar to its left follows the pen / finger, its neighbours give way, the row's right edge never moves; a rule with a percentage appears under the bar. A vertical swipe that starts on a barline still scrolls the pages.
+- [ ] Tap a row's tab in the left margin → *Lock this row* (a padlock) / *Release this row*.
+- [ ] Undo / redo, Reset (asks once), − / + zoom; Done returns to the sheet, whose preview and page count follow the pins. One Undo in the editor takes the whole Layout sitting back.
+- [ ] Close and reopen the piece, and open it on another signed-in device: the pins are there. The editor's own score never changes shape.
+- [ ] With a row packed full, press size + a few times: the fine print turns red ("1 pinned row does not fit — open Layout"), Save PDF and Add to Scores go grey; Layout opens on the red row with *Release this row*; after it, Save is back.
+- [ ] Save PDF: no grip dots, arrows, arcs or percentages on the paper.

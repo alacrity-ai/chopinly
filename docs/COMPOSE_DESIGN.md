@@ -945,6 +945,8 @@ should feel like more of an options control panel now."
 
 ### 10.1 PDF — landed v88 (WSHED-121)
 
+> **Layout pins (v118, WSHED-156):** the export sheet has a *Layout* row that opens the plan's pages full screen, where row breaks / keeps and per-bar widths are pinned on the paper (`measure.lay`, read by the engraver only for paper). Full text: `docs/COMPOSE_LAYOUT_DESIGN.md`.
+
 As built (the text below replaced the plan on 2026-09-14; the spike that decided it is on the card):
 
 - **One description of the ink, two painters.** `js/lib/compose/paint.js` holds the drawing

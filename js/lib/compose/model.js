@@ -28,6 +28,8 @@ export const JUMPS = ["dc", "ds", "dcAlFine", "dsAlFine", "dcAlCoda", "dsAlCoda"
 export const FORM_KINDS = ["segno", "coda", "toCoda", "fine", ...JUMPS, "rehearsal", "tempo"];
 export const TEMPO_TEXT_MAX = 20;
 export const ENDING_MAX = 9;
+export const LAY_BREAKS = ["break", "keep"]; // a layout pin on the barline that closes a bar (docs/COMPOSE_LAYOUT_DESIGN.md §1): the row ends here / never ends here
+export const LAY_W_MIN = 0.4, LAY_W_MAX = 3; // a bar's weight in its row's justification on paper (1 = natural, never stored)
 export const DEFAULT_BARS = 8;
 export const DEFAULT_TEMPO = 100, MIN_TEMPO = 20, MAX_TEMPO = 300;
 /** The playback tempo of a document (older documents carry none). */
@@ -123,6 +125,10 @@ export function validate(doc) {
       const sig = sigAt(doc, bi), full = capacity(sig), grid = exprGrid(sig);
       if (typeof m.short !== "object" || !m.short || (m.short.from !== "end" && m.short.from !== "start") || !Number.isInteger(m.short.len) || m.short.len < grid || m.short.len >= full || m.short.len % grid) throw new Error(`bar ${bi + 1}: a short bar is a whole number of grid steps shorter than its ${sig.beats}/${sig.unit}, from the end or the start`);
       if (m.simile !== undefined) throw new Error(`bar ${bi + 1}: a short bar is not a bar repeat`);
+    }
+    if (m.lay !== undefined) { // layout pins for paper (docs/COMPOSE_LAYOUT_DESIGN.md §1): a break / keep on the closing barline, a weight in the row
+      const { brk, w, ...rest } = typeof m.lay === "object" && m.lay ? m.lay : { bad: 1 };
+      if (Object.keys(rest).length || (brk === undefined && w === undefined) || (brk !== undefined && !LAY_BREAKS.includes(brk)) || (w !== undefined && (typeof w !== "number" || !(w >= LAY_W_MIN && w <= LAY_W_MAX) || w === 1))) throw new Error(`bar ${bi + 1}: a layout pin is a break or a keep, and a weight ${LAY_W_MIN}–${LAY_W_MAX} other than 1`);
     }
     const cap = capacity(timeAt(doc, bi)), beat = groupSize(timeAt(doc, bi));
     if (m.staves.length !== doc.parts[0].staves) throw new Error(`bar ${bi + 1}: staff count`);

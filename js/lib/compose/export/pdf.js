@@ -95,7 +95,7 @@ export function planPages(doc, opts = {}) {
   const pg = PAGES[o.page], margin = MARGINS[o.margins] * PT, S = o.staffMm * PT;
   const width = pg.w - 2 * margin, height = pg.h - 2 * margin;
   const d = trimBars(doc);
-  const L = layoutComposition(d, { unit: S, width });
+  const L = layoutComposition(d, { unit: S, width, pins: true }); // paper honours the piece's layout pins (docs/COMPOSE_LAYOUT_DESIGN.md)
   const ink = inkExtents(L);
   const n = L.systems.length, availS = height / S;
   const pages = [];
@@ -108,7 +108,8 @@ export function planPages(doc, opts = {}) {
   }
   const pageOfSys = []; pages.forEach((p, k) => { for (let i = p.first; i <= p.last; i++) pageOfSys[i] = k; });
   const pageOf = (sys) => pageOfSys[sys], pageAt = (y) => pageOfSys[systemAt(y, n)];
-  return { doc: d, L, S, ink, pages, page: pg, margin, width, height, opts: o, pageOf, pageAt };
+  const tight = L.hit.systems.map((s, k) => (s.tight ? k : -1)).filter((k) => k >= 0); // pinned rows that do not fit at this size: the sheet will not save over them
+  return { doc: d, L, S, ink, pages, page: pg, margin, width, height, opts: o, pageOf, pageAt, tight };
 }
 
 /** Paint a plan into a PDF; resolves to the bytes (Uint8Array). `libs` = { PDFLib, fontkit, fonts: { regular, italic } }. */

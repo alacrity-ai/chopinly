@@ -831,7 +831,7 @@ export function openEditor({ id, ctx, onClose }) {
       }
       case "export-pdf": case "save-pdf": { // the export sheet: size, page, margins, header, preview → Save PDF / Add to Scores (WSHED-121)
         flush();
-        openExportSheet({ id, doc, primary: name });
+        openExportSheet({ id, doc, primary: name, onDoc: (next) => { if (!closed) { commit(next); flush(); } } }); // layout pins set on the paper come back as one edit (docs/COMPOSE_LAYOUT_DESIGN.md §4)
         return;
       }
       case "export-xml": { // MusicXML 4.0 of the piece as it stands (WSHED-119): save to the device or share it, like the PDF

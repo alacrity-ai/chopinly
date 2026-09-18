@@ -18,6 +18,8 @@ export const SYS_H = BLOCK_H + SYS_GAP;
 /** Which of n systems a layout y belongs to: the band around its block, split halfway through the gap (paper routes ink to pages by it). */
 export const systemAt = (y, n) => Math.max(0, Math.min(n - 1, Math.floor((y - TOP_PAD + SYS_GAP / 2) / SYS_H)));
 const MAX_BARS_PER_SYSTEM = 6;
+/** Paper only (docs/COMPOSE_LAYOUT_DESIGN.md §2): a pinned row whose tightest bar falls under this share of natural spacing is `tight` — refused in the Layout view, red when a size change made it so. */
+export const PIN_FLOOR = 0.8;
 const STEM_LEN = 3.5, BEAM_T = 0.45, BEAM_GAP = 0.3, MIN_STEM = 2.75;
 /** The shortest stem a beamed note may have when `levels` beams stack inward from its tip (WSHED-134, Gould):
  *  the bare stem between the head and the innermost beam never shrinks — every extra beam lengthens the stem. */
@@ -53,10 +55,11 @@ export const stemFor = (vi, nVoices, farStep) => (nVoices > 1 ? (vi % 2 === 0 ? 
 const stepsOf = (pitches, clef) => pitches.map((p) => staffStep({ letter: p.step, acc: 0, octave: p.octave, diatonic: p.octave * 7 + "CDEFGAB".indexOf(p.step) }, clef));
 
 /**
- * Full layout. `width` in px, `unit` = S in px. Returns
+ * Full layout. `width` in px, `unit` = S in px. `pins` (paper only — the export plan passes it, the editor never does)
+ * honours the measures' layout pins: `lay.brk` on a closing barline, `lay.w` in the row's justification. Returns
  * { S, width, height, systems, drawn, beams, ties, hit } — every coordinate in S.
  */
-export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
+export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false } = {}) {
   const nStaves = doc.parts[0].staves;
   const widthS = width / S;
 
@@ -193,25 +196,37 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
   const bodyW = (b) => stretchW(b) + fixedW(b);
 
   // -- pack bars into systems --
+  // on paper a pin overrides one decision each (docs/COMPOSE_LAYOUT_DESIGN.md §2): a "break" ends the row at its barline, a "keep" never does; a weight
+  // takes no part in packing — it only shares out the row's room — so with no pins this is the greedy packer it always was
+  const brkOf = (b) => (pins ? b.m.lay?.brk : undefined), weightOf = (b) => (pins ? b.m.lay?.w ?? 1 : 1);
   const systems = [];
   let i = 0;
   while (i < bars.length) {
     const sys = { bars: [], first: systems.length === 0 };
     let sum = 0;
     const avail = widthS - LEFT - 0.5;
-    while (i < bars.length && sys.bars.length < MAX_BARS_PER_SYSTEM) {
+    while (i < bars.length) {
       const b = bars[i];
       const w = leadingW(b, sys.bars.length === 0) + bodyW(b);
-      if (sys.bars.length && sum + w > avail) break;
+      if (sys.bars.length) {
+        const brk = brkOf(bars[i - 1]);
+        if (brk === "break") break;
+        if (brk !== "keep" && (sys.bars.length >= MAX_BARS_PER_SYSTEM || sum + w > avail)) break;
+      }
       sys.bars.push(b); sum += w; i++;
     }
     const lead = sys.bars.reduce((n, b, k) => n + leadingW(b, k === 0), 0);
     const fixed = sys.bars.reduce((n, b) => n + fixedW(b), 0);
-    const body = sum - lead - fixed;
+    const body = sum - lead - fixed + sys.bars.reduce((n, b) => n + stretchW(b) * (weightOf(b) - 1), 0); // the weighted stretch; an exact + 0 when no bar carries one
     // a courtesy key / time at the end when the next system opens with a change
     const nb = bars[i];
     sys.courtesy = nb && (nb.showKey || nb.showTime || nb.showClef) ? { clef: nb.showClef ? nb : null, key: nb.showKey ? nb : null, time: nb.showTime ? nb : null, w: (nb.showClef ? 2.8 : 0) + (nb.showKey ? Math.max(...nb.clefs.map((_, si) => keysigW(nb, si))) * 1.15 + 0.8 : 0) + (nb.showTime ? 3.0 + timeSig(nb.time.beats, nb.time.unit).extra : 0) + 1.0 } : null;
-    sys.scale = Math.min((avail - lead - fixed - (sys.courtesy?.w ?? 0)) / body, i >= bars.length ? 1.25 : 10);
+    sys.cap = i >= bars.length ? 1.25 : 10;
+    sys.room = avail - lead - fixed - (sys.courtesy?.w ?? 0);
+    sys.scale = Math.min(sys.room / body, sys.cap);
+    for (const b of sys.bars) b.scale = sys.scale * weightOf(b); // a bar's own stretch: the row's, times its weight
+    sys.pinned = pins && sys.bars.some((b) => b.m.lay);
+    sys.tight = sys.pinned && sys.bars.length > 1 && sys.bars.some((b) => b.scale < PIN_FLOOR);
     systems.push(sys);
   }
 
@@ -229,7 +244,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
     sys.barlines = [];
     sys.courtesyLead = null;
     sys.endX = null; // where the staff lines stop when it is not the last barline
-    const hsys = { top: sysTop - 3, bottom: sysTop + BLOCK_H + 3, staves: sys.staffTop.map((t) => ({ topY: t })), bars: [] };
+    const hsys = { top: sysTop - 3, bottom: sysTop + BLOCK_H + 3, staves: sys.staffTop.map((t) => ({ topY: t })), bars: [], ...(pins ? { room: sys.room, scale: sys.scale, capped: sys.scale === sys.cap, cap: sys.cap, pinned: sys.pinned, tight: sys.tight } : {}) };
     let cursor = LEFT;
     sys.bars.forEach((b, k) => {
       const first = k === 0;
@@ -247,13 +262,13 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
       sys.leading.push(lead);
       cursor += lw;
       const bodyStart = cursor;
-      const bw = stretchW(b) * sys.scale + fixedW(b);
-      const hbar = { index: b.index, x0: barX0, x1: bodyStart + bw, bodyX0: bodyStart, cols: [], cap: b.cap };
+      const bw = stretchW(b) * b.scale + fixedW(b);
+      const hbar = { index: b.index, x0: barX0, x1: bodyStart + bw, bodyX0: bodyStart, cols: [], cap: b.cap, ...(pins ? { stretch: stretchW(b), fixed: fixedW(b), weight: weightOf(b), scale: b.scale, brk: brkOf(b) ?? null } : {}) };
       barPlace[b.index] = { hbar, si, sys, first };
       let off = 1.0 + b.startPad, fix = 0; // off stretches, fix does not
       for (const c of b.cols) {
-        for (const ch of c.clefs) clefs.push({ x: bodyStart + off * sys.scale + fix + 0.15, y: clefY(staffTop(ch.staff), ch.clef), glyph: CLEFS[ch.clef].glyph, staff: ch.staff, bar: b.index, at: ch.at, system: si });
-        const x = bodyStart + off * sys.scale + fix + c.clefPad + c.gracePad + c.arpPad + c.accPad;
+        for (const ch of c.clefs) clefs.push({ x: bodyStart + off * b.scale + fix + 0.15, y: clefY(staffTop(ch.staff), ch.clef), glyph: CLEFS[ch.clef].glyph, staff: ch.staff, bar: b.index, at: ch.at, system: si });
+        const x = bodyStart + off * b.scale + fix + c.clefPad + c.gracePad + c.arpPad + c.accPad;
         c.x = x;
         hbar.cols.push({ ticks: c.ticks, x });
         const colNotes = []; // every note of this column, for accidental x by drawn staff
@@ -317,7 +332,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
         for (const d of colNotes) d.accLeft = Math.min(d.accLeft, ...colNotes.filter((o) => o.drawStaff === d.drawStaff).flatMap((o) => o.heads.filter((h) => h.acc !== null).map((h) => h.accX))); // the note's leftmost ink: a roll sign, a trill line or a grace slur keeps clear of it
         off += c.w; fix += c.clefPad + c.gracePad + c.arpPad + c.accPad + c.dotPad + c.collPad;
       }
-      for (const ch of b.tailClefs) clefs.push({ x: hbar.x1 - (b.tailPad + b.endPad) * sys.scale + 0.15, y: clefY(staffTop(ch.staff), ch.clef), glyph: CLEFS[ch.clef].glyph, staff: ch.staff, bar: b.index, at: ch.at, system: si });
+      for (const ch of b.tailClefs) clefs.push({ x: hbar.x1 - (b.tailPad + b.endPad) * b.scale + 0.15, y: clefY(staffTop(ch.staff), ch.clef), glyph: CLEFS[ch.clef].glyph, staff: ch.staff, bar: b.index, at: ch.at, system: si });
       cursor = hbar.x1;
       hsys.bars.push(hbar);
       sys.barlines.push({ x: cursor, final: b.index === bars.length - 1, ...(b.m.barline?.end ? { kind: b.m.barline.end } : {}), ...(b.m.barline?.start ? { startX: bodyStart } : {}) });
