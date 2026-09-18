@@ -701,6 +701,7 @@ export function deleteBar(doc, bar) {
     }
     if (om.ending && om.ending.end >= bar) om.ending.end--;
   });
+  if (m.lay?.brk === "break" && prev && !prev.lay?.brk) prev.lay = { ...(prev.lay ?? {}), brk: "break" }; // the row still ends where it did (docs/COMPOSE_LAYOUT_DESIGN.md §1)
   d.measures.splice(bar, 1);
   cleanTies(d); cleanSlurs(d); cleanExpressions(d);
   return d;

@@ -2132,6 +2132,124 @@ await step("v113: pickup bars — on a fresh 12/8 piece three eighths on beats 1
   await page.click(".cp-dur[data-base='4']"); // the armed value is remembered per device: leave the quarter for the phone step
 });
 
+await step("v118: the Layout step — Export → Layout shows the plan's pages full screen; every barline's target is a fingertip wide; a finger breaks a row, a pen drags a bar wider (the row stays justified), a mouse locks a row; a keep that cannot fit is refused and changes nothing; undo / redo; Done hands the pins to the piece (saved, there after a reload, invisible to the editor's own layout); a pinned row that stops fitting at a bigger staff turns red and blocks Save until it is released (WSHED-156)", async () => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto(`${BASE}/?app=1&t=6#/compose`);
+  await page.waitForSelector("#cp-new");
+  const id = await page.evaluate(async () => { // sixteen bars of quarters, bar 10 in sixteenths — built through the engine (the layout is what this step drives)
+    const { newComposition } = await import("/js/lib/compose/model.js");
+    const { place } = await import("/js/lib/compose/engine.js");
+    const { logbook } = await import("/js/lib/logbook.js");
+    const Q = { base: 4, dots: 0, rest: false, tuplet: null, alter: null }, X = { ...Q, base: 16 };
+    let d = newComposition({ id: crypto.randomUUID(), now: Date.now() }); d.title = "Pinned";
+    for (let b = 0; b < 16; b++) { const n = b === 9 ? 16 : 4; for (let q = 0; q < n; q++) d = place(d, { bar: b, staff: 0, ticks: q * (26880 / n), step: 3 + (q % 4) }, n === 16 ? X : Q).doc; for (let q = 0; q < 4; q++) d = place(d, { bar: b, staff: 1, ticks: q * 6720, step: 2 }, Q).doc; }
+    logbook.addComposition(d); return d.id;
+  });
+  await page.evaluate(() => localStorage.removeItem("ws.compose.export"));
+  await page.goto(`${BASE}/?app=1&t=7#/compose/${id}`);
+  await page.waitForSelector(".cp-editor .cp-svg");
+  const screenRows = () => page.evaluate(() => document.querySelector(".cp-editor").__editor.layout.hit.systems.map((s) => s.bars.map((b) => b.index + 1)));
+  const editorRows = JSON.stringify(await screenRows());
+  await page.click("[data-pop=cp-file-more]"); await page.click("#cp-file-more [data-act=export-pdf]");
+  await page.waitForSelector(".cp-export-wrap .cp-paper .cp-page");
+  if ((await page.textContent("#cp-x-pins")) !== "automatic") throw new Error("a fresh piece is automatic: " + (await page.textContent("#cp-x-pins")));
+  await page.click("#cp-x-layout");
+  await page.waitForSelector(".cp-lay .cp-lay-handle");
+  const lay = () => page.evaluate(() => { const v = document.querySelector(".cp-lay").__layout; return { rows: v.plan.L.hit.systems.map((s) => s.bars.map((b) => b.index + 1)), right: v.plan.L.hit.systems.map((s) => s.bars.at(-1).x1), tight: v.plan.tight, lay: v.doc.measures.map((m) => m.lay ?? null), status: document.querySelector(".cp-lay-status").textContent, undo: !document.querySelector("[data-lay=undo]").disabled, redo: !document.querySelector("[data-lay=redo]").disabled }; });
+  const handle = async (bar) => { const h = page.locator(`.cp-lay-handle[data-bar="${bar}"]`); await h.scrollIntoViewIfNeeded(); const b = await h.boundingBox(); return { left: b.x, width: b.width, x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+  // the target is a fingertip, not a hairline
+  const sizes = await page.evaluate(() => [...document.querySelectorAll(".cp-lay-handle")].map((h) => { const r = h.getBoundingClientRect(); return [r.width, r.height]; }));
+  if (sizes.length !== 16 || sizes.some(([w, h]) => w < 43.5 || h < 100)) throw new Error("every barline handle is ≥ 44 px wide and the height of the system: " + JSON.stringify(sizes));
+  const tabs = await page.evaluate(() => [...document.querySelectorAll(".cp-lay-tab")].map((t) => { const r = t.getBoundingClientRect(); return [r.width, r.height]; }));
+  if (tabs.some(([w, h]) => w < 43.5 || h < 43.5)) throw new Error("row tabs are 44 px: " + JSON.stringify(tabs));
+  const auto = await lay();
+  if (auto.rows[0].length < 3) throw new Error("the automatic first row holds at least three bars here: " + JSON.stringify(auto.rows));
+  // a FINGER taps the barline after bar 2 → the menu → the row breaks there, the rest re-flows
+  let h = await handle(1);
+  await page.touchscreen.tap(h.x, h.y);
+  await page.waitForSelector(".cp-lay-menu [data-item=break]");
+  const items = await page.evaluate(() => [...document.querySelectorAll(".cp-lay-menu [data-item]")].map((b) => [b.dataset.item, b.offsetHeight])); // the layout height: the pop animation scales the rect for its first 120 ms
+  if (items.map((i) => i[0]).join() !== "break,keep" || items.some((i) => i[1] < 44)) throw new Error("the barline menu: " + JSON.stringify(items));
+  await page.screenshot({ path: `${S}/cp-40-layout-menu.png` });
+  await page.touchscreen.tap(...(await page.locator(".cp-lay-menu [data-item=break]").boundingBox().then((b) => [b.x + b.width / 2, b.y + b.height / 2])));
+  await page.waitForTimeout(120);
+  let now = await lay();
+  if (JSON.stringify(now.rows[0]) !== "[1,2]" || now.rows[1][0] !== 3 || now.rows.flat().length !== 16 || now.lay[1]?.brk !== "break" || now.status.indexOf("1 break") !== 0) throw new Error("a finger breaks the row after bar 2: " + JSON.stringify(now));
+  if (await page.locator(".cp-lay-menu").count()) throw new Error("the menu closes after its item");
+  // a PEN drags bar 1's barline to the right: bar 1 widens, bar 2 gives, the row still ends at the same right edge
+  h = await handle(0);
+  const pen = (type, x, extra = {}) => page.evaluate(([type, x, y, extra]) => document.querySelector('.cp-lay-handle[data-bar="0"]').dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, isPrimary: true, pointerType: "pen", pointerId: 77, width: 1, height: 1, pressure: type === "pointerup" ? 0 : 0.5, clientX: x, clientY: y, ...extra })), [type, x, h.y, extra]);
+  await pen("pointerdown", h.x);
+  for (let i = 1; i <= 8; i++) { await pen("pointermove", h.x + i * 8); await page.waitForTimeout(25); }
+  await pen("pointerup", h.x + 64);
+  await page.waitForTimeout(150);
+  const dragged = await lay();
+  if (!(dragged.lay[0]?.w > 1.05) || JSON.stringify(dragged.rows) !== JSON.stringify(now.rows) || Math.abs(dragged.right[0] - now.right[0]) > 1e-6) throw new Error("a pen drag widens bar 1 inside its row: " + JSON.stringify({ w: dragged.lay[0], rows: dragged.rows, right: [now.right[0], dragged.right[0]] }));
+  const h2 = await handle(0);
+  if (!(h2.x > h.x + 20)) throw new Error(`the barline followed the pen: ${h.x} → ${h2.x}`);
+  if (await page.locator(".cp-lay-menu").count()) throw new Error("a drag opens no menu");
+  // a MOUSE locks the second row from its tab
+  const second = now.rows[1];
+  await page.locator('.cp-lay-tab[data-row="1"]').scrollIntoViewIfNeeded();
+  await page.mouse.click(...(await page.locator('.cp-lay-tab[data-row="1"]').boundingBox().then((b) => [b.x + b.width / 2, b.y + b.height / 2])));
+  await page.click(".cp-lay-menu [data-item=lock]");
+  await page.waitForTimeout(120);
+  now = await lay();
+  if (JSON.stringify(now.rows[1]) !== JSON.stringify(second) || now.lay[second.at(-1) - 1]?.brk !== "break" || now.lay[second[0] - 1]?.brk !== "keep" || !(await page.locator('.cp-lay-tab[data-row="1"].locked').count())) throw new Error("a mouse locks row 2: " + JSON.stringify(now));
+  // keeps pull bars onto the third row until one cannot fit: that one is refused and changes nothing
+  let refused = false;
+  for (let i = 0; i < 12 && !refused; i++) {
+    const before = await lay(), end = before.rows[2].at(-1) - 1;
+    h = await handle(end); await page.touchscreen.tap(h.x, h.y);
+    await page.waitForSelector(".cp-lay-menu");
+    const pick = (await page.locator(".cp-lay-menu [data-item=unbreak]").count()) ? "unbreak" : "keep";
+    await page.click(`.cp-lay-menu [data-item=${pick}]`); await page.waitForTimeout(120);
+    const after = await lay();
+    if (JSON.stringify(after.lay) === JSON.stringify(before.lay)) { refused = true; if (!/does not fit/.test(await page.textContent(".lb-toast"))) throw new Error("a refusal says why: " + (await page.textContent(".lb-toast"))); if (after.tight.length) throw new Error("a refused keep leaves no tight row"); }
+  }
+  if (!refused) throw new Error("a keep past what fits is refused: " + JSON.stringify((await lay()).rows));
+  const full = await lay();
+  // undo / redo
+  await page.click("[data-lay=undo]"); const undone = await lay();
+  if (JSON.stringify(undone.lay) === JSON.stringify(full.lay) || !undone.redo) throw new Error("undo steps back");
+  await page.click("[data-lay=redo]");
+  if (JSON.stringify((await lay()).lay) !== JSON.stringify(full.lay)) throw new Error("redo steps forward");
+  await page.evaluate(() => { document.querySelector(".cp-lay-scroll").scrollTop = 0; });
+  await page.screenshot({ path: `${S}/cp-41-layout-pinned.png` });
+  await noWiden();
+  // Done: the sheet re-plans with the pins, the piece carries them, the editor's own rows never moved
+  await page.click("[data-lay=done]");
+  await page.waitForSelector(".cp-lay", { state: "detached" });
+  const sheet = await page.evaluate(() => ({ pins: document.querySelector("#cp-x-pins").textContent, rows: document.querySelector("#cp-x-paper").__plan.L.hit.systems.map((s) => s.bars.map((b) => b.index + 1)), save: document.querySelector("#cp-x-save").disabled }));
+  if (sheet.pins === "automatic" || JSON.stringify(sheet.rows) !== JSON.stringify(full.rows) || sheet.save) throw new Error("the sheet follows the pins: " + JSON.stringify(sheet));
+  if (JSON.stringify(await screenRows()) !== editorRows) throw new Error("the editor's screen layout ignores pins");
+  await page.waitForTimeout(450); // the save
+  const stored = await lb((m, [id]) => m.logbook.composition(id).measures.map((x) => x.lay ?? null), id);
+  if (JSON.stringify(stored.slice(0, 16)) !== JSON.stringify(full.lay.slice(0, 16))) throw new Error("the pins are saved with the piece: " + JSON.stringify(stored));
+  // a bigger staff: the full first row no longer fits → red, Save blocked, Release frees it
+  let tight = 0;
+  for (let i = 0; i < 16 && !tight && !(await page.locator("#cp-x-larger").isDisabled()); i++) { await page.click("#cp-x-larger"); tight = await page.evaluate(() => document.querySelector("#cp-x-paper").__plan.tight.length); }
+  if (!tight) throw new Error("a pinned row stops fitting at a bigger staff");
+  const gate = await page.evaluate(() => ({ save: document.querySelector("#cp-x-save").disabled, scores: document.querySelector("#cp-x-scores").disabled, fine: document.querySelector("#cp-x-fine").textContent }));
+  if (!gate.save || !gate.scores || !/not fit/.test(gate.fine)) throw new Error("a row that does not fit blocks the save: " + JSON.stringify(gate));
+  await page.click("#cp-x-layout");
+  await page.waitForSelector(".cp-lay .cp-lay-release");
+  await page.screenshot({ path: `${S}/cp-42-layout-red.png` });
+  while (await page.locator(".cp-lay-release").count()) { await page.locator(".cp-lay-release").first().click(); await page.waitForTimeout(120); }
+  if ((await lay()).tight.length) throw new Error("Release frees the row");
+  await page.keyboard.press("Escape"); // Esc = Done
+  await page.waitForSelector(".cp-lay", { state: "detached" });
+  if (!(await page.locator(".cp-export-wrap").count())) throw new Error("Escape peels the Layout view only");
+  if (await page.evaluate(() => document.querySelector("#cp-x-save").disabled)) throw new Error("Save is back once every row fits");
+  await page.evaluate(() => localStorage.removeItem("ws.compose.export"));
+  // after a reload the pins are still the piece's
+  await page.goto(`${BASE}/?app=1&t=8#/compose/${id}`);
+  await page.waitForSelector(".cp-editor .cp-svg");
+  const kept = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures.filter((m) => m.lay).length);
+  if (!kept) throw new Error("the pins survive a reload");
+  await lb((m, [id]) => m.logbook.removeComposition(id), id);
+});
+
 await step("phone width: the rails scroll, nothing widens, the editor still places", async () => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE}/?app=1&t=3#/compose`);

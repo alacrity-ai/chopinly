@@ -2424,6 +2424,50 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-export-actions { margin: 0.35rem 0 0; }
 .cp-export-actions .cp-export-primary b { color: var(--accent); }
 .cp-export-actions button[disabled] { opacity: 0.55; cursor: progress; }
+.cp-export-pins { color: var(--fg-dim); font-size: 0.85rem; }
+.lb-acct-fine.bad { color: var(--red); }
+/* the Layout view (docs/COMPOSE_LAYOUT_DESIGN.md §4, WSHED-156): the plan's pages full screen; handles and tabs are HTML over the page, marks an SVG group — none of it prints */
+.cp-lay { --cp-h: 2.75rem; --cp-lay-bad: var(--red); position: fixed; inset: 0; z-index: 55; display: flex; flex-direction: column; background: var(--bg); color: var(--fg); user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.cp-lay-bar { flex: none; display: flex; align-items: center; gap: 0.5rem; padding: calc(0.4rem + env(safe-area-inset-top, 0)) 0.6rem 0.4rem; background: var(--bg-panel); border-bottom: 1px solid var(--bg-edge); }
+.cp-lay-seg { display: inline-flex; gap: 0.3rem; flex: none; }
+.cp-lay-done { color: var(--fg-on-accent); background: var(--accent); border-color: var(--accent); flex: none; }
+.cp-lay-status { flex: 1 1 auto; min-width: 0; text-align: center; font-size: 0.88rem; color: var(--fg-dim); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cp-lay-status.bad { color: var(--cp-lay-bad); }
+.cp-lay-bar [data-lay=reset].sure { color: #fff; background: var(--cp-lay-bad); border-color: var(--cp-lay-bad); }
+.cp-lay-hint { flex: none; margin: 0; padding: 0.35rem 0.8rem; font-size: 0.8rem; color: var(--fg-dim); text-align: center; background: var(--bg-panel); border-bottom: 1px solid var(--bg-edge); }
+.cp-lay-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: 12px; }
+.cp-lay-pages { display: flex; flex-direction: column; align-items: center; gap: 14px; width: max-content; min-width: 100%; padding-bottom: env(safe-area-inset-bottom, 0); }
+.cp-lay-page.cp-paper { position: relative; flex: none; overflow: hidden; }
+.cp-lay-hits { position: absolute; inset: 0; }
+.cp-lay-handle { position: absolute; margin: 0; padding: 0; border: none; border-radius: 6px; background: transparent; cursor: col-resize; touch-action: pan-y; -webkit-tap-highlight-color: transparent; }
+.cp-lay-handle::before { content: ""; position: absolute; left: 50%; top: -1px; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%; background: var(--accent); opacity: 0.55; } /* the grip: where a barline can be taken hold of */
+.cp-lay-handle.pinned::before { opacity: 1; }
+.cp-lay-handle:hover, .cp-lay-handle:focus-visible, .cp-lay-handle.on { background: color-mix(in srgb, var(--accent) 16%, transparent); outline: none; }
+.cp-lay-handle.on { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+.cp-lay.dragging, .cp-lay.dragging * { cursor: col-resize; }
+.cp-lay-tab { position: absolute; margin: 0; padding: 0; border: none; background: transparent; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cp-lay-tab::before { content: ""; position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; box-sizing: border-box; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+.cp-lay-tab.pinned::before { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 2.5px, transparent 3px); }
+.cp-lay-tab.locked::before { width: 14px; height: 12px; margin: -4px 0 0 -7px; border-radius: 3px; border: none; background: var(--accent); box-shadow: 0 -6px 0 -3px #fff, 0 -6px 0 -1px var(--accent); } /* a padlock: a body and its shackle */
+.cp-lay-tab.tight::before { border-color: var(--cp-lay-bad); }
+.cp-lay-tab.tight.locked::before, .cp-lay-tab.tight.pinned::before { background: var(--cp-lay-bad); box-shadow: none; }
+.cp-lay-tab:hover, .cp-lay-tab:focus-visible { background: color-mix(in srgb, var(--accent) 14%, transparent); border-radius: 8px; outline: none; }
+.cp-lay-release { position: absolute; transform: translateY(-20%); padding: 0.3rem 0.7rem; border: none; border-radius: 999px; background: var(--cp-lay-bad); color: #fff; font: 600 0.8rem var(--sans); cursor: pointer; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); }
+.cp-lay-flash { position: absolute; pointer-events: none; background: var(--cp-lay-bad); opacity: 0; animation: cp-lay-flash 500ms ease-out; }
+@keyframes cp-lay-flash { 0% { opacity: 0.32; } 100% { opacity: 0; } }
+.cp-lay-marks { pointer-events: none; }
+.cp-lay-mark { fill: none; stroke: var(--accent); stroke-width: 1.1; stroke-linecap: round; stroke-linejoin: round; }
+.cp-lay-pct { fill: var(--accent); font-family: var(--sans); font-weight: 600; }
+.cp-paper .cp-lay-pct { fill: var(--accent); }
+.cp-lay-tight { fill: var(--cp-lay-bad); opacity: 0.1; }
+.cp-lay-menu { z-index: 2; min-width: 14rem; }
+.cp-lay-menu-head { margin: 0.1rem 0.6rem 0.25rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-dim); }
+.cp-lay-menu .cp-menu-row { height: 3rem; }
+@media (max-width: 40rem) {
+  .cp-lay-bar { gap: 0.3rem; padding-left: 0.4rem; padding-right: 0.4rem; }
+  .cp-lay-done span { display: none; }
+  .cp-lay-hint { font-size: 0.74rem; }
+}
 /* wide (an iPad on its side, a desk): the page beside the controls, so the two ways out stay above the fold */
 @media (min-width: 720px) {
   .lb-sheet-wrap.cp-export-wrap .lb-sheet { width: min(92vw, 48rem); max-width: 48rem; }
