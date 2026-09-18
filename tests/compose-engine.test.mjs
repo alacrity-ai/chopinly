@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition, newMeasure, validate, timeAt, isEmptyBar, evTicks } from "../js/lib/compose/model.js";
-import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar, setPitch, stepOf, retype, dot, tie, tuplet, accidental, clipFrom, paste, toRests, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, slurEnd, decompose, addExpression, addHairpin, moveExpressions, moveHairpinEnd, setExpressionValue, removeExpressions, findExpression, expressionsOf, exprSlot, slotOfAbs, nextSlot, upgrade, nudgeExpressionY } from "../js/lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, onsets, pitchFromStep, midiOf, Nudge, normalizeBar, setPitch, stepOf, retype, dot, tie, tuplet, accidental, clipFrom, paste, toRests, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, slurEnd, decompose, stepAccidental, addExpression, addHairpin, moveExpressions, moveHairpinEnd, setExpressionValue, removeExpressions, findExpression, expressionsOf, exprSlot, slotOfAbs, nextSlot, upgrade, nudgeExpressionY } from "../js/lib/compose/engine.js";
 import { capacity, PPQ, groupSize, exprGrid } from "../js/lib/compose/ticks.js";
 const Qt = PPQ;
 import { createHistory } from "../js/lib/compose/history.js";
@@ -324,6 +324,36 @@ test("armed tuplet: the first tap opens a triplet group in a quarter's room, tap
   e = place(e, { bar: 0, staff: 0, ticks: 3 * Qt, step: 4 }, E).doc;                                   // eighth on beat 4 → r8 left
   assert.throws(() => place(e, { bar: 0, staff: 0, ticks: 3 * Qt + Qt / 2 + 10, step: 4 }, TE), /no room/);
   validate(e);
+});
+
+test("stepAccidental (v114): a step up or down through ♯ 𝄪 and ♭ 𝄫, clamped at the ends, the letter kept; a chord steps each pitch from its own alter; nothing to step is a Nudge", () => {
+  let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc; // B4 in C
+  const id = bar1(d)[0].id, p = (x) => find(x, id).ev.pitches[0];
+  const alters = [];
+  for (let i = 0; i < 2; i++) { d = stepAccidental(d, [{ ev: id, pi: 0 }], 1); alters.push(p(d).alter); }
+  assert.deepEqual(alters, [1, 2]);
+  assert.equal(p(d).step, "B", "never respelled to C");
+  assert.throws(() => stepAccidental(d, [{ ev: id, pi: 0 }], 1), /already double sharp/);
+  for (let i = 0; i < 4; i++) { d = stepAccidental(d, [{ ev: id }], -1); alters.push(p(d).alter); }
+  assert.deepEqual(alters.slice(2), [1, 0, -1, -2]);
+  assert.throws(() => stepAccidental(d, [{ ev: id }], -1), /already double flat/);
+  assert.equal(midiOf(p(d)), 69, "B𝄫4 sounds as A4");
+  validate(d);
+  // a natural the key implies shows as a cautionary on the way through, as the ♮ button does
+  let e = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, { ...Q, alter: 1 }).doc;
+  e = stepAccidental(e, [{ ev: bar1(e)[0].id }], -1);
+  assert.deepEqual([bar1(e)[0].pitches[0].alter, bar1(e)[0].pitches[0].acc], [0, "show"]);
+  // a chord: C♯ and E♭ up → C𝄪 and E♮; up again → only E moves (E♯), C𝄪 stays; up again → E𝄪; up again → nothing can move
+  let c = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 0 }, { ...Q, alter: 1 }).doc;      // C4♯
+  c = place(c, { bar: 0, staff: 0, ticks: 0, step: 2 }, { ...Q, alter: -1 }).doc;               // + E4♭
+  const cid = bar1(c)[0].id, al = (x) => find(x, cid).ev.pitches.map((q) => q.alter);
+  c = stepAccidental(c, [{ ev: cid }], 1); assert.deepEqual(al(c), [2, 0]);
+  c = stepAccidental(c, [{ ev: cid }], 1); assert.deepEqual(al(c), [2, 1]);
+  c = stepAccidental(c, [{ ev: cid }], 1); assert.deepEqual(al(c), [2, 2]);
+  assert.throws(() => stepAccidental(c, [{ ev: cid }], 1), /already double sharp/);
+  // rests only: nothing to step
+  const r = fresh();
+  assert.throws(() => stepAccidental(r, [{ ev: r.measures[0].staves[0].voices[0][0].id }], 1), /pick a note/);
 });
 
 test("accidental: sets the spelling, pressing it again returns to the key, a natural the key implies is a cautionary", () => {

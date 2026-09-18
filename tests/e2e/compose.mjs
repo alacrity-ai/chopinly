@@ -1555,47 +1555,85 @@ await step("v102: gesture mode — off, a Place-mode drag does nothing; on, a pe
   await noWiden();
 });
 
-await step("v103: the chevrons — ∧ arms the next shorter value, ∨ the next longer, to both ends; a selection is retyped; a line, a loop and a lopsided stroke are not chevrons; a Touch finger draws one; Gesture off draws nothing", async () => {
+await step("v103 / v114: the chevrons — > arms the next shorter value, < the next longer, to both ends; a selection is retyped; ∧ ∨ step a selected note's accidental C → C♯ → C𝄪 (stop) → … → C𝄫 (stop), undo one at a time; a chord steps each pitch; nothing selected arms ♯; a line, a loop and a lopsided stroke are not chevrons; a Touch finger draws one; Gesture off draws nothing", async () => {
   // still on the "Touch" piece: Place mode, quarter armed, Gesture off (the v102 step turned it off), bar 5 = n4 n4 r2
   const SS = (await state()).S;
   const pen = (type, o) => synth(type, { pointerType: "pen", pointerId: 160, width: 1, height: 1, pressure: 0.5, ...o });
   const fat = (type, o) => synth(type, { pointerType: "touch", pointerId: 161, width: 50, height: 50, ...o });
   const stroke = async (who, pts) => { await who("pointerdown", { clientX: pts[0].x, clientY: pts[0].y }); for (const q of pts.slice(1)) await who("pointermove", { clientX: q.x, clientY: q.y }); const l = pts[pts.length - 1]; await who("pointerup", { clientX: l.x, clientY: l.y }); };
-  const chev = (c, dir, w = 3 * SS, h = 2.5 * SS) => { const sgn = dir === "up" ? 1 : -1; return [{ x: c.x - w, y: c.y + sgn * h }, { x: c.x - w / 2, y: c.y }, { x: c.x, y: c.y - sgn * h }, { x: c.x + w / 2, y: c.y }, { x: c.x + w, y: c.y + sgn * h }]; };
+  // the four: ∧ ∨ with level tips, > < with stacked tips (the same shape turned on its side)
+  const chev = (c, dir, w = 3 * SS, h = 2.5 * SS) => {
+    if (dir === "up" || dir === "down") { const sgn = dir === "up" ? 1 : -1; return [{ x: c.x - w, y: c.y + sgn * h }, { x: c.x - w / 2, y: c.y }, { x: c.x, y: c.y - sgn * h }, { x: c.x + w / 2, y: c.y }, { x: c.x + w, y: c.y + sgn * h }]; }
+    const sgn = dir === "right" ? 1 : -1; return [{ x: c.x - sgn * h, y: c.y - w }, { x: c.x, y: c.y - w / 2 }, { x: c.x + sgn * h, y: c.y }, { x: c.x, y: c.y + w / 2 }, { x: c.x - sgn * h, y: c.y + w }];
+  };
   const armed = async () => (await state()).armed.base;
+  const alters = (bar, staff = 0) => page.evaluate(([b, st]) => document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[st].voices[0].filter((e) => e.kind === "note").map((e) => e.pitches.map((p) => `${p.step}${p.alter ?? 0}`).join("+")).join(" "), [bar, staff]);
+  const toastText = () => page.locator(".lb-toast").textContent();
   // a spot on empty staff: bar 8, the space above the upper staff (no rest to grab there in Select mode)
   const spot = async () => { const p = await point({ bar: 7, staff: 0, ticks: PPQ, step: 12 }); return { x: p.x, y: p.y }; };
-  // off: an ∧ changes nothing
-  await stroke(pen, chev(await spot(), "up"));
+  // off: a > changes nothing
+  await stroke(pen, chev(await spot(), "right"));
   if ((await armed()) !== 4) throw new Error("Gesture off: a chevron armed " + (await armed()));
   await page.click("[data-act=gesture]");
   if (!(await state()).gesture) throw new Error("toggle");
-  // up the ladder to the end, and one past it
-  for (const want of [8, 16, 32, 64, 64]) { await stroke(pen, chev(await spot(), "up")); if ((await armed()) !== want) throw new Error(`∧ should arm ${want}, armed ${await armed()}`); }
-  if (!(await page.locator(".lb-toast").textContent()).includes("shortest")) throw new Error("no toast at the top: " + (await page.locator(".lb-toast").textContent()));
-  // back down, drawn the other way round (right to left), to the end and one past it
-  for (const want of [32, 16, 8, 4, 2, 1, 0, 0]) { await stroke(pen, chev(await spot(), "down").reverse()); if ((await armed()) !== want) throw new Error(`∨ should arm ${want}, armed ${await armed()}`); }
-  if (!(await page.locator(".lb-toast").textContent()).includes("longest")) throw new Error("no toast at the bottom");
+  // along the ladder to the end, and one past it
+  for (const want of [8, 16, 32, 64, 64]) { await stroke(pen, chev(await spot(), "right")); if ((await armed()) !== want) throw new Error(`> should arm ${want}, armed ${await armed()}`); }
+  if (!(await toastText()).includes("shortest")) throw new Error("no toast at the top: " + (await toastText()));
+  // back, drawn the other way round (bottom to top), to the end and one past it
+  for (const want of [32, 16, 8, 4, 2, 1, 0, 0]) { await stroke(pen, chev(await spot(), "left").reverse()); if ((await armed()) !== want) throw new Error(`< should arm ${want}, armed ${await armed()}`); }
+  if (!(await toastText()).includes("longest")) throw new Error("no toast at the bottom");
   if ((await state()).mode !== "place") throw new Error("mode after chevrons: " + (await state()).mode);
-  // a selection is retyped: back to the quarter, lasso bar 5's two quarters, ∧ → two eighths, eighth armed, Place mode
-  for (let i = 0; i < 3; i++) await stroke(pen, chev(await spot(), "up"));
+  // a selection is retyped: back to the quarter, lasso bar 5's two quarters, > → two eighths, eighth armed, Place mode
+  for (let i = 0; i < 3; i++) await stroke(pen, chev(await spot(), "right"));
   if ((await armed()) !== 4) throw new Error("should be back on the quarter: " + (await armed()));
   const a = await point({ bar: 4, staff: 0, ticks: 0, step: 4 }), b = await point({ bar: 4, staff: 0, ticks: PPQ, step: 4 });
-  await stroke(pen, [{ x: a.x - SS, y: a.y - 3 * SS }, { x: b.x + 2 * SS, y: a.y - 3 * SS }, { x: b.x + 2 * SS, y: a.y + 3 * SS }, { x: a.x - SS, y: a.y + 3 * SS }, { x: a.x - SS, y: a.y - 3 * SS }]);
+  const lassoBar5 = () => stroke(pen, [{ x: a.x - SS, y: a.y - 3 * SS }, { x: b.x + 2 * SS, y: a.y - 3 * SS }, { x: b.x + 2 * SS, y: a.y + 3 * SS }, { x: a.x - SS, y: a.y + 3 * SS }, { x: a.x - SS, y: a.y - 3 * SS }]);
+  await lassoBar5();
   if ((await state()).selection.length !== 2) throw new Error("lasso for the retype: " + JSON.stringify((await state()).selection));
-  await stroke(pen, chev(await spot(), "up"));
+  await stroke(pen, chev(await spot(), "right"));
   if ((await kinds(4)) !== "n8 r8 n8 r8 r2" || (await armed()) !== 8 || (await state()).mode !== "place") throw new Error("a chevron on a selection: " + (await kinds(4)) + " armed " + (await armed())); // a retype keeps each note at its onset; the gap after it is a rest
   await page.click("[data-act=undo]");
   if ((await kinds(4)) !== "n4 n4 r2") throw new Error("undo of the retype: " + (await kinds(4)));
-  // not chevrons: a line, a loop (a lasso around nothing), a lopsided stroke — the armed value stays
+  // ∧ ∨ (v114): bar 5's two quarters are B4 B4 (step 4 in the treble) — lasso them, ∧ twice → 𝄪, a third does nothing (no undo step), ∨ ×4 → 𝄫, a fifth does nothing
+  await lassoBar5();
+  if ((await state()).selection.length !== 2) throw new Error("lasso for the accidentals: " + JSON.stringify((await state()).selection));
+  if ((await alters(4)) !== "B0 B0") throw new Error("bar 5 before: " + (await alters(4)));
+  await stroke(pen, chev(await spot(), "up")); if ((await alters(4)) !== "B1 B1") throw new Error("∧ once: " + (await alters(4)));
+  if (!/2 notes raised/.test(await toastText())) throw new Error("toast after ∧: " + (await toastText()));
+  await stroke(pen, chev(await spot(), "up")); if ((await alters(4)) !== "B2 B2") throw new Error("∧ twice: " + (await alters(4)));
+  await stroke(pen, chev(await spot(), "up")); if ((await alters(4)) !== "B2 B2") throw new Error("∧ past the top: " + (await alters(4)));
+  if (!/already double sharp/.test(await toastText())) throw new Error("no nudge at the top: " + (await toastText()));
+  if ((await state()).selection.length !== 2) throw new Error("the selection should survive the chevrons");
+  for (const want of ["B1 B1", "B0 B0", "B-1 B-1", "B-2 B-2", "B-2 B-2"]) { await stroke(pen, chev(await spot(), "down").reverse()); if ((await alters(4)) !== want) throw new Error(`∨ should give ${want}, got ${await alters(4)}`); }
+  if (!/already double flat/.test(await toastText())) throw new Error("no nudge at the bottom: " + (await toastText()));
+  if ((await kinds(4)) !== "n4 n4 r2" || (await armed()) !== 8) throw new Error("∧ ∨ must not touch durations (the eighth stays armed from the retype): " + (await kinds(4)) + " armed " + (await armed()));
+  // six strokes moved the notes, two were refused: six undo steps walk back to B B, one each
+  for (const want of ["B-1 B-1", "B0 B0", "B1 B1", "B2 B2", "B1 B1", "B0 B0"]) { await page.click("[data-act=undo]"); if ((await alters(4)) !== want) throw new Error(`undo should give ${want}, got ${await alters(4)}`); }
+  await page.click("[data-act=redo]"); if ((await alters(4)) !== "B1 B1") throw new Error("redo: " + (await alters(4)));
+  await page.click("[data-act=undo]"); if ((await alters(4)) !== "B0 B0") throw new Error("undo again: " + (await alters(4)));
+  // nothing selected: ∧ ∨ step the one-shot armed accidental (a chord stepping each pitch from its own alter is in the engine test)
+  await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
+  await stroke(pen, chev(await spot(), "up")); // nothing selected: arms ♯
+  if ((await state()).armed.alter !== 1) throw new Error("∧ with nothing selected should arm ♯: " + JSON.stringify((await state()).armed));
+  await stroke(pen, chev(await spot(), "up")); if ((await state()).armed.alter !== 2) throw new Error("∧ again should arm 𝄪");
+  await stroke(pen, chev(await spot(), "down")); await stroke(pen, chev(await spot(), "down")); await stroke(pen, chev(await spot(), "down"));
+  if ((await state()).armed.alter !== -1) throw new Error("∨ ×3 from 𝄪 should arm ♭: " + JSON.stringify((await state()).armed));
+  await page.click(".cp-btn[data-act=acc][data-alter='-1']"); // the palette's ♭ again → off
+  if ((await state()).armed.alter !== null) throw new Error("♭ tapped again should disarm: " + JSON.stringify((await state()).armed));
+  // not chevrons: a line, a loop (a lasso around nothing), a lopsided stroke — the armed value stays; a diagonal ∧ is nothing
   const c = await spot();
   await stroke(pen, [{ x: c.x - 3 * SS, y: c.y }, { x: c.x, y: c.y + 2 }, { x: c.x + 3 * SS, y: c.y }]);
   await stroke(pen, [{ x: c.x - 2 * SS, y: c.y - SS }, { x: c.x + 2 * SS, y: c.y - SS }, { x: c.x + 2 * SS, y: c.y + SS }, { x: c.x - 2 * SS, y: c.y + SS }, { x: c.x - 2 * SS, y: c.y - SS }]);
   await stroke(pen, [{ x: c.x - 3 * SS, y: c.y + 2.5 * SS }, { x: c.x, y: c.y - 2.5 * SS }, { x: c.x + 0.4 * SS, y: c.y - 1.8 * SS }]);
-  if ((await armed()) !== 8) throw new Error("a non-chevron changed the armed value: " + (await armed()));
-  // a Touch finger that slides at once draws one too (input is Touch on this device)
-  await stroke(fat, chev(await spot(), "down"));
-  if ((await armed()) !== 4) throw new Error("a finger ∨ should arm the quarter: " + (await armed()));
+  await stroke(pen, chev(c, "up").map((p) => ({ x: c.x + (p.x - c.x) * Math.SQRT1_2 - (p.y - c.y) * Math.SQRT1_2, y: c.y + (p.x - c.x) * Math.SQRT1_2 + (p.y - c.y) * Math.SQRT1_2 })));
+  if ((await armed()) !== 8 || (await state()).armed.alter !== null) throw new Error("a non-chevron changed the armed value: " + JSON.stringify((await state()).armed));
+  // a Touch finger that slides at once draws one too (input is Touch on this device); leave the quarter armed
+  await stroke(fat, chev(await spot(), "left"));
+  if ((await armed()) !== 4) throw new Error("a finger < should arm the quarter: " + (await armed()));
+  await stroke(fat, chev(await spot(), "left"));
+  if ((await armed()) !== 2) throw new Error("a finger < again should arm the half: " + (await armed()));
+  await stroke(fat, chev(await spot(), "right"));
+  if ((await armed()) !== 4) throw new Error("a finger > should arm the quarter: " + (await armed()));
   await page.screenshot({ path: `${S}/cp-29-chevron.png`, clip: { x: 0, y: 0, width: 1024, height: 420 } });
   await page.click("[data-act=gesture]"); // leave it off for the phone step
   await noWiden();

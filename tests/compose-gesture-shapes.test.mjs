@@ -1,4 +1,4 @@
-// Gesture v2 — the chevrons (docs/COMPOSE_DESIGN.md §8.5k, WSHED-131): the recogniser.
+// Gesture v2 — the chevrons (docs/COMPOSE_DESIGN.md §8.5k, WSHED-131; four ways since v114, WSHED-152): the recogniser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chevron } from "../js/lib/compose/gesture.js";
@@ -31,4 +31,33 @@ test("a line, a loop, a lopsided or a flat stroke is not a chevron", () => {
 test("a hairpin-narrow chevron counts down to 20°; a bent leg does not", () => {
   assert.equal(chevron([{ x: 0, y: 10 }, { x: 1, y: 5 }, { x: 2, y: 0 }, { x: 3, y: 5 }, { x: 4, y: 10 }]), "up"); // ≈ 23°
   assert.equal(chevron([{ x: 0, y: 10 }, { x: 1, y: 3 }, { x: 4, y: 0 }, { x: 5.5, y: 5 }, { x: 8, y: 10 }]), null); // the first leg bows
+});
+
+// v114 (WSHED-152): the sideways chevrons — the same test with the axes swapped
+const left = (cx, cy, w = 3, h = 2.5) => up(cy, cx, w, h).map((p) => ({ x: p.y, y: p.x })); // < : tips stacked, the vertex at the smaller x
+const right = (cx, cy, w = 3, h = 2.5) => left(cx, cy, w, h).map((p) => ({ x: 2 * cx - p.x, y: p.y }));
+const rot = (pts, deg, cx = 10, cy = 10) => { const r = (deg * Math.PI) / 180, c = Math.cos(r), s = Math.sin(r); return pts.map((p) => ({ x: cx + (p.x - cx) * c - (p.y - cy) * s, y: cy + (p.x - cx) * s + (p.y - cy) * c })); };
+
+test("< is left and > is right, in either drawing direction; a wobbly one still counts, a tiny one does not", () => {
+  assert.equal(chevron(left(10, 10)), "left");
+  assert.equal(chevron(right(10, 10)), "right");
+  assert.equal(chevron(left(10, 10).reverse()), "left");
+  assert.equal(chevron(right(10, 10).reverse()), "right");
+  const w = right(10, 10).map((p, i) => ({ x: p.x + (i % 2 ? 0.15 : -0.1), y: p.y + (i % 2 ? -0.12 : 0.1) }));
+  assert.equal(chevron(w), "right");
+  assert.equal(chevron(left(10, 10, 0.9, 0.8)), null);
+});
+
+test("an ∧ turned through a full circle is up, then right, then down, then left, or nothing in between — never two shapes at once", () => {
+  const seen = [];
+  for (let deg = 0; deg < 360; deg += 5) {
+    const got = chevron(rot(up(10, 10), deg));
+    // y grows downward on the page, so a positive turn is clockwise: ∧ → > → ∨ → <
+    const want = deg < 45 || deg > 315 ? "up" : deg < 135 ? "right" : deg < 225 ? "down" : "left";
+    if (got !== null) assert.equal(got, want, `${deg}°`);
+    seen.push(got);
+  }
+  for (const d of ["up", "right", "down", "left"]) assert.ok(seen.includes(d), d);
+  assert.equal(seen[0], "up"); assert.equal(seen[18], "right"); assert.equal(seen[36], "down"); assert.equal(seen[54], "left");
+  assert.equal(chevron(rot(up(10, 10), 45)), null, "square on the diagonal is no shape"); assert.equal(chevron(rot(up(10, 10), 135)), null);
 });
