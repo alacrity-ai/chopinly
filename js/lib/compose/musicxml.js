@@ -4,7 +4,7 @@
 // keeping what Compose can hold and refusing, with the bar number, anything that would corrupt a
 // bar. Pure — node-testable; the .mxl container is `mxl.js`.
 import { PPQ, ticks, capacity, fromTicks, splitRest, groupSize, exprGrid } from "./ticks.js";
-import { newComposition, newMeasure, noteEvent, restEvent, barRests, timeAt, keyAt, clefAt, evTicks, voicesOf, tempoOf, validate, eid, DYNAMICS, DYN_VALUES, HAIRPINS, SPAN_KINDS, FINGER_MAX, GRACE_BASES, TREM_MAX, TEXT_MAX, EXPR_Y_MAX, REST_Y_MAX, MAX_VOICES, MIN_TEMPO, MAX_TEMPO, DEFAULT_BARS } from "./model.js";
+import { newComposition, newMeasure, noteEvent, restEvent, barRests, timeAt, shortMetre, keyAt, clefAt, evTicks, voicesOf, tempoOf, validate, eid, DYNAMICS, DYN_VALUES, HAIRPINS, SPAN_KINDS, FINGER_MAX, GRACE_BASES, TREM_MAX, TEXT_MAX, EXPR_Y_MAX, REST_Y_MAX, MAX_VOICES, MIN_TEMPO, MAX_TEMPO, DEFAULT_BARS } from "./model.js";
 import { onsets, normalizeBar, cleanTies, cleanExpressions, trimBars, decompose, diatonicOf, MARKS, formMarksOf, quarterBpm, simileTail } from "./engine.js";
 import { keyAlterations, CLEFS, parsePitch } from "../music.js";
 import { parseXml, child, children, textOf, numOf, esc } from "./xml.js";
@@ -99,9 +99,10 @@ export function toMusicXml(doc, { title = doc.title, composer = doc.composer ?? 
   const freeNo = () => { for (let n = 1; n <= 16; n++) if (![...slurNo.values()].includes(n)) return n; return null; };
   const glissOpen = new Set(); // "staff:voice" whose previous note slid
   const ry = (x) => (x.dy ? ` relative-y="${x.dy * TENTHS_PER_STEP}"` : "");
+  const n0 = d.measures[0].short?.from === "end" ? 0 : 1; // a pickup is measure 0, implicit (docs/COMPOSE_DESIGN.md §8.5p); the first full bar is 1
   d.measures.forEach((m, bar) => {
     const time = timeAt(d, bar), cap = capacity(time), key = keyAt(d, bar), keyAlt = keyAlterations(key.fifths);
-    w(`    <measure number="${bar + 1}">`);
+    w(`    <measure number="${bar + n0}"${m.short?.from === "end" ? ' implicit="yes"' : ""}>`);
     const attrs = [];
     if (bar === 0) attrs.push(`<divisions>${PPQ}</divisions>`);
     if (m.key) attrs.push(`<key><fifths>${m.key.fifths}</fifths></key>`);
@@ -426,18 +427,24 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
     for (const x of late.get(bi) ?? []) putAt(bi, x);
     late.delete(bi);
     if (bar.len > cap + TOL) refuse(`bar ${bi + 1} holds more than its ${t.beats}/${t.unit}`);
-    const shift = bar.len < cap - TOL && bi === 0 ? cap - bar.len : 0; // a pickup: its rests go in front
-    if (shift) warnings.add("the pickup bar was filled from the front");
-    const g = groupSize(t);
-    for (const c of bar.clefChanges) { const at = Math.min(cap - g, Math.max(0, Math.round((c.at + shift) / g) * g)); if (at === 0) { if (bi === 0 || c.clef !== clefAt(doc0, bi - 1, c.staff, Infinity)) m.clefs = { ...(m.clefs ?? {}), [c.staff]: c.clef }; } else if (!m.clefChanges?.some((o) => o.staff === c.staff && o.at === at)) m.clefChanges = [...(m.clefChanges ?? []), { staff: c.staff, at, clef: c.clef }]; }
+    // a bar every voice leaves short is a short bar (§8.5p): a pickup (the first, or one the file marks implicit) counts from the
+    // barline that follows, any other closes a section; only a bar within a grid step of full is padded as before
+    let shift = 0, tb = t;
+    if (bar.len < cap - TOL) {
+      const grid = exprGrid(t), len = Math.ceil((bar.len - TOL) / grid) * grid;
+      if (len >= grid && len < cap) { m.short = { len, from: bi === 0 || bar.implicit ? "end" : "start" }; tb = shortMetre(t, m.short); if (m.short.from === "end") shift = len - bar.len; }
+      else if (bi === 0) { shift = cap - bar.len; warnings.add("the pickup bar was filled from the front"); }
+    }
+    const g = groupSize(t), tcap = capacity(tb);
+    for (const c of bar.clefChanges) { const at = Math.min(tcap - g, Math.max(0, Math.round((c.at + shift) / g) * g)); if (at === 0) { if (bi === 0 || c.clef !== clefAt(doc0, bi - 1, c.staff, Infinity)) m.clefs = { ...(m.clefs ?? {}), [c.staff]: c.clef }; } else if (!m.clefChanges?.some((o) => o.staff === c.staff && o.at === at)) m.clefChanges = [...(m.clefChanges ?? []), { staff: c.staff, at, clef: c.clef }]; }
     if (m.clefChanges) m.clefChanges.sort((a, b) => a.at - b.at || a.staff - b.staff);
     // voices
     const present = [[], []];
     for (const grp of homes[bi].values()) present[grp.home][ranks[grp.home].get(grp.key)] = grp;
     for (const si of [0, 1]) {
       const nV = present[si].filter(Boolean).length;
-      const voices = inSimile ? [barRests(t)] : present[si].map((grp, vi) => (grp ? buildVoice(grp, si, vi, nV, bi, t, shift, doc0, refuse) : null)); // a % bar's own notes are the bar before's: it holds rests
-      if (!voices[0]) voices[0] = barRests(t);
+      const voices = inSimile ? [barRests(t)] : present[si].map((grp, vi) => (grp ? buildVoice(grp, si, vi, nV, bi, tb, shift, doc0, refuse) : null)); // a % bar's own notes are the bar before's: it holds rests
+      if (!voices[0]) voices[0] = barRests(tb);
       while (voices.length > 1 && !voices[voices.length - 1]) voices.pop();
       m.staves[si].voices = voices;
     }

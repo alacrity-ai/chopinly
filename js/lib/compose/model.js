@@ -1,5 +1,5 @@
 // The composition document (docs/COMPOSE_DESIGN.md §4). Pure — node-testable.
-import { ticks, capacity, fromTicks, splitRest, groupSize, exprGrid } from "./ticks.js";
+import { ticks, capacity, fromTicks, splitRest, groupSize, exprGrid, inMetre } from "./ticks.js";
 
 export const SCHEMA = 3; // v3 (WSHED-122): dynamics, hairpins and text are bar-level `expressions`, no longer note attributes
 /** Dynamics, softest to loudest; the hairpin directions. */
@@ -75,8 +75,19 @@ export function newComposition({ id, title = "Untitled", composer = "", tags = [
 
 export const clone = (doc) => structuredClone(doc);
 
-/** The time / key in force at a bar (bar 1 always carries both). */
-export function timeAt(doc, bar) { for (let i = bar; i >= 0; i--) if (doc.measures[i].time) return doc.measures[i].time; throw new Error("no time signature"); }
+/** The time signature in force at a bar (bar 1 always carries one). */
+export function sigAt(doc, bar) { for (let i = bar; i >= 0; i--) if (doc.measures[i].time) return doc.measures[i].time; throw new Error("no time signature"); }
+/**
+ * The metre of a bar: its time signature, and for a short bar (docs/COMPOSE_DESIGN.md §8.5p — a pickup, or the
+ * bar that completes one) also `cap`, its real length, and `offset`, where its first tick sits in the signature
+ * (a pickup counts from the barline that follows). `capacity(timeAt(doc, b))` is therefore always the bar's length.
+ */
+export function timeAt(doc, bar) {
+  const sig = sigAt(doc, bar), sh = doc.measures[bar]?.short;
+  return sh ? shortMetre(sig, sh) : sig;
+}
+export const shortMetre = (sig, sh) => ({ beats: sig.beats, unit: sig.unit, cap: sh.len, offset: sh.from === "end" ? capacity(sig) - sh.len : 0 });
+/** The key in force at a bar. */
 export function keyAt(doc, bar) { for (let i = bar; i >= 0; i--) if (doc.measures[i].key) return doc.measures[i].key; throw new Error("no key"); }
 /**
  * The clef in force on a staff at a tick of a bar. A bar's `clefs[staff]` is a
@@ -108,11 +119,16 @@ export function validate(doc) {
   if (!m0.key || !m0.time || !m0.clefs) throw new Error("bar 1 must carry key, time and clefs");
   const ids = new Set();
   doc.measures.forEach((m, bi) => {
+    if (m.short !== undefined) { // a short bar (§8.5p): a whole number of expression-grid steps, less than the signature, opening (from the end of the metre) or closing
+      const sig = sigAt(doc, bi), full = capacity(sig), grid = exprGrid(sig);
+      if (typeof m.short !== "object" || !m.short || (m.short.from !== "end" && m.short.from !== "start") || !Number.isInteger(m.short.len) || m.short.len < grid || m.short.len >= full || m.short.len % grid) throw new Error(`bar ${bi + 1}: a short bar is a whole number of grid steps shorter than its ${sig.beats}/${sig.unit}, from the end or the start`);
+      if (m.simile !== undefined) throw new Error(`bar ${bi + 1}: a short bar is not a bar repeat`);
+    }
     const cap = capacity(timeAt(doc, bi)), beat = groupSize(timeAt(doc, bi));
     if (m.staves.length !== doc.parts[0].staves) throw new Error(`bar ${bi + 1}: staff count`);
     let lastAt = 0;
     for (const c of m.clefChanges ?? []) {
-      if (!(c.staff >= 0 && c.staff < m.staves.length) || !Number.isInteger(c.at) || c.at <= 0 || c.at >= cap || c.at % beat || c.at < lastAt) throw new Error(`bar ${bi + 1}: clef change off the beat`);
+      if (!(c.staff >= 0 && c.staff < m.staves.length) || !Number.isInteger(c.at) || c.at <= 0 || c.at >= cap || inMetre(c.at, timeAt(doc, bi)) % beat || c.at < lastAt) throw new Error(`bar ${bi + 1}: clef change off the beat`);
       if ((m.clefChanges ?? []).some((o) => o !== c && o.staff === c.staff && o.at === c.at)) throw new Error(`bar ${bi + 1}: two clefs on one beat`);
       lastAt = c.at;
     }

@@ -19,8 +19,14 @@ export function ticks({ base, dots = 0, tuplet = null }) {
   return t;
 }
 
-/** Ticks in a bar of this time signature. */
-export const capacity = ({ beats, unit }) => (beats * WHOLE) / unit;
+/**
+ * Ticks in a bar of this metre. A short bar (a pickup, or the bar that completes one — docs/COMPOSE_DESIGN.md
+ * §8.5p) comes from `timeAt` as the time signature plus `cap` (its real length) and `offset` (where its first
+ * tick sits in the metre: a pickup counts from the barline that follows, so beats and beams line up).
+ */
+export const capacity = ({ beats, unit, cap }) => cap ?? (beats * WHOLE) / unit;
+/** The tick's place in the metre (a pickup's ticks are shifted to the end of the bar). */
+export const inMetre = (t, time) => t + (time.offset ?? 0);
 /** The expression grid (docs/COMPOSE_EXPRESSIONS_DESIGN.md §1): half of the metre's unit — an eighth in 4/4 and 3/4, a sixteenth in 6/8. */
 export const exprGrid = ({ unit }) => WHOLE / unit / 2;
 
@@ -30,14 +36,15 @@ export function groupSize(time) {
   const compound = time.beats % 3 === 0 && time.beats > 3;
   return compound ? 3 * beat : beat;
 }
-/** Group boundaries [0, g, 2g, …, capacity]. */
+/** Group boundaries [0, g, 2g, …, capacity] (a short bar: the metre's boundaries that fall inside it, and its ends). */
 export function beatGroups(time) {
-  const cap = capacity(time), g = groupSize(time), out = [];
-  for (let t = 0; t < cap; t += g) out.push(t);
+  const cap = capacity(time), g = groupSize(time), off = time.offset ?? 0, out = [0];
+  for (let t = g - (off % g || g); t < cap; t += g) if (t > 0) out.push(t);
   out.push(cap);
   return out;
 }
-const groupOf = (t, time) => Math.floor(t / groupSize(time));
+/** Which beat group a tick of the bar falls in (offset-aware: beat 4 of a one-beat pickup in 12/8 is group 3). */
+export const groupOf = (t, time) => Math.floor(inMetre(t, time) / groupSize(time));
 
 const PLAIN = [WHOLE, WHOLE / 2, WHOLE / 4, WHOLE / 8, WHOLE / 16, WHOLE / 32, WHOLE / 64];
 const DOTTED = PLAIN.slice(0, -1).map((v) => v * 1.5);
@@ -59,17 +66,17 @@ export function fromTicks(t) {
  * layout; its events are still the metre's split, so every bar adds up.)
  */
 export function splitRest(len, at, time) {
-  if (at === 0 && len === capacity(time) && fromTicks(len)) return [fromTicks(len)]; // a whole empty bar is one rest when one value spans it (whole in 4/4, dotted half in 3/4 and 6/8)
+  if (at === 0 && len === capacity(time) && fromTicks(len)) return [fromTicks(len)]; // a whole empty bar is one rest when one value spans it (whole in 4/4, dotted half in 3/4 and 6/8; a one-beat pickup in 12/8 is a dotted-quarter rest)
   const compound = groupSize(time) !== WHOLE / time.unit;
   const candidates = compound ? [...PLAIN, ...DOTTED].sort((a, b) => b - a) : PLAIN;
   const out = [];
-  let pos = at, left = len;
+  let pos = inMetre(at, time), left = len; // alignment is judged in the metre, so a pickup's rests sit as its beats do
   while (left > 0) {
     // Simple metres: a rest starts on a multiple of its own size (a half rest on
     // beat 3, never on beat 2). Compound metres: the largest rest that fits
     // inside the dotted group, aligned to the beat unit (eighth + quarter rest
     // after a note on beat 1 of 6/8).
-    const gEnd = compound ? (groupOf(pos, time) + 1) * groupSize(time) : Infinity;
+    const gEnd = compound ? (Math.floor(pos / groupSize(time)) + 1) * groupSize(time) : Infinity; // pos is already in the metre
     const aligned = compound ? (v) => pos % (WHOLE / time.unit) === 0 : (v) => pos % v === 0;
     const d = candidates.find((v) => v <= left && aligned(v) && pos + v <= gEnd)
       ?? candidates.find((v) => v <= left && pos + v <= gEnd)

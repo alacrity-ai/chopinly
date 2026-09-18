@@ -254,6 +254,7 @@ export function buildRails(host, { title, onAction, onCapture }) {
       <span class="cp-group" role="group" aria-label="bars">
       <button type="button" class="cp-btn cp-sq cp-bar-insert" data-act="bar-insert" aria-pressed="false" aria-label="insert a bar — tap the bar the new one goes before">${icon("barPlus")}</button>
       <button type="button" class="cp-btn cp-sq cp-bar-delete" data-act="bar-delete" aria-pressed="false" aria-label="delete a bar — tap it">${icon("barMinus")}</button>
+      <button type="button" class="cp-btn cp-sq cp-bar-short" data-act="pickup" aria-pressed="false" aria-label="pickup — tap the first bar to cut the rests before its notes, the last bar to cut the rests after them; tap a short bar to fill it again">${icon("barShort")}</button>
       </span>
       <span class="cp-group" role="group" aria-label="bar repeat">
       <span class="cp-more-wrap">
@@ -535,6 +536,7 @@ export function buildRails(host, { title, onAction, onCapture }) {
         host.querySelector(".cp-rehearsal-btn").setAttribute("aria-pressed", String(pending?.kind === "rehearsal"));
         host.querySelector(".cp-bar-insert").setAttribute("aria-pressed", String(pending?.kind === "bar-insert"));
         host.querySelector(".cp-bar-delete").setAttribute("aria-pressed", String(pending?.kind === "bar-delete"));
+        host.querySelector(".cp-bar-short").setAttribute("aria-pressed", String(pending?.kind === "pickup"));
         const tm = pending?.kind === "tempo-mark" ? pending.value : null;
         host.querySelector(".cp-tempo-mark-btn").setAttribute("aria-pressed", String(!!tm));
         const tl = host.querySelector("#cp-tempo-mark-lbl"), want = tm ? `= ${tm.bpm}${tm.text ? ` ${tm.text}` : ""}` : "= tempo"; if (tl.textContent !== want) tl.textContent = want; }

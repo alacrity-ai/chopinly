@@ -35,6 +35,8 @@ const P = {
   // bars (v104, WSHED-132): two barlines with a plus between (insert one) or a minus (delete one)
   barPlus: `<path d="M5 4.5v15M19 4.5v15"/><path d="M12 8.6v6.8M8.6 12h6.8"/>`,
   barMinus: `<path d="M5 4.5v15M19 4.5v15"/><path d="M8.6 12h6.8"/>`,
+  // pickup (v113, WSHED-151): a bar whose left edge is provisional — a dashed barline before a short bar
+  barShort: `<path d="M19 4.5v15"/><path d="M9 4.5v15" stroke-dasharray="2.4 2.2"/><path d="M12 12h4"/>`,
   finger: `<path d="M10.6 12.4V4.9a1.5 1.5 0 0 1 3 0v6.9"/><path d="M13.6 11.6l3.6 1a2.3 2.3 0 0 1 1.7 2.2v1.6c0 3.4-2.5 5.4-5.4 5.4h-1.3a4.9 4.9 0 0 1-3.9-2l-2.6-3.5a1.4 1.4 0 0 1 2.2-1.7l1.7 2.1"/>`,
   palette: `<path d="M12 4.5a7.5 7.5 0 1 0 0 15h1.2a1.6 1.6 0 0 0 1.1-2.8 1.6 1.6 0 0 1 1.1-2.7h1.4a2.7 2.7 0 0 0 2.7-2.7A7.5 7.5 0 0 0 12 4.5Z"/><circle cx="8.3" cy="11.2" r="1.1" fill="currentColor" stroke="none"/><circle cx="11" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="8.6" r="1.1" fill="currentColor" stroke="none"/>`,
   keys: `<rect x="3.5" y="6" width="17" height="12" rx="1.5"/><path d="M8 6v7.5M12 6v7.5M16 6v7.5"/><path d="M6.6 6v5h2.8V6M10.6 6v5h2.8V6M14.6 6v5h2.8V6" fill="currentColor" stroke="none"/>`,

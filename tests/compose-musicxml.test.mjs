@@ -102,16 +102,21 @@ const score = (measures, { staves = 2, extra = "", partList = '<score-part id="P
 const note = (step, oct, dur, type, more = "") => `<note><pitch><step>${step}</step><octave>${oct}</octave></pitch><duration>${dur}</duration><voice>1</voice><type>${type}</type><staff>1</staff>${more}</note>`;
 const rest = (dur, type, more = "") => `<note><rest/><duration>${dur}</duration><voice>1</voice>${type ? `<type>${type}</type>` : ""}<staff>1</staff>${more}</note>`;
 
-test("import: a pickup bar is filled from the front; gaps become the metre's rests; the lower staff rests; title from the file name; tag kept", () => {
+test("import: a pickup bar stays short (v113, §8.5p): a quarter's pickup is a quarter bar counted from the barline, the lower staff a quarter rest; gaps become the metre's rests; title from the file name; tag kept", () => {
   const xml = score([{ attrs: ' implicit="yes"', body: note("G", 4, 4, "quarter") }, note("C", 5, 8, "half") + note("D", 5, 4, "quarter")]);
   const { doc, warnings } = fromMusicXml(xml, { id: "p", fileName: "Pickup study.musicxml", tags: ["imported"] });
-  assert.equal(kinds(doc, 0), "r2 r4 n4"); assert.equal(pitches(doc, 0, 2), "G4");
-  assert.equal(kinds(doc, 1), "n2 n4 r4");
-  assert.equal(kinds(doc, 0, 1), "r1");
+  assert.deepEqual(doc.measures[0].short, { len: PPQ, from: "end" });
+  assert.equal(kinds(doc, 0), "n4"); assert.equal(pitches(doc, 0, 0), "G4");
+  assert.equal(kinds(doc, 1), "n2 n4"); assert.deepEqual(doc.measures[1].short, { len: 3 * PPQ, from: "start" }, "the file's last bar holds three beats: it closes short, completing the pickup");
+  assert.equal(kinds(doc, 0, 1), "r4");
   assert.equal(doc.title, "Pickup study"); assert.deepEqual(doc.tags, ["imported"]);
   assert.equal(doc.measures.length, 8, "padded to the default count with an empty bar after the last");
-  assert.deepEqual(warnings, ["the pickup bar was filled from the front"]);
+  assert.deepEqual(warnings, []);
   validate(doc);
+  // a first bar within a grid step of full (here a sixteenth short) is not a pickup: it is padded from the front as before, with the warning
+  const nearly = fromMusicXml(score([note("G", 4, 4, "quarter") + note("A", 4, 4, "quarter") + note("B", 4, 4, "quarter") + note("C", 5, 3, "eighth", "<dot/>")]), { id: "q" });
+  assert.equal(nearly.doc.measures[0].short, undefined); assert.equal(kinds(nearly.doc, 0), "r16 n4 n4 n4 n8.");
+  assert.deepEqual(nearly.warnings, ["the pickup bar was filled from the front"]);
 });
 
 test("import: a time-wise score with two single-staff parts becomes the upper and lower staff; a third part is ignored; title and composer read", () => {

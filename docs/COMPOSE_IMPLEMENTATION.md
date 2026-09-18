@@ -349,6 +349,27 @@ an old piece opens with its marks in place.
   subsetting fails, the fallback is embedding the whole font (~1 MB per PDF) —
   a size cost, never a fidelity cost. Raster is not a fallback.
 
+## Phase 21 — pickup bars — v113 (WSHED-151, 2026-09-18)
+
+A partial measure that opens or closes (design §8.5p). `model.js`: `measure.short = { len, from }`
+validated (grid steps, shorter than the signature, from the end or the start, never a bar
+repeat); `sigAt` (the signature) beside `timeAt`, which now returns the bar's real metre (`cap`,
+`offset` for a short bar) via `shortMetre`. `ticks.js`: `capacity` honours `cap`; `inMetre` /
+`groupOf` / `beatGroups` and `splitRest` judge alignment in the metre, so a pickup's beats count
+from the barline that follows. `engine.js`: `setShort(doc, bar)` — the cut (front of an opening
+bar, back of a closing one, the shared silence rounded down to the grid, marks and span ends
+shifted, `normalizeBar` after), the fill-again, the refusals; `insertBar` and `setTime` take the
+signature, `setTime` walks the stretch by real bar lengths; `snap`'s grid and the clef-change
+beat honour the offset. `layout.js`: beat groups by `groupOf`; no whole-bar rest in a short bar.
+`musicxml.js`: measure 0 `implicit="yes"` out, short bars in (the `shift` padding kept only for a
+first bar within a grid step of full). `rails.js` / `icons.js`: the *Pickup* button (`barShort`)
+after insert / delete, lit while armed; `editor.js`: `case "pickup"` arms, the tap calls
+`setShort` and toasts the length. Pipeline: `build-piece.mjs` reads `measureExtras[i].short`,
+`checks.mjs` offsets strong beats. Tests: `tests/compose-pickup.test.mjs` (ticks, model, the cut
+both ways and back, refusals, the 16th pickup, snap / layout / rests, insert / delete / time
+change, playback, the MusicXML round trip); the import test now expects a short bar; one E2E
+step (a 12/8 pickup by tap, the closing bar, fill again, undo / redo, the empty-bar nudge).
+
 ## Phase 20 — Favorites — v109 (WSHED-148, 2026-09-17)
 
 Leif's floating palette (design §8.5o). `js/lib/compose/favorites.js`: the pure model — a

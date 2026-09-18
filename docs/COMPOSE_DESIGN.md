@@ -146,6 +146,7 @@ node-tested; `js/tools/compose/*` is the UI. The merge rule stays in
       time?: { beats: 4, unit: 4 },           // same
       clefs?: { 0: "treble", 1: "bass" },     // per staff index, same (a change at the barline)
       clefChanges?: [ { staff: 1, at: 13440, clef: "tenor" } ],  // changes on a beat inside the bar (ticks; sorted); either kind holds until the next
+      short?: { len: 10080, from: "end" | "start" },             // v113 (WSHED-151, §8.5p): a short bar — a pickup counted from the barline that follows ("end"), or the bar that completes one ("start"); `len` ticks on the expression grid, less than the signature
       barline?: { start?: "repeat", end?: "double" | "final" | "repeat" },   // v95 (WSHED-124, COMPOSE_FORM_DESIGN.md): the bar's barlines
       ending?: { n: 1, end: 5 },                                              // v95: an ending bracket from this bar to bar index `end`
       form?: [ { kind: "segno" }, { kind: "tempo", bpm: 120, text: "Allegro" } ], // v95: signs, jumps (dc, dsAlCoda …), rehearsal, tempo marks on the bar
@@ -771,6 +772,50 @@ we should have, in the controls rail, a toggle button for Favorites, just like �
   `assign`, `clear`, `turn`, `allowed`) with a unit test; the E2E summons by a synthetic pen hold,
   checks a slide before 2 s and a Touch-mode hold that aims, assigns *mp* through a hold menu,
   fires it, pages, clears by hold, and reloads to find it all remembered.
+
+### 8.5p Pickup bars — a partial measure that opens or closes (v113, WSHED-151)
+
+Leif (2026-09-18): "the ability to open (and close) a piece with a partial measure. For example my
+invention 2 in e minor is in 12/8 time, but the song starts with a pickup off of the 4th beat. So we
+really only need a one beat measure here right? Likely this would be in the form rail, but I'm not
+sure the most intuitive way to stamp a partial measure."
+
+- **The model: a bar may be shorter than its signature.** `measure.short = { len, from }` — `len`
+  ticks (a whole number of expression-grid steps, less than the signature), `from: "end"` for a
+  pickup (an anacrusis: its ticks count from the barline that follows, so a one-beat pickup in 12/8
+  *is* beat 4 — beams, rest splitting and the snap grid all see it that way) or `from: "start"`
+  for the bar that completes one (counted from its own start, like any bar). The time signature
+  stays in force and is drawn as ever. `timeAt(doc, bar)` returns the bar's real metre — the
+  signature plus `cap` and `offset` for a short bar — so every `capacity(timeAt(…))` consumer
+  (validate, the rest filler, layout, playback, spans, MusicXML) is right without knowing;
+  `sigAt(doc, bar)` is the plain signature for the few that mean it (a new bar, a time change).
+- **The stamp: one button, cut what is written.** *Pickup* sits on the Form rail's bars group
+  after insert / delete and arms like every Form button; the tap on a bar acts. On an **opening
+  bar** (bar 1, one after a repeat end / double / final barline, or one that opens a repeat) the
+  silence every voice shares at its **front** is cut, rounded down to the expression grid — a lone
+  16th in 4/4 leaves an eighth bar with a 16th rest before it. On a **closing bar** (the last bar
+  of the music — the editor's empty bar after it does not count — or one closing with a double /
+  final / repeat end) the shared silence at its **back** is cut. On a **short bar** the tap fills
+  it again (the rests return, re-split to the metre's standard groups). An empty bar ("write the
+  pickup first"), a bar in the middle of a phrase, or one whose chosen end starts (ends) with a
+  note refuses with a nudge and changes nothing. One undo step. Decided here: cut-to-written
+  rather than a menu of lengths — a menu would have to know which values make sense per metre
+  (12/8 alone wants eleven rows), and cutting what is written needs no menu and reads as one
+  idea; an explicit-length hold menu can sit on top later if a short *empty* bar is wanted.
+- **What else follows.** A short bar draws narrow (it has fewer columns) and its silence is
+  written in real values — a dotted-quarter rest for one beat of 12/8 — never the centred
+  whole-bar rest. Playback plays it short. Insert / delete bar keep `short` with its bar; a new
+  bar is never short. A time change re-flows the stretch into full bars and the shortness goes
+  (the pickup would need cutting again). A short bar is not a bar repeat. Bar numbers in toasts
+  stay by index (the score draws none).
+- **MusicXML.** A pickup exports as `<measure number="0" implicit="yes">` and the bars after it
+  count from 1 — how Dorico, MuseScore and Finale write one. Import keeps a bar every voice
+  leaves short as a short bar: the first bar, or one the file marks implicit, from the end; any
+  other from the start (the file's last bar completing a pickup, a bar closing a section). Only a
+  first bar within one grid step of full is padded from the front as before, with its warning.
+- **The pipeline** (`claude_ops/work/chopinly-compose/pipeline`): a spec bar string may be short
+  when `measureExtras[i].short` names the side (`"end"` / `"start"`); the string's length is the
+  bar's. The checker's strong-beat and off-beat reports use the offset.
 
 ### 8.5l Bars — insert and delete (v104, WSHED-132)
 

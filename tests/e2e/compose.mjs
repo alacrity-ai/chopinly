@@ -2013,6 +2013,62 @@ await step("v112: Pen mode owns the score — with the pen hovering (ghost shown
   await noWiden();
 });
 
+await step("v113: pickup bars — on a fresh 12/8 piece three eighths on beats 10–12 of bar 1, Pickup then a tap on bar 1 cuts the three beats of silence (the bar holds 3 eighths, counted from the barline: one beam, a dotted-quarter rest below, the bar drawn narrower than a full one, the toast says so); the last bar of the music closes short from the back; the pickup tapped again is full; undo brings the cut back; an empty bar refuses with a nudge and nothing changes (WSHED-151)", async () => {
+  await page.goto(`${BASE}/?app=1&t=6#/compose`);
+  await page.waitForSelector("#cp-new");
+  await page.click("#cp-new"); await page.waitForSelector("#cp-d-title"); await page.fill("#cp-d-title", "Anacrusis"); await page.click("#cp-d-save");
+  await page.waitForSelector(".cp-editor .cp-svg");
+  const E = PPQ / 2;
+  const doc = () => page.evaluate(() => { const d = document.querySelector(".cp-editor").__editor.state.doc; return { n: d.measures.length, short: d.measures.map((m) => m.short ?? null) }; });
+  const bar = (b) => page.evaluate((b) => { const ed = document.querySelector(".cp-editor").__editor, L = ed.layout; const hb = L.hit.systems.flatMap((s) => s.bars).find((x) => x.index === b); const heads = L.drawn.filter((d) => d.bar === b && !d.rest), rests = L.drawn.filter((d) => d.bar === b && d.rest); return { w: hb ? hb.x1 - hb.bodyX0 : null, /* the body: bar 1 also carries the clef / key / time block */ groups: heads.map((h) => h.group), rests: rests.map((r) => `${r.whole ? "W" : ""}${r.base}${r.dots ? "." : ""}`), beams: hb ? L.beams.filter((bm) => Math.min(bm.x1, bm.x2) >= hb.x0 && Math.max(bm.x1, bm.x2) <= hb.x1).length : null }; }, b);
+  const toast = () => page.evaluate(() => document.querySelector(".lb-toast")?.textContent ?? "");
+  await page.click("[data-pop=cp-time-more]"); await page.click(".cp-time[data-beats='12'][data-unit='8']");
+  await tapAt({ bar: 0, staff: 0, ticks: 200, step: 4 });
+  await page.click(".cp-dur[data-base='8']");
+  for (let k = 9; k < 12; k++) await tapAt({ bar: 0, staff: 0, ticks: k * E + 100, step: 4 + (k - 9) });
+  if ((await kinds(0)) !== "r4. r4. r4. n8 n8 n8") throw new Error("bar 1 before the cut: " + (await kinds(0)));
+  const full = await bar(0), fullW = full.w;
+  // Pickup arms (button lit), the tap on bar 1 cuts
+  await page.click(".cp-bar-short");
+  if ((await state()).pending?.kind !== "pickup") throw new Error("pickup not armed: " + JSON.stringify((await state()).pending));
+  if ((await page.getAttribute(".cp-bar-short", "aria-pressed")) !== "true") throw new Error("pickup button not lit");
+  await tapAt({ bar: 0, staff: 0, ticks: 200, step: 4 });
+  let d = await doc();
+  if (JSON.stringify(d.short[0]) !== JSON.stringify({ len: 3 * E, from: "end" })) throw new Error("bar 1 not a 3-eighth pickup: " + JSON.stringify(d.short[0]));
+  if ((await kinds(0)) !== "n8 n8 n8" || (await kinds(0, 1)) !== "r4.") throw new Error(`pickup voices: ${await kinds(0)} / ${await kinds(0, 1)}`);
+  if ((await state()).pending) throw new Error("pickup stayed armed");
+  if (!/pickup: bar 1 holds 3 eighths/.test(await toast())) throw new Error("toast: " + (await toast()));
+  const cut = await bar(0);
+  if (!(cut.w < fullW * 0.6)) throw new Error(`the pickup bar should draw much narrower than the full bar it was: ${fullW.toFixed(1)} → ${cut.w?.toFixed(1)}`);
+  if (cut.groups.join() !== "3,3,3") throw new Error("the pickup's eighths are beat 4 of 12/8 (group 3): " + cut.groups.join());
+  if (cut.beams !== 1) throw new Error("one beam over the pickup: " + cut.beams);
+  if (cut.rests.join() !== "4.") throw new Error("the lower staff's silence is a dotted-quarter rest at its column, not a whole-bar rest: " + cut.rests.join());
+  await page.screenshot({ path: `${S}/cp-40-pickup.png`, clip: { x: 0, y: 0, width: 1024, height: 620 } });
+  // the closing bar: an eighth opening the last bar of the music (the editor appends its empty bar after it); Pickup + tap cuts the back
+  const last = d.n - 1;
+  await tapAt({ bar: last, staff: 0, ticks: 100, step: 6 });
+  d = await doc(); if (d.n !== last + 2) throw new Error(`a bar should be appended after the last: ${last + 1} → ${d.n}`);
+  await page.click(".cp-bar-short"); await tapAt({ bar: last, staff: 0, ticks: 100, step: 6 });
+  d = await doc();
+  if (JSON.stringify(d.short[last]) !== JSON.stringify({ len: E, from: "start" })) throw new Error(`the last bar of the music closes short by an eighth: ${JSON.stringify(d.short[last])} (bars ${d.n})`);
+  if ((await kinds(last)) !== "n8" || (await kinds(last, 1)) !== "r8") throw new Error(`closing voices: ${await kinds(last)} / ${await kinds(last, 1)}`);
+  if (!/closes short, 1 eighth$/.test(await toast())) throw new Error("toast: " + (await toast()));
+  // the pickup tapped again is full; undo brings the cut back; redo cuts again
+  await page.click(".cp-bar-short"); await tapAt({ bar: 0, staff: 0, ticks: 200, step: 4 });
+  d = await doc(); if (d.short[0] !== null || (await kinds(0)) !== "r4. r4. r4. n8 n8 n8" || (await kinds(0, 1)) !== "r1.") throw new Error(`filled again: ${JSON.stringify(d.short[0])} ${await kinds(0)} / ${await kinds(0, 1)}`);
+  if (!/bar 1 is full again/.test(await toast())) throw new Error("toast: " + (await toast()));
+  await page.click("[data-act=undo]");
+  d = await doc(); if (JSON.stringify(d.short[0]) !== JSON.stringify({ len: 3 * E, from: "end" })) throw new Error("undo did not bring the pickup back: " + JSON.stringify(d.short[0]));
+  await page.click("[data-act=redo]");
+  d = await doc(); if (d.short[0] !== null) throw new Error("redo did not fill the bar again");
+  // an empty bar refuses with a nudge; the armed button is released and nothing changes
+  await page.click(".cp-bar-short"); await tapAt({ bar: 2, staff: 0, ticks: 200, step: 4 });
+  const after = await doc(); if (JSON.stringify(after) !== JSON.stringify(d)) throw new Error("an empty bar changed something");
+  if (!/write the pickup first/.test(await toast())) throw new Error("nudge: " + (await toast()));
+  if ((await state()).pending) throw new Error("pickup stayed armed after the nudge");
+  await page.click(".cp-dur[data-base='4']"); // the armed value is remembered per device: leave the quarter for the phone step
+});
+
 await step("phone width: the rails scroll, nothing widens, the editor still places", async () => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE}/?app=1&t=3#/compose`);
