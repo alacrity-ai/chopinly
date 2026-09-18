@@ -5,7 +5,7 @@
 // into SVG.
 import { keyAlterations, keySignatureGlyphs, CLEFS, staffStep } from "../music.js";
 import { timeSig } from "../staff/glyphs.js";
-import { ticks, capacity, groupSize } from "./ticks.js";
+import { ticks, capacity, groupSize, groupOf } from "./ticks.js";
 import { timeAt, keyAt, clefAt, evTicks } from "./model.js";
 import { onsets, diatonicOf, nextEvent, slurEnd, expressionsOf, spansOf, barStarts, formMarksOf, simileTail } from "./engine.js";
 import { xOfTicks } from "./hit.js";
@@ -29,7 +29,7 @@ const FLAG_W = 1.05; // S: a flag's reach right of an up stem (Bravura flag8thUp
 const prevInk = (b, prev, ds) => Math.max(0, ...prev.evs.filter((x) => x.ev.kind === "note" && x.drawStaff === ds).map((x) => {
   const headW = HEAD_W[headKind(x.ev.dur.base)];
   const flip = x.stem !== "down" && x.steps.some((s1, k) => k && Math.abs(s1 - x.steps[k - 1]) === 1) ? headW : 0;
-  const alone = !b.cols.some((o) => o !== prev && Math.floor(o.ticks / groupSize(b.time)) === Math.floor(prev.ticks / groupSize(b.time)) && o.evs.some((y) => y.staff === x.staff && y.voice === x.voice && y.ev.kind === "note" && y.ev.dur.base >= 8));
+  const alone = !b.cols.some((o) => o !== prev && groupOf(o.ticks, b.time) === groupOf(prev.ticks, b.time) && o.evs.some((y) => y.staff === x.staff && y.voice === x.voice && y.ev.kind === "note" && y.ev.dur.base >= 8));
   const flag = x.stem === "up" && x.ev.dur.base >= 8 && alone ? FLAG_W : 0;
   return x.dx + headW + Math.max(flip, flag) + (x.ev.dur.dots ? 0.9 : 0);
 }));
@@ -261,7 +261,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
           const st = ev.staff, vi = ev.voice, ds = ev.drawStaff, nV = b.nVoices[st];
           if (ev.ev.kind === "rest") {
             const hidden = !!ev.ev.hidden;
-            if (b.allRest[st][vi]) { if (c.ticks === 0 && b.m.simile === undefined && !simileTail(doc, b.index)) drawn.push({ id: ev.ev.id, bar: b.index, staff: st, drawStaff: st, voice: vi, system: si, rest: true, whole: true, hidden, base: 1, dots: 0, x: (bodyStart + hbar.x1) / 2 - 0.85, y: yOfStep(st, 6 + (nV > 1 ? REST_STEP[vi] : 0) + (ev.ev.restY ?? 0)) }); continue; }
+            if (b.allRest[st][vi] && !b.m.short) { if (c.ticks === 0 && b.m.simile === undefined && !simileTail(doc, b.index)) drawn.push({ id: ev.ev.id, bar: b.index, staff: st, drawStaff: st, voice: vi, system: si, rest: true, whole: true, hidden, base: 1, dots: 0, x: (bodyStart + hbar.x1) / 2 - 0.85, y: yOfStep(st, 6 + (nV > 1 ? REST_STEP[vi] : 0) + (ev.ev.restY ?? 0)) }); continue; }
             const base = ev.ev.dur.base;
             drawn.push({ id: ev.ev.id, bar: b.index, staff: st, drawStaff: st, voice: vi, system: si, rest: true, hidden, base, dots: ev.ev.dur.dots, x, y: yOfStep(st, (base <= 1 ? 6 : 4) + (nV > 1 ? REST_STEP[vi] : 0) + (ev.ev.restY ?? 0)), ticks: c.ticks, tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index });
             continue;
@@ -270,7 +270,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800 } = {}) {
           const steps = ev.steps;
           const stem = ev.stem;
           const nx = x + ev.dx; // a colliding voice sits right of the other voice's stem
-          const d = { id: ev.ev.id, bar: b.index, staff: st, drawStaff: ds, voice: vi, cross: ev.ev.cross ?? 0, system: si, rest: false, base, dots: ev.ev.dur.dots, kind, headW, x: nx, colX: x, stem, stemForced: ev.stemForced, stemSet: ev.stemSet, beamBreak: ev.ev.beam === "break", trill: ev.ev.trill ?? null, shared: ev.shared, ticks: c.ticks, group: Math.floor(c.ticks / groupSize(b.time)), heads: [], ledgers: [], tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index, pitches: ev.ev.pitches, art: ev.ev.art ?? null, gliss: ev.ev.gliss ?? null, arp: ev.ev.arp ?? null, slurs: ev.ev.slurs ?? null, accLeft: x - c.accPad, ottava: ev.ottava, trem: ev.ev.trem ?? null, graced: !!ev.ev.graces, fingers: ev.ev.pitches.some((p) => p.finger) ? ev.ev.pitches.map((p) => p.finger ?? null) : null };
+          const d = { id: ev.ev.id, bar: b.index, staff: st, drawStaff: ds, voice: vi, cross: ev.ev.cross ?? 0, system: si, rest: false, base, dots: ev.ev.dur.dots, kind, headW, x: nx, colX: x, stem, stemForced: ev.stemForced, stemSet: ev.stemSet, beamBreak: ev.ev.beam === "break", trill: ev.ev.trill ?? null, shared: ev.shared, ticks: c.ticks, group: groupOf(c.ticks, b.time), heads: [], ledgers: [], tupletId: ev.ev.dur.tuplet?.id ?? null, tupletN: ev.ev.dur.tuplet?.n ?? null, index: ev.index, pitches: ev.ev.pitches, art: ev.ev.art ?? null, gliss: ev.ev.gliss ?? null, arp: ev.ev.arp ?? null, slurs: ev.ev.slurs ?? null, accLeft: x - c.accPad, ottava: ev.ottava, trem: ev.ev.trem ?? null, graced: !!ev.ev.graces, fingers: ev.ev.pitches.some((p) => p.finger) ? ev.ev.pitches.map((p) => p.finger ?? null) : null };
           // heads: sorted by step; seconds flip to the other side of the stem
           const order = steps.map((s2, pi) => ({ step: s2, pi })).sort((a, b2) => a.step - b2.step);
           const walk = stem === "down" ? [...order].reverse() : order;

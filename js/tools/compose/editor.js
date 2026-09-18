@@ -18,11 +18,11 @@ import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt, lasso, spans as spansOfLayout, isHandle, struck } from "../../lib/compose/hit.js";
 import { chevron } from "../../lib/compose/gesture.js";
-import { place, remove, snap, trimBars, find, setPitch, retype, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, addPedal, addOttava, addTextLine, finger, graceAt, toggleGrace, tremolo, setTrill, setStem, beamBreak, setSimile, pitchFromStep, moveExpressions, moveSpanEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, insertBar, deleteBar, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
+import { place, remove, snap, trimBars, find, setPitch, retype, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, addPedal, addOttava, addTextLine, finger, graceAt, toggleGrace, tremolo, setTrill, setStem, beamBreak, setSimile, pitchFromStep, moveExpressions, moveSpanEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, insertBar, deleteBar, setShort, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { createPlayer } from "../../lib/compose/play.js";
-import { clefAt, keyAt, timeAt, tempoOf, usedVoices, MAX_VOICES, MIN_TEMPO, MAX_TEMPO, GRACE_BASES } from "../../lib/compose/model.js";
+import { clefAt, keyAt, timeAt, sigAt, tempoOf, usedVoices, MAX_VOICES, MIN_TEMPO, MAX_TEMPO, GRACE_BASES } from "../../lib/compose/model.js";
 import { ticks as ticksOf, capacity, groupSize, exprGrid, WHOLE } from "../../lib/compose/ticks.js";
 import { CLEFS } from "../../lib/music.js";
 import { buildRails, MAIN_BASES, MORE_BASES, KEYS, RAILS, DEFAULT_RAILS, JUMP_LABEL, HANDS, durName, tupletName } from "./rails.js";
@@ -314,6 +314,11 @@ export function openEditor({ id, ctx, onClose }) {
         commit(next); toast(k === "single" ? `plain barline on bar ${b + 1}` : k === "repeat-start" ? `${next.measures[b].barline?.start ? "repeat starts at" : "no repeat start on"} bar ${b + 1}` : k === "both" ? `repeat ends on bar ${b + 1} and starts again on bar ${b + 2}` : times ? (next.measures[b].barline?.times ? `repeat ×${times} on bar ${b + 1}` : `plain barline on bar ${b + 1}`) : `${next.measures[b].barline?.end ? `${k} barline on` : "plain barline on"} bar ${b + 1}`);
       } else if (p.kind === "bar-insert") { commit(insertBar(doc, t.bar)); toast(`a bar before bar ${t.bar + 1}`); }
       else if (p.kind === "bar-delete") { const next = deleteBar(doc, t.bar); selection.clear(); commit(next); toast(`bar ${t.bar + 1} deleted`); }
+      else if (p.kind === "pickup") { // a short bar (v113, WSHED-151): cut the shared silence off the front of an opening bar or the back of a closing one; a short bar fills again
+        const next = setShort(doc, t.bar), sh = next.measures[t.bar].short, sig = sigAt(next, t.bar);
+        const held = (len) => { const n = len / (WHOLE / sig.unit), name = { 1: "whole", 2: "half", 4: "quarter", 8: "eighth", 16: "sixteenth" }[sig.unit] ?? `${sig.unit}th`; return `${n % 1 ? `${Math.floor(n) || ""}½` : n} ${name}${n > 1 ? "s" : ""}`; };
+        commit(next); toast(sh ? (sh.from === "end" ? `pickup: bar ${t.bar + 1} holds ${held(sh.len)}` : `bar ${t.bar + 1} closes short, ${held(sh.len)}`) : `bar ${t.bar + 1} is full again`);
+      }
       else if (p.kind === "ending") {
         if (p.start === undefined) { pending = { ...p, start: t.bar }; toast(`ending ${p.value} from bar ${t.bar + 1} — now tap its last bar`); haptic(6); sync(); return; }
         const a = Math.min(p.start, t.bar), b = Math.max(p.start, t.bar);
@@ -846,9 +851,9 @@ export function openEditor({ id, ctx, onClose }) {
         setPending({ kind: "barline", value: arg }); toast(`${arg === "single" ? "plain barline" : arg === "repeat-start" ? "repeat start" : arg === "both" ? "repeat end + start" : `${arg} barline`} — tap the bar`);
         return;
       }
-      case "bar-insert": case "bar-delete": { // bars (v104, WSHED-132): arm; the next tap names the bar
+      case "bar-insert": case "bar-delete": case "pickup": { // bars (v104, WSHED-132; pickup v113, WSHED-151): arm; the next tap names the bar
         if (pending?.kind === name) { setPending(null); return; }
-        setPending({ kind: name }); toast(name === "bar-insert" ? "insert a bar — tap the bar it goes before" : "delete a bar — tap it");
+        setPending({ kind: name }); toast(name === "bar-insert" ? "insert a bar — tap the bar it goes before" : name === "bar-delete" ? "delete a bar — tap it" : "pickup — tap the first bar, or the last; a short bar fills again");
         return;
       }
       case "ending": {

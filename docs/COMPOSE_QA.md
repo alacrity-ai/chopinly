@@ -1,6 +1,6 @@
 # Compose — the iPad and phone checklist (WSHED-114)
 
-The automated suite (`tests/e2e/compose.mjs`, 37 steps in headless Chromium with an iPad user
+The automated suite (`tests/e2e/compose.mjs`, 40 steps in headless Chromium with an iPad user
 agent and touch) proves the mechanics on every release, and `npm test` the engine, layout, playback
 and both exports. These are the things only a real device tells you. Run on the iPad (Safari,
 installed to the home screen) with the Pencil, and on the phone; tick, or file the finding on the
@@ -128,6 +128,17 @@ phase's card (WSHED-115 … 122).
 ## The ghost wears the armed value (WSHED-149, v111)
 
 - [ ] Pencil hovering with an eighth armed: the ghost has a flag; sixteenth: two; dotted eighth: the flag and the dot; half: hollow with a stem; whole: hollow, no stem. Grace armed: the small ghost keeps its small flag. The tap places exactly what hovered.
+
+## Pickup bars (WSHED-151, v113)
+
+- [ ] A fresh piece, Time → 12/8. Arm the eighth, tap beats 10, 11, 12 of bar 1 (the last dotted-quarter group). Rails ▾ → Form → the bars group's third button, **Pickup** (a dashed barline): it lights; tap bar 1 → the three beats of silence are gone, the bar is narrow, the three eighths beam as one beat, the lower staff shows a dotted-quarter rest (not a whole-bar rest), the toast says "pickup: bar 1 holds 3 eighths". The 12/8 still draws.
+- [ ] Write the last bar of the piece up to beat 3 and stop. Pickup, tap that bar → the trailing rests go and the bar ends where the music does ("bar n closes short, …"). The empty bar the editor keeps after the music does not get in the way.
+- [ ] Pickup, tap the short bar 1 again → full again, rests back in front; undo → the pickup returns; redo → full.
+- [ ] Pickup on an empty bar → "write the pickup first"; on a bar in the middle → "a short bar opens or closes a section"; on bar 1 when the lower staff sounds on beat 1 → "starts with a note". Nothing changes and the button releases.
+- [ ] Hover the Pencil over the pickup bar with a quarter armed: the ghost snaps to the bar's beats, not to a grid from its left edge.
+- [ ] Play from the start: the pickup sounds for one beat and bar 2 lands on the next click.
+- [ ] Export PDF: the pickup bar is narrow on the page too. Export MusicXML → import on the list: the pickup and the closing bar come back short. Open the file in MuseScore / Dorico: a pickup measure, numbered from 1 after it.
+- [ ] Insert a bar before the pickup → the new bar is full and the pickup stays short; delete the bar after it → still short. Time → 6/8 from bar 1 → the stretch re-flows full (the cut has to be made again).
 
 ## Favorites (WSHED-148, v109; v110 the lift after a drag)
 

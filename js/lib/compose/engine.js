@@ -2,8 +2,8 @@
 // clones the document, changes it, re-normalises the touched bar and returns
 // the new document; a refused edit throws Nudge(sentence) and the document is
 // untouched. Pure — node-testable.
-import { groupSize, ticks, capacity, splitRest, fromTicks, exprGrid, PPQ } from "./ticks.js";
-import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, tempoOf, MAX_VOICES, REST_Y_MAX, EXPR_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, DYN_VALUES, HAIRPINS, SPAN_KINDS, PEDAL_STYLES, TEMPO_UNITS, REHEARSAL_TEXT_MAX, REPEAT_TIMES_MAX, TRILL_ALTERS, FINGER_MAX, GRACE_BASES, TREM_MAX, TEXT_MAX, BARLINE_ENDS, JUMPS, FORM_KINDS, TEMPO_TEXT_MAX, ENDING_MAX, MIN_TEMPO, MAX_TEMPO, eid } from "./model.js";
+import { groupSize, ticks, capacity, splitRest, fromTicks, exprGrid, inMetre, PPQ } from "./ticks.js";
+import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, sigAt, shortMetre, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, tempoOf, MAX_VOICES, REST_Y_MAX, EXPR_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, DYN_VALUES, HAIRPINS, SPAN_KINDS, PEDAL_STYLES, TEMPO_UNITS, REHEARSAL_TEXT_MAX, REPEAT_TIMES_MAX, TRILL_ALTERS, FINGER_MAX, GRACE_BASES, TREM_MAX, TEXT_MAX, BARLINE_ENDS, JUMPS, FORM_KINDS, TEMPO_TEXT_MAX, ENDING_MAX, MIN_TEMPO, MAX_TEMPO, eid } from "./model.js";
 import { parsePitch, keyAlterations, CLEFS } from "../music.js";
 
 export class Nudge extends Error { constructor(msg, { bar = null } = {}) { super(msg); this.name = "Nudge"; this.bar = bar; } }
@@ -483,7 +483,8 @@ export function snap(doc, { bar, staff, ticks: t, voice: vi = 0 }, armed) {
   if (runEnd - runStart < need) throw new Nudge(group ? "no room in this tuplet" : "no room in this bar", { bar });
   const cands = [];
   // plain rests snap to the bar's grid (beats first); inside a tuplet group the grid counts from the run's start
-  for (let k = group ? runStart : Math.ceil(runStart / need) * need; k <= runEnd - need; k += need) cands.push(k);
+  const off = time.offset ?? 0; // a pickup's grid is the metre's, counted from the barline that follows (§8.5p)
+  for (let k = group ? runStart : Math.ceil((runStart + off) / need) * need - off; k <= runEnd - need; k += need) if (k >= runStart) cands.push(k);
   if (!cands.includes(runStart)) cands.push(runStart);
   const onset = cands.reduce((best, c) => (Math.abs(c - tt) < Math.abs(best - tt) ? c : best), cands[0]);
   return { onset, joins: null, runStart, runEnd, group, newGroup, unit, need };
@@ -626,7 +627,7 @@ const clefAtEnd = (doc, bar, staff) => clefAt(doc, bar, staff, Number.MAX_SAFE_I
 export function insertBar(doc, at) {
   if (!Number.isInteger(at) || at < 0 || at > doc.measures.length) throw new Nudge("no such bar");
   const d = clone(doc);
-  const m = newMeasure(d.parts[0].staves, timeAt(d, Math.max(0, at - 1)));
+  const m = newMeasure(d.parts[0].staves, sigAt(d, Math.max(0, at - 1))); // the signature, never a neighbour's shortness
   if (at === 0) { const m0 = d.measures[0]; m.key = m0.key; m.time = m0.time; m.clefs = m0.clefs; delete m0.key; delete m0.time; delete m0.clefs; }
   for (const om of d.measures) {
     for (const x of om.expressions ?? []) if (isSpan(x) && x.end.bar >= at) x.end.bar++;
@@ -677,6 +678,61 @@ export function deleteBar(doc, bar) {
   });
   d.measures.splice(bar, 1);
   cleanTies(d); cleanSlurs(d); cleanExpressions(d);
+  return d;
+}
+
+/**
+ * A short bar (docs/COMPOSE_DESIGN.md §8.5p): the pickup that opens a piece or a section, and the bar that
+ * completes it. On a full bar: an opening bar (bar 1, one after a repeat end / double / final barline, or one
+ * that opens a repeat) loses the silence every voice shares at its front, rounded down to the expression grid,
+ * and counts its beats from the barline that follows; a closing bar (the last bar of the music, or one that
+ * closes with a double / final / repeat end) loses the silence at its back. On a short bar: the rests come
+ * back and it is full again. A bar with no note, a bar in the middle of a phrase, or one whose chosen end
+ * starts (ends) with a note refuses with a Nudge. Returns the new document.
+ */
+export function setShort(doc, bar) {
+  const m = doc.measures[bar];
+  if (!m) throw new Nudge("no such bar");
+  const sig = sigAt(doc, bar), full = capacity(sig), grid = exprGrid(sig);
+  const d = clone(doc), dm = d.measures[bar];
+  const plainRest = (ev) => ev.kind === "rest" && !ev.dur.tuplet;
+  const lead = (v) => { let t = 0; for (const ev of v) { if (!plainRest(ev)) break; t += evTicks(ev); } return t; };
+  const trail = (v) => { let t = 0; for (let i = v.length - 1; i >= 0; i--) { if (!plainRest(v[i])) break; t += evTicks(v[i]); } return t; };
+  const shiftMarks = (by, len) => { // the bar's own marks move with its start (an opening cut) or are dropped past its end (a closing cut)
+    for (const c of dm.clefChanges ?? []) c.at += by;
+    if (dm.clefChanges) { for (const c of dm.clefChanges.filter((c) => c.at <= 0)) dm.clefs = { ...(dm.clefs ?? {}), [c.staff]: c.clef }; dm.clefChanges = dm.clefChanges.filter((c) => c.at > 0 && c.at < len); if (!dm.clefChanges.length) delete dm.clefChanges; }
+    if (dm.expressions) { dm.expressions = dm.expressions.filter((x) => x.at + by >= 0 && x.at + by < len); for (const x of dm.expressions) x.at += by; if (!dm.expressions.length) delete dm.expressions; }
+    for (const om of d.measures) for (const x of om.expressions ?? []) if (isSpan(x) && x.end.bar === bar && om !== dm) x.end.at = Math.max(0, Math.min(len - grid, x.end.at + by));
+    for (const x of dm.expressions ?? []) if (isSpan(x) && x.end.bar === bar) x.end.at = Math.max(x.at, Math.min(len - grid, x.end.at + by));
+  };
+  if (m.short) { // back to full: the cut rests return
+    const { len, from } = m.short, cut = full - len;
+    delete dm.short;
+    for (const st of dm.staves) for (const v of st.voices) { if (!v) continue; if (from === "end") v.unshift(...splitRest(cut, 0, sig).map(restEvent)); else v.push(...splitRest(cut, len, sig).map(restEvent)); }
+    if (from === "end") shiftMarks(cut, full);
+    normalizeBar(d, bar); // the returned rests join what was there into the metre's standard split (a silent staff is one whole-bar rest again)
+    return d;
+  }
+  if (isEmptyBar(m)) throw new Nudge("write the pickup first, then cut the rests", { bar });
+  const prev = bar > 0 ? doc.measures[bar - 1] : null;
+  const lastOfMusic = doc.measures.slice(bar + 1).every(isEmptyBar); // the editor keeps an empty bar after the music
+  const opens = bar === 0 || !!prev?.barline?.end || !!m.barline?.start;
+  const closes = lastOfMusic || !!m.barline?.end;
+  if (!opens && !closes) throw new Nudge("a short bar opens or closes a section", { bar });
+  const from = opens ? "end" : "start", measure = from === "end" ? lead : trail;
+  const voices = m.staves.flatMap((st) => st.voices.filter(Boolean));
+  const silence = Math.min(...voices.map(measure)), cut = silence - (silence % grid);
+  if (cut <= 0) throw new Nudge(from === "end" ? "the bar starts with a note — nothing to cut" : "the bar ends with a note — nothing to cut", { bar });
+  const len = full - cut, metre = shortMetre(sig, { len, from });
+  for (const st of dm.staves) for (const v of st.voices) {
+    if (!v) continue;
+    const had = measure(v), keep = had - cut;
+    if (from === "end") { while (v.length && plainRest(v[0])) v.shift(); if (keep > 0) v.unshift(...splitRest(keep, 0, metre).map(restEvent)); }
+    else { while (v.length && plainRest(v[v.length - 1])) v.pop(); if (keep > 0) v.push(...splitRest(keep, len - keep, metre).map(restEvent)); }
+  }
+  dm.short = { len, from };
+  if (from === "end") shiftMarks(-cut, len); else shiftMarks(0, len);
+  normalizeBar(d, bar);
   return d;
 }
 
@@ -817,7 +873,7 @@ export function setKey(doc, bar, fifths) {
 export function setClef(doc, bar, staff, clef, at = 0) {
   if (!CLEFS[clef]) throw new Nudge("no such clef");
   const d = clone(doc), m = d.measures[bar], time = timeAt(d, bar);
-  if (!Number.isInteger(at) || at < 0 || at >= capacity(time) || at % groupSize(time)) throw new Nudge("a clef change goes on a beat", { bar });
+  if (!Number.isInteger(at) || at < 0 || at >= capacity(time) || inMetre(at, time) % groupSize(time)) throw new Nudge("a clef change goes on a beat", { bar });
   if (at === 0) { if (m.clefs) { delete m.clefs[staff]; if (!Object.keys(m.clefs).length) delete m.clefs; } }
   else if (m.clefChanges) { m.clefChanges = m.clefChanges.filter((c) => !(c.staff === staff && c.at === at)); if (!m.clefChanges.length) delete m.clefChanges; }
   const before = at > 0 ? clefAt(d, bar, staff, at - 1) : bar > 0 ? clefAt(d, bar - 1, staff, Infinity) : null;
@@ -846,7 +902,7 @@ export function decompose(len) {
  */
 export function setTime(doc, bar, time) {
   if (!Number.isInteger(time?.beats) || time.beats < 1 || time.beats > 32 || !TIME_UNITS.includes(time.unit)) throw new Nudge("that's not a time signature");
-  const old = timeAt(doc, bar);
+  const old = sigAt(doc, bar);
   const same = old.beats === time.beats && old.unit === time.unit;
   let end = bar + 1;
   while (end < doc.measures.length && !doc.measures[end].time) end++;
@@ -859,7 +915,10 @@ export function setTime(doc, bar, time) {
     const d = clone(doc); delete d.measures[bar].time; return { doc: d, before: nOld, after: nOld };
   }
   const d = clone(doc);
-  const capOld = capacity(old), capNew = capacity(time), total = nOld * capOld, nNew = Math.max(1, Math.ceil(total / capNew));
+  // each old bar by its real length (a short bar — §8.5p — is shorter than the signature; the re-cut bars are full and its shortness goes)
+  const startOld = []; let total = 0;
+  for (let b = bar; b < end; b++) { startOld.push(total); total += capacity(timeAt(doc, b)); }
+  const capNew = capacity(time), nNew = Math.max(1, Math.ceil(total / capNew));
   const nStaves = d.parts[0].staves;
   const fresh = Array.from({ length: nNew }, () => newMeasure(nStaves, time));
   const oldBars = d.measures.slice(bar, end);
@@ -873,13 +932,13 @@ export function setTime(doc, bar, time) {
   // an expression follows its tick into the new bars; a hairpin end inside the stretch likewise, one past it shifts with the bar count
   const gridNew = exprGrid(time);
   const mapSlot = (abs) => { const nb = Math.min(nNew - 1, Math.floor(abs / capNew)), local = Math.min(capNew - gridNew, abs - nb * capNew); return { bar: nb, at: local - (local % gridNew) }; };
-  const mapEnd = (e) => (e.bar >= bar && e.bar < end ? (({ bar: b2, at }) => ({ bar: bar + b2, at }))(mapSlot((e.bar - bar) * capOld + e.at)) : e.bar >= end ? { bar: e.bar + nNew - nOld, at: e.at } : e);
+  const mapEnd = (e) => (e.bar >= bar && e.bar < end ? (({ bar: b2, at }) => ({ bar: bar + b2, at }))(mapSlot(startOld[e.bar - bar] + e.at)) : e.bar >= end ? { bar: e.bar + nNew - nOld, at: e.at } : e);
   oldBars.forEach((m, k) => {
-    const nb = fresh[Math.min(nNew - 1, Math.floor((k * capOld) / capNew))];
+    const nb = fresh[Math.min(nNew - 1, Math.floor(startOld[k] / capNew))];
     if (m.key) nb.key = m.key;
-    for (const [st, clef] of Object.entries(m.clefs ?? {})) putClef(k * capOld, Number(st), clef);
-    for (const c of m.clefChanges ?? []) putClef(k * capOld + c.at, c.staff, c.clef);
-    for (const x of m.expressions ?? []) { const s2 = mapSlot(k * capOld + x.at), tb = fresh[s2.bar]; tb.expressions = [...(tb.expressions ?? []), { ...x, at: s2.at, ...(isSpan(x) ? { end: mapEnd(x.end) } : {}) }]; }
+    for (const [st, clef] of Object.entries(m.clefs ?? {})) putClef(startOld[k], Number(st), clef);
+    for (const c of m.clefChanges ?? []) putClef(startOld[k] + c.at, c.staff, c.clef);
+    for (const x of m.expressions ?? []) { const s2 = mapSlot(startOld[k] + x.at), tb = fresh[s2.bar]; tb.expressions = [...(tb.expressions ?? []), { ...x, at: s2.at, ...(isSpan(x) ? { end: mapEnd(x.end) } : {}) }]; }
   });
   d.measures.forEach((m, b) => { if (b < bar || b >= end) for (const x of m.expressions ?? []) if (isSpan(x)) x.end = mapEnd(x.end); });
   const prevT = bar > 0 ? timeAt(doc, bar - 1) : null;
@@ -892,7 +951,7 @@ export function setTime(doc, bar, time) {
     oldBars.forEach((m, k) => {
       let unit = null;
       for (const o of onsets(m.staves[st].voices[vi] ?? [])) {
-        const start = k * capOld + o.start, gid = groupId(o.ev);
+        const start = startOld[k] + o.start, gid = groupId(o.ev);
         if (gid) { if (unit && unit.gid === gid) { unit.len += o.len; unit.evs.push({ ev: o.ev, at: start }); } else { unit = { gid, start, len: o.len, evs: [{ ev: o.ev, at: start }] }; items.push(unit); } continue; }
         unit = null;
         if (o.ev.kind === "rest") continue;
