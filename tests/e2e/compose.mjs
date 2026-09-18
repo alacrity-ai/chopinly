@@ -1583,20 +1583,36 @@ await step("v103 / v114: the chevrons — > arms the next shorter value, < the n
   for (const want of [32, 16, 8, 4, 2, 1, 0, 0]) { await stroke(pen, chev(await spot(), "left").reverse()); if ((await armed()) !== want) throw new Error(`< should arm ${want}, armed ${await armed()}`); }
   if (!(await toastText()).includes("longest")) throw new Error("no toast at the bottom");
   if ((await state()).mode !== "place") throw new Error("mode after chevrons: " + (await state()).mode);
-  // a selection is retyped: back to the quarter, lasso bar 5's two quarters, > → two eighths, eighth armed, Place mode
-  for (let i = 0; i < 3; i++) await stroke(pen, chev(await spot(), "right"));
-  if ((await armed()) !== 4) throw new Error("should be back on the quarter: " + (await armed()));
-  const a = await point({ bar: 4, staff: 0, ticks: 0, step: 4 }), b = await point({ bar: 4, staff: 0, ticks: PPQ, step: 4 });
-  const lassoBar5 = () => stroke(pen, [{ x: a.x - SS, y: a.y - 3 * SS }, { x: b.x + 2 * SS, y: a.y - 3 * SS }, { x: b.x + 2 * SS, y: a.y + 3 * SS }, { x: a.x - SS, y: a.y + 3 * SS }, { x: a.x - SS, y: a.y - 3 * SS }]);
+  // a selection is retyped from the notes' OWN value (v115, WSHED-153): walk back only to the half, lasso bar 5's two quarters, > → two eighths (a step from the lit half would have left them quarters), eighth armed, Place mode
+  for (let i = 0; i < 2; i++) await stroke(pen, chev(await spot(), "right"));
+  if ((await armed()) !== 2) throw new Error("should be on the half: " + (await armed()));
+  // the heads move when the bar re-lays out after a retype: take fresh points before every lasso
+  const at = (ticks) => point({ bar: 4, staff: 0, ticks, step: 4 });
+  const box = async (ticks0, dx0, ticks1, dx1) => { const a = await at(ticks0), b = await at(ticks1), x0 = a.x + dx0, x1 = b.x + dx1; await stroke(pen, [{ x: x0, y: a.y - 3 * SS }, { x: x1, y: a.y - 3 * SS }, { x: x1, y: a.y + 3 * SS }, { x: x0, y: a.y + 3 * SS }, { x: x0, y: a.y - 3 * SS }]); };
+  const lassoBar5 = () => box(0, -SS, PPQ, 2 * SS);
   await lassoBar5();
   if ((await state()).selection.length !== 2) throw new Error("lasso for the retype: " + JSON.stringify((await state()).selection));
   await stroke(pen, chev(await spot(), "right"));
   if ((await kinds(4)) !== "n8 r8 n8 r8 r2" || (await armed()) !== 8 || (await state()).mode !== "place") throw new Error("a chevron on a selection: " + (await kinds(4)) + " armed " + (await armed())); // a retype keeps each note at its onset; the gap after it is a rest
-  await page.click("[data-act=undo]");
-  if ((await kinds(4)) !== "n4 n4 r2") throw new Error("undo of the retype: " + (await kinds(4)));
+  // Leif's red flash: an eighth selected with the half lit, < → a quarter that eats the eighth rest beside it (not a whole that cannot fit)
+  await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
+  await page.click(".cp-dur[data-base='2']"); if ((await armed()) !== 2) throw new Error("the half should be lit: " + (await armed()));
+  await box(0, -SS, 0, 1.2 * SS);
+  if ((await state()).selection.length !== 1) throw new Error("lasso of the first eighth: " + JSON.stringify((await state()).selection));
+  await stroke(pen, chev(await spot(), "left"));
+  if ((await kinds(4)) !== "n4 n8 r8 r2" || (await armed()) !== 4) throw new Error("< on an eighth with the half lit: " + (await kinds(4)) + " armed " + (await armed()));
+  // a mixed selection steps each note from its own value; the armed value is left alone
+  await box(0, -SS, PPQ, 0.6 * SS);
+  if ((await state()).selection.length !== 2) throw new Error("lasso of the quarter and the eighth: " + JSON.stringify((await state()).selection));
+  await stroke(pen, chev(await spot(), "right"));
+  if ((await kinds(4)) !== "n8 r8 n16 r16 r8 r2" || (await armed()) !== 4) throw new Error("> on a mixed selection: " + (await kinds(4)) + " armed " + (await armed()));
+  if (!/2 notes shorter/.test(await toastText())) throw new Error("toast after the mixed step: " + (await toastText()));
+  for (const want of ["n4 n8 r8 r2", "n8 r8 n8 r8 r2", "n4 n4 r2"]) { await page.click("[data-act=undo]"); if ((await kinds(4)) !== want) throw new Error(`undo of the retypes should give ${want}: ${await kinds(4)}`); }
+  await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
   // ∧ ∨ (v114): bar 5's two quarters are B4 B4 (step 4 in the treble) — lasso them, ∧ twice → 𝄪, a third does nothing (no undo step), ∨ ×4 → 𝄫, a fifth does nothing
   await lassoBar5();
   if ((await state()).selection.length !== 2) throw new Error("lasso for the accidentals: " + JSON.stringify((await state()).selection));
+  if ((await armed()) !== 4) throw new Error("the quarter should be lit from the last undo-able step: " + (await armed()));
   if ((await alters(4)) !== "B0 B0") throw new Error("bar 5 before: " + (await alters(4)));
   await stroke(pen, chev(await spot(), "up")); if ((await alters(4)) !== "B1 B1") throw new Error("∧ once: " + (await alters(4)));
   if (!/2 notes raised/.test(await toastText())) throw new Error("toast after ∧: " + (await toastText()));
@@ -1606,7 +1622,7 @@ await step("v103 / v114: the chevrons — > arms the next shorter value, < the n
   if ((await state()).selection.length !== 2) throw new Error("the selection should survive the chevrons");
   for (const want of ["B1 B1", "B0 B0", "B-1 B-1", "B-2 B-2", "B-2 B-2"]) { await stroke(pen, chev(await spot(), "down").reverse()); if ((await alters(4)) !== want) throw new Error(`∨ should give ${want}, got ${await alters(4)}`); }
   if (!/already double flat/.test(await toastText())) throw new Error("no nudge at the bottom: " + (await toastText()));
-  if ((await kinds(4)) !== "n4 n4 r2" || (await armed()) !== 8) throw new Error("∧ ∨ must not touch durations (the eighth stays armed from the retype): " + (await kinds(4)) + " armed " + (await armed()));
+  if ((await kinds(4)) !== "n4 n4 r2" || (await armed()) !== 4) throw new Error("∧ ∨ must not touch durations: " + (await kinds(4)) + " armed " + (await armed()));
   // six strokes moved the notes, two were refused: six undo steps walk back to B B, one each
   for (const want of ["B-1 B-1", "B0 B0", "B1 B1", "B2 B2", "B1 B1", "B0 B0"]) { await page.click("[data-act=undo]"); if ((await alters(4)) !== want) throw new Error(`undo should give ${want}, got ${await alters(4)}`); }
   await page.click("[data-act=redo]"); if ((await alters(4)) !== "B1 B1") throw new Error("redo: " + (await alters(4)));
@@ -1626,12 +1642,10 @@ await step("v103 / v114: the chevrons — > arms the next shorter value, < the n
   await stroke(pen, [{ x: c.x - 2 * SS, y: c.y - SS }, { x: c.x + 2 * SS, y: c.y - SS }, { x: c.x + 2 * SS, y: c.y + SS }, { x: c.x - 2 * SS, y: c.y + SS }, { x: c.x - 2 * SS, y: c.y - SS }]);
   await stroke(pen, [{ x: c.x - 3 * SS, y: c.y + 2.5 * SS }, { x: c.x, y: c.y - 2.5 * SS }, { x: c.x + 0.4 * SS, y: c.y - 1.8 * SS }]);
   await stroke(pen, chev(c, "up").map((p) => ({ x: c.x + (p.x - c.x) * Math.SQRT1_2 - (p.y - c.y) * Math.SQRT1_2, y: c.y + (p.x - c.x) * Math.SQRT1_2 + (p.y - c.y) * Math.SQRT1_2 })));
-  if ((await armed()) !== 8 || (await state()).armed.alter !== null) throw new Error("a non-chevron changed the armed value: " + JSON.stringify((await state()).armed));
+  if ((await armed()) !== 4 || (await state()).armed.alter !== null) throw new Error("a non-chevron changed the armed value: " + JSON.stringify((await state()).armed));
   // a Touch finger that slides at once draws one too (input is Touch on this device); leave the quarter armed
   await stroke(fat, chev(await spot(), "left"));
-  if ((await armed()) !== 4) throw new Error("a finger < should arm the quarter: " + (await armed()));
-  await stroke(fat, chev(await spot(), "left"));
-  if ((await armed()) !== 2) throw new Error("a finger < again should arm the half: " + (await armed()));
+  if ((await armed()) !== 2) throw new Error("a finger < should arm the half: " + (await armed()));
   await stroke(fat, chev(await spot(), "right"));
   if ((await armed()) !== 4) throw new Error("a finger > should arm the quarter: " + (await armed()));
   await page.screenshot({ path: `${S}/cp-29-chevron.png`, clip: { x: 0, y: 0, width: 1024, height: 420 } });

@@ -637,13 +637,22 @@ Left arrow should do what down arrow does now. Up and down arrow, should, if a n
 adjust accidentals … C, C sharp, C double sharp, and up again does nothing; down: C sharp, C
 natural, C flat, C double flat." A compass: one axis for time, one for pitch spelling.
 
-- **> and <** — the duration ladder. Exactly what tapping the neighbouring duration button
-  does: `stepDur(dir)` walks `LADDER` (double whole, whole, half, quarter, eighth, sixteenth,
-  32nd, 64th — the main row and the ▾ row together) one step from `armed.base` and calls
-  `act("dur", base)`, so an all-notes selection is retyped first and the value is armed, and a
-  chevron in Select mode lands in Place as a palette tap does. **>** ("right") = shorter — on the
-  palette the shorter values sit to the right, so the sign points along the rail. **<** ("left")
-  = longer. Past either end a toast says "already the shortest / longest" and nothing changes.
+- **> and <** — the duration ladder `LADDER` (double whole, whole, half, quarter, eighth,
+  sixteenth, 32nd, 64th — the main row and the ▾ row together). **>** ("right") = shorter — on
+  the palette the shorter values sit to the right, so the sign points along the rail. **<**
+  ("left") = longer. **With notes selected** (v115, WSHED-153) each note steps one rung **from its
+  own base**, dots kept (the base is the rung; the dot button owns dots), through the rail's own
+  `retype` — so a sixteenth with the quarter lit and a < becomes an eighth that eats the
+  sixteenth rest beside it, exactly as the eighth button would. Until v115 the step was taken
+  from `armed.base` (the lit button), which asked for a *half* there, could not swallow enough
+  rests past the notes that followed, and flashed "too long for this bar" — Leif's
+  unreproducible red. A uniform result arms that value as the rail does; a mixed selection steps
+  each note and leaves the armed value alone; a note already at the end stays while the others
+  move, and only when none can move is it a toast; the all-or-nothing fit rule stays, so a note
+  that truly cannot grow into its bar still nudges, for the right reason. A chevron in Select
+  mode lands in Place as a palette tap does. **With nothing selected** the armed value steps
+  through `act("dur", base)`; past either end "already the shortest / longest" and nothing
+  changes.
 - **∧ and ∨** — the accidentals. `stepAcc(dir)` → `engine.stepAccidental(doc, items, ±1)`: every
   selected pitch's `alter` moves one step, clamped to −2 … 2, and is spelled by the same `spell`
   the ♯ ♭ ♮ buttons use (a result that matches the key shows as a cautionary, one that differs

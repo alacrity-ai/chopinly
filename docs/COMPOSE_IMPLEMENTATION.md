@@ -516,3 +516,13 @@ as-built: `docs/COMPOSE_FORM_DESIGN.md`. Model: three optional measure fields (`
 `form`) on schema v3; engine `setBarline` / `setEnding` / `toggleFormMark` / `unroll` / `tempoMap`;
 playback in performance time with `clockOf`; the layout's form lane and barline kinds; the Form lane
 in `rails.js`; MusicXML both ways; `tests/compose-form.test.mjs`; the E2E form step.
+
+## Phase 23 — the ladder steps from the notes' own value — v115 (WSHED-153, 2026-09-18)
+
+Leif's red flash: a sixteenth selected, "longer", refused; the eighth button fine. `stepDur` stepped
+from `armed.base` (since v103), so with the quarter lit it asked for a half, which could not swallow
+enough rests past the notes that followed ("too long for this bar"). Now with notes selected each
+steps from its own base via `retype(doc, ids, (ev) => …)`, dots kept; a uniform result arms the value,
+a mixed one does not; none-can-move is a toast. Nothing selected: the armed value steps as before.
+E2E: the retype section redrawn around the bug (half lit, an eighth stepped longer eats its rest; a
+mixed pick). sw.js CACHE + version.js → v115.
