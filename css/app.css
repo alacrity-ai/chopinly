@@ -2133,8 +2133,8 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-pick-ic b { font: 600 0.95rem var(--serif); }
 .cp-pick-ic i { font: italic 500 0.95rem var(--serif); }
 .cp-pick-ic .cp-glyph-clef { font-size: 1rem; }
-.cp-mode, .cp-inp, .cp-gest, .cp-favbtn { padding: 0 0.85rem 0 0.65rem; }
-.cp-mode .cp-word, .cp-inp .cp-word, .cp-gest .cp-word, .cp-favbtn .cp-word { font-size: 0.9rem; }
+.cp-mode, .cp-inp { padding: 0 0.85rem 0 0.65rem; }
+.cp-mode .cp-word, .cp-inp .cp-word { font-size: 0.9rem; }
 .cp-input[hidden] { display: none; } /* Pen | Touch (v101): absent where nothing can touch the score */
 /* a setting (Pen | Touch, Gesture) is not an armed action: its lit side is a quiet fill in full ink, the other side dim — the accent stays for what the next tap does */
 .cp-setting > .cp-btn[aria-pressed="true"] { background: var(--bg-edge); color: var(--fg); }
@@ -2179,8 +2179,26 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-header .cp-title { flex: 1 1 auto; min-width: 4rem; height: 2.75rem; text-align: left; font: 400 1.1rem var(--serif); color: var(--fg); background: transparent; border: 1px solid transparent; border-radius: 0.85rem; padding: 0 0.6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cp-header .cp-title:active { background: var(--bg-raised); border-color: var(--bg-edge); }
 .cp-spring { flex: 1; }
-.cp-file, .cp-rails-btn { gap: 0.35rem; }
-.cp-rails-btn .ic { width: 1.25rem; height: 1.25rem; }
+.cp-file, .cp-options-btn { gap: 0.35rem; }
+.cp-options-btn .ic { width: 1.25rem; height: 1.25rem; }
+/* Options ▾ (v116, WSHED-154, docs/COMPOSE_DESIGN.md §8.5q): a control panel — captioned sections, a full-width Pen | Touch switch, rows with a switch at the right, then the rail checklist */
+.cp-options { min-width: 17.5rem; gap: 0.1rem; padding: 0.3rem 0.4rem 0.45rem; max-height: calc(100vh - 1rem); overflow-y: auto; }
+.cp-opt-cap { font: 600 0.6rem var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg-dim); padding: 0.5rem 0.65rem 0.25rem; }
+.cp-opt-switch { display: flex; margin: 0 0.25rem 0.3rem; }
+.cp-opt-switch > .cp-btn { flex: 1 1 0; justify-content: center; }
+.cp-opt-row { height: 2.9rem; gap: 0.7rem; padding: 0 0.55rem 0 0.6rem; border-radius: 0.6rem; }
+.cp-opt-row .ic { width: 1.35rem; height: 1.35rem; color: var(--fg-dim); }
+.cp-opt-row[aria-pressed="true"] { background: transparent; color: var(--fg); border-color: transparent; box-shadow: none; }
+.cp-opt-row[aria-pressed="true"] .ic { color: var(--fg); }
+.cp-opt-row:active { background: var(--bg-raised); }
+.cp-opt-text { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; flex: 1 1 auto; min-width: 0; line-height: 1.1; }
+.cp-opt-text .cp-word { font-size: 0.92rem; }
+.cp-opt-hint { font: 400 0.7rem var(--sans); color: var(--fg-dim); white-space: nowrap; }
+.cp-toggle { position: relative; flex: none; width: 2.35rem; height: 1.4rem; border-radius: 1rem; background: var(--bg-edge); transition: background 120ms; }
+.cp-toggle::after { content: ""; position: absolute; top: 0.17rem; left: 0.17rem; width: 1.06rem; height: 1.06rem; border-radius: 50%; background: var(--fg-dim); transition: transform 120ms, background 120ms; }
+.cp-opt-row[aria-pressed="true"] .cp-toggle { background: var(--accent); }
+.cp-opt-row[aria-pressed="true"] .cp-toggle::after { transform: translateX(0.95rem); background: var(--fg-on-accent); }
+.cp-opt-sep { height: 1px; margin: 0.35rem 0.3rem 0.05rem; background: var(--bg-edge); }
 .cp-menu { flex-direction: column; align-items: stretch; gap: 0.15rem; min-width: 15rem; padding: 0.4rem; }
 .cp-menu-row > span { white-space: nowrap; }
 .cp-menu-row { justify-content: flex-start; gap: 0.6rem; height: 2.7rem; padding: 0 0.8rem 0 0.6rem; border: none; background: transparent; font-weight: 500; text-align: left; }
@@ -2363,7 +2381,7 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
   .cp-group { border-radius: 0.6rem; }
   .cp-btn .ic { width: 1.3rem; height: 1.3rem; }
   .cp-glyph { font-size: 1.6rem; }
-  .cp-tempo-mark, .cp-mode .cp-word, .cp-inp .cp-word, .cp-gest .cp-word, .cp-favbtn .cp-word { display: none; }
+  .cp-tempo-mark, .cp-mode .cp-word { display: none; }
   .cp-fav { --cp-h: 2.8rem; }
   /* a picker shows its glyph, not its word (never a bare chevron); once armed the value stands in for both */
   .cp-rail:not(.cp-header) .cp-pick-label { display: none; }
@@ -2377,7 +2395,7 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
   .cp-mode { padding: 0 0.5rem; }
   .cp-pos-wrap { min-width: 6rem; }
 }
-@media (prefers-reduced-motion: reduce) { .cp-flash { transition: none; } .cp-more { animation: none; } .cp-fav-slot.cp-fav-listen { animation: none; } .cp-btn:active { transform: none; } .cp-lane::before, .cp-lane::after { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .cp-flash { transition: none; } .cp-more { animation: none; } .cp-toggle, .cp-toggle::after { transition: none; } .cp-fav-slot.cp-fav-listen { animation: none; } .cp-btn:active { transform: none; } .cp-lane::before, .cp-lane::after { transition: none; } }
 
 /* --- Compose: the export sheet (WSHED-121) ------------------------------------------- */
 .lb-sheet-wrap.cp-export-wrap .lb-sheet { max-width: 40rem; margin: 0 auto; }

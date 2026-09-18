@@ -87,8 +87,19 @@ export function buildRails(host, { title, onAction, onCapture }) {
         <span class="cp-more cp-menu" id="cp-file-more" hidden>${FILE_ITEMS.map(([act, label, live]) => `<button type="button" class="cp-btn cp-menu-row" data-act="${act}"${live ? "" : " disabled"}><span>${label}</span>${live ? "" : "<small>soon</small>"}</button>`).join("")}</span>
       </span>
       <span class="cp-more-wrap">
-        <button type="button" class="cp-btn cp-pick cp-rails-btn" data-pop="cp-rails-more" aria-label="show or hide rails" aria-expanded="false">${icon("grip")}<span class="cp-pick-label">Rails</span>${CHEV}</button>
-        <span class="cp-more cp-menu" id="cp-rails-more" hidden>${RAILS.map(([k, label]) => `<button type="button" class="cp-btn cp-menu-row cp-rail-row" role="menuitemcheckbox" data-act="rail" data-rail="${k}" aria-checked="true"><span class="cp-check">${icon("check")}</span><span>${label}</span></button>`).join("")}</span>
+        <button type="button" class="cp-btn cp-pick cp-options-btn" data-pop="cp-options-more" aria-label="options — what draws, gestures, favorites, which rails show" aria-expanded="false">${icon("sliders")}<span class="cp-pick-label">Options</span>${CHEV}</button>
+        <span class="cp-more cp-menu cp-options" id="cp-options-more" hidden>
+          <span class="cp-opt-cap">Input</span>
+          <span class="cp-group cp-switch cp-setting cp-input cp-opt-switch" role="group" aria-label="what draws"${TOUCHY ? "" : " hidden"}>
+            <button type="button" class="cp-btn cp-inp" data-act="input" data-input="pen" aria-pressed="false" aria-label="the pencil draws — fingers rest">${icon("nib")}<span class="cp-word">Pen</span></button>
+            <button type="button" class="cp-btn cp-inp" data-act="input" data-input="touch" aria-pressed="false" aria-label="a finger draws">${icon("finger")}<span class="cp-word">Touch</span></button>
+          </span>
+          <button type="button" class="cp-btn cp-menu-row cp-opt-row cp-gest" data-act="gesture" role="switch" aria-pressed="false" aria-label="gesture mode — drag to lasso, a line through selected notes deletes them, chevrons step values">${icon("gesture")}<span class="cp-opt-text"><span class="cp-word">Gesture</span><span class="cp-opt-hint">lasso, strike, chevrons</span></span><span class="cp-toggle" aria-hidden="true"></span></button>
+          <button type="button" class="cp-btn cp-menu-row cp-opt-row cp-favbtn" data-act="favorites" role="switch" aria-pressed="false" aria-label="favorites — a floating palette of your own buttons; hold two seconds on the staff to summon it">${icon("star")}<span class="cp-opt-text"><span class="cp-word">Favorites</span><span class="cp-opt-hint">your floating palette · hold 2 s to summon</span></span><span class="cp-toggle" aria-hidden="true"></span></button>
+          <span class="cp-opt-sep" aria-hidden="true"></span>
+          <span class="cp-opt-cap">Rails</span>
+          ${RAILS.map(([k, label]) => `<button type="button" class="cp-btn cp-menu-row cp-rail-row" role="menuitemcheckbox" data-act="rail" data-rail="${k}" aria-checked="true"><span class="cp-check">${icon("check")}</span><span>${label}</span></button>`).join("")}
+        </span>
       </span>
     </div>
     <div class="cp-rail cp-control" role="toolbar" aria-label="controls" data-rail="control">
@@ -99,16 +110,6 @@ export function buildRails(host, { title, onAction, onCapture }) {
       <span class="cp-group cp-switch" role="group" aria-label="mode">
         <button type="button" class="cp-btn cp-mode" data-act="select" aria-pressed="false">${icon("cursor")}<span class="cp-word">Select</span></button>
         <button type="button" class="cp-btn cp-mode" data-act="pan" aria-pressed="false" aria-label="pan — one finger scrolls, two zoom">${icon("hand")}<span class="cp-word">Pan</span></button>
-      </span>
-      <span class="cp-group cp-switch cp-setting cp-input" role="group" aria-label="what draws"${TOUCHY ? "" : " hidden"}>
-        <button type="button" class="cp-btn cp-inp" data-act="input" data-input="pen" aria-pressed="false" aria-label="the pencil draws — fingers rest">${icon("nib")}<span class="cp-word">Pen</span></button>
-        <button type="button" class="cp-btn cp-inp" data-act="input" data-input="touch" aria-pressed="false" aria-label="a finger draws">${icon("finger")}<span class="cp-word">Touch</span></button>
-      </span>
-      <span class="cp-group cp-switch cp-setting cp-gesture" role="group" aria-label="gestures">
-        <button type="button" class="cp-btn cp-gest" data-act="gesture" aria-pressed="false" aria-label="gesture mode — drag to lasso, a line through selected notes deletes them">${icon("gesture")}<span class="cp-word">Gesture</span></button>
-      </span>
-      <span class="cp-group cp-switch cp-setting cp-favs" role="group" aria-label="favorites">
-        <button type="button" class="cp-btn cp-favbtn" data-act="favorites" aria-pressed="false" aria-label="favorites — a floating palette of your own buttons; hold two seconds on the staff to summon it">${icon("star")}<span class="cp-word">Favorites</span></button>
       </span>
       <span class="cp-tray">
         <button type="button" class="cp-btn cp-sq" data-act="delete" aria-label="delete the selection" disabled>${icon("trash")}</button>
@@ -468,9 +469,10 @@ export function buildRails(host, { title, onAction, onCapture }) {
     /** Reflect the editor's state: { armed, mode, canUndo, canRedo, hasSelection, title }. */
     update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, rails = DEFAULT_RAILS, pending = null, title, voice = 0, used = new Set([0]), sel = {}, tempoUnit = { base: 4, dots: 0 }, hands = "en", pedalStyle = "line", input = "touch", gesture = false, favorites = false }) {
       let shown = false;
-      for (const b of host.querySelectorAll(".cp-inp")) b.setAttribute("aria-pressed", String(b.dataset.input === input)); // Pen | Touch (v101, docs/COMPOSE_DESIGN.md §8.5i)
-      host.querySelector(".cp-gest").setAttribute("aria-pressed", String(!!gesture)); // Gesture mode (v102, §8.5j)
-      host.querySelector(".cp-favbtn").setAttribute("aria-pressed", String(!!favorites)); // Favorites (v109, §8.5o): shown or hidden
+      // the Options ▾ panel (v116, §8.5q): Pen | Touch (v101, §8.5i), Gesture (v102, §8.5j) and Favorites (v109, §8.5o) mirror the editor's state
+      for (const b of host.querySelectorAll(".cp-inp")) b.setAttribute("aria-pressed", String(b.dataset.input === input));
+      host.querySelector(".cp-gest").setAttribute("aria-pressed", String(!!gesture));
+      host.querySelector(".cp-favbtn").setAttribute("aria-pressed", String(!!favorites));
       // the voice picker (v90: one ▾ button, not four squares — the rail wrapped on many devices): the active voice's number in its colour;
       // the menu's rows: the active one lit, voices the piece uses in full ink, the rest dim; the rows follow the selection
       { const pick = host.querySelector(".cp-voice-pick"); pick.dataset.v = String(voice); pick.querySelector(".cp-voice-n").textContent = String(voice + 1); }

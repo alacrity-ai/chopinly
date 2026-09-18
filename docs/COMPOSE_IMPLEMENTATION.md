@@ -526,3 +526,12 @@ steps from its own base via `retype(doc, ids, (ev) => …)`, dots kept; a unifor
 a mixed one does not; none-can-move is a toast. Nothing selected: the armed value steps as before.
 E2E: the retype section redrawn around the bug (half lit, an eighth stepped longer eats its rest; a
 mixed pick). sw.js CACHE + version.js → v115.
+
+## Phase 24 — Options ▾ — v116 (WSHED-154, 2026-09-18)
+
+Rails ▾ becomes Options ▾ (design §8.5q): the Pen | Touch switch, Gesture and Favorites leave the
+control rail for a captioned Input section above the Rails checklist, rows with a CSS switch pill
+(`.cp-toggle`) lit by `aria-pressed`. Same `data-act`s and classes, so `update()` and the dispatcher
+are untouched but for the markup; `icons.js` gains `sliders`. E2E: an `opt(sel)` helper opens the
+panel, taps, closes it; the header step checks the panel's order, captions, a live switch, and
+that the control rail lost the three. sw.js CACHE + version.js → v116.

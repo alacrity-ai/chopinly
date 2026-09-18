@@ -46,6 +46,7 @@ const P = {
   skipBack: `<path d="M17.5 5.6v12.8c0 .8-.9 1.3-1.6.9L6.6 13a1.1 1.1 0 0 1 0-1.9l9.3-6.4c.7-.4 1.6.1 1.6.9Z" fill="currentColor" stroke="none"/><rect x="4.2" y="5.5" width="2.2" height="13" rx="0.9" fill="currentColor" stroke="none"/>`,
   skipFwd: `<path d="M6.5 5.6v12.8c0 .8.9 1.3 1.6.9l9.3-6.3a1.1 1.1 0 0 0 0-1.9L8.1 4.7c-.7-.4-1.6.1-1.6.9Z" fill="currentColor" stroke="none"/><rect x="17.6" y="5.5" width="2.2" height="13" rx="0.9" fill="currentColor" stroke="none"/>`,
   pause: `<rect x="6.5" y="5.5" width="4" height="13" rx="1.2" fill="currentColor" stroke="none"/><rect x="13.5" y="5.5" width="4" height="13" rx="1.2" fill="currentColor" stroke="none"/>`,
+  sliders: `<path d="M4 7.5h9"/><path d="M17.5 7.5H20"/><circle cx="15" cy="7.5" r="2.1"/><path d="M4 16.5h2.5"/><path d="M11 16.5h9"/><circle cx="8.5" cy="16.5" r="2.1"/>`,
   star: `<path d="M12 3.8l2.5 5.2 5.7.7-4.2 3.9 1.1 5.6L12 16.4l-5.1 2.8 1.1-5.6-4.2-3.9 5.7-.7Z"/>`,
   cloud: `<path d="M7 18.5h10.5a3.5 3.5 0 0 0 .5-7 5.5 5.5 0 0 0-10.6-1.2A4.1 4.1 0 0 0 7 18.5Z"/>`,
   flip: `<path d="M4.5 8.5h13l-3-3"/><path d="M19.5 15.5h-13l3 3"/>`,
