@@ -29,6 +29,8 @@ const squares = () => page.evaluate(() => {
   }
   return { n: out.n, bad: out.bad, header: [...out.header], lanes: [...out.lanes] };
 });
+/** Options ▾ (v116): the input switch, Gesture and Favorites live in the header panel — open it, tap, close it. */
+const opt = async (sel, pg = page) => { await pg.click("[data-pop=cp-options-more]"); await pg.click(sel); await pg.click("[data-pop=cp-options-more]"); };
 const kinds = (bar, staff = 0) => page.evaluate(([b, st]) => document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[st].voices[0].map((e) => `${e.kind === "rest" ? "r" : "n"}${e.dur.base}${e.dur.dots ? "." : ""}`).join(" "), [bar, staff]);
 const point = (place) => page.evaluate((p) => document.querySelector(".cp-editor").__editor.pointFor(p), place);
 const tapXY = async (p) => { if ((await state()).input === "pen") { await synth("pointerdown", { pointerType: "pen", pointerId: 199, width: 1, height: 1, pressure: 0.5, clientX: p.x, clientY: p.y }); await synth("pointerup", { pointerType: "pen", pointerId: 199, width: 1, height: 1, pressure: 0, clientX: p.x, clientY: p.y }); } else await page.touchscreen.tap(Math.round(p.x), Math.round(p.y)); await page.waitForTimeout(80); }; // v112: in Pen mode a finger on the score does nothing, so a tap there is the pen's
@@ -425,18 +427,27 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
   if ((await state()).mode !== "place") await page.keyboard.press("v");
   await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
-  // the header's Rails ▾ menu shows and hides lanes; the File ▾ menu is a placeholder for export
+  // the header's Options ▾ panel shows and hides lanes; the File ▾ menu is a placeholder for export
   if (!(await page.locator(".cp-header [data-act=back]").count()) || !(await page.locator(".cp-header #cp-title").count())) throw new Error("back / title not on the header rail");
   await page.click("[data-pop=cp-file-more]");
   if ((await page.locator("#cp-file-more .cp-menu-row:disabled").count()) !== 1 || (await page.locator("#cp-file-more .cp-menu-row:not(:disabled)").count()) !== 3) throw new Error("file menu: two PDF rows and MusicXML live, MIDI a placeholder");
   await page.click("[data-pop=cp-file-more]");
-  await page.click("[data-pop=cp-rails-more]");
-  if ((await page.locator("#cp-rails-more .cp-rail-row").count()) !== 8) throw new Error("rail rows"); // controls · transport · notes · utility · expression · form · piano · notes2
+  await page.click("[data-pop=cp-options-more]");
+  if ((await page.locator("#cp-options-more .cp-rail-row").count()) !== 8) throw new Error("rail rows"); // controls · transport · notes · utility · expression · form · piano · notes2
+  // Options ▾ (v116, WSHED-154): the panel is Input (Pen | Touch, Gesture, Favorites) over Rails; the control rail no longer carries them; a row's switch mirrors the state and the panel stays open
+  if ((await page.locator(".cp-options-btn .cp-pick-label").textContent()) !== "Options" || (await page.locator("#cp-options-more .cp-opt-cap").allTextContents()).join(",") !== "Input,Rails") throw new Error("the panel's captions");
+  if (await page.locator(".cp-control .cp-inp, .cp-control .cp-gest, .cp-control .cp-favbtn").count()) throw new Error("the toggles still sit on the control rail");
+  { const rows = await page.locator("#cp-options-more > *").evaluateAll((els) => els.map((e) => e.className.split(" ").pop())); if (rows.slice(0, 6).join(",") !== "cp-opt-cap,cp-opt-switch,cp-gest,cp-favbtn,cp-opt-sep,cp-opt-cap") throw new Error("panel order: " + rows.join(",")); }
+  await page.click("#cp-options-more .cp-gest");
+  if ((await page.locator("#cp-options-more").isHidden()) || (await page.locator(".cp-gest").getAttribute("aria-pressed")) !== "true" || !(await state()).gesture) throw new Error("Gesture from the panel should flip and keep the panel open");
+  await page.click("#cp-options-more .cp-gest");
+  if ((await page.locator(".cp-gest").getAttribute("aria-pressed")) !== "false" || (await state()).gesture) throw new Error("Gesture off again");
+  { const sw = await page.locator("#cp-options-more .cp-opt-switch").boundingBox(), m = await page.locator("#cp-options-more").boundingBox(); if (!sw || sw.width < 0.85 * m.width) throw new Error(`the Pen | Touch switch should span the panel: ${sw?.width} of ${m.width}`); }
   await page.click(".cp-rail-row[data-rail=transport]");
-  if (!(await page.locator(".cp-transport").isHidden()) || (await page.locator("#cp-rails-more").isHidden())) throw new Error("transport should hide and the menu stay open");
+  if (!(await page.locator(".cp-transport").isHidden()) || (await page.locator("#cp-options-more").isHidden())) throw new Error("transport should hide and the menu stay open");
   await page.click(".cp-rail-row[data-rail=transport]");
   if (await page.locator(".cp-transport").isHidden()) throw new Error("transport should show again");
-  await page.click(".cp-rail-row[data-rail=utility]"); await page.click("[data-pop=cp-rails-more]");
+  await page.click(".cp-rail-row[data-rail=utility]"); await page.click("[data-pop=cp-options-more]");
   if (!(await st()).open || (await page.locator("#cp-utility").isHidden())) throw new Error("utility rail did not open");
   if (await page.locator("[data-act=bar-prev], [data-act=bar-next], #cp-at-read").count()) throw new Error("the bar selector is still there");
   // key: pick G major → the cursor is armed (picker shows it); tap bar 3 → the change lands there and the cursor clears
@@ -542,7 +553,7 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   if ((await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures[0].staves[0].voices[0][0].arp)) !== undefined) throw new Error("roll not cleared");
   await page.click("[data-act=gliss]"); await page.click(".cp-art-btn[data-mark='staccato']"); await page.click(".cp-art-btn[data-mark='lowerMordent']");
   await page.keyboard.press("Escape"); await page.keyboard.press("v");
-  await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=utility]"); await page.click("[data-pop=cp-rails-more]");
+  await page.click("[data-pop=cp-options-more]"); await page.click(".cp-rail-row[data-rail=utility]"); await page.click("[data-pop=cp-options-more]");
   if ((await st()).open) throw new Error("utility rail did not close");
 });
 
@@ -564,7 +575,7 @@ await step("palm safety: a wide touch contact and a second simultaneous finger p
 });
 
 await step("expressions (WSHED-122, via Rails ▾): f arms and a tap puts it on beat 1; a crescendo takes three taps (button, beat 2, bar 2 beat 1); rit. from the text menu lands on the & of 3; in Select mode the dynamic selects, drags a slot right, ← nudges it back, Delete removes it and undo restores it; a selected hairpin shows two handles and drags up by whole staff steps (↓ nudges it back); typed text arms without firing shortcuts; Escape cancels a half-placed hairpin; the buttons stay squares", async () => {
-  await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=expression]"); await page.click("[data-pop=cp-rails-more]");
+  await page.click("[data-pop=cp-options-more]"); await page.click(".cp-rail-row[data-rail=expression]"); await page.click("[data-pop=cp-options-more]");
   if (await page.locator("#cp-expression").isHidden()) throw new Error("expression rail did not open");
   if ((await state()).mode !== "place") await page.keyboard.press("v");
   await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
@@ -638,7 +649,7 @@ await step("expressions (WSHED-122, via Rails ▾): f arms and a tap puts it on 
   if ((await state()).mode !== "select") await page.click("[data-act=select]");
   for (const kind of ["hairpin", "text", "dyn"]) { const p = await at(kind); await page.mouse.click(p.x, p.y); if (!(await state()).selection.length) throw new Error(`${kind} did not select for deletion`); await page.keyboard.press("Delete"); }
   if ((await page.evaluate(() => document.querySelectorAll(".cp-svg .cp-expr").length)) !== 0) throw new Error("expressions not cleared");
-  await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=expression]"); await page.click("[data-pop=cp-rails-more]");
+  await page.click("[data-pop=cp-options-more]"); await page.click(".cp-rail-row[data-rail=expression]"); await page.click("[data-pop=cp-options-more]");
   await page.keyboard.press("Escape"); if ((await state()).mode === "select") await page.keyboard.press("v");
 });
 
@@ -911,7 +922,7 @@ await step("form rail: Rails ▾ → Form; a repeat end on bar 4 draws dots on b
   await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
   if ((await state()).mode !== "place") await page.keyboard.press("v");
   await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
-  await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=form]"); await page.click("[data-pop=cp-rails-more]");
+  await page.click("[data-pop=cp-options-more]"); await page.click(".cp-rail-row[data-rail=form]"); await page.click("[data-pop=cp-options-more]");
   if (await page.locator("#cp-form").isHidden()) throw new Error("the Form rail did not open");
   const barTap = (bar) => tapAt({ bar, staff: 0, ticks: PPQ + 300, step: 4 });
   const form = () => page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures.map((m, b) => `${b + 1}:${m.barline ? JSON.stringify(m.barline) : ""}${m.ending ? `E${m.ending.n}-${m.ending.end + 1}` : ""}${m.form ? m.form.map((f) => f.kind + (f.bpm ? `=${f.bpm}${f.text ? ` ${f.text}` : ""}` : "")).join(",") : ""}`).filter((x) => x.length > 2).join(" "));
@@ -965,7 +976,7 @@ await step("piano rail (WSHED-125, via Rails ▾): a pedal by three taps draws P
   await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
   if ((await state()).mode !== "place") await page.keyboard.press("v");
   await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
-  await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=piano]"); await page.click("[data-pop=cp-rails-more]");
+  await page.click("[data-pop=cp-options-more]"); await page.click(".cp-rail-row[data-rail=piano]"); await page.click("[data-pop=cp-options-more]");
   if (await page.locator("#cp-piano").isHidden()) throw new Error("the Piano rail did not open");
   const ed = () => document.querySelector(".cp-editor").__editor;
   const b = await page.evaluate(() => { const d = document.querySelector(".cp-editor").__editor.state.doc; return d.measures.findIndex((m) => m.staves[0].voices[0].some((e) => e.kind === "note" && !e.dur.tuplet)); }); // a bar with an untied plain note on the upper staff
@@ -1031,7 +1042,7 @@ await step("extended Notes rail (WSHED-126, via Rails ▾): Grace on, a tap befo
   await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
   if ((await state()).mode !== "place") await page.keyboard.press("v");
   await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
-  await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=notes2]"); await page.click("[data-pop=cp-rails-more]");
+  await page.click("[data-pop=cp-options-more]"); await page.click(".cp-rail-row[data-rail=notes2]"); await page.click("[data-pop=cp-options-more]");
   if (await page.locator("#cp-notes2").isHidden()) throw new Error("the Notes + rail did not open");
   const b = await page.evaluate(() => { const d = document.querySelector(".cp-editor").__editor.state.doc; return d.measures.findIndex((m) => m.staves[0].voices[0].some((e) => e.kind === "note" && !e.dur.tuplet)); });
   const noteAt0 = () => page.evaluate((b) => { const d = document.querySelector(".cp-editor").__editor.state.doc; const v = d.measures[b].staves[0].voices[0]; let t = 0; for (const e of v) { if (t === 0 && e.kind === "note") return { id: e.id, graces: e.graces ?? null, trem: e.trem ?? null, art: e.art ?? null }; t += 1; } return null; }, b);
@@ -1092,7 +1103,7 @@ await step("the rails filled out (WSHED-127, v98): sf ▾ → sfz on a beat; hol
   await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
   if ((await state()).mode !== "place") await page.keyboard.press("v");
   await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
-  for (const rail of ["expression", "form", "piano", "notes2"]) if (await page.locator(`#cp-${rail}`).isHidden()) { await page.click("[data-pop=cp-rails-more]"); await page.click(`.cp-rail-row[data-rail=${rail}]`); await page.click("[data-pop=cp-rails-more]"); }
+  for (const rail of ["expression", "form", "piano", "notes2"]) if (await page.locator(`#cp-${rail}`).isHidden()) { await page.click("[data-pop=cp-options-more]"); await page.click(`.cp-rail-row[data-rail=${rail}]`); await page.click("[data-pop=cp-options-more]"); }
   const hold = async (sel) => { const bb = await page.locator(sel).first().boundingBox(); await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2); await page.mouse.down(); await page.waitForTimeout(600); await page.mouse.up(); await page.waitForTimeout(120); };
   const docOf = () => page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc);
   const empty = (m) => m.staves.every((st) => st.voices.every((v) => !v || v.every((e) => e.kind === "rest")));
@@ -1310,7 +1321,7 @@ await step("v100: a rail never wraps — one line at every width, slides under a
   await page.waitForSelector(".sc-row");
   await page.click(".sc-open");
   await page.waitForSelector(".cp-editor .cp-svg");
-  for (const rail of ["utility", "expression", "form", "piano", "notes2"]) if (await page.locator(`#cp-${rail}`).isHidden()) { await page.click("[data-pop=cp-rails-more]"); await page.click(`.cp-rail-row[data-rail=${rail}]`); await page.click("[data-pop=cp-rails-more]"); }
+  for (const rail of ["utility", "expression", "form", "piano", "notes2"]) if (await page.locator(`#cp-${rail}`).isHidden()) { await page.click("[data-pop=cp-options-more]"); await page.click(`.cp-rail-row[data-rail=${rail}]`); await page.click("[data-pop=cp-options-more]"); }
   const lines = () => page.evaluate(() => {
     const rails = [];
     for (const r of document.querySelectorAll(".cp-rail")) {
@@ -1354,9 +1365,9 @@ await step("v100: a rail never wraps — one line at every width, slides under a
   await hold(".cp-hold-pp");
   for (const [sel, name] of [["#cp-pp-more", "pp hold menu"]]) { const m = await page.locator(sel).boundingBox(); if (!m || m.x < 0 || m.x + m.width > 390 || m.y < 0 || m.y + m.height > 844) throw new Error(`${name} off screen: ${JSON.stringify(m)}`); }
   await page.keyboard.press("Escape"); await page.mouse.click(200, 800);
-  await page.click("[data-pop=cp-rails-more]");
-  { const m = await page.locator("#cp-rails-more").boundingBox(); if (!m || m.x < 0 || m.x + m.width > 390) throw new Error("rails menu off screen: " + JSON.stringify(m)); }
-  await page.click("[data-pop=cp-rails-more]");
+  await page.click("[data-pop=cp-options-more]");
+  { const m = await page.locator("#cp-options-more").boundingBox(); if (!m || m.x < 0 || m.x + m.width > 390) throw new Error("rails menu off screen: " + JSON.stringify(m)); }
+  await page.click("[data-pop=cp-options-more]");
   // no picker is a bare chevron at phone width
   const bare = await page.evaluate(() => [...document.querySelectorAll(".cp-rail:not(.cp-header) .cp-pick")].filter((b) => b.getBoundingClientRect().width && ![...b.children].some((c) => !c.classList.contains("cp-chev") && c.getBoundingClientRect().width > 0)).map((b) => b.getAttribute("aria-label")));
   if (bare.length) throw new Error("bare chevrons at phone width: " + JSON.stringify(bare));
@@ -1376,14 +1387,14 @@ await step("v101: Pen | Touch — a wide finger rests in Pen and draws in Touch;
   const pitchAt = (bar, i) => page.evaluate(([b, i]) => { const e = document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[0].voices[0][i]; return e.pitches?.map((p) => p.step + p.octave).join("+") ?? e.kind; }, [bar, i]);
   const fat = (type, o) => synth(type, { pointerType: "touch", pointerId: 130, width: 50, height: 50, ...o }); // an iPad fingertip, wider than the palm guard
   // this context saw a pen long ago → the switch stands on Pen and is visible on an iPad
-  if (!(await page.locator(".cp-input").isVisible())) throw new Error("no switch on an iPad");
+  await page.click("[data-pop=cp-options-more]"); if (!(await page.locator(".cp-input").isVisible())) throw new Error("no switch on an iPad"); await page.click("[data-pop=cp-options-more]");
   if ((await state()).input !== "pen" || (await pressed()) !== "pen=true,touch=false") throw new Error("after a pen this device should rest fingers: " + (await state()).input + " " + (await pressed()));
   // Pen: a wide finger tap places nothing
   let p = await point({ bar: 0, staff: 0, ticks: 0, step: 4 });
   await fat("pointerdown", { clientX: p.x, clientY: p.y }); await fat("pointerup", { clientX: p.x, clientY: p.y });
   if ((await kinds(0)) !== "r1") throw new Error("Pen mode let a wide finger place: " + (await kinds(0)));
   // Touch: the same tap places B4; a slow lift still lands under the finger
-  await page.click(".cp-inp[data-input=touch]");
+  await opt(".cp-inp[data-input=touch]");
   if ((await state()).input !== "touch" || (await pressed()) !== "pen=false,touch=true") throw new Error("switch to Touch: " + (await pressed()));
   await fat("pointerdown", { clientX: p.x, clientY: p.y }); await fat("pointerup", { clientX: p.x, clientY: p.y });
   if ((await kinds(0)) !== "n4 r4 r2" || (await pitchAt(0, 0)) !== "B4") throw new Error("Touch tap: " + (await kinds(0)) + " " + (await pitchAt(0, 0)));
@@ -1455,7 +1466,7 @@ await step("v101: Pen | Touch — a wide finger rests in Pen and draws in Touch;
   f = await st();
   if (f.input !== "pen" || !f.penSeen || f.pressed !== "pen=true,touch=false") throw new Error("the first pen should flip to Pen: " + JSON.stringify(f));
   if (!(await pg.locator(".lb-toast").textContent()).includes("Pencil")) throw new Error("no toast on the flip: " + (await pg.locator(".lb-toast").textContent()));
-  await pg.click(".cp-inp[data-input=touch]");
+  await opt(".cp-inp[data-input=touch]", pg);
   await pg.reload(); await pg.waitForSelector(".cp-editor .cp-svg");
   f = await st();
   if (f.input !== "touch" || !f.penSeen) throw new Error("the setting should survive a reload: " + JSON.stringify(f));
@@ -1497,7 +1508,7 @@ await step("v102: gesture mode — off, a Place-mode drag does nothing; on, a pe
   let s = await state();
   if (JSON.stringify(s.selection) !== sel0 || (await kinds(4)) !== "n4 n4 r2" || s.mode !== "place") throw new Error("gesture off: a drag did something: " + JSON.stringify(s.selection) + " vs " + sel0 + " " + (await kinds(4)));
   // on: the same drag lassoes both; the mode stays Place and the quarter stays armed
-  await page.click("[data-act=gesture]");
+  await opt("[data-act=gesture]");
   if (!(await state()).gesture || (await pressed()) !== "true") throw new Error("toggle did not turn on");
   await stroke(pen, g.box);
   s = await state();
@@ -1522,7 +1533,7 @@ await step("v102: gesture mode — off, a Place-mode drag does nothing; on, a pe
   await page.click("[data-act=undo]");
   if ((await kinds(4)) !== "n4 n4 r2") throw new Error("undo of a strike: " + (await kinds(4)));
   // a dynamic: f on bar 5 beat 1, lasso it, strike it out
-  if (await page.locator("#cp-expression").isHidden()) { await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=expression]"); await page.click("[data-pop=cp-rails-more]"); }
+  if (await page.locator("#cp-expression").isHidden()) { await page.click("[data-pop=cp-options-more]"); await page.click(".cp-rail-row[data-rail=expression]"); await page.click("[data-pop=cp-options-more]"); }
   g = await geom(); // undo re-laid the system out
   await page.click(".cp-dyn-btn[data-dyn=f]");
   await tap(pen, g.a);
@@ -1547,7 +1558,7 @@ await step("v102: gesture mode — off, a Place-mode drag does nothing; on, a pe
   // remembered across a reload; off again → a drag does nothing
   await page.reload(); await page.waitForSelector(".cp-editor .cp-svg");
   if (!(await state()).gesture || (await pressed()) !== "true") throw new Error("gesture should survive a reload");
-  await page.click("[data-act=gesture]");
+  await opt("[data-act=gesture]");
   if ((await state()).gesture) throw new Error("toggle did not turn off");
   const a2 = await point({ bar: 4, staff: 0, ticks: 0, step: 4 }), b2 = await point({ bar: 4, staff: 0, ticks: PPQ, step: 4 });
   await stroke(pen, [{ x: a2.x - SS, y: a2.y - 3 * SS }, { x: b2.x + 2 * SS, y: a2.y - 3 * SS }, { x: b2.x + 2 * SS, y: a2.y + 3 * SS }, { x: a2.x - SS, y: a2.y + 3 * SS }]);
@@ -1574,7 +1585,7 @@ await step("v103 / v114: the chevrons — > arms the next shorter value, < the n
   // off: a > changes nothing
   await stroke(pen, chev(await spot(), "right"));
   if ((await armed()) !== 4) throw new Error("Gesture off: a chevron armed " + (await armed()));
-  await page.click("[data-act=gesture]");
+  await opt("[data-act=gesture]");
   if (!(await state()).gesture) throw new Error("toggle");
   // along the ladder to the end, and one past it
   for (const want of [8, 16, 32, 64, 64]) { await stroke(pen, chev(await spot(), "right")); if ((await armed()) !== want) throw new Error(`> should arm ${want}, armed ${await armed()}`); }
@@ -1649,14 +1660,14 @@ await step("v103 / v114: the chevrons — > arms the next shorter value, < the n
   await stroke(fat, chev(await spot(), "right"));
   if ((await armed()) !== 4) throw new Error("a finger > should arm the quarter: " + (await armed()));
   await page.screenshot({ path: `${S}/cp-29-chevron.png`, clip: { x: 0, y: 0, width: 1024, height: 420 } });
-  await page.click("[data-act=gesture]"); // leave it off for the phone step
+  await opt("[data-act=gesture]"); // leave it off for the phone step
   await noWiden();
 });
 
 await step("v104: bars — Insert puts an empty bar before the tapped one, Delete takes a bar (the stray last one too), undo / redo; the export preview is the plan's page: only that page's systems, ink above and below the staves kept, page 2 steps into view, the PDF has the plan's pages (WSHED-132 / 133)", async () => {
   await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
   if ((await state()).mode !== "place") await page.keyboard.press("v");
-  if (await page.locator("#cp-form").isHidden()) { await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=form]"); await page.click("[data-pop=cp-rails-more]"); }
+  if (await page.locator("#cp-form").isHidden()) { await page.click("[data-pop=cp-options-more]"); await page.click(".cp-rail-row[data-rail=form]"); await page.click("[data-pop=cp-options-more]"); }
   if (await page.locator("#cp-form").isHidden()) throw new Error("the Form rail did not open");
   const barsN = async () => (await state()).bars;
   const sig = () => page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures.map((m) => m.staves.reduce((n, s) => n + s.voices.reduce((k, v) => k + (v ? v.filter((e) => e.kind === "note").length : 0), 0), 0)).join("."));
@@ -1836,7 +1847,7 @@ await step("v109: favorites — hidden at first, page 1 seeded; a pen held still
   const near = (p, q) => !p.hidden && Math.abs(p.gripX - q.x) <= 2 && (Math.abs(p.gripY - q.y) <= 2 || Math.abs(p.y + p.h - (768 - 8)) <= 1 || Math.abs(p.y - 8) <= 1); // the grabber under the pointer, unless the panel had to be kept on screen
   const pen = (type, o) => synth(type, { pointerType: "pen", pointerId: 160, width: 1, height: 1, pressure: 0.5, ...o });
   const fin = (type, o) => synth(type, { pointerType: "touch", pointerId: 161, width: 10, height: 10, ...o });
-  await page.click("[data-act=input][data-input=pen]");
+  await opt("[data-act=input][data-input=pen]");
   if ((await state()).input !== "pen") throw new Error("Pen mode");
   let f = await fav(), p = await panel();
   if (f.on || !p.hidden || (await pressed()) !== "false") throw new Error("the panel should start hidden: " + JSON.stringify({ f, p }));
@@ -1873,7 +1884,7 @@ await step("v109: favorites — hidden at first, page 1 seeded; a pen held still
   if (Math.abs((await panel()).gripX - b.x) > 2) throw new Error("a hold on a head summoned");
   await page.keyboard.press("Escape"); if ((await state()).mode !== "place") await page.keyboard.press("v");
   // Touch mode: a still finger aims at half a second, then summons at 2 s and the lift places nothing; a finger that slides is aiming
-  await page.click("[data-act=input][data-input=touch]");
+  await opt("[data-act=input][data-input=touch]");
   const t = await point({ bar: 6, staff: 0, ticks: PPQ, step: 8 });
   await fin("pointerdown", { clientX: t.x, clientY: t.y }); await page.waitForTimeout(700);
   if (!(await page.evaluate(() => !!document.querySelector(".cp-overlay .cp-ghost, .cp-ghost")))) console.log("  (no ghost element found to check the aim — continuing)");
@@ -1890,11 +1901,11 @@ await step("v109: favorites — hidden at first, page 1 seeded; a pen held still
   await fin("pointerup", { clientX: t2.x + 30, clientY: t2.y - AIM }); await page.waitForTimeout(100);
   if ((await kinds(6)) === k6) throw new Error("the aim should still land a note: " + (await kinds(6)));
   await page.keyboard.press("Control+z");
-  await page.click("[data-act=input][data-input=pen]");
+  await opt("[data-act=input][data-input=pen]");
   // the toggle hides and shows (at the same place)
-  await page.click(".cp-favbtn");
+  await opt(".cp-favbtn");
   if (!(await panel()).hidden || (await fav()).on || (await pressed()) !== "false") throw new Error("the toggle did not hide");
-  await page.click(".cp-favbtn");
+  await opt(".cp-favbtn");
   p = await panel();
   if (p.hidden || Math.abs(p.gripX - t.x) > 2) throw new Error("the toggle did not show the panel where it was: " + JSON.stringify(p));
   // pages: 1 / 8 with ◀ dead, ▶ to 8 / 8 and dead, back to 2 / 8
@@ -1905,7 +1916,7 @@ await step("v109: favorites — hidden at first, page 1 seeded; a pen held still
   for (let i = 0; i < 6; i++) await page.click(".cp-fav [data-fav=prev]");
   if ((await panel()).page !== "2 / 8" || (await fav()).page !== 1) throw new Error("page 2");
   // an empty slot listens; mp from the Dynamics rail is captured, not fired
-  if (await page.locator("#cp-expression").isHidden()) { await page.click("[data-pop=cp-rails-more]"); await page.click(".cp-rail-row[data-rail=expression]"); await page.click("[data-pop=cp-rails-more]"); }
+  if (await page.locator("#cp-expression").isHidden()) { await page.click("[data-pop=cp-options-more]"); await page.click(".cp-rail-row[data-rail=expression]"); await page.click("[data-pop=cp-options-more]"); }
   await page.click(".cp-fav-slot[data-slot='0']");
   p = await panel();
   if (!p.slots[0].listen || !p.hint || (await fav()).listening !== 0) throw new Error("slot 0 should listen: " + JSON.stringify(p));
@@ -1978,7 +1989,7 @@ await step("v109: favorites — hidden at first, page 1 seeded; a pen held still
   f = await fav(); p = await panel();
   if (!f.on || p.hidden || f.page !== 1 || f.listening !== -1 || (await state()).pending) throw new Error("the lift after a drag pressed something: " + JSON.stringify({ under, f }));
   await page.waitForTimeout(650); // the window closes: a plain tap on the × still hides
-  await page.click(".cp-favbtn"); // hidden again for the phone step
+  await opt(".cp-favbtn"); // hidden again for the phone step
   await noWiden();
 });
 
@@ -2056,12 +2067,12 @@ await step("v112: Pen mode owns the score — with the pen hovering (ghost shown
   if (top1 <= top0) throw new Error(`Pan mode: a finger did not scroll (${top0} → ${top1})`);
   await page.click("[data-act=pan]"); await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
   // Touch mode: the same narrow tap draws
-  await page.click("[data-act=input][data-input=touch]");
+  await opt("[data-act=input][data-input=touch]");
   const t = await point({ bar: 5, staff: 0, ticks: 0, step: 2 });
   await tip("pointerdown", { clientX: t.x, clientY: t.y }); await tip("pointerup", { clientX: t.x, clientY: t.y });
   if ((await kinds(5)) === "r1") throw new Error("Touch mode: a finger should still place");
   await page.keyboard.press("Control+z"); await page.keyboard.press("Control+z");
-  await page.click("[data-act=input][data-input=pen]");
+  await opt("[data-act=input][data-input=pen]");
   await noWiden();
 });
 

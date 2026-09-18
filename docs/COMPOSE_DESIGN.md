@@ -471,7 +471,7 @@ A fourth lane, toggled by the **𝄞 …** button on the control rail (remembere
 
 ### 8.5c The header rail (v77)
 
-A topmost lane holds **‹ back · title … File ▾ · Rails ▾**. **Rails ▾** is a checklist of every other lane (Controls, Transport, Notes, Key · time · clef · marks): unticking hides a lane, the choice is remembered per device (`ws.compose.rails`), and a new lane (the expression rail) joins the list when it lands. **File ▾** is the home of *Save to Scores as PDF · Export PDF · Export MusicXML · Export MIDI* — greyed until P4. Note glyphs in buttons anchor their **baseline** (the head's centre) to the button's centre line; rests and accidentals centre their ink.
+A topmost lane holds **‹ back · title … File ▾ · Options ▾** (Rails ▾ until v116, see §8.5q). **Options ▾** ends in a checklist of every other lane (Controls, Transport, Notes, Key · time · clef · marks): unticking hides a lane, the choice is remembered per device (`ws.compose.rails`), and a new lane (the expression rail) joins the list when it lands. **File ▾** is the home of *Save to Scores as PDF · Export PDF · Export MusicXML · Export MIDI* — greyed until P4. Note glyphs in buttons anchor their **baseline** (the head's centre) to the button's centre line; rests and accidentals centre their ink.
 
 ### 8.5d Identity — title · composer · tags (v80)
 
@@ -894,6 +894,33 @@ measure insert, to the FORM rail."
 A third rail sits between the control rail and the palette: **stop · a bar back · play/pause · a bar forward · position slider (bar N of M) · tempo (♩= − / +, hold to repeat, tap the number to type)**. `Space` toggles play, `Home` stops. Playback (`play.js`) turns the document into a timeline of absolute-tick notes (ties merge into one sounding note), sequences them 180 ms ahead on the audio clock through the piano voice, and a playhead line on the overlay follows; the view scrolls only when the playing system leaves it. The tempo is saved with the piece (`tempo`, default 100, 20–300) and is *not* an undoable edit. Editing while playing re-sequences from the current position.
 
 The rails are 3.4 rem tall (2.8 rem under 480 px), buttons and icons scale with them, and Bravura glyphs in buttons are centred on their **ink**, not their typographic box: `rails.js` measures each glyph with canvas `measureText` (font and ink bounding boxes) once Bravura has loaded and slides it by `--dy`, so a whole note, a quarter, a rest and a sharp all sit dead-centre whatever the button size. The tempo group is one pill; the position slider fills with the accent up to the playhead.
+
+### 8.5q Options ▾ — the header's control panel (v116, WSHED-154)
+
+Leif (2026-09-18): "the rails dropdown should be renamed to something like Layout, or Options. I'd
+like to move the Pen, Gesture, and Favorites toggles into the Options drop down (they'd be their own
+section, now probably above the individual rail toggles). It should look nice. The Rails drop down
+should feel like more of an options control panel now."
+
+- **Options ▾** (a sliders icon, `.cp-options-btn`, `data-pop="cp-options-more"`) replaces Rails ▾
+  at the header's right. The panel (`#cp-options-more`, `.cp-menu.cp-options`) has two captioned
+  sections in the rails' caption voice (`.cp-opt-cap`, small caps, letter-spaced, dim):
+  - **Input** — the **Pen | Touch** switch (§8.5i) as a full-width segmented control (the same
+    `.cp-group.cp-switch.cp-setting.cp-input`; absent where nothing can touch the score); then
+    **Gesture** (§8.5j) and **Favorites** (§8.5o) as rows (`.cp-opt-row`, `role="switch"`): the
+    icon, the name over a one-line hint, and a switch pill at the right (`.cp-toggle`, CSS-only,
+    lit by `aria-pressed`). A lit row keeps its quiet ink — the pill carries the state — so the
+    accent stays for what the next tap does, as §8.5j decided.
+  - **Rails** — the checklist as before (`.cp-rail-row`).
+- **Behaviour.** The three toggles keep their `data-act`s and classes, so `update()` mirrors the
+  editor's state into them unchanged and the panel **stays open** while toggling, as the rail rows
+  already did (the dispatcher returns before `closeMore()` for `rail`, `input`, `gesture`,
+  `favorites`). The control rail is now undo / redo · Select | Pan · the clipboard · zoom.
+- **Fit.** `min-width 17.5rem`, `max-height calc(100vh − 1rem)` with a scroll, placed by the
+  menus' own `place()`: measured 352 × 594 px on an iPad landscape, 343 × 567 px on a phone
+  (390 wide), on screen both times.
+- **Why "Options", not "Layout".** The panel holds what draws and two modes as well as which
+  rails show; only a third of it is layout.
 
 ## 9. Rendering (`render.js`)
 

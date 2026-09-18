@@ -22,7 +22,7 @@ phase's card (WSHED-115 … 122).
 - [ ] A mark can be tapped, lassoed, dragged sideways across bars, lifted or lowered in whole steps, deleted, undone.
 
 ## Form (WSHED-124)
-- [ ] Rails ▾ → Form. Barline ▾ → `:|` then tap bar 8: repeat dots on both staves; `|:` on bar 5; `‖` on bar 4; `|.` on the last bar. The same picture on the same bar again clears it.
+- [ ] Options ▾ → Form. Barline ▾ → `:|` then tap bar 8: repeat dots on both staves; `|:` on bar 5; `‖` on bar 4; `|.` on the last bar. The same picture on the same bar again clears it.
 - [ ] Ending ▾ → 1., tap bar 7 then bar 8; 2., tap bar 9 twice: two brackets with their numbers, the first closed at the repeat.
 - [ ] Segno on bar 3, Jump ▾ → D.S. al Coda at bar 12, To Coda at bar 6, coda sign on bar 13, Fine somewhere: each lands where tapped; the same tap removes; undo restores.
 - [ ] Rehearsal A on bar 1, B on bar 9; ♩= → "Adagio 60" → tap bar 9: the word and the metronome mark sit above the bar.
@@ -30,7 +30,7 @@ phase's card (WSHED-115 … 122).
 - [ ] Export PDF: barlines, brackets, signs and words are on paper. Export MusicXML → Sibelius shows the repeats, endings and jumps; Sibelius → import keeps them.
 
 ## Piano (WSHED-125)
-- [ ] Rails ▾ → Piano. Ped., tap beat 1 of bar 1 on the lower staff, tap beat 1 of bar 2: *Ped.* and a line with an up-hook under the lower staff. Ped. again, tap beat 1 of bar 2 then beat 3: the join becomes a notch (a retake).
+- [ ] Options ▾ → Piano. Ped., tap beat 1 of bar 1 on the lower staff, tap beat 1 of bar 2: *Ped.* and a line with an up-hook under the lower staff. Ped. again, tap beat 1 of bar 2 then beat 3: the join becomes a notch (a retake).
 - [ ] 8va, tap the first note of bar 3 on the upper staff, tap its last note: *8va* with a dashed line and a hook; the heads under it draw an octave lower, ledger lines gone; play — the pitch is the same. 8vb on the lower staff likewise (an octave higher).
 - [ ] Select a chord, tap **3**: a 3 on every head; tap **3** again: gone. Nothing selected, tap **2**, then tap three noteheads in turn: each gets a 2 and the button stays lit; tap one of them again: its 2 goes; Esc disarms. Upper-staff digits sit above the notes, lower-staff digits below; a chord's digits stack in the notes' order.
 - [ ] In Select mode a pedal or octave line selects, drags in time, lifts by whole steps, stretches by its end handle; Delete removes it; undo restores.
@@ -38,7 +38,7 @@ phase's card (WSHED-115 … 122).
 - [ ] Export PDF: the lines, signs and digits are on paper (the octave line dashed). Export MusicXML → Sibelius shows the pedal, the octave line and the fingering; Sibelius → import keeps them.
 
 ## Notes + (WSHED-126)
-- [ ] Rails ▾ → Notes +. Eighth armed, Grace on (lit): tap just left of a note at a step above it: a small slashed eighth with a slur to the note; tap the same spot: gone; two taps at different steps: two graces under one beam. Sixteenth armed: the grace is a sixteenth. Hold Grace → plain: no slash. Esc turns Grace off.
+- [ ] Options ▾ → Notes +. Eighth armed, Grace on (lit): tap just left of a note at a step above it: a small slashed eighth with a slur to the note; tap the same spot: gone; two taps at different steps: two graces under one beam. Sixteenth armed: the grace is a sixteenth. Hold Grace → plain: no slash. Esc turns Grace off.
 - [ ] Select a note, Trem ▾ → 2: two bars on the stem; 2 again: gone; on a whole note the bars sit above the head. Play: the note re-strikes in sixteenths.
 - [ ] Marcato and staccatissimo on a selection: the wedge above, the teardrop beside the head; the same again clears.
 - [ ] Play a bar with a slashed grace: it sounds just before the beat and the previous note ends early; a plain grace takes the first half of its note.
@@ -83,7 +83,7 @@ phase's card (WSHED-115 … 122).
 
 ## The rails facelift (WSHED-128, v100)
 
-- A rail never wraps. Turn every rail on (⠿ Rails ▾) and narrow the window, or open on a phone: each rail stays one line and slides sideways under a finger; a fade shows on the side there is more. Nothing widens the page.
+- A rail never wraps. Turn every rail on (Options ▾ → Rails) and narrow the window, or open on a phone: each rail stays one line and slides sideways under a finger; a fade shows on the side there is more. Nothing widens the page.
 - Groups, not tiles: note values, dot · tie · tuplet, accidentals, marks, ornaments, dynamics, hairpins, signs, pedals, octave lines, fingers, hands, stems and beams each sit in one bordered group with hairlines between. Undo / redo, delete / copy / cut / paste, the transport and zoom are borderless icons. Select / Pan is a switch.
 - A hold dot (lower-right corner) marks every button that opens a menu on a hold: pp, ff, both hairpins, A, ♩= tempo, %, Ped., 8va, 8vb, r.h., the tuplet, Grace.
 - The palette rails carry a caption at the left (NOTES, KEY · TIME, DYNAMICS, FORM, PIANO, MARKS) that stays while the rail slides; none at phone width.
@@ -94,7 +94,7 @@ phase's card (WSHED-115 … 122).
 
 ## Pen | Touch (WSHED-129, v101)
 
-- On an iPad or a phone a second switch sits beside Select / Pan: **Pen | Touch** (a nib, a fingertip). On a desktop with no touch it is not there.
+- On an iPad or a phone **Pen | Touch** (a nib, a fingertip) is the first thing in Options ▾ (beside Select / Pan on the control rail until v116). On a desktop with no touch it is not there.
 - Touch: a finger tap on an empty beat places the armed note; in Select mode a finger landing near a head grabs it and a drag re-pitches it, a finger stroke around heads lassoes them, a tap near a rest or a dynamic selects it.
 - Touch, Place mode: hold a finger on the staff for half a second — the ghost lifts above the fingertip; slide, and it follows; lift, and the note lands where the ghost was. A quick tap lands under the finger.
 - Pen: fingers behave as before (a clean tap or a narrow one-finger grab; a wide or moving or second contact does nothing).
@@ -103,7 +103,7 @@ phase's card (WSHED-115 … 122).
 
 ## Gesture mode v1 (WSHED-130, v102)
 
-- A Gesture toggle sits after Pen | Touch on the control rail; off until you switch it on; remembered on the device.
+- A Gesture switch sits under Pen | Touch in Options ▾ (on the control rail until v116); off until you switch it on; remembered on the device.
 - On, Place mode: drag on empty staff and a lasso draws; lift and what is inside is selected; a lasso around nothing clears the selection. The armed note stays armed and a plain tap still places.
 - On: select some notes and draw a line through them — they become rests (undo brings them back). The same through a selected dynamic removes it. A line through unselected notes changes nothing.
 - Touch mode: slide a finger at once and it draws a lasso; hold it half a second first and it aims (v101).
@@ -132,7 +132,7 @@ phase's card (WSHED-115 … 122).
 
 ## Pickup bars (WSHED-151, v113)
 
-- [ ] A fresh piece, Time → 12/8. Arm the eighth, tap beats 10, 11, 12 of bar 1 (the last dotted-quarter group). Rails ▾ → Form → the bars group's third button, **Pickup** (a dashed barline): it lights; tap bar 1 → the three beats of silence are gone, the bar is narrow, the three eighths beam as one beat, the lower staff shows a dotted-quarter rest (not a whole-bar rest), the toast says "pickup: bar 1 holds 3 eighths". The 12/8 still draws.
+- [ ] A fresh piece, Time → 12/8. Arm the eighth, tap beats 10, 11, 12 of bar 1 (the last dotted-quarter group). Options ▾ → Form → the bars group's third button, **Pickup** (a dashed barline): it lights; tap bar 1 → the three beats of silence are gone, the bar is narrow, the three eighths beam as one beat, the lower staff shows a dotted-quarter rest (not a whole-bar rest), the toast says "pickup: bar 1 holds 3 eighths". The 12/8 still draws.
 - [ ] Write the last bar of the piece up to beat 3 and stop. Pickup, tap that bar → the trailing rests go and the bar ends where the music does ("bar n closes short, …"). The empty bar the editor keeps after the music does not get in the way.
 - [ ] Pickup, tap the short bar 1 again → full again, rests back in front; undo → the pickup returns; redo → full.
 - [ ] Pickup on an empty bar → "write the pickup first"; on a bar in the middle → "a short bar opens or closes a section"; on bar 1 when the lower staff sounds on beat 1 → "starts with a note". Nothing changes and the button releases.
@@ -145,7 +145,7 @@ phase's card (WSHED-115 … 122).
 
 - [ ] Place mode, Pencil: hold still on empty staff for 2 s → the Favorites panel appears with its grabber under the tip, a tick, and no note on the lift. Hold again elsewhere → it moves there. Slide before 2 s (Gesture on) → a lasso, no panel. Hold on a notehead → a grab, no panel.
 - [ ] Touch mode, finger: hold still 2 s → the ghost lifts at half a second, then at 2 s the panel opens and the lift places nothing; hold half a second then slide → the aim, as before.
-- [ ] The controls rail's Favorites button shows / hides it; reload → still shown where it was. Drag by the grabber with Pencil and finger; × hides.
+- [ ] The Favorites switch in Options ▾ (on the controls rail until v116) shows / hides it; reload → still shown where it was. Drag by the grabber with Pencil and finger; × hides.
 - [ ] Page 1: ♯ ♭ ♮ dot tie tuplet — each lights / acts exactly as its rail button. ◀ ▶ page to 8 / 8 and stop; the marker reads *n / 8*.
 - [ ] Tap an empty slot on page 2 → the pulsing outline and the hint; hold *pp* on the Dynamics rail, tap *ppp* → the slot shows *ppp*, nothing was placed; tap the slot → *ppp* arms. Tap an empty slot then Undo → the toast refuses; tap the slot again → cancelled.
 - [ ] Hold a filled slot 1.5 s → "removed", the slot is empty; a tap on it now listens.
@@ -173,9 +173,15 @@ phase's card (WSHED-115 … 122).
 - [ ] Eighth pairs look exactly as before. Export PDF: the same on paper.
 
 ## Bars — insert and delete (WSHED-132, v104)
-- [ ] Rails ▾ → Form → the bars group: **insert** then tap bar 3 → an empty bar 3, the old bar 3 is bar 4; **delete** then tap it → gone; undo / redo each one step.
+- [ ] Options ▾ → Form → the bars group: **insert** then tap bar 3 → an empty bar 3, the old bar 3 is bar 4; **delete** then tap it → gone; undo / redo each one step.
 - [ ] Delete a bar carrying a key or time change → the next bar shows the change; delete bar 1 → the new bar 1 carries the signatures.
 - [ ] Delete the empty last bar → gone; write in the new last bar → a fresh empty bar is appended as before.
 - [ ] A hairpin ending in a deleted bar now ends in the bar before; one starting there is gone; an ending bracket over it shrinks.
 - [ ] The last bar of a piece refuses to go (a nudge).
 - [ ] (fixed in v104) Open a piece, place one note, wait a second, undo → the note goes (it used to stay once the save had run).
+
+## Options ▾ (WSHED-154, v116)
+
+- The header's right button reads **Options** with a sliders icon. Open it: **INPUT** — Pen | Touch spanning the panel (iPad / phone only), then Gesture and Favorites rows each with a switch at the right; a rule; **RAILS** — the eight checkboxes.
+- Flip Gesture: the pill slides and lights, the panel stays open; the control rail no longer has Pen | Touch, Gesture or Favorites — it is undo / redo, Select | Pan, the clipboard, zoom.
+- Phone: the panel fits the screen; Pen and Touch keep their words inside it.
