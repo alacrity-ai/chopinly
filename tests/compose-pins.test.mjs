@@ -65,7 +65,12 @@ test("a keep pulls the next bar onto the row, past the automatic break — and p
 });
 
 test("a row kept past what fits is tight; the same row unpinned never is", () => {
-  let d = piece(16); for (let b = 0; b < 9; b++) d = setBreak(d, b, "keep");
+  let ten = piece(16); for (let b = 0; b < 9; b++) ten = setBreak(ten, b, "keep");
+  const crammed = layoutComposition(ten, PAPER); // ten bars of quarters on one row: about half their natural spacing — Leif's call, not the engraver's (v119)
+  assert.equal(crammed.hit.systems[0].bars.length, 10);
+  assert.ok(crammed.hit.systems[0].scale < 0.8 && crammed.hit.systems[0].scale > PIN_FLOOR);
+  assert.deepEqual(tightRows(crammed), []);
+  let d = piece(24); for (let b = 0; b < 23; b++) d = setBreak(d, b, "keep");
   const L = layoutComposition(d, PAPER);
   assert.deepEqual(tightRows(L), [0]);
   assert.ok(L.hit.systems[0].bars.some((hb) => hb.scale < PIN_FLOOR));

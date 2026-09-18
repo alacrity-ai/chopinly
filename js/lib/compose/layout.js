@@ -18,8 +18,9 @@ export const SYS_H = BLOCK_H + SYS_GAP;
 /** Which of n systems a layout y belongs to: the band around its block, split halfway through the gap (paper routes ink to pages by it). */
 export const systemAt = (y, n) => Math.max(0, Math.min(n - 1, Math.floor((y - TOP_PAD + SYS_GAP / 2) / SYS_H)));
 const MAX_BARS_PER_SYSTEM = 6;
-/** Paper only (docs/COMPOSE_LAYOUT_DESIGN.md §2): a pinned row whose tightest bar falls under this share of natural spacing is `tight` — refused in the Layout view, red when a size change made it so. */
-export const PIN_FLOOR = 0.8;
+/** Paper only (docs/COMPOSE_LAYOUT_DESIGN.md §2): a pinned row whose tightest bar falls under this share of natural spacing is `tight` — refused in the Layout view, red when a size change made it so.
+ *  0.3 since v119 (0.8 before): Leif judges what looks crammed; the floor only stops what cannot be read at all (a sixteenth's column is then 0.75 S, heads 1.18 S wide already overlap). */
+export const PIN_FLOOR = 0.3;
 const STEM_LEN = 3.5, BEAM_T = 0.45, BEAM_GAP = 0.3, MIN_STEM = 2.75;
 /** The shortest stem a beamed note may have when `levels` beams stack inward from its tip (WSHED-134, Gould):
  *  the bare stem between the head and the innermost beam never shrinks — every extra beam lengthens the stem. */

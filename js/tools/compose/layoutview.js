@@ -158,8 +158,13 @@ export function openLayoutView({ doc: initial, opts, title = "", composer = "" }
     });
     h.addEventListener("pointermove", (e) => {
       if (!down || e.pointerId !== down.id) return;
+      // the handle owns its gesture (touch-action: none), so the browser can never start a scroll in the middle of a sizing (v119): the first
+      // TAP_PX of travel decide — sideways (or diagonal) sizes the bar and stays a sizing however the hand wanders; clearly up or down scrolls the pages by hand
+      if (down.pan) { scroll.scrollTop -= e.clientY - down.lastY; down.lastY = e.clientY; e.preventDefault(); return; }
       if (!drag) {
-        if (Math.abs(e.clientX - down.x) < TAP_PX) return;
+        const dx = Math.abs(e.clientX - down.x), dy = Math.abs(e.clientY - down.y);
+        if (dx < TAP_PX && dy < TAP_PX) return;
+        if (dy > 2 * dx) { down.pan = true; down.lastY = e.clientY; swallow = true; return; } // only a clearly vertical start pans; a diagonal one is a sizing
         const at = rowOfBar(b); if (!at) return;
         const hb = at.row.bars[at.k];
         drag = { bar: b, base: doc, row: at.row, k: at.k, x: down.x, width: hb.stretch * hb.scale, start: hb.weight, weight: hb.weight };
@@ -169,7 +174,7 @@ export function openLayoutView({ doc: initial, opts, title = "", composer = "" }
     });
     const up = (e, ok) => { if (!down || e.pointerId !== down.id) return; down = null; if (drag) endDrag(ok); };
     h.addEventListener("pointerup", (e) => up(e, true));
-    h.addEventListener("pointercancel", (e) => up(e, false)); // the browser took the gesture (a vertical scroll): nothing changes
+    h.addEventListener("pointercancel", (e) => up(e, false)); // the system took the pointer away: nothing changes
     h.addEventListener("click", (e) => { // the last event of a tap, so nothing synthesised lands on the menu it opens; the click that ends a drag is swallowed
       if (swallow) { swallow = false; return; }
       const r = h.getBoundingClientRect();

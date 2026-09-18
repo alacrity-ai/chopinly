@@ -63,7 +63,7 @@ a second, hidden way to set breaks — and the pages would reflow under the pen)
 `w = 1` the arithmetic is the old arithmetic (the extra term is an exact zero). Everything inside
 the bar that used `sys.scale` uses the bar's own `b.scale = sys.scale · w`.
 
-**Tight rows.** `PIN_FLOOR = 0.8`: a pinned row (a keep, a break or a weight on any of its bars)
+**Tight rows.** `PIN_FLOOR = 0.3` (0.8 in v118 — see §10): a pinned row (a keep, a break or a weight on any of its bars)
 in which some bar's `scale` falls under the floor is marked `sys.tight = true`. A row without pins
 is never tight (a single enormous bar on its own row is today's behaviour and stays).
 
@@ -157,7 +157,7 @@ disabled while it is non-zero. `paper.__plan` still carries the plan for the E2E
 - The break belongs to the bar that **ends** the row (the barline you tap), not the bar that
   starts the next — it is what the hand points at, and `deleteBar` can carry it back one bar.
 - Weights never change which bars share a row.
-- The floor is 0.8 of natural spacing; below it a row is refused / red rather than squeezed.
+- The floor is 0.3 of natural spacing since v119 (§10); below it a row is refused / red rather than squeezed.
 - One editor undo step per Layout sitting.
 - Pins are stored with the piece, not per device and not per page size. A pinned row that stops
   fitting at another size turns red instead of being quietly re-flowed.
@@ -199,3 +199,25 @@ Landed as written, with these particulars:
 - Tests: `tests/compose-pins.test.mjs` (12); E2E step "v118: the Layout step" — finger tap, pen drag
   (synthetic `pointerType: "pen"`), mouse click, handle / tab / menu-row sizes, refusal, undo / redo,
   persistence, the editor's rows untouched, the red-row gate and release. 41 steps, ~91 s local.
+
+## 10. v119 — Leif's first pass on the iPad (2026-09-18)
+
+"It's very close to perfect." Two things:
+
+1. **"As I'm sizing a bar's width, if I'm not going perfectly left to right it scrolls, and the scrolling
+   interrupts the sizing. If we're sizing a bar, lock scrolling."** The handles were `touch-action: pan-y`,
+   so the browser could claim the touch for a scroll at any moment (`pointercancel` → the sizing was thrown
+   away). Now `touch-action: none`: the handle owns its gesture. The first 6 px decide — anything sideways
+   or diagonal is a sizing and stays one however far the hand wanders vertically; only a clearly vertical
+   start (`dy > 2·dx`) pans, and the view scrolls itself by hand for the rest of that gesture (no momentum;
+   the rest of the page still scrolls natively). Same path for finger, Pencil and mouse.
+2. **"It's too strict … bar 12 won't fit — it definitely will. Be much less strict. Let me be the judge."**
+   `PIN_FLOOR` 0.8 → **0.3**. At 0.8 a row could hold barely more than the automatic layout gave it. At 0.3
+   the floor only stops what cannot be read at all (a sixteenth's column is 0.75 S there — heads are 1.18 S
+   wide); everything between natural and that is Leif's call, with no warning. The floor still bounds a
+   width drag and still turns a pinned row red when a size change pushes it under.
+
+E2E: the step's piece is 32 bars now (16 could no longer reach the floor); it sizes with a pen that wanders
+112 px down while moving 64 px right (the pages must not scroll, `touch-action` must be `none`), pans from
+a handle with a vertical gesture (scrolls, sizes nothing, opens no menu), and asserts that a row of six or
+more bars under 0.6 of natural spacing is accepted before the refusal comes.

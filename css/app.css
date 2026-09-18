@@ -2439,7 +2439,7 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-lay-pages { display: flex; flex-direction: column; align-items: center; gap: 14px; width: max-content; min-width: 100%; padding-bottom: env(safe-area-inset-bottom, 0); }
 .cp-lay-page.cp-paper { position: relative; flex: none; overflow: hidden; }
 .cp-lay-hits { position: absolute; inset: 0; }
-.cp-lay-handle { position: absolute; margin: 0; padding: 0; border: none; border-radius: 6px; background: transparent; cursor: col-resize; touch-action: pan-y; -webkit-tap-highlight-color: transparent; }
+.cp-lay-handle { position: absolute; margin: 0; padding: 0; border: none; border-radius: 6px; background: transparent; cursor: col-resize; touch-action: none; -webkit-tap-highlight-color: transparent; } /* none, not pan-y: a sizing that wanders off the horizontal must never turn into a scroll (v119); the view pans by hand when the gesture starts up or down */
 .cp-lay-handle::before { content: ""; position: absolute; left: 50%; top: -1px; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%; background: var(--accent); opacity: 0.55; } /* the grip: where a barline can be taken hold of */
 .cp-lay-handle.pinned::before { opacity: 1; }
 .cp-lay-handle:hover, .cp-lay-handle:focus-visible, .cp-lay-handle.on { background: color-mix(in srgb, var(--accent) 16%, transparent); outline: none; }
