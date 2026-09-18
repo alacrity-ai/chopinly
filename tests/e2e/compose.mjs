@@ -2136,13 +2136,13 @@ await step("v118: the Layout step — Export → Layout shows the plan's pages f
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.goto(`${BASE}/?app=1&t=6#/compose`);
   await page.waitForSelector("#cp-new");
-  const id = await page.evaluate(async () => { // sixteen bars of quarters, bar 10 in sixteenths — built through the engine (the layout is what this step drives)
+  const id = await page.evaluate(async () => { // thirty-two bars of quarters, bar 10 in sixteenths — built through the engine (the layout is what this step drives); long enough that a row can be kept past the v119 floor
     const { newComposition } = await import("/js/lib/compose/model.js");
     const { place } = await import("/js/lib/compose/engine.js");
     const { logbook } = await import("/js/lib/logbook.js");
     const Q = { base: 4, dots: 0, rest: false, tuplet: null, alter: null }, X = { ...Q, base: 16 };
     let d = newComposition({ id: crypto.randomUUID(), now: Date.now() }); d.title = "Pinned";
-    for (let b = 0; b < 16; b++) { const n = b === 9 ? 16 : 4; for (let q = 0; q < n; q++) d = place(d, { bar: b, staff: 0, ticks: q * (26880 / n), step: 3 + (q % 4) }, n === 16 ? X : Q).doc; for (let q = 0; q < 4; q++) d = place(d, { bar: b, staff: 1, ticks: q * 6720, step: 2 }, Q).doc; }
+    for (let b = 0; b < 32; b++) { const n = b === 9 ? 16 : 4; for (let q = 0; q < n; q++) d = place(d, { bar: b, staff: 0, ticks: q * (26880 / n), step: 3 + (q % 4) }, n === 16 ? X : Q).doc; for (let q = 0; q < 4; q++) d = place(d, { bar: b, staff: 1, ticks: q * 6720, step: 2 }, Q).doc; }
     logbook.addComposition(d); return d.id;
   });
   await page.evaluate(() => localStorage.removeItem("ws.compose.export"));
@@ -2159,7 +2159,7 @@ await step("v118: the Layout step — Export → Layout shows the plan's pages f
   const handle = async (bar) => { const h = page.locator(`.cp-lay-handle[data-bar="${bar}"]`); await h.scrollIntoViewIfNeeded(); const b = await h.boundingBox(); return { left: b.x, width: b.width, x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
   // the target is a fingertip, not a hairline
   const sizes = await page.evaluate(() => [...document.querySelectorAll(".cp-lay-handle")].map((h) => { const r = h.getBoundingClientRect(); return [r.width, r.height]; }));
-  if (sizes.length !== 16 || sizes.some(([w, h]) => w < 43.5 || h < 100)) throw new Error("every barline handle is ≥ 44 px wide and the height of the system: " + JSON.stringify(sizes));
+  if (sizes.length !== 32 || sizes.some(([w, h]) => w < 43.5 || h < 100)) throw new Error("every barline handle is ≥ 44 px wide and the height of the system: " + JSON.stringify(sizes));
   const tabs = await page.evaluate(() => [...document.querySelectorAll(".cp-lay-tab")].map((t) => { const r = t.getBoundingClientRect(); return [r.width, r.height]; }));
   if (tabs.some(([w, h]) => w < 43.5 || h < 43.5)) throw new Error("row tabs are 44 px: " + JSON.stringify(tabs));
   const auto = await lay();
@@ -2174,20 +2174,28 @@ await step("v118: the Layout step — Export → Layout shows the plan's pages f
   await page.touchscreen.tap(...(await page.locator(".cp-lay-menu [data-item=break]").boundingBox().then((b) => [b.x + b.width / 2, b.y + b.height / 2])));
   await page.waitForTimeout(120);
   let now = await lay();
-  if (JSON.stringify(now.rows[0]) !== "[1,2]" || now.rows[1][0] !== 3 || now.rows.flat().length !== 16 || now.lay[1]?.brk !== "break" || now.status.indexOf("1 break") !== 0) throw new Error("a finger breaks the row after bar 2: " + JSON.stringify(now));
+  if (JSON.stringify(now.rows[0]) !== "[1,2]" || now.rows[1][0] !== 3 || now.rows.flat().length !== 32 || now.lay[1]?.brk !== "break" || now.status.indexOf("1 break") !== 0) throw new Error("a finger breaks the row after bar 2: " + JSON.stringify(now));
   if (await page.locator(".cp-lay-menu").count()) throw new Error("the menu closes after its item");
   // a PEN drags bar 1's barline to the right: bar 1 widens, bar 2 gives, the row still ends at the same right edge
   h = await handle(0);
   const pen = (type, x, extra = {}) => page.evaluate(([type, x, y, extra]) => document.querySelector('.cp-lay-handle[data-bar="0"]').dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, isPrimary: true, pointerType: "pen", pointerId: 77, width: 1, height: 1, pressure: type === "pointerup" ? 0 : 0.5, clientX: x, clientY: y, ...extra })), [type, x, h.y, extra]);
   await pen("pointerdown", h.x);
-  for (let i = 1; i <= 8; i++) { await pen("pointermove", h.x + i * 8); await page.waitForTimeout(25); }
-  await pen("pointerup", h.x + 64);
+  const scrollTop = () => page.evaluate(() => document.querySelector(".cp-lay-scroll").scrollTop), top0 = await scrollTop();
+  for (let i = 1; i <= 8; i++) { await pen("pointermove", h.x + i * 8, { clientY: h.y + i * 14 }); await page.waitForTimeout(25); } // a hand that wanders well off the horizontal: still a sizing, and the pages never scroll under it (v119)
+  await pen("pointerup", h.x + 64, { clientY: h.y + 112 });
+  if ((await scrollTop()) !== top0) throw new Error("a sizing never scrolls the pages");
+  if ((await page.evaluate(() => getComputedStyle(document.querySelector(".cp-lay-handle")).touchAction)) !== "none") throw new Error("a barline handle owns its gesture (touch-action: none), so the browser cannot start a scroll mid-sizing");
   await page.waitForTimeout(150);
   const dragged = await lay();
   if (!(dragged.lay[0]?.w > 1.05) || JSON.stringify(dragged.rows) !== JSON.stringify(now.rows) || Math.abs(dragged.right[0] - now.right[0]) > 1e-6) throw new Error("a pen drag widens bar 1 inside its row: " + JSON.stringify({ w: dragged.lay[0], rows: dragged.rows, right: [now.right[0], dragged.right[0]] }));
   const h2 = await handle(0);
   if (!(h2.x > h.x + 20)) throw new Error(`the barline followed the pen: ${h.x} → ${h2.x}`);
   if (await page.locator(".cp-lay-menu").count()) throw new Error("a drag opens no menu");
+  // the same handle, a gesture that starts downward: the view pans by hand, nothing is sized, no menu opens
+  { const before = JSON.stringify((await lay()).lay), p = await handle(0);
+    await pen("pointerdown", p.x, { clientY: p.y }); for (let i = 1; i <= 6; i++) await pen("pointermove", p.x + i, { clientY: p.y - i * 12 }); await pen("pointerup", p.x + 6, { clientY: p.y - 72 });
+    if (!((await scrollTop()) > top0 + 40) || JSON.stringify((await lay()).lay) !== before || (await page.locator(".cp-lay-menu").count())) throw new Error("a vertical gesture on a barline scrolls the pages and sizes nothing: " + (await scrollTop()));
+    await page.evaluate(() => { document.querySelector(".cp-lay-scroll").scrollTop = 0; }); }
   // a MOUSE locks the second row from its tab
   const second = now.rows[1];
   await page.locator('.cp-lay-tab[data-row="1"]').scrollIntoViewIfNeeded();
@@ -2198,7 +2206,7 @@ await step("v118: the Layout step — Export → Layout shows the plan's pages f
   if (JSON.stringify(now.rows[1]) !== JSON.stringify(second) || now.lay[second.at(-1) - 1]?.brk !== "break" || now.lay[second[0] - 1]?.brk !== "keep" || !(await page.locator('.cp-lay-tab[data-row="1"].locked').count())) throw new Error("a mouse locks row 2: " + JSON.stringify(now));
   // keeps pull bars onto the third row until one cannot fit: that one is refused and changes nothing
   let refused = false;
-  for (let i = 0; i < 12 && !refused; i++) {
+  for (let i = 0; i < 30 && !refused; i++) {
     const before = await lay(), end = before.rows[2].at(-1) - 1;
     h = await handle(end); await page.touchscreen.tap(h.x, h.y);
     await page.waitForSelector(".cp-lay-menu");
@@ -2207,6 +2215,7 @@ await step("v118: the Layout step — Export → Layout shows the plan's pages f
     const after = await lay();
     if (JSON.stringify(after.lay) === JSON.stringify(before.lay)) { refused = true; if (!/does not fit/.test(await page.textContent(".lb-toast"))) throw new Error("a refusal says why: " + (await page.textContent(".lb-toast"))); if (after.tight.length) throw new Error("a refused keep leaves no tight row"); }
   }
+  { const v = await page.evaluate(() => { const r = document.querySelector(".cp-lay").__layout.plan.L.hit.systems[2]; return { n: r.bars.length, scale: r.scale }; }); if (!(v.n >= 6) || !(v.scale < 0.6)) throw new Error("v119: the judge is Leif — a row may be kept far tighter than natural spacing before it is refused: " + JSON.stringify(v)); }
   if (!refused) throw new Error("a keep past what fits is refused: " + JSON.stringify((await lay()).rows));
   const full = await lay();
   // undo / redo
@@ -2225,7 +2234,7 @@ await step("v118: the Layout step — Export → Layout shows the plan's pages f
   if (JSON.stringify(await screenRows()) !== editorRows) throw new Error("the editor's screen layout ignores pins");
   await page.waitForTimeout(450); // the save
   const stored = await lb((m, [id]) => m.logbook.composition(id).measures.map((x) => x.lay ?? null), id);
-  if (JSON.stringify(stored.slice(0, 16)) !== JSON.stringify(full.lay.slice(0, 16))) throw new Error("the pins are saved with the piece: " + JSON.stringify(stored));
+  if (JSON.stringify(stored.slice(0, 32)) !== JSON.stringify(full.lay.slice(0, 32))) throw new Error("the pins are saved with the piece: " + JSON.stringify(stored));
   // a bigger staff: the full first row no longer fits → red, Save blocked, Release frees it
   let tight = 0;
   for (let i = 0; i < 16 && !tight && !(await page.locator("#cp-x-larger").isDisabled()); i++) { await page.click("#cp-x-larger"); tight = await page.evaluate(() => document.querySelector("#cp-x-paper").__plan.tight.length); }
