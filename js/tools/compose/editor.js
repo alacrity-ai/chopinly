@@ -568,14 +568,27 @@ export function openEditor({ id, ctx, onClose }) {
     follow(lastHead); // the last head lassoed sets the active voice
     showSel(); sync(); haptic(selection.size ? 6 : 0);
   }
-  /** The sideways chevrons (§8.5k, v114): ">" arms the next shorter value, "<" the next longer — the palette's ladder, main row and ▾ row together — through the same path as a palette tap (a selection is retyped first). */
+  /** The sideways chevrons (§8.5k, v114): ">" the next shorter value, "<" the next longer — the palette's ladder, main row and ▾ row together. With notes selected (v115, WSHED-153: Leif's red flash on a 16th → 8th) each note steps from ITS OWN base, dots kept, through the rail's own retype; a uniform result arms that value as the rail does. With nothing selected the armed value steps, as a palette tap does. */
   const LADDER = [0, ...MAIN_BASES, ...MORE_BASES.filter((b) => b > 0)]; // longest → shortest
   function stepDur(dir) {
-    const i = LADDER.indexOf(armed.base), j = i + (dir === "right" ? 1 : -1);
-    if (j < 0 || j >= LADDER.length) { toast(`already the ${dir === "right" ? "shortest" : "longest"} — ${durName(armed.base)}`); haptic(4); return; }
-    const had = selection.size;
-    act("dur", LADDER[j]);
-    if (armed.base === LADDER[j]) toast(`${durName(LADDER[j])}${had ? "" : " armed"}`);
+    const by = dir === "right" ? 1 : -1, end = dir === "right" ? "shortest" : "longest";
+    const rung = (base) => { const j = LADDER.indexOf(base) + by; return j >= 0 && j < LADDER.length ? LADDER[j] : null; };
+    if (selection.size) {
+      if (!allNotes()) { toast("pick notes to retype"); return; }
+      const ids = selEvIds(), next = ids.map((id) => rung(find(doc, id).ev.dur.base));
+      if (next.every((b) => b === null)) { toast(`already the ${end} — ${durName(find(doc, ids[0]).ev.dur.base)}`); haptic(4); return; }
+      try { commit(retype(doc, ids, (ev) => ({ base: rung(ev.dur.base) ?? ev.dur.base, dots: ev.dur.dots }))); haptic(8); }
+      catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); return; }
+      const bases = new Set(ids.map((id) => find(doc, id).ev.dur.base));
+      if (bases.size === 1) { armed = { ...armed, base: [...bases][0] }; saveArm(); toast(durName(armed.base)); }
+      else toast(`${next.filter(Boolean).length} notes ${by > 0 ? "shorter" : "longer"}`);
+      if (mode !== "place") setMode("place"); else sync();
+      return;
+    }
+    const b = rung(armed.base);
+    if (b === null) { toast(`already the ${end} — ${durName(armed.base)}`); haptic(4); return; }
+    act("dur", b);
+    if (armed.base === b) toast(`${durName(b)} armed`);
   }
   /** The upright chevrons (§8.5k, v114): ∧ raises the selected notes' accidentals one step (C → C♯ → C𝄪), ∨ lowers them (C → C♭ → C𝄫), the letter never respelled; with nothing selected they step the one-shot armed accidental the way the palette's ♯ ♭ ♮ do. */
   const ACC_GLYPH = { 2: "𝄪", 1: "♯", 0: "♮", "-1": "♭", "-2": "𝄫" };

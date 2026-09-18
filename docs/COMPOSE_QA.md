@@ -112,7 +112,7 @@ phase's card (WSHED-115 … 122).
 ## Gesture v2 — the chevrons (WSHED-131, v103; four ways since WSHED-152, v114)
 
 - Gesture on: draw a right arrowhead (>) on empty staff and the palette arms the next shorter value (quarter → eighth → sixteenth …); a < walks back (eighth → quarter → half …). A toast names the value; at either end it says "already the shortest / longest".
-- Select some notes first and the > or < retypes them (as a palette tap does) and arms the value.
+- Select some notes first and the > or < steps each from its own value (a sixteenth → an eighth whatever is lit, eating the rest beside it), arms it when they all agree; a mixed pick steps each one and leaves the lit value alone. Dots survive a step.
 - Select a note and draw ∧: C → C♯ → C𝄪, then "already double sharp" and nothing changes. ∨: C𝄪 → C♯ → C♮ (a cautionary natural in C) → C♭ → C𝄫, then "already double flat". The letter never changes. A chord of C♯ and E♭ under one ∧ → C𝄪 and E♮; keep going and E climbs alone while C𝄪 stays. Undo steps one chevron at a time; a refused one leaves nothing to undo.
 - Nothing selected: ∧ arms ♯ for the next tap (the palette's ♯ lights), ∧ again 𝄪; ∨ from there ♯, ♮, ♭, 𝄫. A rest or a dynamic selected: "pick a note for the accidental".
 - A line, a loop, a flat or lopsided stroke is not a chevron: lasso and strike behave as before. A chevron drawn square on the diagonal is nothing.
