@@ -339,10 +339,14 @@ test("stepAccidental (v114): a step up or down through ♯ 𝄪 and ♭ 𝄫, cl
   assert.throws(() => stepAccidental(d, [{ ev: id }], -1), /already double flat/);
   assert.equal(midiOf(p(d)), 69, "B𝄫4 sounds as A4");
   validate(d);
-  // a natural the key implies shows as a cautionary on the way through, as the ♮ button does
+  // a step back to what the key implies writes no sign of its own (v117: the layout adds a natural only where the bar needs one); the ♮ button still writes a cautionary
   let e = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, { ...Q, alter: 1 }).doc;
   e = stepAccidental(e, [{ ev: bar1(e)[0].id }], -1);
-  assert.deepEqual([bar1(e)[0].pitches[0].alter, bar1(e)[0].pitches[0].acc], [0, "show"]);
+  assert.deepEqual([bar1(e)[0].pitches[0].alter, bar1(e)[0].pitches[0].acc], [0, undefined]);
+  e = accidental(e, [{ ev: bar1(e)[0].id }], 0);
+  assert.deepEqual([bar1(e)[0].pitches[0].alter, bar1(e)[0].pitches[0].acc], [0, "show"], "the rail's ♮ is the courtesy");
+  e = stepAccidental(e, [{ ev: bar1(e)[0].id }], 1); e = stepAccidental(e, [{ ev: bar1(e)[0].id }], -1);
+  assert.equal(bar1(e)[0].pitches[0].acc, undefined, "a step clears an explicit sign");
   // a chord: C♯ and E♭ up → C𝄪 and E♮; up again → only E moves (E♯), C𝄪 stays; up again → E𝄪; up again → nothing can move
   let c = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 0 }, { ...Q, alter: 1 }).doc;      // C4♯
   c = place(c, { bar: 0, staff: 0, ticks: 0, step: 2 }, { ...Q, alter: -1 }).doc;               // + E4♭

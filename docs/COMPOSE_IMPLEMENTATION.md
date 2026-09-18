@@ -535,3 +535,12 @@ control rail for a captioned Input section above the Rails checklist, rows with 
 are untouched but for the markup; `icons.js` gains `sliders`. E2E: an `opt(sel)` helper opens the
 panel, taps, closes it; the header step checks the panel's order, captions, a live switch, and
 that the control rail lost the three. sw.js CACHE + version.js → v116.
+
+## Phase 25 — chevrons write no courtesy signs — v117 (WSHED-155, 2026-09-18)
+
+Leif: in G, D♯ → 𝄪 → ♯ → back drew a natural; redundant. `stepAccidental` had spelled through the
+buttons' `spell`, which stamps `acc: "show"` on a return to the key (the rail's cautionary-on-request).
+Now the step sets `alter` and deletes `acc`; `layout.js` already draws a sign only where the pitch
+differs from what is in force (key, or an earlier sign on the letter in the bar). Layout test: bare D
+in G after the round trip; a natural only after a D♯ earlier in the bar; a step up to a sign the bar
+carries draws nothing twice. sw.js CACHE + version.js → v117.

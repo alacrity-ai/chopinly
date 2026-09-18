@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newComposition } from "../js/lib/compose/model.js";
-import { place, setClef, setKey, setTime, articulate, arpeggio, accidental, slur, addExpression, addHairpin, nudgeExpressionY, MARKS } from "../js/lib/compose/engine.js";
+import { place, setClef, setKey, setTime, articulate, arpeggio, accidental, stepAccidental, slur, addExpression, addHairpin, nudgeExpressionY, MARKS } from "../js/lib/compose/engine.js";
 import { things } from "../js/lib/compose/hit.js";
 import { layoutComposition, SYS_H, TOP_PAD } from "../js/lib/compose/layout.js";
 import { slotAt, thingAt, ticksAt, xOfTicks, barAt } from "../js/lib/compose/hit.js";
@@ -521,4 +521,27 @@ test("accidental room: the sign takes the previous column's white space first, t
   const F = layoutComposition(f, { unit: 12, width: 1024 }), first = F.drawn.find((x) => !x.rest && x.bar === 1), bar = F.hit.systems[0].bars.find((hb) => hb.index === 1);
   assert.ok(first.heads[0].accX - bar.bodyX0 >= 0.4 - 1e-9, `air after the barline ${first.heads[0].accX - bar.bodyX0} S`);
   void plain;
+});
+
+test("a chevron step back to the key draws no sign (v117, WSHED-155): in G, D♯ → D𝄪 → D♯ → D is a bare D; after an earlier D♯ in the bar it is a natural; a step up to a sign the bar carries draws nothing", () => {
+  const G = 1, D = 6; // one sharp; D5 is step 6 in the treble (B4 is 4)
+  let d = setKey(fresh(), 0, G);
+  d = place(d, { bar: 0, staff: 0, ticks: 0, step: D }, Q).doc;
+  const id = d.measures[0].staves[0].voices[0][0].id, one = (x) => layoutComposition(x, { width: 900, unit: 12 }).drawn.find((n) => n.id === id).heads[0].acc;
+  assert.equal(one(d), null, "a plain D in G");
+  d = stepAccidental(d, [{ ev: id }], 1); assert.equal(one(d), 1);
+  d = stepAccidental(d, [{ ev: id }], 1); assert.equal(one(d), 2);
+  d = stepAccidental(d, [{ ev: id }], -1); assert.equal(one(d), 1);
+  d = stepAccidental(d, [{ ev: id }], -1); assert.equal(one(d), null, "Leif's case: no natural, the key says D");
+  assert.equal(d.measures[0].staves[0].voices[0][0].pitches[0].acc, undefined);
+  // the same D on beat 2 after a D♯ on beat 1: the bar needs the natural, and the layout supplies it
+  let e = setKey(fresh(), 0, G);
+  e = place(e, { bar: 0, staff: 0, ticks: 0, step: D }, { ...Q, alter: 1 }).doc;
+  e = place(e, { bar: 0, staff: 0, ticks: PPQ, step: D }, { ...Q, alter: 1 }).doc;
+  const second = e.measures[0].staves[0].voices[0][1].id, two = (x) => layoutComposition(x, { width: 900, unit: 12 }).drawn.find((n) => n.id === second).heads[0].acc;
+  assert.equal(two(e), null, "the first D♯ carries through the bar");
+  e = stepAccidental(e, [{ ev: second }], -1);
+  assert.equal(two(e), 0, "a natural after the bar's D♯");
+  e = stepAccidental(e, [{ ev: second }], 1);
+  assert.equal(two(e), null, "back to ♯: the earlier sign still carries, nothing drawn twice");
 });
