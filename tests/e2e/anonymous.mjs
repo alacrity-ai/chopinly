@@ -376,7 +376,7 @@ await step("pinned nav: header + strip stay in view when scrolled", async () => 
   await page.click("#nav-slot [data-go='']");
   await page.waitForSelector(".lb-hero");
 });
-await step("tool menu: Logbook / rule / instruments / rule / training; labels aligned", async () => {
+await step("tool menu: Logbook / rule / your material / rule / instruments / rule / training; labels aligned", async () => {
   await page.goto(`${BASE}/#/metronome`);
   await page.waitForSelector(".picker-btn");
   await page.click(".picker-btn");
@@ -387,7 +387,7 @@ await step("tool menu: Logbook / rule / instruments / rule / training; labels al
     const gw = [...document.querySelectorAll(".picker-glyph")].map((el) => Math.round(el.getBoundingClientRect().width));
     return { kids, xs, gw };
   });
-  const want = ["Logbook", "—", "Metronome", "Piano", "Pitch pipe", "Tuner", "—", "Recorder", "—", "Scores", "Compose", "—", "Sight singing", "Ear training"];
+  const want = ["Logbook", "—", "Scores", "Compose", "Recorder", "—", "Metronome", "Piano", "Pitch pipe", "Tuner", "—", "Sight singing", "Ear training"];
   if (JSON.stringify(r.kids.map((k) => k.toLowerCase())) !== JSON.stringify(want.map((k) => k.toLowerCase()))) throw new Error("order " + JSON.stringify(r.kids));
   if (new Set(r.xs).size !== 1 || new Set(r.gw).size !== 1) throw new Error("misaligned " + JSON.stringify(r));
   await shot("19-tool-menu");
