@@ -20,7 +20,7 @@ export async function importMusicXmlFile(file) {
   return { composition: logbook.addComposition(doc), warnings };
 }
 
-export function mountList(root, { store }, { open }) {
+export function mountList(root, { store }, { open, help }) {
   let highlightId = null;
   let q = "", sort = store.get("sort", "recent"), group = store.get("group", false), tagFilter = store.get("tags", []);
   if (!SORT_IDS.includes(sort)) sort = "recent";
@@ -46,6 +46,7 @@ export function mountList(root, { store }, { open }) {
       <section class="scores compose" aria-label="compose">
         <div class="sc-head">
           <h2 class="lb-sect sc-sect">compositions${total ? `<span class="lb-sect-sub">${total}</span>` : ""}</h2>
+          <button type="button" class="sc-add sc-add-quiet cp-help-btn" id="cp-help" aria-label="help — how Compose works">${icon("help")}<span>help</span></button>
           <button type="button" class="sc-add sc-add-quiet" id="cp-import" aria-label="import MusicXML files">${icon("download")}<span>import</span></button>
           <button type="button" class="sc-add" id="cp-new" aria-label="new composition">${icon("plus")}<span>new</span></button>
           <input type="file" id="cp-import-file" accept="${XML_ACCEPT}" multiple hidden aria-label="choose MusicXML files">
@@ -57,6 +58,7 @@ export function mountList(root, { store }, { open }) {
             ? `<p class="lb-empty sc-empty">nothing matches.</p>`
             : groups.map((gr) => `${gr.composer !== null ? `<div class="lb-sect sc-groupname">${gr.composer ? esc(gr.composer) : "no composer"}<span class="lb-sect-sub">${gr.scores.length}</span></div>` : ""}<ul class="sc-list" id="cp-list">${gr.scores.map(row).join("")}</ul>`).join("")}
       </section>`;
+    root.querySelector("#cp-help").addEventListener("click", () => help?.());
     root.querySelector("#cp-new").addEventListener("click", async () => {
       const r = await openCompositionDetails(null);
       if (r.created) { haptic(8); open(r.created.id); }

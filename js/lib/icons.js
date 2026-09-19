@@ -17,6 +17,7 @@ const P = {
   pencil: `<path d="M5 19.2l.9-3.6L15.6 5.9a1.6 1.6 0 0 1 2.3 0l.9.9a1.6 1.6 0 0 1 0 2.3l-9.7 9.7L5 19.2Z"/><path d="M13.9 7.6l3.2 3.2"/>`,
   user: `<circle cx="12" cy="8.2" r="3.6"/><path d="M4.8 19.5c.9-3.6 3.6-5.4 7.2-5.4s6.3 1.8 7.2 5.4"/>`,
   info: `<circle cx="12" cy="12" r="8.6"/><path d="M12 11.2v5.2"/><path d="M12 7.7v.3" stroke-width="2.6"/>`,
+  help: `<circle cx="12" cy="12" r="8.6"/><path d="M9.6 9.4a2.5 2.5 0 1 1 2.9 2.5v1.7"/><path d="M12.5 16.6v.3" stroke-width="2.6"/>`,
   download: `<path d="M12 4.5v10.2"/><path d="M8.2 11l3.8 3.8 3.8-3.8"/><path d="M5 16.5v2a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2"/>`,
   share: `<path d="M12 14.5V3.5"/><path d="M8.2 7.3L12 3.5l3.8 3.8"/><path d="M5 11.5v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/>`,
   home: `<path d="M4.5 11.2 12 5l7.5 6.2"/><path d="M6.5 10v9h11v-9"/><path d="M10.2 19v-4.6h3.6V19"/>`,

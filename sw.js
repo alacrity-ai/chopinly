@@ -1,6 +1,6 @@
 // Network-first, cache-fallback. Installable + fully offline, but never serves
 // a stale shell when the network is up (see docs/DESIGN.md §5).
-const CACHE = "chopinly-v121";
+const CACHE = "chopinly-v122";
 const SHELL = [
   "/app",
   "/css/app.css",
@@ -88,6 +88,25 @@ const SHELL = [
   "/js/tools/compose/layoutview.js",
   "/js/tools/compose/savefile.js",
   "/js/tools/compose/favorites.js",
+  "/js/tools/compose/help.js",
+  "/js/lib/help/content.js",
+  "/js/lib/help/search.js",
+  "/js/lib/help/figures.js",
+  // the help screenshots (WSHED-159): help must read on a plane like everything else
+  "/img/help/compositions-list.png",
+  "/img/help/editor.png",
+  "/img/help/export-sheet.png",
+  "/img/help/favorites-panel.png",
+  "/img/help/layout-view.png",
+  "/img/help/options-panel.png",
+  "/img/help/rail-controls.png",
+  "/img/help/rail-dynamics.png",
+  "/img/help/rail-form.png",
+  "/img/help/rail-keys.png",
+  "/img/help/rail-marks.png",
+  "/img/help/rail-notes.png",
+  "/img/help/rail-piano.png",
+  "/img/help/rail-transport.png",
   "/vendor/pdfjs/pdf.mjs",
   "/vendor/pdfjs/pdf.worker.mjs",
   "/vendor/pdfjs/standard_fonts/FoxitDingbats.pfb",
