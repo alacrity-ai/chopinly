@@ -411,6 +411,21 @@ test("monthByGoal sums to the month total; minutesBetween clips", () => {
   assert.deepEqual(lb.metrics.monthByGoal(2026, 7), []);
 });
 
+test("compositionOfScore: the piece a score was exported from — the latest when several point at it, none for an imported PDF or once the piece is gone (WSHED-157)", () => {
+  const { lb } = fresh();
+  lb.addComposition({ id: "c1", title: "First", measures: [], openedAt: 1 });
+  lb.addComposition({ id: "c2", title: "Second", measures: [], openedAt: 1 });
+  assert.equal(lb.compositionOfScore("s1"), null);
+  assert.equal(lb.compositionOfScore(null), null);
+  lb.updateComposition("c1", { scoreId: "s1" });
+  assert.equal(lb.compositionOfScore("s1").id, "c1");
+  assert.equal(lb.compositionOfScore("s2"), null);
+  lb.updateComposition("c2", { scoreId: "s1" });
+  assert.ok(["c1", "c2"].includes(lb.compositionOfScore("s1").id));
+  lb.removeComposition(lb.compositionOfScore("s1").id); lb.removeComposition(lb.compositionOfScore("s1").id);
+  assert.equal(lb.compositionOfScore("s1"), null);
+});
+
 test("compositions carry title, composer and tags like scores, cleaned the same way, with the same filters and sorts", () => {
   const { lb } = fresh();
   const c = lb.addComposition({ id: "c1", title: "  Study  in C ", composer: "Leif", tags: ["study", "study", " exercise "], measures: [], openedAt: 1 });

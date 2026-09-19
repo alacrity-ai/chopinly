@@ -589,6 +589,8 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
   /** Compositions — the same filters and sorts as scores (q over title / composer / tags; every tag must match). */
   const compositions = ({ q = "", tags = [], sort = "recent" } = {}) => sortScores(filterScores(doc.compositions, { q, tags }), sort);
   const composition = (id) => doc.compositions.find((c) => c.id === id) ?? null;
+  /** The composition a score was exported from (its `scoreId` points here; WSHED-157) — the most recently changed when several do; null for an imported PDF. */
+  const compositionOfScore = (scoreId) => (scoreId ? doc.compositions.filter((c) => c.scoreId === scoreId).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0] ?? null : null);
   /** Register a composition document (built by js/lib/compose/model.js). */
   function addComposition(c) {
     if (!c?.id || composition(c.id)) throw new Error("bad composition");
@@ -859,7 +861,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     // ink + brushes
     inkFor, inkPages, setInk, brushes, brush, addBrush, updateBrush, removeBrush, reorderBrushes, resetBrushes,
     // compositions
-    compositions, composition, addComposition, updateComposition, removeComposition, compositionSyncable,
+    compositions, composition, compositionOfScore, addComposition, updateComposition, removeComposition, compositionSyncable,
     // other tools
     addAuto,
     // sync

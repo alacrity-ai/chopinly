@@ -174,6 +174,7 @@ export function openDetails(id, { onPractice = null } = {}) {
   const s = logbook.score(id);
   if (!s) { toast("that score is gone"); return Promise.resolve({ deleted: true }); }
   const goal = s.goalId ? logbook.goal(s.goalId) : null;
+  const composed = logbook.compositionOfScore(id); // the piece this PDF was exported from, when Compose made it (WSHED-157)
   const composers = suggestComposers(logbook.goals({ status: "all" }), logbook.scores());
   const tags = suggestTags(logbook.scores());
   const here = scoreStore.has(id);
@@ -193,6 +194,7 @@ export function openDetails(id, { onPractice = null } = {}) {
       <ul class="lb-acct-list">
         <li><button type="button" class="lb-acct-row" id="sc-d-goal">${goal ? `<i class="lb-type ${(TYPES[goal.type] ?? TYPES.other).cls}" aria-hidden="true">${(TYPES[goal.type] ?? TYPES.other).glyph}</i>` : icon("log")}<span><b>${goal ? esc(displayName(goal)) : "link to a goal"}</b><small>${goal ? "the goal this score belongs to — tap to change" : "so practicing it and opening it are one gesture"}</small></span></button></li>
         <li><button type="button" class="lb-acct-row" id="sc-d-practice">${icon("play")}<span><b>practice this</b><small>${goal ? `start the clock on ${esc(displayName(goal))}` : "starts the clock on a new piece with this title"}</small></span></button></li>
+        ${composed ? `<li><button type="button" class="lb-acct-row" id="sc-d-compose">${icon("nib")}<span><b>go to compose</b><small>open ${esc(composed.composer ? `${composed.composer} – ${composed.title}` : composed.title)} in Compose, where this score was written</small></span></button></li>` : ""}
         ${cloudRow}
         <li><button type="button" class="lb-acct-row" id="sc-d-save-file" ${here ? "" : "disabled"}>${icon("download")}<span><b>save this score to a file</b><small>${here ? "the PDF exactly as it was imported" : "the file isn't on this device"}</small></span></button></li>
       </ul>
@@ -221,6 +223,7 @@ export function openDetails(id, { onPractice = null } = {}) {
     if (!save()) return;
     try { const g = practiceScore(id); close(); onPractice?.(g); } catch (e) { err.textContent = e.message; }
   });
+  body.querySelector("#sc-d-compose")?.addEventListener("click", () => { if (!save()) return; close(); location.hash = `#/compose/${encodeURIComponent(composed.id)}`; });
   body.querySelector("#sc-d-save-file").addEventListener("click", () => { if (save()) saveScoreFile(id); });
   body.querySelector("#sc-d-cloud")?.addEventListener("click", async (e) => {
     if (!save()) return;

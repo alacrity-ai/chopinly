@@ -185,6 +185,7 @@ await step("the more sheet offers fit + save; `save this score to a file` yields
   await ensureChrome();
   await page.click("#sc-more");
   await page.waitForSelector(".sc-more-wrap.open");
+  if (await page.locator(".sc-more-wrap [data-compose]").count()) throw new Error("an imported PDF has no way back to Compose (WSHED-157)");
   await page.screenshot({ path: `${S}/sc-06-more.png` });
   const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 8000 }), page.click(".sc-more-wrap [data-save]")]);
   const path = await dl.path();

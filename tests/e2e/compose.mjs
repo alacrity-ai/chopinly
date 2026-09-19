@@ -902,6 +902,26 @@ await step("export: File ▾ → Export PDF opens the sheet with a page-1 previe
   const dark = await page.evaluate(() => { const c = document.querySelector("#sc-page"); const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; let k = 0; for (let i = 0; i < d.length; i += 16) if (d[i] < 128) k++; return k / (d.length / 16); });
   if (!(dark > 0.002)) throw new Error("the reader shows a blank page: " + dark);
   await page.screenshot({ path: `${S}/cp-20-export-in-scores.png` });
+  // the way back (WSHED-157): a score Compose made offers "go to compose" right under "practice this" — in the reader's … sheet and in the details sheet — and it lands in the editor on that piece
+  await page.click("#sc-more");
+  await page.waitForSelector(".sc-more-wrap.open [data-compose]");
+  const moreRows = await page.evaluate(() => [...document.querySelectorAll(".sc-more-wrap .lb-acct-list:first-of-type .lb-acct-row")].map((b) => (b.dataset.practice ? "practice" : b.dataset.compose ? "compose" : b.dataset.details ? "details" : "?")));
+  if (moreRows.join() !== "practice,compose,details") throw new Error("go to compose sits under practice this: " + moreRows.join());
+  if (!/Compose E2E|Untitled|in Compose/.test(await page.textContent(".sc-more-wrap [data-compose]"))) throw new Error("the row names the piece: " + (await page.textContent(".sc-more-wrap [data-compose]")));
+  await page.waitForTimeout(350); // the sheet's card-in
+  await page.screenshot({ path: `${S}/cp-20b-go-to-compose.png` });
+  await page.click(".sc-more-wrap [data-details]");
+  await page.waitForSelector(".sc-details-wrap.open #sc-d-compose");
+  if (!(await page.evaluate(() => document.querySelector("#sc-d-practice").closest("li").nextElementSibling?.querySelector("#sc-d-compose")))) throw new Error("details: go to compose sits under practice this");
+  await page.click("#sc-d-compose");
+  await page.waitForSelector(".cp-editor .cp-svg");
+  if (!page.url().endsWith(`#/compose/${cid}`) || (await page.locator(".sc-reader").count()) || (await page.locator(".lb-sheet-wrap:not(.closing)").count())) throw new Error("go to compose lands in the editor on the piece, the reader and the sheet gone: " + page.url());
+  await page.goto(`${BASE}/?app=1&t=91#/scores/${scoreId}`); // and once more from the reader's own sheet
+  await page.waitForSelector(".sc-reader");
+  await page.click("#sc-more"); await page.waitForSelector(".sc-more-wrap.open [data-compose]");
+  await page.click(".sc-more-wrap [data-compose]");
+  await page.waitForSelector(".cp-editor .cp-svg");
+  if (!page.url().endsWith(`#/compose/${cid}`) || (await page.locator(".sc-reader").count())) throw new Error("the reader's go to compose: " + page.url());
   // back in the editor: the sheet knows the linked score; a change + re-send replaces the file in place (same score, new bytes)
   await page.goto(`${BASE}/?app=1&t=9#/compose/${cid}`);
   await page.waitForSelector(".cp-editor .cp-svg");
