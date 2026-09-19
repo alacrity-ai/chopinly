@@ -81,6 +81,8 @@ await step("the article draws its figures at a real size, and its headings nest 
 await step("a screenshot article shows a real image, not a broken one", async () => {
   await page.goto(`${BASE}/?app=1#/compose/help/rail-form`);
   await page.waitForSelector(".hp-shot img");
+  // the shots are loading="lazy": wait for the bytes, not just the element (over the wire they are not instant)
+  await page.waitForFunction(() => [...document.querySelectorAll(".hp-shot img")].every((i) => i.complete && i.naturalWidth > 0), null, { timeout: 20000 });
   const ok = await page.$$eval(".hp-shot img", (e) => e.map((x) => x.naturalWidth > 100 && x.getBoundingClientRect().width > 100));
   if (!ok.length || ok.some((v) => !v)) throw new Error("shots " + JSON.stringify(ok));
   if ((await page.textContent(".hp-article h1")) !== "The Form rail") throw new Error("deep link");
