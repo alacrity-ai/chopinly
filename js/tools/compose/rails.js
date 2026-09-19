@@ -99,6 +99,9 @@ export function buildRails(host, { title, onAction, onCapture }) {
           <span class="cp-opt-sep" aria-hidden="true"></span>
           <span class="cp-opt-cap">Rails</span>
           ${RAILS.map(([k, label]) => `<button type="button" class="cp-btn cp-menu-row cp-rail-row" role="menuitemcheckbox" data-act="rail" data-rail="${k}" aria-checked="true"><span class="cp-check">${icon("check")}</span><span>${label}</span></button>`).join("")}
+          <span class="cp-opt-sep" aria-hidden="true"></span>
+          <span class="cp-opt-cap">Help</span>
+          <button type="button" class="cp-btn cp-menu-row cp-opt-row cp-helpbtn" data-act="help" aria-label="help and guides — how Compose works">${icon("help")}<span class="cp-opt-text"><span class="cp-word">Help &amp; guides</span><span class="cp-opt-hint">how Compose works · searchable</span></span></button>
         </span>
       </span>
     </div>

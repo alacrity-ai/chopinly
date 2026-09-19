@@ -846,6 +846,7 @@ export function openEditor({ id, ctx, onClose }) {
       case "input": setInput(arg); return; // Pen | Touch (v101)
       case "gesture": setGesture(!gestureOn); return; // Gesture mode (v102)
       case "favorites": fav.toggle(); return; // Favorites (v109): show / hide the panel
+      case "help": location.hash = "#/compose/help"; return; // the help page (docs/COMPOSE_HELP_DESIGN.md §1) — the router hides this editor and brings it back
       case "select": setMode(mode === "select" ? "place" : "select"); return;
       case "pan": setMode(mode === "pan" ? "place" : "pan"); return;
       case "delete": deleteSelection(); return;
@@ -1176,6 +1177,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (e.key === "Escape" && pending) { setPending(null); return; }
     if (e.key === "Escape" && pasting) { setPasting(false); return; }
     if (e.key === "Escape") { if (selection.size) { selection.clear(); showSel(); sync(); } else setMode(mode === "select" ? "place" : "select"); return; }
+    if (e.key === "?" || (e.shiftKey && e.key === "/")) { e.preventDefault(); act("help"); return; } // some layouts (and Chromium's synthetic keys) report the unshifted "/"
     if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelection(); return; }
     if (KEY_BASE[e.key]) { act("dur", KEY_BASE[e.key]); return; }
     if (e.key === ".") { act("dot"); return; }
@@ -1218,6 +1220,8 @@ export function openEditor({ id, ctx, onClose }) {
 
   const api = {
     id, close,
+    /** The editor's own layer — the router hides it while the help page is up (docs/COMPOSE_HELP_DESIGN.md §7). */
+    el,
     /** For tests: the live state. */
     get state() { return { mode, armed, voice, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, pending, rails: railsOn, title, doc, input, penSeen, gesture: gestureOn, favorites: fav.state, canUndo: history.canUndo, canRedo: history.canRedo }; },
     /** For tests: the current layout. */

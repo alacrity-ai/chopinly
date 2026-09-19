@@ -435,7 +435,7 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   await page.click("[data-pop=cp-options-more]");
   if ((await page.locator("#cp-options-more .cp-rail-row").count()) !== 8) throw new Error("rail rows"); // controls · transport · notes · utility · expression · form · piano · notes2
   // Options ▾ (v116, WSHED-154): the panel is Input (Pen | Touch, Gesture, Favorites) over Rails; the control rail no longer carries them; a row's switch mirrors the state and the panel stays open
-  if ((await page.locator(".cp-options-btn .cp-pick-label").textContent()) !== "Options" || (await page.locator("#cp-options-more .cp-opt-cap").allTextContents()).join(",") !== "Input,Rails") throw new Error("the panel's captions");
+  if ((await page.locator(".cp-options-btn .cp-pick-label").textContent()) !== "Options" || (await page.locator("#cp-options-more .cp-opt-cap").allTextContents()).join(",") !== "Input,Rails,Help") throw new Error("the panel's captions");
   if (await page.locator(".cp-control .cp-inp, .cp-control .cp-gest, .cp-control .cp-favbtn").count()) throw new Error("the toggles still sit on the control rail");
   { const rows = await page.locator("#cp-options-more > *").evaluateAll((els) => els.map((e) => e.className.split(" ").pop())); if (rows.slice(0, 6).join(",") !== "cp-opt-cap,cp-opt-switch,cp-gest,cp-favbtn,cp-opt-sep,cp-opt-cap") throw new Error("panel order: " + rows.join(",")); }
   await page.click("#cp-options-more .cp-gest");
