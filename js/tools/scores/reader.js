@@ -193,12 +193,14 @@ export async function openReader({ id, page = null, ctx, onClose }) {
     showChrome();
     const cur = logbook.score(id) ?? s;
     const goal = cur.goalId ? logbook.goal(cur.goalId) : null;
+    const composed = logbook.compositionOfScore(id); // the way back to the piece this score was exported from (WSHED-157)
     const sheet = openSheet({
       title: cur.title,
       cls: "lb-acct-wrap sc-more-wrap",
       html: `
         <ul class="lb-acct-list">
           <li><button type="button" class="lb-acct-row" data-practice="1">${icon("play")}<span><b>practice this</b><small>${goal ? `start the clock on ${esc(goal.name)}` : "starts the clock on a new piece with this title"}</small></span></button></li>
+          ${composed ? `<li><button type="button" class="lb-acct-row" data-compose="1">${icon("nib")}<span><b>go to compose</b><small>open ${esc(composed.composer ? `${composed.composer} – ${composed.title}` : composed.title)} in Compose, where this score was written</small></span></button></li>` : ""}
           <li><button type="button" class="lb-acct-row" data-details="1">${icon("log")}<span><b>details</b><small>title, composer, tags, goal</small></span></button></li>
         </ul>
         <ul class="lb-acct-list">
@@ -208,6 +210,7 @@ export async function openReader({ id, page = null, ctx, onClose }) {
         <p class="lb-acct-copy lb-dim">tap the right edge to turn forward, the left to go back; the middle shows the bar. Page-turn pedals and arrow keys work too.</p>`,
     });
     sheet.body.querySelector("[data-practice]").addEventListener("click", () => { try { practiceScore(id); sheet.close(); } catch (e) { toast(e.message); } });
+    sheet.body.querySelector("[data-compose]")?.addEventListener("click", () => { sheet.close(); location.hash = `#/compose/${encodeURIComponent(composed.id)}`; }); // the route change unmounts Scores, which closes the reader
     sheet.body.querySelector("[data-details]").addEventListener("click", async () => { sheet.close(); const r = await openDetails(id); if (r?.deleted) close(); });
     sheet.body.querySelector("[data-fit]").addEventListener("click", (e) => {
       fitPref = e.currentTarget.dataset.fit; store.set("fit", fitPref);
