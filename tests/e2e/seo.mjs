@@ -6,7 +6,7 @@ const step = async (name, f) => { try { await f(); console.log("ok  ", name); } 
 const fresh = async (opts = {}) => { const ctx = await browser.newContext({ viewport: { width: 420, height: 860 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, ...opts }); const page = await ctx.newPage(); const errors = []; page.on("pageerror", (e) => errors.push(e.message)); return { ctx, page, errors }; };
 const noWiden = async (page, what) => { const w = await page.evaluate(() => ({ vw: innerWidth, doc: document.documentElement.scrollWidth })); if (w.doc > w.vw) throw new Error(`${what} widened ` + JSON.stringify(w)); };
 const ldOf = (page) => page.evaluate(() => JSON.parse(document.querySelector('script[type="application/ld+json"]').textContent));
-const TOOLS = { metronome: "metronome", piano: "keyboard", tuner: "tuner", "pitch-pipe": "pitchpipe", recorder: "recorder", "sight-singing": "sightsinging", "ear-training": "eartraining", "practice-log": "logbook" };
+const TOOLS = { metronome: "metronome", piano: "keyboard", tuner: "tuner", "pitch-pipe": "pitchpipe", recorder: "recorder", "sight-singing": "sightsinging", "ear-training": "eartraining", "practice-log": "logbook", scores: "scores", compose: "compose" };
 
 await step("discovery files: robots, sitemap, llms.txt, api-catalog, agent-skills, rss — 200 with the right content-type; Link header", async () => {
   const { page, ctx } = await fresh();
@@ -62,7 +62,8 @@ await step("tool pages: h1, canonical, SoftwareApplication + Breadcrumb JSON-LD,
   const tools = await page.goto(`${BASE}/tools`);
   if (tools.status() !== 200) throw new Error("tools index");
   const links = await page.$$eval(".l-toollist-big a", (els) => els.map((a) => a.getAttribute("href")));
-  if (links.length !== 8) throw new Error("tools index links " + JSON.stringify(links));
+  // every tool page, and nothing else (was a hard-coded 8 that went stale when Scores and Compose got pages)
+  if (JSON.stringify([...links].sort()) !== JSON.stringify(Object.keys(TOOLS).map((t) => `/${t}`).sort())) throw new Error("tools index links " + JSON.stringify(links));
   if (errors.length) throw new Error(errors.join("; "));
   await ctx.close();
 });

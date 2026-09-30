@@ -1,6 +1,6 @@
 // Shell: navbar with a tool dropdown (rendered from the registry), hash
 // routing (#/<tool-id>), screen wake-lock, service-worker registration.
-import { TOOLS, DEFAULT_TOOL } from "./registry.js";
+import { TOOLS, GROUPS, DEFAULT_TOOL } from "./registry.js";
 import { getAudio } from "./lib/audio.js";
 import { makeStore } from "./lib/store.js";
 import { logbook } from "./lib/logbook.js";
@@ -69,6 +69,16 @@ pickerMenu.hidden = true;
 picker.append(pickerBtn, pickerMenu);
 
 let lastCategory = null;
+const flyouts = new Map(); // group id → { item, panel } (WSHED-160)
+const toolItem = (tool) => {
+  const item = document.createElement("button");
+  item.className = "picker-item";
+  item.setAttribute("role", "menuitemradio");
+  item.dataset.tool = tool.id;
+  item.innerHTML = `<span class="picker-glyph" aria-hidden="true">${tool.glyph}</span>${tool.name}`;
+  item.addEventListener("click", () => { closeMenu(); mount(tool); });
+  return item;
+};
 for (const tool of TOOLS) {
   const category = tool.category ?? "tools";
   if (lastCategory !== null && category !== lastCategory) {
@@ -78,20 +88,78 @@ for (const tool of TOOLS) {
     pickerMenu.append(rule);
   }
   lastCategory = category;
-  const item = document.createElement("button");
-  item.className = "picker-item";
-  item.setAttribute("role", "menuitemradio");
-  item.dataset.tool = tool.id;
-  item.innerHTML = `<span class="picker-glyph" aria-hidden="true">${tool.glyph}</span>${tool.name}`;
-  item.addEventListener("click", () => { closeMenu(); mount(tool); });
-  pickerMenu.append(item);
+  if (!tool.group) { pickerMenu.append(toolItem(tool)); continue; }
+  // a grouped tool lives in its group's flyout; the group gets the one line in the menu
+  if (!flyouts.has(tool.group)) {
+    const g = GROUPS[tool.group];
+    const item = document.createElement("button");
+    item.className = "picker-item picker-group";
+    item.setAttribute("role", "menuitem");
+    item.setAttribute("aria-haspopup", "menu");
+    item.setAttribute("aria-expanded", "false");
+    item.dataset.group = g.id;
+    item.innerHTML = `<span class="picker-glyph" aria-hidden="true">${g.glyph}</span>${g.name}<span class="picker-more" aria-hidden="true">${icon("next")}</span>`;
+    const panel = document.createElement("div");
+    panel.className = "picker-flyout";
+    panel.setAttribute("role", "menu");
+    panel.setAttribute("aria-label", g.name);
+    panel.dataset.group = g.id;
+    panel.hidden = true;
+    panel.innerHTML = `<button class="picker-back" type="button">${icon("back")}<span>${g.name}</span></button>`;
+    panel.querySelector(".picker-back").addEventListener("click", () => { closeFlyout(); item.focus(); });
+    // a click on a flyout the mouse already opened keeps it; otherwise a click toggles
+    item.addEventListener("click", (e) => { if (panel.hidden) openFlyout(g.id, { focusFirst: e.detail === 0 }); else if (panel.dataset.by === "hover") panel.dataset.by = "click"; else closeFlyout(); });
+    item.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") openFlyout(g.id, { hover: true }); });
+    pickerMenu.append(item);
+    picker.append(panel);
+    flyouts.set(g.id, { item, panel });
+  }
+  flyouts.get(tool.group).panel.append(toolItem(tool));
+}
+// hovering any plain item with a mouse puts a flyout away
+pickerMenu.addEventListener("pointerover", (e) => { if (e.pointerType === "mouse" && e.target.closest(".picker-item:not(.picker-group)")) closeFlyout(); });
+
+/** Beside the menu when there's room; on a narrow phone it covers the menu, with a back row.
+ *  Hover only ever opens it beside — covering the menu under a moving mouse would pull the item away from the click. */
+function openFlyout(id, { focusFirst = false, hover = false } = {}) {
+  const { item, panel } = flyouts.get(id);
+  if (!panel.hidden && hover) return;
+  closeFlyout();
+  panel.hidden = false;
+  panel.classList.remove("over");
+  const pr = picker.getBoundingClientRect(), mr = pickerMenu.getBoundingClientRect(), ir = item.getBoundingClientRect();
+  const w = panel.offsetWidth;
+  const beside = mr.left - 6 - w >= 8;
+  if (!beside && hover) { panel.hidden = true; return; }
+  panel.dataset.by = hover ? "hover" : "click";
+  if (beside) {
+    panel.style.top = `${ir.top - pr.top - 5}px`;
+    panel.style.right = `${pr.right - mr.left + 6}px`;
+    panel.style.minWidth = "";
+  } else {
+    panel.classList.add("over");
+    panel.style.top = `${mr.top - pr.top}px`;
+    panel.style.right = `${pr.right - mr.right}px`;
+    panel.style.minWidth = `${mr.width}px`;
+    pickerMenu.classList.add("behind");
+  }
+  item.setAttribute("aria-expanded", "true");
+  if (focusFirst || panel.classList.contains("over")) panel.querySelector(".picker-item")?.focus({ preventScroll: true });
+}
+function closeFlyout() {
+  for (const { item, panel } of flyouts.values()) { panel.hidden = true; item.setAttribute("aria-expanded", "false"); }
+  pickerMenu.classList.remove("behind");
 }
 
 function openMenu() { pickerMenu.hidden = false; pickerBtn.setAttribute("aria-expanded", "true"); }
-function closeMenu() { pickerMenu.hidden = true; pickerBtn.setAttribute("aria-expanded", "false"); }
+function closeMenu() { closeFlyout(); pickerMenu.hidden = true; pickerBtn.setAttribute("aria-expanded", "false"); }
 pickerBtn.addEventListener("click", () => (pickerMenu.hidden ? openMenu() : closeMenu()));
 document.addEventListener("click", (e) => { if (!picker.contains(e.target)) closeMenu(); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  const open = [...flyouts.values()].find((f) => !f.panel.hidden);
+  if (open) { closeFlyout(); open.item.focus(); } else closeMenu(); // Escape peels the flyout first
+});
 
 // --- mounting + routing ----------------------------------------------------
 function mount(tool) {
@@ -101,11 +169,12 @@ function mount(tool) {
   shellStore.set("activeTool", tool.id);
   syncHash(tool);
   pickerBtn.innerHTML =
-    `<span class="picker-glyph" aria-hidden="true">${tool.glyph}</span><span class="picker-name">${tool.name}</span>` +
+    `<span class="picker-glyph" aria-hidden="true">${tool.glyph}</span><span class="picker-name">${tool.short ?? tool.name}</span>` +
     `<span class="chevron" aria-hidden="true">&#9662;</span>`;
-  for (const item of pickerMenu.children) {
+  for (const item of picker.querySelectorAll(".picker-item[data-tool]")) {
     item.setAttribute("aria-checked", String(item.dataset.tool === tool.id));
   }
+  for (const [id, { item }] of flyouts) item.classList.toggle("current", tool.group === id);
   tool.mount(root, { getAudio, store: makeStore(tool.id), setRunning });
   syncMetroChip();
 }

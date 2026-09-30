@@ -1,6 +1,6 @@
 // Network-first, cache-fallback. Installable + fully offline, but never serves
 // a stale shell when the network is up (see docs/DESIGN.md §5).
-const CACHE = "chopinly-v122";
+const CACHE = "chopinly-v123";
 const SHELL = [
   "/app",
   "/css/app.css",
@@ -19,6 +19,14 @@ const SHELL = [
   "/js/lib/skins.js",
   "/js/lib/icons.js",
   "/js/lib/music.js",
+  "/js/lib/chords/theory.js",
+  "/js/lib/chords/voicings.js",
+  "/js/lib/chords/diagram.js",
+  "/js/lib/chords/pluck.js",
+  "/js/lib/chords/data/guitar.js",
+  "/js/lib/chords/data/ukulele.js",
+  "/js/tools/chords/index.js",
+  "/js/tools/chords/ui.js",
   "/js/lib/melody-player.js",
   "/js/lib/pitch/detect.js",
   "/js/lib/pitch/mic.js",

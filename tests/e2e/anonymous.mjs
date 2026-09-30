@@ -376,18 +376,19 @@ await step("pinned nav: header + strip stay in view when scrolled", async () => 
   await page.click("#nav-slot [data-go='']");
   await page.waitForSelector(".lb-hero");
 });
-await step("tool menu: Logbook / rule / your material / rule / instruments / rule / training; labels aligned", async () => {
+await step("tool menu: Logbook / rule / your material / rule / instruments / rule / training / rule / Almanac (a flyout, WSHED-160); labels aligned", async () => {
   await page.goto(`${BASE}/#/metronome`);
   await page.waitForSelector(".picker-btn");
   await page.click(".picker-btn");
   await page.waitForSelector(".picker-menu:not([hidden])");
   const r = await page.evaluate(() => {
-    const kids = [...document.querySelector(".picker-menu").children].map((el) => el.classList.contains("picker-rule") ? "—" : el.lastChild.textContent.trim());
-    const xs = [...document.querySelectorAll(".picker-item")].map((el) => Math.round(el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft) + el.querySelector(".picker-glyph").getBoundingClientRect().width));
-    const gw = [...document.querySelectorAll(".picker-glyph")].map((el) => Math.round(el.getBoundingClientRect().width));
+    const label = (el) => [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join("").trim();
+    const kids = [...document.querySelector(".picker-menu").children].map((el) => el.classList.contains("picker-rule") ? "—" : label(el));
+    const xs = [...document.querySelectorAll(".picker-menu .picker-item")].map((el) => Math.round(el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft) + el.querySelector(".picker-glyph").getBoundingClientRect().width));
+    const gw = [...document.querySelectorAll(".picker-menu .picker-glyph")].map((el) => Math.round(el.getBoundingClientRect().width));
     return { kids, xs, gw };
   });
-  const want = ["Logbook", "—", "Scores", "Compose", "Recorder", "—", "Metronome", "Piano", "Pitch pipe", "Tuner", "—", "Sight singing", "Ear training"];
+  const want = ["Logbook", "—", "Scores", "Compose", "Recorder", "—", "Metronome", "Piano", "Pitch pipe", "Tuner", "—", "Sight singing", "Ear training", "—", "Almanac"];
   if (JSON.stringify(r.kids.map((k) => k.toLowerCase())) !== JSON.stringify(want.map((k) => k.toLowerCase()))) throw new Error("order " + JSON.stringify(r.kids));
   if (new Set(r.xs).size !== 1 || new Set(r.gw).size !== 1) throw new Error("misaligned " + JSON.stringify(r));
   await shot("19-tool-menu");
