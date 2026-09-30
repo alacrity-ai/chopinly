@@ -126,6 +126,12 @@ reward the wrong thing.
   vector PDF into Scores (or to a file), and MusicXML both
   ways: *Export MusicXML* for Sibelius / MuseScore / Finale / Dorico, *import* a
   `.musicxml` / `.xml` / `.mxl` as a new composition. Synced with an account.
+- **Almanac** — the reference shelf, one line in the menu that opens beside it.
+  First book: **chord diagrams** for guitar and ukulele — every key, triads through
+  thirteenths, altered and slash chords, each shape checked note by note. Search
+  by symbol (`F#m7b5`, `Bbmaj9`, `C/E`) or by type (`m7` → all twelve keys); a
+  chord's sheet has every shape, the notes spelled with their degrees, and a strum.
+  Dots show fingers, notes or degrees, roots in brass; left-handed mirrors it.
 - **Logbook** — goals, the clock, notes, today, history, analytics.
 
 ## Your data is yours

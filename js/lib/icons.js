@@ -66,6 +66,10 @@ const P = {
   copy: `<rect x="8.5" y="8.5" width="10.5" height="10.5" rx="1.6"/><path d="M5.5 15V6.5a1 1 0 0 1 1-1H15"/>`,
   cut: `<circle cx="7.5" cy="16.5" r="2.4"/><circle cx="16.5" cy="16.5" r="2.4"/><path d="M9.3 14.9 17.5 4.5M14.7 14.9 6.5 4.5"/>`,
   paste: `<rect x="6" y="6.5" width="12" height="13" rx="1.6"/><rect x="9.2" y="4.5" width="5.6" height="3.4" rx="1"/><path d="M9.5 12.5h5M9.5 15.5h3.5"/>`,
+  // the Almanac (WSHED-160): an open book; chord diagrams: a chord box with two dots
+  book: `<path d="M12 6.8c-1.9-1.4-4.4-2-7.5-1.8v12.4c3.1-.2 5.6.4 7.5 1.8 1.9-1.4 4.4-2 7.5-1.8V5c-3.1-.2-5.6.4-7.5 1.8Z"/><path d="M12 6.8v12.4"/>`,
+  chordbox: `<path d="M6 5.5h12" stroke-width="2.6"/><path d="M6 5.5v13M10 5.5v13M14 5.5v13M18 5.5v13M6 9.8h12M6 14.2h12M6 18.5h12"/><circle cx="10" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="14" cy="16.4" r="2" fill="currentColor" stroke="none"/>`,
+  search: `<circle cx="10.5" cy="10.5" r="5.8"/><path d="M15 15l4.8 4.8" stroke-width="2.2"/>`,
   log: `<path d="M6 4.5h9.5l3 3V19.5H6V4.5Z"/><path d="M9 10h6M9 13.5h6M9 17h3.5"/>`,
 };
 
