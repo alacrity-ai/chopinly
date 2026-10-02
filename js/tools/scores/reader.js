@@ -2,7 +2,9 @@
 // black, a top bar that gets out of the way. Tap the right 35 % to turn
 // forward, the left 35 % to go back, the middle to show the bar. Swipes and
 // the keys page-turn pedals send do the same. A turn never shows a blank
-// frame: the last page stays until the next is drawn.
+// frame: the last page stays until the next is drawn. The Pencil on the page
+// starts drawing mode (WSHED-161), and in drawing mode the page is the pen's:
+// no touch turns, scrolls or shows anything (WSHED-162) — only the keys turn.
 import { logbook } from "../../lib/logbook.js";
 import { icon } from "../../lib/icons.js";
 import { esc, toast, openSheet } from "../logbook/util.js";
@@ -93,16 +95,16 @@ export async function openReader({ id, page = null, ctx, onClose }) {
 
   // Ink (P2): the overlay + tool bar. While ink is on the bars stay put (no auto-hide).
   const inkBtn = el.querySelector("#sc-ink");
-  let inkPage = 0;
+  let inkPage = 0, down = null, penAt = -1e9;
   const ink = createInkLayer({
     sheet: el.querySelector(".sc-sheet"), bar: el.querySelector("#sc-inkbar"), scoreId: id, store,
-    onTap: (x, y) => tapAt(x, y),
-    onModeChange: (on) => { el.classList.toggle("inking", on); inkBtn.classList.toggle("on", on); inkBtn.setAttribute("aria-pressed", String(on)); if (on) { clearTimeout(chromeTimer); el.classList.add("chrome"); } else showChrome(); },
+    // a contact already on the glass when the mode changes (the palm that landed before the pen) is forgotten: its lift turns nothing
+    onModeChange: (on) => { down = null; el.classList.toggle("inking", on); inkBtn.classList.toggle("on", on); inkBtn.setAttribute("aria-pressed", String(on)); if (on) { clearTimeout(chromeTimer); el.classList.add("chrome"); } else showChrome(); },
   });
   const showChrome = () => { el.classList.add("chrome"); clearTimeout(chromeTimer); if (!ink.on) chromeTimer = setTimeout(() => el.classList.remove("chrome"), CHROME_MS); };
   const toggleChrome = () => { if (ink.on) return; if (el.classList.contains("chrome")) { clearTimeout(chromeTimer); el.classList.remove("chrome"); } else showChrome(); };
   showChrome();
-  /** A tap at a viewport point: the edges turn, the middle shows the bar. Shared with the ink layer. */
+  /** A tap at a viewport point: the edges turn, the middle shows the bar. */
   function tapAt(clientX) {
     const r = stage.getBoundingClientRect(), x = (clientX - r.left) / r.width;
     if (x >= 1 - ZONE) next(); else if (x <= ZONE) prev(); else toggleChrome();
@@ -158,9 +160,17 @@ export async function openReader({ id, page = null, ctx, onClose }) {
   const next = () => goTo(current + 1), prev = () => goTo(current - 1);
 
   // --- input ------------------------------------------------------------------
-  let down = null;
-  stage.addEventListener("pointerdown", (e) => { if (e.button && e.button !== 0) return; down = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId }; });
+  stage.addEventListener("pointerdown", (e) => {
+    if (e.button && e.button !== 0) return;
+    // the Pencil always draws — it wakes drawing mode with the stroke it is making (WSHED-161); in drawing mode every contact is the ink layer's to take or ignore (WSHED-162)
+    if (e.pointerType === "pen") penAt = performance.now();
+    if (ink.on || e.pointerType === "pen") { down = null; ink.begin(e); return; }
+    down = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
+  });
+  // The stage pans under a touch (touch-action: pan-y), and the browser settles that when the contact lands — before drawing mode is on. A stylus is never a pan: cancel it here, or the stroke that wakes drawing mode is scrolled away and cancelled. iOS names the stylus on the touch; elsewhere the pen's pointerdown has just fired.
+  stage.addEventListener("touchstart", (e) => { if ([...e.changedTouches].some((t) => t.touchType === "stylus") || performance.now() - penAt < 80) e.preventDefault(); }, { passive: false });
   stage.addEventListener("pointerup", (e) => {
+    if (ink.on) { down = null; return; }
     if (!down || down.id !== e.pointerId) return;
     const dx = e.clientX - down.x, dy = e.clientY - down.y, dt = performance.now() - down.t;
     down = null;

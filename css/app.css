@@ -2037,6 +2037,7 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 
 /* --- Scores P2: ink ----------------------------------------------------------- */
 .sc-ink { position: absolute; inset: 0; pointer-events: none; }
+.sc-ink-live { position: absolute; inset: 0; pointer-events: none; } /* a translucent stroke in flight: painted opaque, shown at the brush's opacity, so it is one even layer (WSHED-163) */
 .sc-bar { grid-template-columns: 2.8rem 1fr auto auto 2.8rem 2.8rem 2.8rem; gap: 0.35rem; }
 /* metronome in the reader bar (WSHED-110) */
 .sc-metro { display: inline-flex; align-items: center; gap: 0.15rem; margin-right: 0.35rem; }
@@ -2099,7 +2100,7 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .sc-br-check small { color: var(--fg-dim); font-size: 0.78rem; }
 .sc-br-formacts { display: flex; align-items: center; gap: 0.5rem; }
 .sc-br-formacts .lb-modal-save { margin-left: auto; }
-.sc-reader.inking .sc-stage { cursor: crosshair; }
+.sc-reader.inking .sc-stage { cursor: crosshair; touch-action: none; } /* drawing mode is the pen's: no touch pans the page (WSHED-162) */
 @media (max-width: 480px) { .sc-inkbar { gap: 0.2rem; } .sc-ink-btn { width: 2.3rem; height: 2.3rem; } }
 
 /* --- Compose (WSHED-114 P0): rails on top, the score below, palm-safe ------- */

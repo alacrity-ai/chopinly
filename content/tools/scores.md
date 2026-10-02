@@ -18,7 +18,7 @@ cta: "Open scores"
 
 **Bookmark** a page with one tap and give it a name — *coda*, *the hard bit*, *development* — then jump to it from a list. Bookmarks sync with an account, so the phone and the tablet agree.
 
-**Annotate** with an Apple Pencil (or any stylus). Three pen colours, a highlighter, an eraser that sweeps along the stroke, undo and redo. The pen draws and a finger still turns pages, so you can mark a fingering without leaving reading mode; a toggle lets a finger draw when there is no pencil. Ink lives on its own layer and syncs as tiny vector strokes. **The PDF is never modified**: *save this score to a file* gives you back exactly the bytes you imported.
+**Annotate** with an Apple Pencil (or any stylus). Three pen colours, a highlighter, an eraser that sweeps along the stroke, undo and redo. Put the Pencil on the page and you are drawing — no button first. While you draw, the page belongs to the pen: a resting palm or a stray finger turns nothing and moves nothing, and a highlighter stroke is one even tint however slowly you pull it. Tap the pencil button to go back to turning pages; a toggle lets a finger draw when there is no pencil. Ink lives on its own layer and syncs as tiny vector strokes. **The PDF is never modified**: *save this score to a file* gives you back exactly the bytes you imported.
 
 ## Big scans
 

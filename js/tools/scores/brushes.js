@@ -32,7 +32,10 @@ function preview(canvas, b) {
   const n = 40, pts = [];
   for (let i = 0; i <= n; i++) { const t = i / n; pts.push({ x: (0.08 + t * 0.84) * (cw / pageW), y: (0.5 + Math.sin(t * Math.PI * 2) * 0.28) * (ch / pageW), p: 0.35 + 0.5 * Math.sin(t * Math.PI) }); }
   st.pts = pts;
-  draw(cx, [st], pageW * dpr, pageW * dpr);
+  const scratch = document.createElement("canvas"); // a translucent brush goes down as one layer (WSHED-163)
+  scratch.width = canvas.width; scratch.height = canvas.height;
+  draw(cx, [st], pageW * dpr, pageW * dpr, { scratch: scratch.getContext("2d") });
+  scratch.width = 0; scratch.height = 0;
 }
 
 /**

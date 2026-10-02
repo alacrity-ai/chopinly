@@ -23,8 +23,10 @@ and on the phone; tick, or file the finding on the phase's card.
 ## Bookmarks and ink
 - [ ] Add a bookmark with a label; the button fills; jump from the list.
 - [ ] Pencil: a fingering (short strokes) lands where the tip was, with no visible lag; pressure changes the width.
-- [ ] Highlighter over a bar is translucent; the eraser sweeps a stroke; undo / redo.
-- [ ] The palm on the glass does not draw; a finger still turns pages while the Pencil is up; the finger toggle lets a finger draw.
+- [ ] Reading, ink off: put the Pencil on the page and write — the stroke is there from its first point, the ink bar appears, the page did not scroll under the tip (WSHED-161). A Pencil tap only turns ink mode on.
+- [ ] Ink mode: rest the palm, tap and drag with a finger anywhere on the page — nothing turns, nothing scrolls, nothing draws. A Pencil tap at the page edge leaves a dot. The bar buttons still take a finger; the pencil button leaves ink mode and fingers turn pages again (WSHED-162).
+- [ ] Highlighter over a bar is one even tint from end to end while drawing and after lifting, slow or fast, and where the stroke doubles back; two strokes are darker only where they cross (WSHED-163). The eraser sweeps a stroke; undo / redo.
+- [ ] The finger toggle lets a finger draw (and then a palm draws too — that is what it is for).
 - [ ] Ink survives closing and reopening the score; *save this score to a file* gives back a clean PDF (no ink).
 
 ## Practice link

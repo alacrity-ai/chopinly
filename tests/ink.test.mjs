@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { encode, decode, simplify, hit, travel, bytes, SCALE, PEN_W, HI_W, MIN_TRAVEL, COLORS } from "../js/lib/scores/ink.js";
+import { encode, decode, simplify, hit, travel, bytes, draw, layered, alphaOf, strokeFor, DEFAULT_BRUSHES, SCALE, PEN_W, HI_W, MIN_TRAVEL, COLORS } from "../js/lib/scores/ink.js";
 import { bodyCap, KINDS } from "../js/lib/merge.js";
 import { createLogbook } from "../js/lib/logbook.js";
 
@@ -71,4 +71,60 @@ test("a dense page stays under the ink cap; the cap is per kind and the logbook 
   lb.removeScore(sc.id);
   assert.equal(lb.doc.ink.length, 0, "removing the score removes its ink");
   assert.ok(lb.doc.deleted.some((d) => d.kind === "ink" && d.id === `${sc.id}:1`));
+});
+
+/** A 2D context that records what would change pixels: each stroke / fill / drawImage with the alpha and blend it ran under, and each clearRect. */
+const fakeCtx = (W, H) => {
+  const ops = [], c = { canvas: { width: W, height: H }, globalAlpha: 1, globalCompositeOperation: "source-over", ops };
+  for (const m of ["beginPath", "moveTo", "lineTo", "quadraticCurveTo", "arc"]) c[m] = () => {};
+  for (const m of ["stroke", "fill"]) c[m] = () => ops.push({ op: m, alpha: c.globalAlpha, blend: c.globalCompositeOperation });
+  c.clearRect = (...box) => ops.push({ op: "clear", box });
+  c.drawImage = (src, ...box) => ops.push({ op: "image", alpha: c.globalAlpha, blend: c.globalCompositeOperation, src, box });
+  return c;
+};
+
+test("draw: a highlighter or translucent stroke is one layer — painted opaque on the scratch, laid on once at its opacity (WSHED-163)", () => {
+  const brush = (id) => DEFAULT_BRUSHES.find((b) => b.id === id);
+  const W = 840, H = 1086, dense = Array.from({ length: 300 }, (_, i) => ({ x: 0.2 + i * 0.0017, y: 0.4, p: 0.5 })); // a point every 1.4 px under an 18 px brush
+  const hi = { ...strokeFor(brush("b-yellow")), pts: dense }, pencil = { ...strokeFor(brush("b-pencil")), pts: dense }, pen = { ...strokeFor(brush("b-ink")), pts: dense };
+  assert.deepEqual([hi, pencil, pen].map(layered), [true, true, false]);
+  assert.equal(layered({ t: "hi", a: 1, pts: [] }), true, "a multiplying stroke overlaps itself darker even at full opacity");
+  assert.equal(layered({ t: "pen", c: 0, w: PEN_W, pts: [] }), false, "v52 pen ink is opaque");
+  assert.equal(alphaOf({ t: "hi", c: 0, w: HI_W, pts: [] }), 0.35, "v52 highlighter ink keeps its flat opacity");
+
+  for (const st of [hi, pencil]) {
+    const ctx = fakeCtx(W, H), scratch = fakeCtx(W, H);
+    draw(ctx, [st], W, H, { scratch });
+    assert.deepEqual(ctx.ops.map((o) => o.op), ["image"], "the page takes the stroke in one composite, never a segment at a time");
+    assert.equal(ctx.ops[0].alpha, st.a);
+    assert.equal(ctx.ops[0].blend, st.t === "hi" ? "multiply" : "source-over");
+    assert.equal(ctx.ops[0].src, scratch.canvas);
+    const paints = scratch.ops.filter((o) => o.op === "stroke");
+    assert.equal(paints.length, dense.length, "every segment and the tail, on the scratch");
+    assert.ok(paints.every((o) => o.alpha === 1 && o.blend === "source-over"), "at full strength, so overlap inside the stroke cannot add");
+    const [bx, by, bw, bh] = ctx.ops[0].box;
+    assert.deepEqual(ctx.ops[0].box.slice(4), [bx, by, bw, bh], "laid on where it was painted");
+    const half = ((st.w / SCALE) * W * (st.t === "hi" ? 1 : 1.45)) / 2; // the widest the stroke gets, either side of its points
+    assert.ok(bx <= 0.2 * W - half && bx + bw >= 0.7083 * W + half && by <= 0.4 * H - half && by + bh >= 0.4 * H + half, "the box holds the stroke and its width");
+    assert.ok(bx >= 0 && by >= 0 && bx + bw <= W && by + bh <= H);
+    assert.deepEqual([scratch.ops[0], scratch.ops.at(-1)], [{ op: "clear", box: [bx, by, bw, bh] }, { op: "clear", box: [bx, by, bw, bh] }], "the scratch starts and ends clean");
+    assert.equal(ctx.globalAlpha, 1); assert.equal(ctx.globalCompositeOperation, "source-over");
+  }
+  assert.throws(() => draw(fakeCtx(W, H), [hi], W, H), /scratch/, "no silent fallback to the compounding path");
+
+  // opaque ink goes straight on and needs no scratch; a stroke in flight paints only its tail
+  const ctx = fakeCtx(W, H);
+  draw(ctx, [pen], W, H);
+  assert.equal(ctx.ops.filter((o) => o.op === "stroke").length, dense.length);
+  assert.ok(ctx.ops.every((o) => o.alpha === 1 && o.blend === "source-over"));
+  const tail = fakeCtx(W, H);
+  draw(tail, null, W, H, { only: pen, from: dense.length - 2 });
+  assert.equal(tail.ops.length, 3, "two segments and the tail");
+
+  // a tap is one point: a dot, filled once
+  const dot = fakeCtx(W, H), sc = fakeCtx(W, H);
+  draw(dot, [{ ...pen, pts: [dense[0]] }, { ...hi, pts: [dense[0]] }], W, H, { scratch: sc });
+  assert.deepEqual(dot.ops.map((o) => o.op), ["fill", "image"]);
+  assert.deepEqual(sc.ops.map((o) => o.op), ["clear", "fill", "clear"]);
+  assert.deepEqual(decode(encode([{ ...pen, pts: [dense[0]] }]))[0].pts.length, 1, "a dot survives the wire");
 });

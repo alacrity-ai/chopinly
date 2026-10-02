@@ -59,7 +59,7 @@ a **rendered-page cache** is wanted because real scores run 30 MB and more.
 | Uploads are deliberate | The PDF goes up only when the musician chooses **upload** in the library: the list becomes a checklist (tap rows, *select all*), and the picked scores upload one at a time with progress and a *stop*. Never automatic on sign-in. Downloads of your own files are automatic on open. | Cloud bytes cost money and the free allowance is promotional; an automatic upload of a 40-score library on first sign-in would spend it without asking. Leif's refinement 2026-09-09: "an upload scores button which creates select boxes next to all the scores in the list … select all should be easy". | Cloud files are the first feature where a user costs money. Leif's direction: local storage only for non-premium members; cross-device **scores** and cross-device **audio (takes)** become the premium proposition when premium exists. 100 MB keeps the demo honest (a few dozen engraved scores) without inviting a scan library. |
 | Upload policy | **Automatic when signed in and online**, in the background, newest first; download **on open**, with a setting *keep every score on this device* for people who want the whole library offline. | The brief says "accessible across devices"; making the musician press *upload* per score would break that. Auto-download of the whole library on a phone would eat storage they did not ask to spend. |
 | Rendered-page cache | **Two tiers** (§5): an in-memory ring of `ImageBitmap`s around the current page, and a persistent `pages` store of encoded bitmaps for scores over a size threshold, with a byte budget and least-recently-opened eviction. | Confirmed by Leif. Engraved PDFs render in tens of milliseconds and need only the memory tier; 30 MB scans are JPEG-decode bound and the second open should be instant. |
-| Pen versus finger | **Pen draws, finger turns and scrolls** by default (`pointerType === "pen"`). A toggle in the ink bar lets a finger draw on devices without a stylus. | Native palm rejection for free on iPad. Finger-drawing devices (Android phones, a desktop mouse) still get ink. |
+| Pen versus finger | **The Pencil draws — always.** With ink mode off, a pen contact on the page turns it on and is the first stroke (WSHED-161). **In ink mode the page is the pen's**: a finger or a palm on it does nothing — no turn, no scroll (WSHED-162, as built 2026-10-01; the first version let fingers turn and scroll in ink mode, and a resting palm turned pages). A toggle in the ink bar makes the finger the pen on devices without a stylus. | A resting palm must never act. Finger-drawing devices (Android phones) still get ink; a mouse draws in ink mode. |
 | Tool placement | New tool `scores`, category **`library`**, listed after the Recorder and before the lessons. Hash routes `#/scores` (library) and `#/scores/<id>` (reader). | Neither an instrument nor a lesson nor a capture device. Its own rule in the tool menu, like the Recorder. |
 | Legal pages | Reword the "no third-party code" lines to **"no third-party scripts from other domains"**; add uploaded score files to the privacy table; add a copyright / takedown clause to the terms. All via the generator. | The privacy promise stays true in spirit; the letter must match the code. People will upload purchased and photocopied music; the terms need to say what we do about a complaint. |
 | Copyright posture | Files are **private to the account**: no sharing, no public links, never served to another user, never used for anything but showing them to their owner. Takedown contact in the terms. | Personal copies for personal use are the whole use case. Not being a distribution channel is the defence. |
@@ -202,13 +202,29 @@ bookmark, a search hit or `#/scores/<id>?p=12` opens on that page.
 
 ## 7. Ink
 
-**Input.** A `<canvas>` overlay the exact size of the page canvas. Pointer events
-with `pointerType === "pen"` draw (pressure → width, `getCoalescedEvents` for
-smooth curves at 240 Hz on iPad); touches are ignored by the overlay so they fall
-through to turning and scrolling. With the finger toggle on, touches draw and
-edge taps still turn (a tap is not a stroke; a stroke needs 4 px of travel).
-The Pencil's double-tap (`pointerType pen` + button change) switches pen ↔ eraser
-where the browser exposes it; nothing breaks where it does not.
+**Input** (as built, v124 — WSHED-161 / 162). A `<canvas>` overlay the exact size
+of the page canvas. Pressure → width, `getCoalescedEvents` for smooth curves at
+240 Hz on iPad.
+
+- **Waking.** With ink mode off the overlay takes no events, so a contact lands on
+  the stage. A `pointerType === "pen"` contact there turns ink mode on and is
+  handed to the ink layer as the first stroke (`ink.begin`). The stage is a native
+  scroller (`touch-action: pan-y`) and the browser settles a pan when the contact
+  lands, before the mode is on — so a non-passive `touchstart` on the stage cancels
+  it for a stylus (`Touch.touchType === "stylus"` on iOS; elsewhere the pen's
+  `pointerdown` has just fired). A waking contact that is only a tap (under 4 px
+  of travel on a 420 px page, under 300 ms) switches the mode on and leaves no ink.
+- **Drawing mode is the pen's.** While ink mode is on, the stage hands every
+  contact to the ink layer and acts on none itself: the Pencil and the mouse draw;
+  a touch does nothing — no tap, no swipe, no pan (`.inking .sc-stage` is
+  `touch-action: none`) — unless the finger toggle makes the finger the pen. A
+  contact already down when the mode came on is forgotten, so a palm that landed
+  before the pen turns nothing when it lifts. A tap is a **dot** (a one-point
+  stroke), never a page turn. The bars are outside the stage and keep taking
+  fingers; the keys (a page-turn pedal) still turn. The lit pencil button leaves.
+- A stroke is followed from `window` (capture) for its pointer id, not from the
+  element that took the `pointerdown` — it may have begun on the stage.
+- The Pencil's double-tap (pen ↔ eraser) is not built.
 
 **Tools.** Pen in three colours (ink black, brass, felt red), highlighter
 (translucent wide brass), stroke eraser (removes any stroke the pointer crosses),
@@ -220,6 +236,18 @@ all integers, coordinates in 1/10 000 of the page box, pressure in 1/255, points
 delta-encoded, and simplified with a 1-unit tolerance before storing. A page of
 fingerings is ~300 bytes; a page of phrase marks and circles ~3 KB. Rendering
 replays strokes with `lineJoin round`, quadratic smoothing between points.
+
+**One stroke, one layer** (WSHED-163, v124). A stroke is painted a segment at a
+time and neighbouring segments overlap by a whole round cap. Under a translucent
+or multiplying brush each overlap would add: at pen rate (a point a pixel) a 35 %
+highlighter went opaque while it was being drawn. So a highlighter or translucent
+stroke (`layered` in `ink.js`) is painted at full strength on a scratch canvas and
+laid onto the ink once at the brush's opacity (`draw(…, { scratch })`); in flight
+it is painted on that same canvas, `.sc-ink-live`, shown at the brush's opacity
+with CSS, and lands in one composite on the lift. Overlap inside a stroke never
+adds; two strokes still darken where they cross. The canvas takes the page's size
+only once a page has such a stroke. Opaque ink is painted straight on, as before.
+The stored format did not change.
 
 **Storage and sync.** One `ink` entity per page (§2). Saved to the doc 400 ms
 after the last stroke (debounced), which triggers the existing sync schedule.
@@ -385,7 +413,7 @@ What that means for this design:
   since iOS 16.4. Pencil pressure and `pointerType: "pen"` are supported.
 - **Android Chrome**: everything works; a manifest `share_target` could accept
   PDFs from the share sheet later (not MVP; iOS Safari does not support it).
-- **Desktop**: mouse draws only with the finger toggle on; arrow keys turn.
+- **Desktop**: in ink mode the mouse draws; arrow keys turn.
 - **Getting out of forScore**: forScore exports PDFs (with or without flattened
   annotations) via its share sheet to Files; Chopinly imports them from there.
   There is no forScore metadata import; title and composer are typed once.

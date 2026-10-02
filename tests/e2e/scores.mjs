@@ -341,14 +341,18 @@ await step("starting practice on a goal with a score asks to open it: stay here 
   await page.waitForSelector(".sc-row");
 });
 
-/** Draw a stroke on the ink overlay with synthetic pen pointer events (fractions of the page). */
-const penStroke = (pts, { type = "pen", pressure = 0.6 } = {}) => page.evaluate(([pts, type, pressure]) => {
+/** Draw a stroke with synthetic pointer events (fractions of the page), dispatched on whatever a real pointer would land on there — the overlay in drawing mode, the page under it otherwise. `down` / `lift` false leave the contact on the glass or pick one up. */
+const penStroke = (pts, { type = "pen", pressure = 0.6, id = 7, down = true, lift = true } = {}) => page.evaluate(([pts, type, pressure, id, down, lift]) => {
   const c = document.querySelector(".sc-ink"); const r = c.getBoundingClientRect();
-  const ev = (name, fx, fy, extra = {}) => c.dispatchEvent(new PointerEvent(name, { bubbles: true, cancelable: true, pointerId: 7, pointerType: type, isPrimary: true, clientX: r.left + fx * r.width, clientY: r.top + fy * r.height, pressure, button: 0, buttons: 1, ...extra }));
-  ev("pointerdown", pts[0][0], pts[0][1]);
-  for (const [x, y] of pts.slice(1)) ev("pointermove", x, y);
-  ev("pointerup", pts[pts.length - 1][0], pts[pts.length - 1][1], { buttons: 0 });
-}, [pts, type, pressure]);
+  const t = document.elementFromPoint(r.left + pts[0][0] * r.width, r.top + pts[0][1] * r.height);
+  const ev = (name, fx, fy, extra = {}) => t.dispatchEvent(new PointerEvent(name, { bubbles: true, cancelable: true, pointerId: id, pointerType: type, isPrimary: true, clientX: r.left + fx * r.width, clientY: r.top + fy * r.height, pressure, button: 0, buttons: 1, ...extra }));
+  if (down) ev("pointerdown", pts[0][0], pts[0][1]);
+  for (const [x, y] of pts.slice(down ? 1 : 0)) ev("pointermove", x, y);
+  if (lift) ev("pointerup", pts[pts.length - 1][0], pts[pts.length - 1][1], { buttons: 0 });
+}, [pts, type, pressure, id, down, lift]);
+const inking = () => page.evaluate(() => document.querySelector(".sc-reader").classList.contains("inking"));
+const stageTouchAction = () => page.evaluate(() => getComputedStyle(document.querySelector(".sc-stage")).touchAction);
+const inkCount = () => lb((m, a) => m.logbook.inkFor(a[0], 3)?.s.length ?? 0, scoreId);
 /** Count of non-transparent pixels on the ink overlay. */
 const inkPixels = () => page.evaluate(() => { const c = document.querySelector(".sc-ink"); const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 40) n++; return n; });
 /** The most opaque pixel within a few px of a page fraction on the overlay ([r,g,b,a]). */
@@ -356,59 +360,116 @@ const NEAR = `(fx, fy) => { const c = document.querySelector(".sc-ink"); const r
 const inkAt = (fx, fy) => page.evaluate(([fx, fy, src]) => (new Function("return " + src)())(fx, fy), [fx, fy, NEAR]);
 const inkNearFn = (fx, fy, pred) => page.waitForFunction(([fx, fy, src, p]) => (new Function("return " + p)())((new Function("return " + src)())(fx, fy)), [fx, fy, NEAR, pred.toString()], { timeout: 8000 });
 
-await step("ink: pen draws, a pen tap on the edge still turns, a finger does not draw unless toggled", async () => {
+await step("ink: the Pencil on the page starts drawing mode and its stroke at once; a pen tap only wakes it (WSHED-161)", async () => {
   await page.click('.sc-row:has-text("Fixture Sonata No. 1") .sc-open');
   await page.waitForSelector(".sc-reader");
   await waitPage(3);
   await page.waitForFunction(() => document.querySelector("#sc-spin")?.hidden, null, { timeout: 15000 });
-  await ensureChrome();
-  await page.click("#sc-ink");
-  await page.waitForSelector(".sc-inkbar:not([hidden])");
+  if (await inking()) throw new Error("ink mode should start off");
   if ((await inkPixels()) !== 0) throw new Error("overlay should start clean");
+  // no bar, no pencil button: the pen comes down on the page and that contact is the stroke
   await penStroke([[0.2, 0.3], [0.3, 0.32], [0.4, 0.3], [0.5, 0.33], [0.6, 0.3]]);
+  await page.waitForSelector(".sc-inkbar:not([hidden])");
+  const woke = await page.evaluate(() => ({ inking: document.querySelector(".sc-reader").classList.contains("inking"), chrome: document.querySelector(".sc-reader").classList.contains("chrome"), pressed: document.querySelector("#sc-ink").getAttribute("aria-pressed") }));
+  if (!(woke.inking && woke.chrome && woke.pressed === "true")) throw new Error("the pen did not wake drawing mode: " + JSON.stringify(woke));
   await page.waitForFunction(() => document.querySelector('.sc-inkbar [data-act="undo"]')?.disabled === false);
   const px1 = await inkPixels();
-  if (!(px1 > 200)) throw new Error("pen stroke did not draw: " + px1);
+  if (!(px1 > 200)) throw new Error("the waking stroke did not draw: " + px1);
   const col = await inkAt(0.4, 0.3);
   if (!(col[3] > 100 && col[0] < 60)) throw new Error("ink colour " + col);
-  // a pen tap on the right edge is a tap, not a stroke: the page turns
+  if (!(await pageNo()).startsWith("3 /")) throw new Error("the waking stroke turned the page: " + (await pageNo()));
+  await page.screenshot({ path: `${S}/sc-14a-pen-wakes-ink.png` });
+  // a pen tap with the mode off wakes it and leaves nothing — not a dot, not a page turn
+  await page.click("#sc-ink");
+  await page.waitForSelector(".sc-inkbar", { state: "hidden" });
   await penStroke([[0.92, 0.5]]);
-  await waitPage(4);
-  await page.waitForFunction(() => document.querySelector("#sc-spin")?.hidden, null, { timeout: 15000 });
-  await page.waitForFunction(() => { const c = document.querySelector(".sc-ink"); const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < d.length; i += 4) if (d[i] > 40) return false; return true; });
-  await penStroke([[0.08, 0.5]]);
-  await waitPage(3);
-  await page.waitForFunction(() => { const c = document.querySelector(".sc-ink"); const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 40) n++; return n > 200; });
-  // a finger with the toggle off draws nothing — it falls through to the stage, where a drag is a swipe (this one turns back a page)
-  await penStroke([[0.2, 0.6], [0.3, 0.62], [0.4, 0.6], [0.5, 0.63], [0.6, 0.6]], { type: "touch" });
-  await waitPage(2);
-  await page.keyboard.press("ArrowRight"); await waitPage(3);
+  await page.waitForSelector(".sc-inkbar:not([hidden])");
+  await page.waitForTimeout(600); // a turn or a save would have happened by now
+  if (!(await pageNo()).startsWith("3 /")) throw new Error("the waking tap turned the page: " + (await pageNo()));
+  if ((await inkAt(0.92, 0.5))[3] > 0 || (await inkCount()) !== 1) throw new Error("the waking tap left ink");
+});
+
+await step("ink: in drawing mode only the pen acts on the page — a finger turns and scrolls nothing, a pen tap is a dot, the keys still turn (WSHED-162)", async () => {
+  if ((await stageTouchAction()) !== "none") throw new Error("the stage should not pan in drawing mode: " + (await stageTouchAction()));
+  // real touches: both edges and the middle
+  await tap(0.92); await tap(0.08); await tap(0.5);
+  // a finger drag across the page — it was a swipe that turned back a page
+  await penStroke([[0.2, 0.6], [0.3, 0.62], [0.4, 0.6], [0.5, 0.63], [0.6, 0.6]], { type: "touch", id: 9 });
+  await page.waitForTimeout(500);
+  if (!(await pageNo()).startsWith("3 /")) throw new Error("a finger turned the page in drawing mode: " + (await pageNo()));
+  if (!(await inking()) || !(await chrome())) throw new Error("a finger changed the mode or hid the bar");
+  if ((await inkAt(0.4, 0.6))[3] > 40) throw new Error("a finger drew with the toggle off");
+  // a pen tap is a dot, on the edge too
+  await penStroke([[0.92, 0.5]]);
+  await inkNearFn(0.92, 0.5, (d) => d[3] > 100);
+  await page.waitForTimeout(600);
+  if (!(await pageNo()).startsWith("3 /")) throw new Error("a pen tap turned the page: " + (await pageNo()));
+  if ((await inkCount()) !== 2) throw new Error("a pen tap should be a dot: " + (await inkCount()));
+  if ((await lb((m, a) => m.logbook.inkFor(a[0], 3).s[1].p.length, scoreId)) !== 3) throw new Error("the dot should be one point");
+  // the palm that was already on the glass when the pen woke drawing mode: its lift turns nothing
+  await page.click("#sc-ink");
+  await page.waitForSelector(".sc-inkbar", { state: "hidden" });
+  await penStroke([[0.92, 0.7]], { type: "touch", id: 11, lift: false });
+  await penStroke([[0.5, 0.8]]);
+  await page.waitForSelector(".sc-inkbar:not([hidden])");
+  await penStroke([[0.92, 0.7]], { type: "touch", id: 11, down: false });
+  await page.waitForTimeout(500);
+  if (!(await pageNo()).startsWith("3 /")) throw new Error("the resting palm turned the page when it lifted: " + (await pageNo()));
+  // the keys (a page-turn pedal) are not the screen: they still turn
+  await page.keyboard.press("ArrowRight"); await waitPage(4);
+  await page.keyboard.press("ArrowLeft"); await waitPage(3);
   await page.waitForFunction(() => document.querySelector("#sc-spin")?.hidden, null, { timeout: 15000 });
   await inkNearFn(0.3, 0.32, (d) => d[3] > 100);
-  if ((await inkAt(0.4, 0.6))[3] > 40) throw new Error("a finger drew with the toggle off");
+  // the finger toggle makes the finger the pen
   await page.click('.sc-inkbar [data-act="finger"]');
-  await penStroke([[0.2, 0.6], [0.3, 0.62], [0.4, 0.6], [0.5, 0.63], [0.6, 0.6]], { type: "touch" });
+  await penStroke([[0.2, 0.6], [0.3, 0.62], [0.4, 0.6], [0.5, 0.63], [0.6, 0.6]], { type: "touch", id: 9 });
   await inkNearFn(0.4, 0.6, (d) => d[3] > 40);
   await page.click('.sc-inkbar [data-act="finger"]');
   await page.screenshot({ path: `${S}/sc-14-ink.png` });
+  // the pencil button leaves drawing mode: fingers turn again and the stage pans
+  await page.click("#sc-ink");
+  await page.waitForSelector(".sc-inkbar", { state: "hidden" });
+  if ((await stageTouchAction()) !== "pan-y") throw new Error("the stage should pan again: " + (await stageTouchAction()));
+  await tap(0.92); await waitPage(4);
+  await tap(0.08); await waitPage(3);
+  await page.waitForFunction(() => document.querySelector("#sc-spin")?.hidden, null, { timeout: 15000 });
+  await ensureChrome();
+  await page.click("#sc-ink");
+  await page.waitForSelector(".sc-inkbar:not([hidden])");
 });
 
-await step("ink: the yellow highlighter brush, eraser removes a stroke, undo brings it back, ink survives a reload and is synced under the ink cap", async () => {
+await step("ink: a highlighter stroke is one even layer at the brush's opacity, in flight and on the page (WSHED-163); eraser removes a stroke, undo brings it back, ink survives a reload and is synced under the ink cap", async () => {
   await page.click('.sc-inkbar [data-brush="b-yellow"]');
-  await penStroke([[0.2, 0.45], [0.7, 0.45]]);
+  // pen-rate sampling: a point every 1.4 px under an 18 px brush — every pixel is crossed by a dozen segments. It doubles back over itself for good measure.
+  const dense = (x0, x1, y, n) => Array.from({ length: n }, (_, i) => [x0 + ((x1 - x0) * i) / (n - 1), y]);
+  const want = Math.round(0.35 * 255), even = (a) => Math.abs(a - want) <= 3;
+  await penStroke([...dense(0.2, 0.7, 0.45, 150), ...dense(0.7, 0.4, 0.455, 90)], { lift: false });
+  const flight = await page.evaluate(() => { const c = document.querySelector(".sc-ink-live"); const at = (fx) => c.getContext("2d").getImageData(Math.round(fx * c.width), Math.round(0.45 * c.height), 1, 1).data[3]; return { opacity: Number(getComputedStyle(c).opacity), a: [at(0.25), at(0.45), at(0.65)], sized: c.width === document.querySelector(".sc-ink").width }; });
+  if (!(flight.sized && flight.opacity === 0.35 && flight.a.every((a) => a === 255))) throw new Error("a stroke in flight is opaque paint on its own layer shown at 35 %: " + JSON.stringify(flight));
+  if ((await inkAt(0.45, 0.45))[3] !== 0) throw new Error("the stroke in flight should not be on the ink canvas yet");
+  await page.screenshot({ path: `${S}/sc-15a-highlighter-in-flight.png` });
+  await penStroke([[0.4, 0.455]], { down: false });
   await inkNearFn(0.45, 0.45, (d) => d[3] > 20 && d[0] > d[2]);
+  const laid = [await inkAt(0.25, 0.45), await inkAt(0.45, 0.45), await inkAt(0.65, 0.45)].map((d) => d[3]);
+  if (!laid.every(even)) throw new Error(`the highlighter should be ${want} of 255 along its whole length, doubled back or not: ${laid}`);
+  if (await page.evaluate(() => { const c = document.querySelector(".sc-ink-live"); const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < d.length; i += 4) if (d[i]) return true; return false; })) throw new Error("the layer canvas should be clean after the lift");
+  // a second stroke across the first: two layers where they cross, one everywhere else
+  await penStroke(Array.from({ length: 40 }, (_, i) => [0.55, 0.4 + (0.1 * i) / 39]));
+  await page.waitForFunction(() => document.querySelector(".sc-ink-live").style.opacity === "0.35");
+  const cross = (await inkAt(0.55, 0.45))[3], alone = (await inkAt(0.55, 0.41))[3];
+  if (!(even(alone) && cross > want + 40)) throw new Error(`two strokes should darken where they cross: alone ${alone}, crossing ${cross}`);
   await page.waitForTimeout(600); // the debounced save
   const saved = await lb((m, a) => { const k = m.logbook.inkFor(a[0], 3); return { n: k?.s.length, hi: k?.s.filter((x) => x.t === "hi").length, bytes: JSON.stringify(k).length, pending: m.logbook.doc.pending.filter((p) => p.startsWith("ink:")).length }; }, scoreId);
-  if (saved.n !== 3 || saved.hi !== 1 || saved.pending !== 1) throw new Error("saved " + JSON.stringify(saved));
+  if (saved.n !== 5 || saved.hi !== 2 || saved.pending !== 1) throw new Error("saved " + JSON.stringify(saved));
   await page.click('.sc-inkbar [data-tool="eraser"]');
   await penStroke([[0.4, 0.25], [0.4, 0.36]]); // crosses the first pen stroke
   await inkNearFn(0.3, 0.32, (d) => d[3] <= 40);
   await page.waitForTimeout(600);
-  if ((await lb((m, a) => m.logbook.inkFor(a[0], 3).s.length, scoreId)) !== 2) throw new Error("eraser did not remove the stroke");
+  if ((await lb((m, a) => m.logbook.inkFor(a[0], 3).s.length, scoreId)) !== 4) throw new Error("eraser did not remove the stroke");
   await page.click('.sc-inkbar [data-act="undo"]');
   await inkNearFn(0.3, 0.32, (d) => d[3] > 100);
   await page.waitForTimeout(600);
-  if ((await lb((m, a) => m.logbook.inkFor(a[0], 3).s.length, scoreId)) !== 3) throw new Error("undo did not restore");
+  if ((await lb((m, a) => m.logbook.inkFor(a[0], 3).s.length, scoreId)) !== 5) throw new Error("undo did not restore");
   await page.screenshot({ path: `${S}/sc-15-ink-tools.png` });
   // brushes (WSHED-106): the sheet adds one, it lands in the bar in hand, a delete falls back to the first brush
   await page.click('.sc-inkbar [data-act="brushes"]');

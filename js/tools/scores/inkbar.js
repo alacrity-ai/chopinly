@@ -1,29 +1,37 @@
 // The ink layer (docs/SCORES_DESIGN.md §7): a canvas the exact size of the
-// page over the page canvas, and the bar of tools under the top bar. The pen
-// draws; a finger turns and scrolls unless the finger toggle is on; a tap is
-// not a stroke (it needs 4 px of travel) so edge taps still turn pages. The
-// live stroke draws on the same frame as the pointer event; the save to the
-// logbook is debounced. Undo / redo are per page, per sitting.
+// page over the page canvas, and the bar of tools under the top bar. The
+// Pencil touching the page starts drawing mode and its first stroke at once
+// (WSHED-161). Drawing mode belongs to the pen (WSHED-162): a finger or a palm
+// on the page does nothing — no turn, no scroll — unless the finger toggle
+// makes the finger the pen, and a tap is a dot, never a page turn. A
+// translucent stroke is one even layer (WSHED-163): in flight it is painted
+// opaque on its own canvas shown at the brush's opacity, and on the lift it
+// lands in one composite. The save to the logbook is debounced. Undo / redo
+// are per page, per sitting.
 import { logbook } from "../../lib/logbook.js";
 import { icon } from "../../lib/icons.js";
 import { toast, esc, longPress } from "../logbook/util.js";
 import { haptic } from "../logbook/motion.js";
-import { encode, decode, simplify, travel, hit, draw, strokeFor, SCALE, MIN_TRAVEL } from "../../lib/scores/ink.js";
+import { encode, decode, simplify, travel, hit, draw, paintStroke, layered, alphaOf, strokeFor, SCALE, MIN_TRAVEL } from "../../lib/scores/ink.js";
 import { openBrushes, swatch, brushSub } from "./brushes.js";
 
-const SAVE_MS = 400;
+const SAVE_MS = 400, TAP_MS = 300;
 const ERASE_R = 12 / 420; // normalised radius the eraser sweeps (≈ 12 px on a 420 px page)
 
 /**
  * @param {{ sheet: HTMLElement, bar: HTMLElement, scoreId: string, store: object,
- *           onTap(clientX, clientY): void, onModeChange(on: boolean): void }} opts
+ *           onModeChange(on: boolean): void }} opts
  */
-export function createInkLayer({ sheet, bar, scoreId, store, onTap, onModeChange }) {
+export function createInkLayer({ sheet, bar, scoreId, store, onModeChange }) {
   const canvas = document.createElement("canvas");
   canvas.className = "sc-ink";
   canvas.width = 1; canvas.height = 1;
-  sheet.append(canvas);
-  const cx = canvas.getContext("2d");
+  // One more canvas over the ink for layered strokes (WSHED-163): the stroke in flight, and the scratch surface committed ones are laid on through. It takes the page's size only once a page needs it.
+  const over = document.createElement("canvas");
+  over.className = "sc-ink-live";
+  over.width = 1; over.height = 1;
+  sheet.append(canvas, over);
+  const cx = canvas.getContext("2d"), ox = over.getContext("2d");
   // tool: "brush" | "eraser" (v52 stored "pen" / "hi" — both are brushes now). The brush in hand is by id (WSHED-106).
   let on = false, tool = store.get("inkTool", "brush") === "eraser" ? "eraser" : "brush", brushId = store.get("inkBrush", null), fingerInk = store.get("fingerInk", false);
   const curBrush = () => logbook.brush(brushId) ?? logbook.brushes()[0] ?? null;
@@ -68,14 +76,19 @@ export function createInkLayer({ sheet, bar, scoreId, store, onTap, onModeChange
     W = cssW; H = cssH; dpr = ratio;
     w = Math.max(1, Math.round(cssW * ratio)); h = Math.max(1, Math.round(cssH * ratio));
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-    canvas.style.width = `${cssW}px`; canvas.style.height = `${cssH}px`;
+    canvas.style.width = over.style.width = `${cssW}px`; canvas.style.height = over.style.height = `${cssH}px`;
     repaint();
   }
+  /** The layer canvas at the page's size (a resize clears it; `repaint` puts a stroke in flight back). */
+  const layer = () => { if (over.width !== w || over.height !== h) { over.width = w; over.height = h; } return ox; };
   function repaint() {
     cx.clearRect(0, 0, w, h);
-    if (strokes.length) draw(cx, strokes, w, h);
-    if (live) draw(cx, strokes, w, h, { only: live });
+    if (strokes.length) draw(cx, strokes, w, h, { scratch: strokes.some(layered) ? layer() : null });
+    if (live) paintLive(0);
   }
+  /** The stroke in flight from point `from` on: a layered one at full strength on the layer canvas (its CSS opacity is the brush's), an opaque one straight onto the ink. */
+  const paintLive = (from) => { if (layered(live)) paintStroke(layer(), live, w, h, from); else draw(cx, strokes, w, h, { only: live, from }); };
+  const dropLive = () => { if (live && layered(live)) ox.clearRect(0, 0, over.width, over.height); live = null; };
   const norm = (e) => { const r = canvas.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height, p: e.pointerType === "pen" ? Math.max(0.05, e.pressure || 0.5) : 0.5 }; };
 
   // --- pages ------------------------------------------------------------------
@@ -83,7 +96,7 @@ export function createInkLayer({ sheet, bar, scoreId, store, onTap, onModeChange
     flush();
     page = n;
     strokes = decode(logbook.inkFor(scoreId, n));
-    undo = []; redo = []; live = null;
+    undo = []; redo = []; dropLive();
     repaint();
     if (on) paintBar();
   }
@@ -105,21 +118,30 @@ export function createInkLayer({ sheet, bar, scoreId, store, onTap, onModeChange
   }
 
   // --- input ------------------------------------------------------------------
-  const draws = (e) => e.pointerType === "pen" || fingerInk;
-  let pid = null, downAt = 0, downXY = null, lastErase = null;
-  canvas.addEventListener("pointerdown", (e) => {
-    if (!on || pid !== null || (e.button && e.button !== 0)) return;
-    if (!draws(e)) return; // a finger with the toggle off: falls through to the stage (turn / scroll)
+  // Drawing mode belongs to the pen (WSHED-162): the Pencil and the mouse draw; a finger draws only when the toggle makes it the pen, and otherwise does nothing here or on the stage.
+  const draws = (e) => e.pointerType !== "touch" || fingerInk;
+  let pid = null, downAt = 0, waking = false, lastErase = null;
+  function start(e, wake = false) {
+    if (!on || pid !== null || (e.button && e.button !== 0) || !draws(e)) return;
     e.stopPropagation(); e.preventDefault();
-    pid = e.pointerId; downAt = performance.now(); downXY = { x: e.clientX, y: e.clientY };
+    pid = e.pointerId; downAt = performance.now(); waking = wake;
     try { canvas.setPointerCapture(pid); } catch { /* not needed */ }
+    // the stroke may have begun on the stage (the margins, or the contact that woke drawing mode), so it is followed from the window, not from whichever element took the pointerdown
+    window.addEventListener("pointermove", move, true); window.addEventListener("pointerup", end, true); window.addEventListener("pointercancel", end, true);
     const pt = norm(e);
     if (tool === "eraser") { erasing = true; lastErase = pt; eraseAt(pt); return; }
     const b = curBrush();
     if (!b) return;
     live = strokeFor(b); live.pts = [pt];
-  });
-  canvas.addEventListener("pointermove", (e) => {
+    if (layered(live)) { over.style.opacity = String(alphaOf(live)); layer(); }
+  }
+  const release = () => {
+    try { canvas.releasePointerCapture(pid); } catch { /* fine */ }
+    pid = null;
+    window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", end, true); window.removeEventListener("pointercancel", end, true);
+  };
+  canvas.addEventListener("pointerdown", (e) => start(e));
+  function move(e) {
     if (pid !== e.pointerId) return;
     e.stopPropagation();
     // coalesced events give 240 Hz curves on an iPad; some browsers (and synthetic events) hand back an empty list
@@ -138,31 +160,30 @@ export function createInkLayer({ sheet, bar, scoreId, store, onTap, onModeChange
     if (!live) return;
     const from = live.pts.length;
     for (const ev of events) live.pts.push(norm(ev.pointerType ? ev : e));
-    draw(cx, strokes, w, h, { only: live, from: Math.max(1, from - 1) });
-  });
-  const end = (e) => {
+    paintLive(Math.max(1, from - 1));
+  }
+  function end(e) {
     if (pid !== e.pointerId) return;
     e.stopPropagation();
-    try { canvas.releasePointerCapture(pid); } catch { /* fine */ }
-    pid = null;
+    release();
     if (erasing) { erasing = false; if (dirty) commit(); return; }
     if (!live) return;
-    const st = live; live = null;
+    const st = live; dropLive();
     const moved = travel(st.pts) * SCALE;
-    if (moved < MIN_TRAVEL && performance.now() - downAt < 300 && e.type !== "pointercancel") {
-      // a tap, not a stroke — hand it to the reader (edge → turn, middle → bar)
-      repaint();
-      onTap?.(downXY.x, downXY.y);
-      return;
-    }
-    if (e.type === "pointercancel") { repaint(); return; }
-    st.pts = simplify(st.pts, 1 / SCALE);
+    // a cancelled stroke leaves nothing, and neither does the tap that only woke drawing mode (WSHED-161)
+    if (e.type === "pointercancel" || (waking && moved < MIN_TRAVEL && performance.now() - downAt < TAP_MS)) { repaint(); return; }
+    st.pts = moved < 1 ? [st.pts[0]] : simplify(st.pts, 1 / SCALE); // a tap is a dot — in drawing mode nothing turns the page (WSHED-162)
     undo.push(strokes); redo = [];
     strokes = [...strokes, st];
     commit();
-  };
-  canvas.addEventListener("pointerup", end);
-  canvas.addEventListener("pointercancel", end);
+  }
+  /** Drop a stroke in flight without keeping it (drawing mode went off under it). */
+  function abandon() {
+    if (pid === null) return;
+    release();
+    if (erasing) { erasing = false; if (dirty) commit(); return; }
+    if (live) { dropLive(); repaint(); }
+  }
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
   function eraseAt(pt) {
     const i = hit(strokes, pt.x, pt.y, ERASE_R);
@@ -173,20 +194,33 @@ export function createInkLayer({ sheet, bar, scoreId, store, onTap, onModeChange
     repaint();
   }
 
+  function toggle(force) {
+    on = force === undefined ? !on : !!force;
+    if (!on) abandon();
+    bar.hidden = !on;
+    if (on) paintBar();
+    applyTouchAction();
+    onModeChange?.(on);
+  }
   applyTouchAction();
   return {
     canvas,
     get on() { return on; },
     /** Ink mode on / off: the overlay takes pen input, the bar shows. */
-    toggle(force) {
-      on = force === undefined ? !on : !!force;
-      bar.hidden = !on;
-      if (on) paintBar();
-      applyTouchAction();
-      onModeChange?.(on);
+    toggle,
+    /**
+     * A pointer went down on the stage (the reader hands every one over while
+     * drawing mode is on, and the Pencil's always). The Pencil wakes drawing
+     * mode and this contact is its first stroke (WSHED-161); in drawing mode
+     * whatever draws may start in the margins, and a finger starts nothing.
+     */
+    begin(e) {
+      const wake = !on;
+      if (wake) { if (e.pointerType !== "pen") return; toggle(true); }
+      start(e, wake);
     },
     size, load, flush, repaint,
     hasInk: () => strokes.length > 0,
-    destroy() { flush(); offLb(); canvas.width = 0; canvas.height = 0; canvas.remove(); bar.hidden = true; bar.innerHTML = ""; },
+    destroy() { abandon(); flush(); offLb(); for (const c of [canvas, over]) { c.width = 0; c.height = 0; c.remove(); } bar.hidden = true; bar.innerHTML = ""; },
   };
 }
