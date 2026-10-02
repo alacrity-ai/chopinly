@@ -11,7 +11,7 @@
 // k?, a?, p: [x0, y0, p0, dx, dy, dp, …] } ] }: coordinates quantised to
 // 1/10 000, pressure to 1/255, opacity to 1/100, points delta-encoded, all
 // integers. A page of fingerings is a few hundred bytes; the sync cap for the
-// kind is 128 KB.
+// kind is 128 KB. A single point is a dot.
 export const SCALE = 10000, PSCALE = 255;
 export const TOOLS = { pen: "pen", hi: "hi" };
 /** Colours by index: ink, brass, felt red (design §7). */
@@ -144,35 +144,76 @@ export function hit(strokes, x, y, r) {
   return -1;
 }
 
+/** The opacity a stroke is laid down at. */
+export const alphaOf = (st) => st.a ?? TOOL_ALPHA[st.t] ?? 1;
+/**
+ * A stroke that must go down as one layer (WSHED-163): it is painted a segment
+ * at a time, the segments overlap by a whole round cap, and under a translucent
+ * or multiplying brush every overlap would add — a 35 % highlighter sampled at
+ * pen rate turns opaque. Opaque source-over ink can overlap itself freely.
+ */
+export const layered = (st) => st.t === "hi" || alphaOf(st) < 1;
+/** Width of a stroke at a point, in the canvas's pixels: pressure moves a pen between 0.55× and 1.45× of its base, a highlighter is flat. */
+const widthAt = (st, base, pt) => (st.t === "hi" ? base : base * (0.55 + 0.9 * (pt.p ?? 0.5)));
+
+/**
+ * Paint one stroke's shape in its colour with whatever alpha and blend the
+ * context has — the caller decides how it lands. Points from index `from` on
+ * (a stroke in flight grows by its tail); a single point is a dot.
+ */
+export function paintStroke(ctx, st, w, h, from = 0) {
+  const pts = st.pts;
+  if (!pts.length) return;
+  const base = (st.w / SCALE) * w;
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.strokeStyle = ctx.fillStyle = st.k ?? COLORS[st.c] ?? COLORS[0];
+  if (pts.length === 1) { ctx.beginPath(); ctx.arc(pts[0].x * w, pts[0].y * h, widthAt(st, base, pts[0]) / 2, 0, Math.PI * 2); ctx.fill(); return; }
+  for (let i = Math.max(1, from); i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    ctx.lineWidth = widthAt(st, base, b);
+    ctx.beginPath();
+    if (i >= 2) { const m = pts[i - 2]; const cx = a.x * w, cy = a.y * h; ctx.moveTo((m.x * w + cx) / 2, (m.y * h + cy) / 2); ctx.quadraticCurveTo(cx, cy, (cx + b.x * w) / 2, (cy + b.y * h) / 2); }
+    else { ctx.moveTo(a.x * w, a.y * h); ctx.lineTo((a.x * w + b.x * w) / 2, (a.y * h + b.y * h) / 2); }
+    ctx.stroke();
+  }
+  const l = pts[pts.length - 1], k = pts[pts.length - 2];
+  ctx.lineWidth = widthAt(st, base, l);
+  ctx.beginPath(); ctx.moveTo((k.x * w + l.x * w) / 2, (k.y * h + l.y * h) / 2); ctx.lineTo(l.x * w, l.y * h); ctx.stroke();
+}
+
+/** The pixel box a stroke can touch, padded for its widest point and clipped to both surfaces: [x, y, w, h]. */
+function boxOf(st, w, h, ctx, scratch) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of st.pts) { x0 = Math.min(x0, p.x * w); x1 = Math.max(x1, p.x * w); y0 = Math.min(y0, p.y * h); y1 = Math.max(y1, p.y * h); }
+  const pad = ((st.w / SCALE) * w * 1.45) / 2 + 2;
+  const W = Math.min(ctx.canvas.width, scratch.canvas.width), H = Math.min(ctx.canvas.height, scratch.canvas.height);
+  const bx = Math.max(0, Math.floor(x0 - pad)), by = Math.max(0, Math.floor(y0 - pad));
+  return [bx, by, Math.min(W, Math.ceil(x1 + pad)) - bx, Math.min(H, Math.ceil(y1 + pad)) - by];
+}
+
 /**
  * Draw strokes on a 2D context sized to the page: `w`, `h` are the canvas's
- * device pixels for the whole page box. Width follows pressure between
- * 0.55× and 1.45× of the stroke's base width; the highlighter is flat and
- * translucent. `partial` draws only from point index `from` on (live strokes).
+ * device pixels for the whole page box. An opaque stroke is painted straight
+ * on (`from` paints only its tail, for a stroke in flight). A layered stroke
+ * (see `layered`) is painted at full strength on `scratch` — a 2D context at
+ * least as large, left clean afterwards — and laid on once at its opacity, so
+ * a stroke is one even layer however densely it was sampled and wherever it
+ * crosses itself; two strokes still darken where they cross.
  */
-export function draw(ctx, strokes, w, h, { from = 0, only = null } = {}) {
-  ctx.lineCap = "round"; ctx.lineJoin = "round";
+export function draw(ctx, strokes, w, h, { from = 0, only = null, scratch = null } = {}) {
   const list = only ? [only] : strokes;
   for (const st of list) {
-    const pts = st.pts;
-    if (!pts.length) continue;
-    const base = (st.w / SCALE) * w;
-    ctx.strokeStyle = st.k ?? COLORS[st.c] ?? COLORS[0];
-    ctx.globalAlpha = st.a ?? TOOL_ALPHA[st.t] ?? 1;
+    if (!st.pts.length) continue;
     ctx.globalCompositeOperation = st.t === "hi" ? "multiply" : "source-over";
-    if (pts.length === 1 || (from === 0 && pts.length === 1)) {
-      ctx.beginPath(); ctx.arc(pts[0].x * w, pts[0].y * h, base * 0.5, 0, Math.PI * 2); ctx.fillStyle = ctx.strokeStyle; ctx.fill();
-      continue;
-    }
-    for (let i = Math.max(1, from); i < pts.length; i++) {
-      const a = pts[i - 1], b = pts[i];
-      ctx.lineWidth = st.t === "hi" ? base : base * (0.55 + 0.9 * (b.p ?? 0.5));
-      ctx.beginPath();
-      if (i >= 2) { const m = pts[i - 2]; const cx = a.x * w, cy = a.y * h; ctx.moveTo((m.x * w + cx) / 2, (m.y * h + cy) / 2); ctx.quadraticCurveTo(cx, cy, (cx + b.x * w) / 2, (cy + b.y * h) / 2); }
-      else { ctx.moveTo(a.x * w, a.y * h); ctx.lineTo((a.x * w + b.x * w) / 2, (a.y * h + b.y * h) / 2); }
-      ctx.stroke();
-    }
-    if (from === 0 || from >= pts.length - 1) { const l = pts[pts.length - 1], k = pts[pts.length - 2]; ctx.beginPath(); ctx.moveTo((k.x * w + l.x * w) / 2, (k.y * h + l.y * h) / 2); ctx.lineTo(l.x * w, l.y * h); ctx.stroke(); }
+    if (!layered(st)) { ctx.globalAlpha = 1; paintStroke(ctx, st, w, h, from); continue; }
+    if (!scratch) throw new Error("ink: a layered stroke needs a scratch surface");
+    const [bx, by, bw, bh] = boxOf(st, w, h, ctx, scratch);
+    if (bw <= 0 || bh <= 0) continue;
+    scratch.clearRect(bx, by, bw, bh);
+    paintStroke(scratch, st, w, h);
+    ctx.globalAlpha = alphaOf(st);
+    ctx.drawImage(scratch.canvas, bx, by, bw, bh, bx, by, bw, bh);
+    scratch.clearRect(bx, by, bw, bh);
   }
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
 }
