@@ -161,7 +161,7 @@ export function openEditor({ id, ctx, onClose }) {
     R.showPlayhead(xOfTicks(hb.bar, loc.ticks), hb.sys);
     rails.transport({ pos: t, bar: loc.bar, bars: doc.measures.length });
     if (player.playing && sysIndex !== lastSys) { // keep the playing system in view (no scroll while the score is being edited by hand)
-      const top = hb.sys.top * S + 8, bottom = hb.sys.bottom * S + 8;
+      const top = (hb.sys.top - (L.y0 ?? 0)) * S + 8, bottom = (hb.sys.bottom - (L.y0 ?? 0)) * S + 8;
       if (top < view.scrollTop || bottom > view.scrollTop + view.clientHeight) view.scrollTo({ top: Math.max(0, top - view.clientHeight * 0.25), behavior: "smooth" });
     }
     lastSys = sysIndex;
@@ -181,7 +181,7 @@ export function openEditor({ id, ctx, onClose }) {
   }
 
   // --- coordinates -----------------------------------------------------------
-  const toS = (clientX, clientY) => { const r = R.svg.getBoundingClientRect(); return { x: (clientX - r.left) / S, y: (clientY - r.top) / S }; };
+  const toS = (clientX, clientY) => { const r = R.svg.getBoundingClientRect(); return { x: (clientX - r.left) / S, y: (clientY - r.top) / S + (L?.y0 ?? 0) }; }; // the drawing starts at L.y0 (≤ 0): the first system's ink above the layout's top
   const stepY = (sys, staff, step) => sys.staves[staff].topY + (8 - step) / 2;
 
   // --- ghost -----------------------------------------------------------------
@@ -1259,7 +1259,7 @@ export function openEditor({ id, ctx, onClose }) {
     pointFor({ bar, staff, ticks, step }) {
       const { sys, bar: hb } = barAt(L, bar);
       const r = R.svg.getBoundingClientRect();
-      return { x: r.left + xOfTicks(hb, ticks) * S, y: r.top + stepY(sys, staff, step) * S };
+      return { x: r.left + xOfTicks(hb, ticks) * S, y: r.top + (stepY(sys, staff, step) - (L.y0 ?? 0)) * S };
     },
   };
   el.__editor = api;

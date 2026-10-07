@@ -88,6 +88,8 @@ test("chord symbols engrave on one line per system, clear of the highest ink, wi
   assert.deepEqual(b.runs, [{ t: "m7" }, { t: "(♭5)", sup: true }]);
   const tempo = L.form.find((f) => f.kind === "tempo");
   assert.ok(tempo.y < a.y - a.size, "the tempo mark moved above the chord line");
+  assert.ok(L.y0 <= tempo.y - 1.6 && L.y0 < 0, `the screen's drawing starts above the first system's highest ink (y0 ${L.y0})`);
+  assert.equal(layoutComposition(piece(), { unit: 10, width: 1600 }).y0, 0, "a piece with nothing tall starts at the top");
   // a tap on a symbol selects it as a chord
   const t = thingAt(L, a.x + 0.5, a.y - 0.4);
   assert.equal(t?.type, "chord"); assert.equal(t.ev, d.measures[0].expressions.find((x) => x.kind === "chord").id);
