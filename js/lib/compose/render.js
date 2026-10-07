@@ -36,9 +36,10 @@ function el(name, attrs, text) {
 let textMeter = null; // a canvas context measuring the serif face (chord symbols set run by run)
 /** The screen painter: paint.js calls → SVG nodes, appended as they come; groups nest. */
 class SvgPainter {
-  constructor(L) {
+  constructor(L, y0 = 0) { // y0 (S, ≤ 0): where the drawing starts — the editor reaches up to the first system's highest ink (L.y0); a paper page does not
     this.S = L.S; this.fs = 4 * L.S;
-    this.svg = el("svg", { class: "cp-svg staff-svg", viewBox: `0 0 ${L.width} ${L.height}`, width: L.width, height: L.height, style: `font-size:${this.fs}px` });
+    const top = y0 * L.S, h = L.height - top;
+    this.svg = el("svg", { class: "cp-svg staff-svg", viewBox: `0 ${top.toFixed(2)} ${L.width} ${h.toFixed(2)}`, width: L.width, height: h.toFixed(2), style: `font-size:${this.fs}px` });
     this.stack = []; this.groups = new Map();
   }
   px(v) { return (v * this.S).toFixed(2); }
@@ -154,12 +155,13 @@ export function renderComposition(container, L) {
     return out;
   };
   const vcls = (vi) => (vi ? ` cp-v${vi + 1}` : "");
-  const painter = new SvgPainter(L);
+  const painter = new SvgPainter(L, L.y0 ?? 0);
   paintScore(L, painter);
   const { svg, groups } = painter;
 
   // overlay: ghost + bar flash
-  const overlay = el("svg", { class: "cp-overlay", viewBox: `0 0 ${L.width} ${L.height}`, width: L.width, height: L.height, style: `font-size:${fs}px` });
+  const top = (L.y0 ?? 0) * S, h = L.height - top;
+  const overlay = el("svg", { class: "cp-overlay", viewBox: `0 ${top.toFixed(2)} ${L.width} ${h.toFixed(2)}`, width: L.width, height: h.toFixed(2), style: `font-size:${fs}px` });
   const flash = el("rect", { class: "cp-flash", x: 0, y: 0, width: 0, height: 0, hidden: "" });
   const ghost = el("g", { class: "cp-ghost", hidden: "" });
   const lassoEl = el("polyline", { class: "cp-lasso", points: "", hidden: "" });

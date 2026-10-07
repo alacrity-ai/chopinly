@@ -440,14 +440,14 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
       const ornament = ABOVE_MARKS.has(m);
       if (ornament) {
         const mk = { x: m === "delayedTurn" ? d.x + d.headW + 1.2 : d.x + d.headW / 2, y: high, mark: m, above: true, system: d.system };
-        marks.push(mk); high -= m === "fermata" ? 1.8 : 1.4;
+        marks.push(mk); d.markTop = Math.min(d.markTop ?? Infinity, high - (m === "fermata" ? 1.3 : 1.0)); high -= m === "fermata" ? 1.8 : 1.4;
         if (m === "trill" && d.trill?.alter !== undefined) { trillAccs.push({ x: mk.x, y: high - 0.9, alter: d.trill.alter, system: d.system }); high -= 1.6; } // the accidental over tr (a flat's bowl clears the tr's top)
         if (m === "trill" && d.trill?.line) { // the wavy extension to the next note of the line, else the bar's end
           const nx = nextEvent(doc, lineOf(d)), d2 = nx && byId.get(nx.id), x2 = d2 && d2.system === d.system ? (d2.rest ? d2.x : Math.min(d2.accLeft, ...d2.heads.map((h) => h.x))) - 0.4 : hit.systems[d.system].bars.find((hb) => hb.index === d.bar).x1 - 0.5;
           if (x2 - (mk.x + 1.4) >= TRILL_SEG) trillLines.push({ x1: mk.x + 1.4, x2, y: mk.y, system: d.system });
         }
       }
-      else { marks.push({ x: (stemSide ? d.stemX : d.x + d.headW / 2), y: near, mark: m, above: markAbove, system: d.system }); near += step; if (markAbove) high = Math.min(high, near - 0.4); }
+      else { marks.push({ x: (stemSide ? d.stemX : d.x + d.headW / 2), y: near, mark: m, above: markAbove, system: d.system }); if (markAbove) d.markTop = Math.min(d.markTop ?? Infinity, near - 0.75); else d.markBot = Math.max(d.markBot ?? -Infinity, near + 0.75); near += step; if (markAbove) high = Math.min(high, near - 0.4); }
     }
   }
   // -- slurs: from the first note's head to the last's, on the side away from the stems (mixed stems: above), arched
@@ -509,8 +509,9 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
   //    staff and below whatever sounds under them — text above; a hairpin over a system break is drawn in open halves --
   const dynamics = [], hairpins = [], texts = [], pedals = [], ottavaLines = [], textLines = [], fingers = [], chordAt = [];
   const hbarOf = new Map(); hit.systems.forEach((hs, si) => hs.bars.forEach((hb) => hbarOf.set(hb.index, { si, hb })));
-  const belowOf = (d) => Math.max(d.fingerBot ?? -Infinity, d.rest ? d.y + 1 : Math.max(d.botY, d.stem === "down" ? d.stemTipY : d.botY) + (d.art?.some((m) => !ABOVE_MARKS.has(m) && !AFTER_MARKS.has(m)) && d.stem !== "down" ? 1.3 : 0));
-  const aboveOf = (d) => Math.min(d.fingerTop ?? Infinity, (d.rest ? d.y - 1 : Math.min(d.topY, d.stem === "up" ? d.stemTipY : d.topY)) - (d.rest ? 0 : (d.art ?? []).reduce((n, m) => n + (m === "fermata" ? 1.8 : ABOVE_MARKS.has(m) ? 1.4 : 0), 0) + (d.trill?.alter !== undefined ? 1.6 : 0)));
+  // the ink a note reaches above / below: its marks where they were actually put (WSHED-165: an 8va / 8vb sat on an accent), fingering, stems
+  const belowOf = (d) => Math.max(d.fingerBot ?? -Infinity, d.markBot ?? -Infinity, d.rest ? d.y + 1 : Math.max(d.botY, d.stem === "down" ? d.stemTipY : d.botY) + (d.art?.some((m) => !ABOVE_MARKS.has(m) && !AFTER_MARKS.has(m)) && d.stem !== "down" ? 1.3 : 0));
+  const aboveOf = (d) => Math.min(d.fingerTop ?? Infinity, d.markTop ?? Infinity, (d.rest ? d.y - 1 : Math.min(d.topY, d.stem === "up" ? d.stemTipY : d.topY)) - (d.rest ? 0 : (d.art ?? []).reduce((n, m) => n + (m === "fermata" ? 1.8 : ABOVE_MARKS.has(m) ? 1.4 : 0), 0) + (d.trill?.alter !== undefined ? 1.6 : 0)));
   // -- fingering (docs/COMPOSE_PIANO_DESIGN.md §4): a digit per head, above the upper staff's notes and below the lower's, stacked in the notes' own order (the digit nearest the staff belongs to the head nearest it), 1.25 S apart.
   //    A digit is 0.91 S tall on its baseline (Bravura fingering at scale 0.9); the baseline sits FINGER_AIR beyond the note's outer edge
   //    (the head's centre or the stem tip) so the ink clears a head by half a space and a stem tip by a whole one (v106, WSHED-135) --
@@ -532,7 +533,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
   const dynUnder = (staff, a, b) => exprs.some((o) => o.x.staff === staff && (o.x.kind === "dyn" ? o.abs >= a && o.abs < b : (o.x.kind === "hairpin" || o.x.kind === "textline") && o.abs < b && o.absEnd > a)); // a text line ("una corda") shares the dynamics line
   const ottavaBelow = (staff, a, b) => exprs.some((o) => o.x.kind === "ottava" && o.x.dir < 0 && o.x.staff === staff && o.abs < b && o.absEnd >= a); // an 8vb shares the range: the pedal goes under it
   const pedalLine = (si, staff, a, b) => exprLine(si, staff, under(staff, a, b, si)) + (dynUnder(staff, a, b) ? 2.0 : 0.6) + (ottavaBelow(staff, a, b) ? 1.8 : 0); // under the dynamics, under an 8vb — the stack stays inside the system gap
-  const ottavaLine = (si, staff, a, b, dir) => (dir > 0 ? Math.min(systems[si].staffTop[staff] - 2.6, ...under(staff, a, b, si).map((d) => aboveOf(d) - 1.0)) : exprLine(si, staff, under(staff, a, b, si)) + (dynUnder(staff, a, b) ? 1.7 : 0));
+  const ottavaLine = (si, staff, a, b, dir) => (dir > 0 ? Math.min(systems[si].staffTop[staff] - 2.6, ...under(staff, a, b, si).map((d) => aboveOf(d) - 1.0)) : exprLine(si, staff, under(staff, a, b, si)) + 0.6 + (dynUnder(staff, a, b) ? 1.7 : 0)); // an 8vb's numeral stands above its line: 0.6 S more so it clears an accent under the notes
   for (const e of exprs) {
     const x0 = e.x, where = hbarOf.get(e.bar);
     if (!where) continue;
@@ -683,10 +684,23 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
     }
   });
   const height = (TOP_PAD + systems.length * SYS_H - SYS_GAP + BOTTOM_PAD) * S;
+  // the first system's ink above the layout's top (a chord-symbol line over high notes, an 8va, a tempo mark — WSHED-165):
+  // y0 ≤ 0 is where the screen's drawing must start so none of it is cut off; paper measures its own ink and ignores it
+  let inkTop = systems.length ? systems[0].staffTop[0] - 1 : 0;
+  const up = (y) => { if (Number.isFinite(y) && y < inkTop) inkTop = y; };
+  for (const d of drawn) if (d.system === 0 && !d.hidden) up(aboveOf(d));
+  for (const c of chords) if (c.system === 0) up(c.y - c.size * 1.1);
+  for (const f of form) if (f.system === 0) up(f.y - 1.6);
+  for (const e of endings) if (e.system === 0) up(e.y - 1.4);
+  for (const o of ottavaLines) if (o.system === 0) up(o.y - 1.5);
+  for (const t of texts) if (t.system === 0) up(t.y - 1.3);
+  for (const t of tuplets) if (t.system === 0) up(t.y - 1.2);
+  for (const sl of slurs) if (sl.system === 0) up(Math.min(sl.y1, sl.y2) - 0.75 * sl.h - 0.3);
+  const y0 = Math.min(0, Math.floor((inkTop - 0.8) * 4) / 4);
   /** The expression line of a staff in a system over [a, b) absolute ticks, and the text line at `a` — where a ghost mark would land. */
   const exprLineAt = (si, staff, a, b) => exprLine(si, staff, under(staff, a, b, si));
   const textLineAt = (si, staff, a) => Math.min(systems[si].staffTop[staff] - 2.3, ...under(staff, a, a + 1, si).map((d) => aboveOf(d) - 1.3));
-  return { S, unit: S, width, height, systems, drawn, beams, ties, slurs, tuplets, marks, trillLines, trillAccs, glisses, arps, dynamics, hairpins, texts, chords, pedals, ottavas: ottavaLines, textLines, fingers, graces, graceBeams, graceSlurs, trems, similes, clefs, form, endings, hit, nStaves, exprLine: exprLineAt, textLine: textLineAt, chordLine, pedalLine, ottavaLine };
+  return { S, unit: S, width, height, y0, systems, drawn, beams, ties, slurs, tuplets, marks, trillLines, trillAccs, glisses, arps, dynamics, hairpins, texts, chords, pedals, ottavas: ottavaLines, textLines, fingers, graces, graceBeams, graceSlurs, trems, similes, clefs, form, endings, hit, nStaves, exprLine: exprLineAt, textLine: textLineAt, chordLine, pedalLine, ottavaLine };
 }
 
 function restBetween(drawn, a, b) {

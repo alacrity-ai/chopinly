@@ -603,7 +603,7 @@ await step("expressions (WSHED-122, via Rails ▾): f arms and a tap puts it on 
   await page.screenshot({ path: `${S}/cp-16-expression.png` });
   // Select mode: a mouse click on the dynamic selects it; dragging it a slot right moves it in time; ← nudges it back; Delete removes it; undo restores it
   await page.click("[data-act=select]");
-  const at = (kind) => page.evaluate((kind) => { const ed = document.querySelector(".cp-editor").__editor, L = ed.layout, r = document.querySelector(".cp-svg").getBoundingClientRect(); const it = kind === "dyn" ? L.dynamics[0] : kind === "text" ? L.texts[0] : L.hairpins[0]; const x = kind === "hairpin" ? (it.x1 + it.x2) / 2 : kind === "text" ? it.x + 0.5 : it.x, y = kind === "dyn" ? it.y - 0.3 : kind === "text" ? it.y - 0.4 : it.y; return { x: r.left + x * L.S, y: r.top + y * L.S, id: it.id }; }, kind);
+  const at = (kind) => page.evaluate((kind) => { const ed = document.querySelector(".cp-editor").__editor, L = ed.layout, r = document.querySelector(".cp-svg").getBoundingClientRect(); const it = kind === "dyn" ? L.dynamics[0] : kind === "text" ? L.texts[0] : L.hairpins[0]; const x = kind === "hairpin" ? (it.x1 + it.x2) / 2 : kind === "text" ? it.x + 0.5 : it.x, y = kind === "dyn" ? it.y - 0.3 : kind === "text" ? it.y - 0.4 : it.y; return { x: r.left + x * L.S, y: r.top - (document.querySelector(".cp-editor").__editor.layout.y0 ?? 0) * document.querySelector(".cp-editor").__editor.layout.S + y * L.S, id: it.id }; }, kind);
   const dyn = await at("dyn");
   await page.mouse.click(dyn.x, dyn.y);
   if ((await state()).selection.join() !== dyn.id) throw new Error("dynamic not selected: " + JSON.stringify(await state()));
@@ -659,7 +659,7 @@ await step("voices: the switcher writes into voice 2 (padded, tinted, stems down
   const Z = (await state()).S;
   const vk = (bar, staff, vi) => page.evaluate(([b, st, v]) => { const x = document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[st].voices[v]; return x === undefined ? "none" : x === null ? "null" : x.map((e) => `${e.kind === "rest" ? "r" : "n"}${e.dur.base}`).join(" "); }, [bar, staff, vi]);
   const drawnOf = (id) => page.evaluate((i) => { const d = document.querySelector(".cp-editor").__editor.layout.drawn.find((x) => x.id === i); return d && { voice: d.voice, stem: d.stem, x: d.x, drawStaff: d.drawStaff, hidden: d.hidden, y: d.rest ? d.y : d.heads[0].y }; }, id);
-  const headPt = (id) => page.evaluate((i) => { const ed = document.querySelector(".cp-editor").__editor, d = ed.layout.drawn.find((x) => x.id === i), r = document.querySelector(".cp-svg").getBoundingClientRect(), S = ed.state.S; const h = d.rest ? { x: d.x + 0.7, y: d.y } : { x: d.heads[0].x + d.headW / 2, y: d.heads[0].y }; return { x: r.left + h.x * S, y: r.top + h.y * S }; }, id);
+  const headPt = (id) => page.evaluate((i) => { const ed = document.querySelector(".cp-editor").__editor, d = ed.layout.drawn.find((x) => x.id === i), r = document.querySelector(".cp-svg").getBoundingClientRect(), S = ed.state.S; const h = d.rest ? { x: d.x + 0.7, y: d.y } : { x: d.heads[0].x + d.headW / 2, y: d.heads[0].y }; return { x: r.left + h.x * S, y: r.top - (document.querySelector(".cp-editor").__editor.layout.y0 ?? 0) * document.querySelector(".cp-editor").__editor.layout.S + h.y * S }; }, id);
   const pen = (type, o) => synth(type, { pointerType: "pen", pointerId: 97, width: 1, height: 1, pressure: 0.5, ...o });
   const penTap = async (pt) => { await pen("pointerdown", { clientX: pt.x, clientY: pt.y }); await pen("pointerup", { clientX: pt.x, clientY: pt.y }); await page.waitForTimeout(40); };
   const idOf = (bar, staff, vi, index) => page.evaluate(([b, st, v, i]) => document.querySelector(".cp-editor").__editor.state.doc.measures[b].staves[st].voices[v][i].id, [bar, staff, vi, index]);
@@ -1084,7 +1084,7 @@ await step("extended Notes rail (WSHED-126, via Rails ▾): Grace on, a tap befo
   await page.keyboard.press("Escape");
   if ((await state()).pending) throw new Error("Escape did not turn grace off");
   // tremolo and marcato on a selection
-  const head = await page.evaluate((id) => { const ed = document.querySelector(".cp-editor").__editor, d = ed.layout.drawn.find((x) => x.id === id), r = document.querySelector(".cp-svg").getBoundingClientRect(); return { x: r.left + (d.x + d.headW / 2) * ed.layout.S, y: r.top + d.heads[0].y * ed.layout.S }; }, before.id);
+  const head = await page.evaluate((id) => { const ed = document.querySelector(".cp-editor").__editor, d = ed.layout.drawn.find((x) => x.id === id), r = document.querySelector(".cp-svg").getBoundingClientRect(); return { x: r.left + (d.x + d.headW / 2) * ed.layout.S, y: r.top - (document.querySelector(".cp-editor").__editor.layout.y0 ?? 0) * document.querySelector(".cp-editor").__editor.layout.S + d.heads[0].y * ed.layout.S }; }, before.id);
   await page.mouse.click(head.x, head.y);
   if (!(await state()).selection.length) throw new Error("head not selected");
   await page.click("[data-pop=cp-trem-more]"); await page.click(".cp-trem-row[data-n='2']");
@@ -1161,7 +1161,7 @@ await step("the rails filled out (WSHED-127, v98): sf ▾ → sfz on a beat; hol
   if ((await page.locator(".cp-svg .cp-expr[data-kind=pedal] .cp-pedal-sign").count()) !== 2 || (await page.locator(".cp-svg .cp-expr[data-kind=pedal] .cp-pedal-line").count()) !== 0) throw new Error("Ped. ✱ should be two signs and no line");
   await hold(".cp-pedal-btn"); await page.click(".cp-pedal-row[data-style=line]"); await page.keyboard.press("Escape");
   // notes: select the bar's first head → Orn ▾ trill with a line, flip stem, a breath mark
-  const headOf = () => page.evaluate((b) => { const ed = document.querySelector(".cp-editor").__editor, d = ed.layout.drawn.find((x) => !x.rest && x.bar === b && x.staff === 0), r = document.querySelector(".cp-svg").getBoundingClientRect(); return { x: r.left + (d.x + d.headW / 2) * ed.layout.S, y: r.top + d.heads[0].y * ed.layout.S, stem: d.stem }; }, b);
+  const headOf = () => page.evaluate((b) => { const ed = document.querySelector(".cp-editor").__editor, d = ed.layout.drawn.find((x) => !x.rest && x.bar === b && x.staff === 0), r = document.querySelector(".cp-svg").getBoundingClientRect(); return { x: r.left + (d.x + d.headW / 2) * ed.layout.S, y: r.top - (document.querySelector(".cp-editor").__editor.layout.y0 ?? 0) * document.querySelector(".cp-editor").__editor.layout.S + d.heads[0].y * ed.layout.S, stem: d.stem }; }, b);
   let first = await headOf();
   { const vr = await page.evaluate(() => { const r = document.querySelector("#cp-view").getBoundingClientRect(); return [r.top, r.bottom]; }); if (first.y < vr[0] + 12 || first.y > vr[1] - 24) { await page.evaluate((y) => { const v = document.querySelector("#cp-view"); v.scrollTop += y - v.getBoundingClientRect().top - v.clientHeight * 0.5; }, first.y); first = await headOf(); } } // under the rails: scroll it into the view first
   await page.mouse.click(first.x, first.y);
@@ -1226,6 +1226,7 @@ await step("the Libertango round (WSHED-166…169): the Chords rail builds B m7(
   if ((await state()).pending) throw new Error("Escape did not disarm");
   // Select mode: tap the first symbol, the 7 chip retypes it alone; undo
   await page.click("[data-act=select]");
+  await page.evaluate(() => { const v = document.querySelector("#cp-view"), g = document.querySelector(".cp-svg .cp-expr[data-kind=chord]"); v.scrollTop += g.getBoundingClientRect().top - v.getBoundingClientRect().top - v.clientHeight * 0.4; }); // the chord line sits high over the staff: bring it into the view, clear of the rails
   const box = await page.locator(".cp-svg .cp-expr[data-kind=chord]").first().boundingBox();
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   if ((await state()).selection.length !== 1) throw new Error("the symbol was not selected: " + JSON.stringify((await state()).selection));
@@ -1241,7 +1242,9 @@ await step("the Libertango round (WSHED-166…169): the Chords rail builds B m7(
   const note = (await docOf()).measures[b].staves[0].voices[0][n];
   const lines0 = await page.locator(".cp-svg .cp-gliss-line").count();
   const hd = await page.evaluate((id) => { const d = document.querySelector(".cp-editor").__editor.layout.drawn.find((x) => x.id === id); return d && { ticks: d.ticks, step: d.heads[0].step }; }, note.id);
-  const hp = await point({ bar: b, staff: 0, ticks: hd.ticks, step: hd.step });
+  let hp = await point({ bar: b, staff: 0, ticks: hd.ticks, step: hd.step });
+  await page.evaluate((y) => { const v = document.querySelector("#cp-view"); v.scrollTop += y - v.getBoundingClientRect().top - v.clientHeight * 0.5; }, hp.y); // into the view, clear of the rails
+  hp = await point({ bar: b, staff: 0, ticks: hd.ticks, step: hd.step });
   await page.mouse.click(hp.x, hp.y); // a tap on a head selects it
   if (!(await state()).selection.length) throw new Error("no note selected for the gliss");
   await hold(".cp-gliss-btn"); await page.click(".cp-gliss-row[data-mode=up]");
@@ -1627,7 +1630,7 @@ await step("v102: gesture mode — off, a Place-mode drag does nothing; on, a pe
   await page.click(".cp-dyn-btn[data-dyn=f]");
   await tap(pen, g.a);
   if ((await exprs(4)).join() !== "dyn:f") throw new Error("f did not land: " + (await exprs(4)));
-  const d = await page.evaluate(() => { const ed = document.querySelector(".cp-editor").__editor, dy = ed.layout.dynamics.find((x) => x.bar === 4), r = document.querySelector(".cp-svg").getBoundingClientRect(), S = ed.layout.S; return { x: r.left + dy.x * S, y: r.top + (dy.y - 0.3) * S }; });
+  const d = await page.evaluate(() => { const ed = document.querySelector(".cp-editor").__editor, dy = ed.layout.dynamics.find((x) => x.bar === 4), r = document.querySelector(".cp-svg").getBoundingClientRect(), S = ed.layout.S; return { x: r.left + dy.x * S, y: r.top - (document.querySelector(".cp-editor").__editor.layout.y0 ?? 0) * document.querySelector(".cp-editor").__editor.layout.S + (dy.y - 0.3) * S }; });
   await stroke(pen, [{ x: d.x - 1.5 * SS, y: d.y - 1.4 * SS }, { x: d.x + 1.5 * SS, y: d.y - 1.4 * SS }, { x: d.x + 1.5 * SS, y: d.y + 1.2 * SS }, { x: d.x - 1.5 * SS, y: d.y + 1.2 * SS }, { x: d.x - 1.5 * SS, y: d.y - 1.4 * SS }]);
   s = await state();
   if (s.selection.length !== 1 || s.selection[0].includes(":")) throw new Error("lasso around the dynamic: " + JSON.stringify(s.selection));
