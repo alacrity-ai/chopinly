@@ -8,7 +8,7 @@
 // baked outlines (bravura.js) as one form XObject per glyph, words are set in Fraunces (embedded
 // subsets), hidden rests and halos are left out, every voice is ink. Pure given the libraries, so
 // node tests render real PDFs.
-import { layoutComposition, SYS_H, TOP_PAD, BLOCK_H, systemAt } from "../layout.js";
+import { layoutComposition, SYS_H, SYS_GAP, TOP_PAD, BLOCK_H, systemAt } from "../layout.js";
 import { paintScore } from "../paint.js";
 import { trimBars } from "../engine.js";
 import { BRAVURA } from "./bravura.js";
@@ -19,9 +19,12 @@ export const STAFF_MM = Array.from({ length: 23 }, (_, i) => Math.round(140 + 5 
 export const MARGINS = { narrow: 10, normal: 15, wide: 20 }; // mm
 export const DEFAULTS = { page: "letter", staffMm: 1.8, margins: "normal", header: true };
 const PT = 72 / 25.4;
-const TITLE_PT = 20, COMPOSER_PT = 12, RUN_PT = 9;
+export const TITLE_PT = 20, SUBTITLE_PT = 12, COMPOSER_PT = 12, RUN_PT = 9;
 const HEADER_PT = 66, RUN_HEAD_PT = 22; // the room the title block / running head take at the top
+/** The first page's title block, baselines in pt from the printable box's top (WSHED-169: a subtitle centred under the title pushes the composer down). The PDF and the sheet's preview both set it from here. */
+export const headerBlock = ({ subtitle = "" } = {}) => { const sub = subtitle ? SUBTITLE_PT + 6 : 0; return { title: TITLE_PT, subtitle: subtitle ? TITLE_PT + 6 + SUBTITLE_PT : null, composer: TITLE_PT + COMPOSER_PT + 8 + sub, room: HEADER_PT + sub }; };
 const AIR = 3;                          // S of air above a page's first staff (slurs, marks, the 8va of a high note)
+const GAP_AIR = 1.2;                    // S of air between one system's lowest ink and the next one's highest (WSHED-165)
 // paper line weights in S (Bravura's engraving defaults are of this order; the screen uses fixed CSS px)
 const W = { sline: 0.1, "cp-tuplet-line": 0.12, "cp-gliss-line": 0.13, "cp-hairpin": 0.12, "cp-pedal-line": 0.12, "cp-ottava-line": 0.11, "cp-grace-slash": 0.12, "cp-textline": 0.11, "cp-niente": 0.11 };
 
@@ -40,8 +43,9 @@ export function exportOptions(opts = {}) {
  * outlines' boxes, words an estimate of the serif face; hidden rests are left out like paper.
  */
 class InkMeter {
-  constructor(L) { this.n = L.systems.length; this.box = L.systems.map(() => ({ top: Infinity, bottom: -Infinity, left: Infinity, right: -Infinity })); this.skip = 0; }
-  mark(x, y) { if (this.skip) return; const b = this.box[systemAt(y, this.n)]; b.top = Math.min(b.top, y); b.bottom = Math.max(b.bottom, y); b.left = Math.min(b.left, x); b.right = Math.max(b.right, x); }
+  constructor(L) { this.n = L.systems.length; this.box = L.systems.map(() => ({ top: Infinity, bottom: -Infinity, left: Infinity, right: -Infinity })); this.skip = 0; this.sys = null; }
+  at(si) { this.sys = si; } // the system the next primitives belong to (WSHED-165): its ink counts there however far it reaches
+  mark(x, y) { if (this.skip) return; const b = this.box[this.sys ?? systemAt(y, this.n)]; b.top = Math.min(b.top, y); b.bottom = Math.max(b.bottom, y); b.left = Math.min(b.left, x); b.right = Math.max(b.right, x); }
   group(cls) { if (this.skip || /\bcp-hidden\b/.test(cls)) this.skip++; }
   end() { if (this.skip) this.skip--; }
   line(x1, y1, x2, y2) { this.mark(x1, y1); this.mark(x2, y2); }
@@ -61,6 +65,7 @@ class InkMeter {
     if (rotate) { const r = Math.max(right - left, bottom - top); this.mark(x - r * k, y - r * k); this.mark(x + r * k, y + r * k); return; } // a rotated run (arpeggio): its longer side both ways
     this.mark(x + left * k, y + top * k); this.mark(x + right * k, y + bottom * k);
   }
+  measure(str, size) { return 0.58 * size * str.length; }
   text(x, y, str, cls, { size, anchor, rotate } = {}) {
     const w = 0.55 * size * str.length, dx = anchor === "middle" ? -w / 2 : anchor === "end" ? -w : 0;
     if (rotate) { this.mark(x - w / 2, y - w / 2); this.mark(x + w / 2, y + w / 2); return; }
@@ -82,7 +87,8 @@ export function inkExtents(L) {
 }
 
 /**
- * Lay the piece out for paper: { doc, L, S, ink, pages: [{ first, last, top, dy }], page, margin, width, height, opts, pageOf, pageAt }.
+ * Lay the piece out for paper: { doc, L, S, ink, pages: [{ first, last, top, dy }], page, margin, width, height, opts, pageOf, pageAt, dyOf }.
+ * `dyOf(system)` is that system's own offset (a page's `dy` is its first system's): systems part further where their ink needs it.
  * S is the staff space in pt; L is the engraver's layout at that S (coordinates in S); `ink` the
  * systems' extents; a page's `dy` (S) added to a layout y gives the y on that page, measured
  * from the printable box's top. A page holds a run of whole systems: its first system's ink
@@ -99,21 +105,29 @@ export function planPages(doc, opts = {}) {
   const ink = inkExtents(L);
   const n = L.systems.length, availS = height / S;
   const pages = [];
+  // systems sit SYS_GAP apart unless their ink needs more (WSHED-165: a chord-symbol line over high notes, ledger notes far
+  // below): then the gap is the lower ink of one plus the upper ink of the next plus GAP_AIR — each system has its own `dy`
+  const sysDy = [];
   for (let i = 0; i < n;) {
-    const top = (o.header ? (pages.length ? RUN_HEAD_PT : HEADER_PT) : 0) / S + Math.max(AIR, ink[i].above);
-    let last = i;
-    while (last + 1 < n && top + (last + 1 - i) * SYS_H + BLOCK_H + Math.max(AIR, ink[last + 1].below) <= availS) last++;
-    pages.push({ first: i, last, top, dy: top - (TOP_PAD + i * SYS_H) });
+    const top = (o.header ? (pages.length ? RUN_HEAD_PT : headerBlock({ subtitle: opts.subtitle ?? doc.subtitle }).room) : 0) / S + Math.max(AIR, ink[i].above);
+    let y = top, last = i;
+    sysDy[i] = top - (TOP_PAD + i * SYS_H);
+    while (last + 1 < n) {
+      const j = last + 1, yj = y + BLOCK_H + Math.max(SYS_GAP, ink[last].below + ink[j].above + GAP_AIR);
+      if (yj + BLOCK_H + Math.max(AIR, ink[j].below) > availS) break;
+      y = yj; sysDy[j] = yj - (TOP_PAD + j * SYS_H); last = j;
+    }
+    pages.push({ first: i, last, top, dy: sysDy[i] });
     i = last + 1;
   }
   const pageOfSys = []; pages.forEach((p, k) => { for (let i = p.first; i <= p.last; i++) pageOfSys[i] = k; });
-  const pageOf = (sys) => pageOfSys[sys], pageAt = (y) => pageOfSys[systemAt(y, n)];
+  const pageOf = (sys) => pageOfSys[sys], pageAt = (y) => pageOfSys[systemAt(y, n)], dyOf = (sys) => sysDy[sys];
   const tight = L.hit.systems.map((s, k) => (s.tight ? k : -1)).filter((k) => k >= 0); // pinned rows that do not fit at this size: the sheet will not save over them
-  return { doc: d, L, S, ink, pages, page: pg, margin, width, height, opts: o, pageOf, pageAt, tight };
+  return { doc: d, L, S, ink, pages, page: pg, margin, width, height, opts: o, pageOf, pageAt, dyOf, tight };
 }
 
 /** Paint a plan into a PDF; resolves to the bytes (Uint8Array). `libs` = { PDFLib, fontkit, fonts: { regular, italic } }. */
-export async function renderPdf(plan, { PDFLib, fontkit, fonts }, { title = "", composer = "", now = new Date() } = {}) {
+export async function renderPdf(plan, { PDFLib, fontkit, fonts }, { title = "", subtitle = "", composer = "", now = new Date() } = {}) {
   const { PDFDocument } = PDFLib;
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
@@ -126,8 +140,10 @@ export async function renderPdf(plan, { PDFLib, fontkit, fonts }, { title = "", 
   const { w: pw, h: ph } = plan.page, m = plan.margin;
   if (plan.opts.header) {
     const t = title || "Untitled";
-    pages[0].drawText(t, { x: pw / 2 - regular.widthOfTextAtSize(t, TITLE_PT) / 2, y: ph - m - TITLE_PT, size: TITLE_PT, font: regular, color: ink });
-    if (composer) pages[0].drawText(composer, { x: pw - m - italic.widthOfTextAtSize(composer, COMPOSER_PT), y: ph - m - TITLE_PT - COMPOSER_PT - 8, size: COMPOSER_PT, font: italic, color: ink });
+    const hb = headerBlock({ subtitle });
+    pages[0].drawText(t, { x: pw / 2 - regular.widthOfTextAtSize(t, TITLE_PT) / 2, y: ph - m - hb.title, size: TITLE_PT, font: regular, color: ink });
+    if (subtitle) pages[0].drawText(subtitle, { x: pw / 2 - regular.widthOfTextAtSize(subtitle, SUBTITLE_PT) / 2, y: ph - m - hb.subtitle, size: SUBTITLE_PT, font: regular, color: ink });
+    if (composer) pages[0].drawText(composer, { x: pw - m - italic.widthOfTextAtSize(composer, COMPOSER_PT), y: ph - m - hb.composer, size: COMPOSER_PT, font: italic, color: ink });
     pages.forEach((p, i) => {
       if (i === 0) return;
       p.drawText(t, { x: m, y: ph - m - RUN_PT, size: RUN_PT, font: italic, color: ink });
@@ -135,7 +151,7 @@ export async function renderPdf(plan, { PDFLib, fontkit, fonts }, { title = "", 
       p.drawText(num, { x: pw - m - regular.widthOfTextAtSize(num, RUN_PT), y: ph - m - RUN_PT, size: RUN_PT, font: regular, color: ink });
     });
   }
-  paintScore(plan.L, new PdfPainter(plan, pdf, pages, { PDFLib, italic, ink }));
+  paintScore(plan.L, new PdfPainter(plan, pdf, pages, { PDFLib, italic, regular, ink }));
   return pdf.save({ useObjectStreams: false }); // plain objects: every viewer, and a byte-level test, can read the page tree
 }
 
@@ -158,18 +174,23 @@ export function outlineOps(d, k) {
 }
 
 class PdfPainter {
-  constructor(plan, pdf, pages, { PDFLib, italic, ink }) {
-    this.plan = plan; this.S = plan.S; this.pdf = pdf; this.pages = pages; this.P = PDFLib; this.italic = italic; this.ink = ink;
+  constructor(plan, pdf, pages, { PDFLib, italic, regular, ink }) {
+    this.plan = plan; this.S = plan.S; this.pdf = pdf; this.pages = pages; this.P = PDFLib; this.italic = italic; this.regular = regular ?? italic; this.ink = ink;
     this.skip = 0;          // > 0 inside a hidden group (a hidden rest): nothing is drawn
+    this.sys = null;        // the system the primitives being drawn belong to (paint.js `at`)
     this.forms = new Map(); // codepoint → XObject ref (one outline per glyph per document)
     this.names = new Map(); // "page:codepoint" → resource name on that page
   }
-  /** Which page a layout y lands on: the plan's routing (the preview uses the same). */
-  pageAt(y) { return this.plan.pageAt(y); }
+  at(si) { this.sys = si; }
+  /** Which page a primitive lands on: its system's (WSHED-165 — a staccato dot under a low note, a chord symbol high above, stays with
+   *  its system); a primitive painted with no system named goes by its height. The preview routes the same way. */
+  pageAt(y) { return this.sys !== null ? this.plan.pageOf(this.sys) : this.plan.pageAt(y); }
   /** Layout (x, y) in S → page space (pt, y up) on page k. */
-  pt(x, y, k) { const p = this.plan.pages[k]; return { x: this.plan.margin + x * this.S, y: this.plan.page.h - this.plan.margin - (y + p.dy) * this.S }; }
+  /** The offset of the system a primitive belongs to (its own, else the one its height falls in). */
+  dy(y) { return this.plan.dyOf(this.sys ?? systemAt(y, this.plan.L.systems.length)); }
+  pt(x, y, k) { return { x: this.plan.margin + x * this.S, y: this.plan.page.h - this.plan.margin - (y + this.dy(y)) * this.S }; }
   /** Layout (x, y) → SVG-space (pt, y down from the page's top-left) for drawSvgPath. */
-  sv(x, y, k) { const p = this.plan.pages[k]; return [this.plan.margin + x * this.S, this.plan.margin + (y + p.dy) * this.S]; }
+  sv(x, y, k) { return [this.plan.margin + x * this.S, this.plan.margin + (y + this.dy(y)) * this.S]; }
   width(cls) { for (const c of cls.split(" ")) if (W[c]) return W[c] * this.S; return 0.1 * this.S; }
   group(cls) { if (this.skip || /\bcp-hidden\b/.test(cls)) this.skip++; }
   end() { if (this.skip) this.skip--; }
@@ -241,13 +262,16 @@ class PdfPainter {
       pen += glyphs[i].a;
     }
   }
+  /** The face a run is set in: chord symbols upright, every other word italic (the screen's styles). */
+  font(cls) { return /\bcp-chord\b/.test(cls ?? "") ? this.regular : this.italic; }
+  measure(str, size, cls) { return this.font(cls).widthOfTextAtSize(str, size * this.S) / this.S; }
   text(x, y, str, cls, { size, anchor, rotate } = {}) {
     if (this.skip) return;
-    const k = this.pageAt(y), pt = size * this.S;
+    const k = this.pageAt(y), pt = size * this.S, font = this.font(cls);
     const o = this.pt(x, y, k);
-    const w = this.italic.widthOfTextAtSize(str, pt);
+    const w = font.widthOfTextAtSize(str, pt);
     const dx = anchor === "middle" ? -w / 2 : anchor === "end" ? -w : 0;
     const a = rotate ? (-rotate[0] * Math.PI) / 180 : 0;
-    this.pages[k].drawText(str, { x: o.x + dx * Math.cos(a), y: o.y + dx * Math.sin(a), size: pt, font: this.italic, color: this.ink, ...(rotate ? { rotate: this.P.degrees(-rotate[0]) } : {}) });
+    this.pages[k].drawText(str, { x: o.x + dx * Math.cos(a), y: o.y + dx * Math.sin(a), size: pt, font, color: this.ink, ...(rotate ? { rotate: this.P.degrees(-rotate[0]) } : {}) });
   }
 }

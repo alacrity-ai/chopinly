@@ -33,6 +33,7 @@ function el(name, attrs, text) {
   return node;
 }
 
+let textMeter = null; // a canvas context measuring the serif face (chord symbols set run by run)
 /** The screen painter: paint.js calls → SVG nodes, appended as they come; groups nest. */
 class SvgPainter {
   constructor(L) {
@@ -67,6 +68,14 @@ class SvgPainter {
     for (const [k, v] of Object.entries(data ?? {})) attrs[`data-${k}`] = v;
     this.add(el("text", attrs, ch));
   }
+  /** A run's advance in S, measured in the serif face (canvas); before the font is in, an estimate. */
+  measure(str, size, cls) {
+    if (typeof document === "undefined" || !document.fonts?.check?.('500 1em "Fraunces"')) return 0.58 * size * str.length;
+    textMeter ??= document.createElement("canvas").getContext("2d");
+    const px = Math.max(1, this.S * size); // measured at the size it is drawn: Fraunces has an optical-size axis, so 100 px glyphs are narrower than 20 px ones
+    textMeter.font = `${/\bcp-chord\b/.test(cls) ? "" : "italic "}500 ${px.toFixed(2)}px "Fraunces"`;
+    return textMeter.measureText(str).width / this.S;
+  }
   text(x, y, str, cls, { size, anchor, rotate } = {}) {
     const attrs = { x: this.px(x), y: this.px(y), class: cls };
     if (anchor) attrs["text-anchor"] = anchor;
@@ -78,7 +87,16 @@ class SvgPainter {
 
 /** The SVG painter that keeps only the primitives `keep(y)` allows: one page of a plan (docs §10.1). Groups stay, so selection classes and data still nest. */
 class PageSvgPainter extends SvgPainter {
-  constructor(L, keep) { super(L); this.keep = keep; }
+  constructor(L, keep, keepSys, shiftOf) { super(L); this.keep0 = keep; this.keepSys = keepSys; this.shiftOf = shiftOf; this.sys = null; }
+  /** A top-level node moves with its system when the plan parted the systems further than the layout (WSHED-165). */
+  add(node) {
+    const d = !this.stack.length && this.sys !== null && this.shiftOf ? this.shiftOf(this.sys) : 0;
+    if (d) { const t = node.getAttribute("transform"); node.setAttribute("transform", `translate(0 ${this.px(d)})${t ? ` ${t}` : ""}`); }
+    return super.add(node);
+  }
+  /** The system the next primitives belong to (paint.js `at`): it decides the page when known; a bare height only otherwise (WSHED-165). */
+  at(si) { this.sys = si; }
+  keep(y) { return this.sys !== null && this.keepSys ? this.keepSys(this.sys) : this.keep0(y); }
   line(x1, y1, x2, y2, cls) { if (this.keep(y1)) super.line(x1, y1, x2, y2, cls); }
   rect(x, y, w, h, cls) { if (this.keep(y)) super.rect(x, y, w, h, cls); }
   polygon(points, cls) { if (this.keep(points[0][1])) super.polygon(points, cls); }
@@ -93,8 +111,8 @@ class PageSvgPainter extends SvgPainter {
  * admits — the export sheet passes the plan's `pageAt(y) === k`, the same routing the PDF painter
  * uses, so the preview of a page is the page (WSHED-133).
  */
-export function renderPage(L, keep) {
-  const painter = new PageSvgPainter(L, keep);
+export function renderPage(L, keep, keepSys = null, shiftOf = null) {
+  const painter = new PageSvgPainter(L, keep, keepSys, shiftOf);
   paintScore(L, painter);
   return painter.svg;
 }
@@ -105,7 +123,7 @@ export function renderComposition(container, L) {
   /** The nodes of one ghost note / rest. */
   const ghostNodes = (spec) => {
     if (spec.dyn) { const c = inkCentre(dynGlyph(spec.dyn)); const t = glyphOf(c === null ? spec.x : spec.x - c * 4, spec.y, dynGlyph(spec.dyn), "glyph cp-dyn"); if (c === null) t.setAttribute("text-anchor", "middle"); return [t]; }
-    if (spec.text && !spec.line) return [el("text", { x: px(spec.x), y: px(spec.y), class: "cp-expr-text", style: `font-size:${(S * 1.15).toFixed(1)}px` }, spec.text)]; // a text line's ghost carries `text` too (below)
+    if (spec.text && !spec.line) return [el("text", { x: px(spec.x), y: px(spec.y), class: spec.chord ? "cp-chord cp-ghost-chord" : "cp-expr-text", style: `font-size:${(S * (spec.chord ? 1.45 : 1.15)).toFixed(1)}px` }, spec.text)]; // a text line's ghost carries `text` too (below); a chord symbol's ghost (WSHED-166) is its plain text
     if (spec.hairpin) { // the rubber band from a placed start to the pointer: open at the far end while it is still being drawn
       const o = 0.55, cresc = spec.hairpin === "cresc", a1 = cresc ? 0 : o, a2 = cresc ? o : 0, x1 = spec.x1, x2 = Math.max(spec.x1 + 0.5, spec.x2), y = spec.y;
       return [el("path", { class: "cp-hairpin", d: `M${px(x1)},${px(y - a1)} L${px(x2)},${px(y - a2)} M${px(x1)},${px(y + a1)} L${px(x2)},${px(y + a2)}` })];

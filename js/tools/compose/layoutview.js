@@ -7,12 +7,11 @@ import { icon } from "../../lib/icons.js";
 import { toast, plural } from "../logbook/util.js";
 import { haptic } from "../logbook/motion.js";
 import { renderPage } from "../../lib/compose/render.js";
-import { planPages } from "../../lib/compose/export/pdf.js";
+import { planPages, headerBlock, TITLE_PT, SUBTITLE_PT, COMPOSER_PT, RUN_PT } from "../../lib/compose/export/pdf.js";
 import { PIN_FLOOR } from "../../lib/compose/layout.js";
 import { setBreak, setWeight, lockRow, releaseBars, clearPins, pinCount, pinSummary, rowLocked, weightFor, scalesWith, roundWeight } from "../../lib/compose/pins.js";
 
 const SVG = "http://www.w3.org/2000/svg";
-const TITLE_PT = 20, COMPOSER_PT = 12, RUN_PT = 9; // as export/pdf.js draws them
 export const HANDLE_PX = 44; // a barline's target: a fingertip, narrowed only so two never overlap
 const HANDLE_SHARE = 0.45;   // of the narrower neighbouring bar
 const TAP_PX = 6;            // travel past this is a drag
@@ -20,9 +19,9 @@ const ZOOMS = [1, 1.5, 2, 3], FIT_MAX = 1100, KEY_STEP = 0.05;
 const svgEl = (name, attrs = {}) => { const n = document.createElementNS(SVG, name); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); return n; };
 
 /** Page k of a plan as the paper will carry it (the export sheet's preview and this view share it): the plan's systems through the screen painter, the header as text, nothing clipped short of the page's edge. */
-export function planPageSvg(plan, k, { title = "", composer = "" } = {}) {
+export function planPageSvg(plan, k, { title = "", subtitle = "", composer = "" } = {}) {
   const { page: pg, margin: m, S, L } = plan, pk = plan.pages[k], n = plan.pages.length;
-  const score = renderPage(L, (y) => plan.pageAt(y) === k);
+  const score = renderPage(L, (y) => plan.pageAt(y) === k, (s) => plan.pageOf(s) === k, (s) => plan.dyOf(s) - pk.dy); // ink goes by its system, and each system sits where the plan put it (WSHED-165), as on paper
   for (const a of ["width", "height"]) score.removeAttribute(a);
   score.setAttribute("x", m); score.setAttribute("y", m + pk.dy * S); score.setAttribute("width", L.width); score.setAttribute("height", L.height); score.setAttribute("overflow", "visible");
   const page = svgEl("svg", { class: "cp-page", viewBox: `0 0 ${pg.w} ${pg.h}`, role: "img", "aria-label": `page ${k + 1} of ${n}` });
@@ -30,7 +29,7 @@ export function planPageSvg(plan, k, { title = "", composer = "" } = {}) {
   const words = (x, y, str, cls, size, anchor) => { const t = svgEl("text", { class: cls, x, y, "text-anchor": anchor, "font-size": size }); t.textContent = str; page.append(t); };
   if (plan.opts.header) {
     const t = title || "Untitled";
-    if (k === 0) { words(pg.w / 2, m + TITLE_PT, t, "cp-page-text", TITLE_PT, "middle"); if (composer) words(pg.w - m, m + TITLE_PT + COMPOSER_PT + 8, composer, "cp-page-text it", COMPOSER_PT, "end"); }
+    if (k === 0) { const hb = headerBlock({ subtitle }); words(pg.w / 2, m + hb.title, t, "cp-page-text", TITLE_PT, "middle"); if (subtitle) words(pg.w / 2, m + hb.subtitle, subtitle, "cp-page-text", SUBTITLE_PT, "middle"); if (composer) words(pg.w - m, m + hb.composer, composer, "cp-page-text it", COMPOSER_PT, "end"); }
     else { words(m, m + RUN_PT, t, "cp-page-text it", RUN_PT, "start"); words(pg.w - m, m + RUN_PT, String(k + 1), "cp-page-text", RUN_PT, "end"); }
   }
   page.append(score);
@@ -41,7 +40,7 @@ export function planPageSvg(plan, k, { title = "", composer = "" } = {}) {
  * Open the view over whatever is on screen. Resolves when it closes: the document with its pins when
  * anything changed, else null.
  */
-export function openLayoutView({ doc: initial, opts, title = "", composer = "" }) {
+export function openLayoutView({ doc: initial, opts, title = "", subtitle = "", composer = "" }) {
   let doc = initial, plan = null, zoom = 0, closed = false, menu = null, drag = null, raf = 0;
   const past = [], future = [];
   const root = document.createElement("div");
@@ -69,7 +68,7 @@ export function openLayoutView({ doc: initial, opts, title = "", composer = "" }
   const tightKeys = (p) => new Set(p.tight.map((i) => p.L.hit.systems[i].bars[0].index)); // a tight row is known by its first bar: row numbers shift as breaks move
   const pagePx = () => Math.min(FIT_MAX, Math.max(240, scroll.clientWidth - 24)) * ZOOMS[zoom];
   const xPt = (xs) => plan.margin + xs * plan.S;
-  const yPt = (sys, ys) => plan.margin + (plan.pages[plan.pageOf(sys)].dy + ys) * plan.S;
+  const yPt = (sys, ys) => plan.margin + (plan.dyOf(sys) + ys) * plan.S;
   const place = (node, x0, y0, x1, y1) => { const { w, h } = plan.page; node.style.left = `${(x0 / w) * 100}%`; node.style.top = `${(y0 / h) * 100}%`; node.style.width = `${((x1 - x0) / w) * 100}%`; node.style.height = `${((y1 - y0) / h) * 100}%`; };
 
   // --- edits: tried on a copy; a row that would not fit refuses, and nothing changes ---
@@ -218,7 +217,7 @@ export function openLayoutView({ doc: initial, opts, title = "", composer = "" }
     const live = new Set();
     wraps.forEach(({ wrap, hits }, k) => {
       wrap.style.width = `${px}px`;
-      const page = planPageSvg(plan, k, { title, composer }); page.append(marksFor(k));
+      const page = planPageSvg(plan, k, { title, subtitle, composer }); page.append(marksFor(k));
       wrap.querySelector(".cp-page")?.remove(); wrap.prepend(page);
       for (const old of hits.querySelectorAll(".cp-lay-tab, .cp-lay-release")) old.remove();
       rowsOf().forEach((r, i) => {

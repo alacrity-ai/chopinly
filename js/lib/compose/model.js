@@ -1,5 +1,5 @@
 // The composition document (docs/COMPOSE_DESIGN.md §4). Pure — node-testable.
-import { ticks, capacity, fromTicks, splitRest, groupSize, exprGrid, inMetre } from "./ticks.js";
+import { ticks, capacity, fromTicks, splitRest, exprGrid, inMetre } from "./ticks.js";
 
 export const SCHEMA = 3; // v3 (WSHED-122): dynamics, hairpins and text are bar-level `expressions`, no longer note attributes
 /** Dynamics, softest to loudest; the hairpin directions. */
@@ -17,6 +17,12 @@ export const FINGER_MAX = 5;
 export const GRACE_BASES = [8, 16, 32]; // a grace note's value (docs/COMPOSE_NOTES2_DESIGN.md §1)
 export const TREM_MAX = 3;
 export const TEXT_MAX = 40;
+/** Chord symbols (docs/COMPOSE_CHORDS_DESIGN.md §1, WSHED-166): a root, the quality as engraved text, an optional slash bass. */
+export const CHORD_Q_MAX = 16;
+export const SUBTITLE_MAX = 80; // a piece's subtitle ("As played by …", WSHED-169)
+/** A glissando (WSHED-167): "start" slides to the voice's next note; "up" / "down" leave the note with no landing (an open gliss). */
+export const GLISS = ["start", "up", "down"];
+const isPitchName = (r) => !!r && typeof r === "object" && /^[A-G]$/.test(r.step) && Number.isInteger(r.alter ?? 0) && Math.abs(r.alter ?? 0) <= 2 && Object.keys(r).every((k) => k === "step" || k === "alter");
 export const MAX_VOICES = 4;
 /** How far a rest may be dragged from its automatic place, in staff steps (`ev.restY`). */
 export const REST_Y_MAX = 12;
@@ -119,6 +125,7 @@ export function validate(doc) {
   const v3 = doc.v === SCHEMA;
   const m0 = doc.measures[0];
   if (!m0.key || !m0.time || !m0.clefs) throw new Error("bar 1 must carry key, time and clefs");
+  if (doc.subtitle !== undefined && (typeof doc.subtitle !== "string" || !doc.subtitle.trim() || doc.subtitle.length > SUBTITLE_MAX)) throw new Error(`a subtitle is 1–${SUBTITLE_MAX} letters or absent`);
   const ids = new Set();
   doc.measures.forEach((m, bi) => {
     if (m.short !== undefined) { // a short bar (§8.5p): a whole number of expression-grid steps, less than the signature, opening (from the end of the metre) or closing
@@ -130,11 +137,11 @@ export function validate(doc) {
       const { brk, w, ...rest } = typeof m.lay === "object" && m.lay ? m.lay : { bad: 1 };
       if (Object.keys(rest).length || (brk === undefined && w === undefined) || (brk !== undefined && !LAY_BREAKS.includes(brk)) || (w !== undefined && (typeof w !== "number" || !(w >= LAY_W_MIN && w <= LAY_W_MAX) || w === 1))) throw new Error(`bar ${bi + 1}: a layout pin is a break or a keep, and a weight ${LAY_W_MIN}–${LAY_W_MAX} other than 1`);
     }
-    const cap = capacity(timeAt(doc, bi)), beat = groupSize(timeAt(doc, bi));
+    const cap = capacity(timeAt(doc, bi));
     if (m.staves.length !== doc.parts[0].staves) throw new Error(`bar ${bi + 1}: staff count`);
     let lastAt = 0;
     for (const c of m.clefChanges ?? []) {
-      if (!(c.staff >= 0 && c.staff < m.staves.length) || !Number.isInteger(c.at) || c.at <= 0 || c.at >= cap || inMetre(c.at, timeAt(doc, bi)) % beat || c.at < lastAt) throw new Error(`bar ${bi + 1}: clef change off the beat`);
+      if (!(c.staff >= 0 && c.staff < m.staves.length) || !Number.isInteger(c.at) || c.at <= 0 || c.at >= cap || inMetre(c.at, timeAt(doc, bi)) % exprGrid(timeAt(doc, bi)) || c.at < lastAt) throw new Error(`bar ${bi + 1}: clef change off the half-beat grid`); // on the expression grid since WSHED-168 (a beat before)
       if ((m.clefChanges ?? []).some((o) => o !== c && o.staff === c.staff && o.at === c.at)) throw new Error(`bar ${bi + 1}: two clefs on one beat`);
       lastAt = c.at;
     }
@@ -146,6 +153,7 @@ export function validate(doc) {
       if (x.dy !== undefined && (!Number.isInteger(x.dy) || x.dy === 0 || Math.abs(x.dy) > EXPR_Y_MAX)) throw new Error(`bar ${bi + 1}: ${x.id}: dy must be a whole number of steps within ±${EXPR_Y_MAX} (absent when 0)`);
       if (x.kind === "dyn") { if (!DYN_VALUES.includes(x.value)) throw new Error(`bar ${bi + 1}: ${x.id} is not a dynamic`); }
       else if (x.kind === "text") { if (typeof x.value !== "string" || !x.value.trim() || x.value.length > TEXT_MAX) throw new Error(`bar ${bi + 1}: ${x.id} text`); }
+      else if (x.kind === "chord") { if (!isPitchName(x.root) || typeof x.q !== "string" || x.q.length > CHORD_Q_MAX || x.q !== x.q.trim() || (x.bass !== undefined && !isPitchName(x.bass)) || x.value !== undefined) throw new Error(`bar ${bi + 1}: chord symbol ${x.id} needs a root, a quality of at most ${CHORD_Q_MAX} letters and an optional bass`); }
       else if (SPAN_KINDS.includes(x.kind)) {
         const eb = doc.measures[x.end?.bar];
         if (x.kind === "hairpin" && !HAIRPINS.includes(x.dir)) throw new Error(`bar ${bi + 1}: hairpin ${x.id} has no direction`);
@@ -217,10 +225,11 @@ export function validate(doc) {
           if (ev.kind !== "note" || !Array.isArray(ev.graces) || !ev.graces.length) throw new Error(`${ev.id}: graces belong on a note, at least one`);
           for (const g of ev.graces) if (!GRACE_BASES.includes(g.base) || !(g.pitches?.length > 0) || g.pitches.some((p) => !/^[A-G]$/.test(p.step) || !Number.isInteger(p.octave) || !Number.isInteger(p.alter ?? 0) || Math.abs(p.alter ?? 0) > 2)) throw new Error(`${ev.id}: a grace note needs a value of 8, 16 or 32 and pitches`);
         }
+        if (ev.gliss !== undefined && (ev.kind !== "note" || !GLISS.includes(ev.gliss))) throw new Error(`${ev.id}: a glissando is start, up or down, on a note`);
         if (ev.trem !== undefined && (ev.kind !== "note" || !Number.isInteger(ev.trem) || ev.trem < 1 || ev.trem > TREM_MAX)) throw new Error(`${ev.id}: a tremolo is 1–${TREM_MAX} strokes on a note`);
         if (ev.trill !== undefined && (ev.kind !== "note" || !ev.art?.includes("trill") || typeof ev.trill !== "object" || !ev.trill || (ev.trill.line !== undefined && ev.trill.line !== true) || (ev.trill.alter !== undefined && !TRILL_ALTERS.includes(ev.trill.alter)) || (ev.trill.line === undefined && ev.trill.alter === undefined))) throw new Error(`${ev.id}: trill options belong on a trilled note — a line, an accidental`);
         if (ev.stem !== undefined && (ev.kind !== "note" || (ev.stem !== "up" && ev.stem !== "down"))) throw new Error(`${ev.id}: a stem is up or down, on a note`);
-        if (ev.beam !== undefined && (ev.kind !== "note" || ev.beam !== "break")) throw new Error(`${ev.id}: a beam break goes on a note`);
+        if (ev.beam !== undefined && (ev.kind !== "note" || (ev.beam !== "break" && ev.beam !== "join"))) throw new Error(`${ev.id}: a beam break or join goes on a note`); // join since WSHED-170: the beam runs on across the beat
         if (ev.art && ev.art.filter((a) => a === "turn" || a === "invertedTurn" || a === "delayedTurn").length > 1) throw new Error(`${ev.id}: one turn per note`);
         if (ev.kind === "rest" && ev.pitches) throw new Error(`rest ${ev.id} with pitches`);
         if (ev.hidden && ev.kind !== "rest") throw new Error(`note ${ev.id} marked hidden`);

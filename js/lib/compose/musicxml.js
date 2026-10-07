@@ -9,6 +9,7 @@ import { onsets, normalizeBar, cleanTies, cleanExpressions, trimBars, decompose,
 import { keyAlterations, CLEFS, parsePitch } from "../music.js";
 import { parseXml, child, children, textOf, numOf, esc } from "./xml.js";
 import { VERSION } from "../../version.js";
+import { xmlKind, qualityFromXml } from "./chordsym.js";
 
 // --- the shared vocabulary ------------------------------------------------------------------
 const CLEF_XML = { treble: ["G", 2], soprano: ["C", 1], mezzo: ["C", 2], alto: ["C", 3], tenor: ["C", 4], baritone: ["F", 3], bass: ["F", 4] };
@@ -57,11 +58,13 @@ export const musicXmlFileName = (c) => {
 };
 export const MUSICXML_TYPE = "application/vnd.recordare.musicxml+xml";
 
+/** A chord symbol as <harmony> (WSHED-166): root, kind (with the engraved quality as text=), bass. */
+const harmonyXml = (x) => `<harmony placement="above"${x.dy ? ` relative-y="${x.dy * TENTHS_PER_STEP}"` : ""}><root><root-step>${x.root.step}</root-step>${x.root.alter ? `<root-alter>${x.root.alter}</root-alter>` : ""}</root><kind text="${esc(x.q)}">${xmlKind(x.q)}</kind>${x.bass ? `<bass><bass-step>${x.bass.step}</bass-step>${x.bass.alter ? `<bass-alter>${x.bass.alter}</bass-alter>` : ""}</bass>` : ""}<staff>${x.staff + 1}</staff></harmony>`;
 /**
  * The document as MusicXML 4.0 part-wise text (docs/COMPOSE_MUSICXML_DESIGN.md §1). Trailing
  * empty bars are trimmed like the PDF's. `now` and `software` are injectable for the golden file.
  */
-export function toMusicXml(doc, { title = doc.title, composer = doc.composer ?? "", now = new Date(), software = `Chopinly ${VERSION}` } = {}) {
+export function toMusicXml(doc, { title = doc.title, subtitle = doc.subtitle ?? "", composer = doc.composer ?? "", now = new Date(), software = `Chopinly ${VERSION}` } = {}) {
   const d = trimBars(doc);
   const nStaves = d.parts[0].staves;
   const out = [];
@@ -75,6 +78,7 @@ export function toMusicXml(doc, { title = doc.title, composer = doc.composer ?? 
   if (composer) w(`    <creator type="composer">${esc(composer)}</creator>`);
   w(`    <encoding><software>${esc(software)}</software><encoding-date>${date}</encoding-date><supports element="accidental" type="yes"/><supports element="beam" type="no"/><supports element="stem" type="no"/></encoding>`);
   w("  </identification>");
+  if (subtitle) w(`  <credit page="1"><credit-type>subtitle</credit-type><credit-words justify="center" valign="top">${esc(subtitle)}</credit-words></credit>`); // WSHED-169
   w('  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>');
   w('  <part id="P1">');
   // span stops (hairpins, pedals, octave lines) by the bar they land in
@@ -145,6 +149,7 @@ export function toMusicXml(doc, { title = doc.title, composer = doc.composer ?? 
       const st = `<staff>${x.staff + 1}</staff>`;
       if (x.kind === "dyn") inserts[x.staff].push({ at: x.at, rank: 2, xml: `<direction placement="below"><direction-type><dynamics${ry(x)}><${x.value}/></dynamics></direction-type>${st}</direction>` });
       else if (x.kind === "text") inserts[x.staff].push({ at: x.at, rank: 3, xml: `<direction placement="above"><direction-type><words${ry(x)}>${esc(x.value)}</words></direction-type>${st}</direction>` });
+      else if (x.kind === "chord") inserts[x.staff].push({ at: x.at, rank: 3, xml: harmonyXml(x) }); // WSHED-166
       else if (x.kind === "hairpin") inserts[x.staff].push({ at: x.at, rank: 4, xml: `<direction placement="below"><direction-type><wedge type="${WEDGE_OF[x.dir]}" number="${x.staff + 1}"${x.niente ? ' niente="yes"' : ""}${ry(x)}/></direction-type>${st}</direction>` });
       else if (x.kind === "pedal") inserts[x.staff].push({ at: x.at, rank: 4, xml: pedalXml(x, "start") });
       else if (x.kind === "textline") inserts[x.staff].push({ at: x.at, rank: 4, xml: textLineXml(x, "start") });
@@ -187,6 +192,7 @@ export function toMusicXml(doc, { title = doc.title, composer = doc.composer ?? 
             first.push(tupletNot);
             if (ev.gliss === "start") { first.push('<glissando type="start" line-type="wavy"/>'); glissOpen.add(line); }
             const groups = { articulations: [], ornaments: [] };
+            if (ev.gliss === "up" || ev.gliss === "down") groups.articulations.push(ev.gliss === "up" ? "<doit/>" : "<falloff/>"); // an open gliss = MusicXML's indeterminate slide off the note (WSHED-167)
             let fermata = "";
             for (const a of ev.art ?? []) { const [where, name] = ART_XML[a] ?? []; if (!where) continue; if (where === "fermata") fermata = "<fermata/>"; else groups[where].push(`<${name}/>${a === "trill" && ev.trill ? `${ev.trill.alter !== undefined ? `<accidental-mark>${ACC_MARK_OF[ev.trill.alter]}</accidental-mark>` : ""}${ev.trill.line ? '<wavy-line type="start"/><wavy-line type="stop"/>' : ""}` : ""}`); } // a trill's accidental and wavy line ride in the ornaments (docs/COMPOSE_RAILS2_DESIGN.md §6)
             if (fermata) first.push(fermata);
@@ -254,6 +260,7 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
   const warnings = new Set();
   const title = textOf(child(root, "work"), "work-title") || textOf(root, "movement-title") || fileName.replace(/\.(musicxml|xml|mxl)$/i, "").trim() || "Untitled";
   const composer = children(child(root, "identification"), "creator").find((c) => c.attrs.type === "composer")?.text ?? "";
+  const subtitle = (children(root, "credit").find((c) => textOf(c, "credit-type") === "subtitle") ? textOf(children(root, "credit").find((c) => textOf(c, "credit-type") === "subtitle"), "credit-words") : textOf(root, "movement-title") && textOf(child(root, "work"), "work-title") && textOf(root, "movement-title") !== textOf(child(root, "work"), "work-title") ? textOf(root, "movement-title") : "").replace(/\s+/g, " ").trim().slice(0, 80); // WSHED-169
   let tempo = null;
   const accSupported = children(child(child(root, "identification"), "encoding"), "supports").some((x) => x.attrs.element === "accidental" && x.attrs.type === "yes");
 
@@ -323,6 +330,7 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
             else if (s.attrs.type === "stop" && slurOpen.has(n)) { rec.slurs.push({ id: slurOpen.get(n), at: "stop" }); slurOpen.delete(n); }
           }
           for (const g of [...children(not, "glissando"), ...children(not, "slide")]) if (g.attrs.type === "start") rec.gliss = true;
+          for (const a of child(not, "articulations")?.children ?? []) if (a.name === "doit" || a.name === "falloff") rec.gliss = a.name === "doit" ? "up" : "down"; // an open gliss (WSHED-167)
           for (const grp of ["articulations", "ornaments"]) for (const a of child(not, grp)?.children ?? []) {
             if (a.name === "tremolo") { const n = parseInt(a.text, 10); if ((a.attrs.type ?? "single") === "single" && n >= 1 && n <= TREM_MAX) rec.trem = n; else warnings.add("a two-note tremolo was skipped"); continue; }
             if (a.name === "wavy-line") { if (a.attrs.type === "start") rec.trillLine = true; continue; } // a trill's extension (only with a trill mark — a bare wavy line is dropped)
@@ -382,7 +390,16 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
           else if (loc === "right" && (style === "light-heavy" || style === "heavy-heavy")) bar.barline.end = "final";
           if (end) { const n = parseInt(end.attrs.number, 10); if (end.attrs.type === "start" && n >= 1) bar.endingStart = Math.min(n, 9); else if (end.attrs.type === "stop" || end.attrs.type === "discontinue") bar.endingStop = true; }
         }
-        else if (el.name === "harmony" || el.name === "figured-bass") warnings.add("chord symbols ignored");
+        else if (el.name === "harmony") { // a chord symbol (WSHED-166) on its staff at the cursor (+ offset)
+          const si = ourStaff(part, numOf(el, "staff", 1)), rootEl = child(el, "root"), kindEl = child(el, "kind");
+          const step = textOf(rootEl, "root-step"), alter = numOf(rootEl, "root-alter", 0), bassEl = child(el, "bass");
+          if (si >= 0 && /^[A-G]$/.test(step) && Number.isInteger(alter) && Math.abs(alter) <= 2 && kindEl?.text !== "none") {
+            const bstep = textOf(bassEl, "bass-step"), balter = numOf(bassEl, "bass-alter", 0);
+            const ryv = Number(el.attrs["relative-y"] ?? 0), dyv = Math.max(-EXPR_Y_MAX, Math.min(EXPR_Y_MAX, Math.round(ryv / TENTHS_PER_STEP)));
+            bar.dirs.push({ kind: "chord", si, at: cursor + scale(numOf(el, "offset", 0)), root: { step, alter }, q: qualityFromXml(kindEl?.text?.trim() ?? "major", kindEl?.attrs.text), ...(/^[A-G]$/.test(bstep) && Math.abs(balter) <= 2 ? { bass: { step: bstep, alter: balter } } : {}), dy: dyv });
+          } else if (si >= 0) warnings.add("a chord symbol Compose cannot spell was skipped");
+        }
+        else if (el.name === "figured-bass") warnings.add("figured bass ignored");
         bar.len = Math.max(bar.len, cursor);
       }
       if (pendingGraces.size) warnings.add("a grace note with no note after it was dropped");
@@ -435,8 +452,8 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
       if (len >= grid && len < cap) { m.short = { len, from: bi === 0 || bar.implicit ? "end" : "start" }; tb = shortMetre(t, m.short); if (m.short.from === "end") shift = len - bar.len; }
       else if (bi === 0) { shift = cap - bar.len; warnings.add("the pickup bar was filled from the front"); }
     }
-    const g = groupSize(t), tcap = capacity(tb);
-    for (const c of bar.clefChanges) { const at = Math.min(tcap - g, Math.max(0, Math.round((c.at + shift) / g) * g)); if (at === 0) { if (bi === 0 || c.clef !== clefAt(doc0, bi - 1, c.staff, Infinity)) m.clefs = { ...(m.clefs ?? {}), [c.staff]: c.clef }; } else if (!m.clefChanges?.some((o) => o.staff === c.staff && o.at === at)) m.clefChanges = [...(m.clefChanges ?? []), { staff: c.staff, at, clef: c.clef }]; }
+    const g = exprGrid(t), tcap = capacity(tb); // a mid-bar clef lands on the half-beat slot at or before its note (WSHED-168)
+    for (const c of bar.clefChanges) { const at = Math.min(tcap - g, Math.max(0, Math.floor((c.at + shift + TOL) / g) * g)); if (at === 0) { if (bi === 0 || c.clef !== clefAt(doc0, bi - 1, c.staff, Infinity)) m.clefs = { ...(m.clefs ?? {}), [c.staff]: c.clef }; } else if (!m.clefChanges?.some((o) => o.staff === c.staff && o.at === at)) m.clefChanges = [...(m.clefChanges ?? []), { staff: c.staff, at, clef: c.clef }]; }
     if (m.clefChanges) m.clefChanges.sort((a, b) => a.at - b.at || a.staff - b.staff);
     // voices
     const present = [[], []];
@@ -455,6 +472,7 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
     for (const dd of bar.dirs) {
       const pos = snap(dd.at + shift, bi, dd.type === "stop");
       if (dd.kind === "dyn" || dd.kind === "text") { const x = { id: eid(), kind: dd.kind, staff: dd.si, at: pos.at, value: dd.value }; if (dd.dy) x.dy = dd.dy; putAt(pos.bar, x); continue; }
+      if (dd.kind === "chord") { const x = { id: eid(), kind: "chord", staff: dd.si, at: pos.at, root: dd.root, q: dd.q, ...(dd.bass ? { bass: dd.bass } : {}) }; if (dd.dy) x.dy = dd.dy; putAt(pos.bar, x); continue; }
       // spans: a wedge / pedal / octave-shift opens on its staff and number and closes at the next stop of its kind there (any number of that kind when the numbers do not match)
       const kind = dd.kind === "wedge" ? "hairpin" : dd.kind, k = `${kind}:${dd.si}:${dd.number}`;
       const close = () => {
@@ -482,6 +500,7 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
   for (const [b, xs] of late) for (const x of xs) if (b < measures.length) putAt(b, x); // a span that stopped at the very end lands on the added bar's first slot
   while (measures.length < DEFAULT_BARS) measures.push(newMeasure(2, timeOf(measures.length - 1)));
   const doc = newComposition({ id, title, composer, tags, now });
+  if (subtitle) doc.subtitle = subtitle;
   doc.measures = measures;
   if (tempo !== null && Number.isFinite(tempo)) doc.tempo = Math.max(MIN_TEMPO, Math.min(MAX_TEMPO, Math.round(tempo)));
   for (let b = 0; b < measures.length; b++) { try { normalizeBar(doc, b); } catch (e) { refuse(`bar ${b + 1} does not add up (${e.message})`); } }
@@ -548,7 +567,7 @@ function buildVoice(grp, si, vi, nV, bi, time, shift, doc0, refuse) {
       const ev = r.kind === "rest" ? restEvent(d) : noteEvent(d, r.pitches.map((p) => { const q = { step: p.step, alter: p.alter, octave: p.octave }; if (p.tie === "start" || p.tie === "both") { if (k === durs.length - 1) q.tie = p.tie; else q.tie = k === 0 && p.tie === "both" ? "both" : "start"; } else if (p.tie === "stop" && k === 0) q.tie = "stop"; if (k < durs.length - 1) q.tie = q.tie === "stop" || q.tie === "both" ? "both" : "start"; if (p.accShown && k === 0) q.accShown = true; if (p.finger) q.finger = p.finger; return q; }).sort((a, b) => diatonicOf(a) - diatonicOf(b)));
       if (r.kind === "note") {
         if (k === 0) { if (r.art.length) ev.art = r.art.filter((a) => MARKS.includes(a)); if (ev.art?.includes("trill") && (r.trillLine || r.trillAlter !== undefined)) ev.trill = { ...(r.trillLine ? { line: true } : {}), ...(r.trillAlter !== undefined ? { alter: r.trillAlter } : {}) }; if (r.arp) ev.arp = r.arp; if (r.trem) ev.trem = r.trem; if (r.graces?.length) ev.graces = r.graces; if (r.slurs.some((s) => s.at === "start")) ev.slurs = r.slurs.filter((s) => s.at === "start"); }
-        if (k === durs.length - 1) { if (r.gliss) ev.gliss = "start"; if (r.slurs.some((s) => s.at === "stop")) ev.slurs = [...(ev.slurs ?? []), ...r.slurs.filter((s) => s.at === "stop")]; }
+        if (k === durs.length - 1) { if (r.gliss) ev.gliss = r.gliss === true ? "start" : r.gliss; if (r.slurs.some((s) => s.at === "stop")) ev.slurs = [...(ev.slurs ?? []), ...r.slurs.filter((s) => s.at === "stop")]; }
         if (r.si !== si) ev.cross = r.si - si;
       } else {
         if (r.hidden) ev.hidden = true;

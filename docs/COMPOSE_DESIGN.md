@@ -1051,7 +1051,8 @@ per dynamic, no tempo map beyond a default 100 bpm. A follow-up card, not the MV
 | Instruments / more staves | `parts[]`, `staves`; layout already takes N staves per system |
 | Cross-staff beams | landed v86 — `ev.cross`, `makeCrossBeam` |
 | Rest vertical offset (drag a rest out of another voice's way) | landed v87 — `ev.restY`, `nudgeRest`, ↑/↓ |
-| Lyrics · chord symbols | `event.lyric`, `event.harmony` (MusicXML shapes) |
+| Chord symbols | landed v125 — an expression kind `chord` + the Chords rail; see `docs/COMPOSE_CHORDS_DESIGN.md` (WSHED-166) |
+| Lyrics | `event.lyric` (MusicXML shape) |
 | Repeats · endings | `measure.barline`, `measure.ending` |
 | Playback | walk ticks → the piano voice on the shared clock; the metronome pill already exists |
 | MusicXML import | the reverse walk into the same model |

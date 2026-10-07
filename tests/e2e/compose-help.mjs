@@ -34,13 +34,13 @@ await step("the compositions list has a help button, and it opens the help page"
   if (!page.url().endsWith("#/compose/help")) throw new Error("url " + page.url());
 });
 
-await step("the contents page lists four sections and 24 articles", async () => {
+await step("the contents page lists four sections and 25 articles (the Chords rail since v125)", async () => {
   const caps = await page.$$eval(".hp-cap", (e) => e.map((x) => x.textContent.trim()));
   if (caps.join("|") !== "Start here|The editor|The rails|Keeping and sharing") throw new Error(caps.join("|"));
   const n = await page.$$eval(".hp-link", (e) => e.length);
-  if (n !== 24) throw new Error(`${n} articles in the sidebar`);
+  if (n !== 25) throw new Error(`${n} articles in the sidebar`);
   const cards = await page.$$eval(".hp-cards a", (e) => e.length);
-  if (cards !== 24) throw new Error(`${cards} cards on the index`);
+  if (cards !== 25) throw new Error(`${cards} cards on the index`);
   await page.screenshot({ path: `${S}/hp-01-index.png` });
 });
 

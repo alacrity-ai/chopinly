@@ -13,7 +13,7 @@ The editor is three things stacked: a **header**, however many **rails** you hav
 
 ## The header
 
-`‹` goes back to your compositions. The **title** in the middle is a button — tap it for the details sheet, where the title, composer and tags live. **File ▾** holds the exports. **Options ▾** is the control panel: what draws, gestures, favorites, which rails show, and help. See [the Options panel](help:options).
+`‹` goes back to your compositions. The **title** in the middle is a button — tap it for the details sheet, where the title, a subtitle (*as played by …*), the composer and tags live. **File ▾** holds the exports. **Options ▾** is the control panel: what draws, gestures, favorites, which rails show, and help. See [the Options panel](help:options).
 
 ## The rails
 

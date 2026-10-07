@@ -21,7 +21,7 @@ Vector outlines, not a picture of a page. The notes are drawn from Bravura's own
 - **size** — the staff size, from 1.4 to 2.5 mm a staff space, in small steps. The readout shows the staff height and the page count as you go.
 - **page** — Letter or A4.
 - **margins** — narrow, normal or wide.
-- **header** — the title and composer on page 1, and a running head with the page number after it.
+- **header** — the title, the subtitle (if the piece has one) and the composer on page 1, and a running head with the page number after it.
 
 ## The preview is the page
 

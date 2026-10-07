@@ -35,6 +35,6 @@ They work like every other mark: with a selection they stamp it, the same one ag
 
 Compose decides stems and beam groups by standard practice, and is right almost always. For the times it is not:
 
-**stem** forces a note's stem up or down. **beam** breaks the beam group at the note, so a new group starts there.
+**stem** forces a note's stem up or down. **beam** breaks the beam group at the note, so a new group starts there. **Hold beam** for **join**: the note is beamed on from the one before it across the beat — four eighths under one beam in half a bar of 4/4, as many engravers write them. A tuplet always beams as one group, however many beats it spans.
 
 Both are overrides of a good default, not settings to manage — use them where the music means something the rules cannot know, and leave them alone everywhere else. They travel into the PDF and into MusicXML.

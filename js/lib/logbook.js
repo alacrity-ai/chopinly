@@ -600,7 +600,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     touch("composition", c); doc.compositions.push(c); save(); return c;
   }
   /**
-   * Replace a composition's content (measures / title / composer / tags / tempo / openedAt).
+   * Replace a composition's content (measures / title / subtitle / composer / tags / tempo / openedAt).
    * Opening is not an edit: `openedAt` alone neither bumps updatedAt nor syncs — a device that
    * merely opened a piece must never outrank one that edited it offline (the merge clock is updatedAt).
    */
@@ -610,6 +610,7 @@ export function createLogbook({ store = makeStore("logbook"), now = () => Date.n
     let edited = false;
     if ("title" in patch) { const t = cleanTitle(patch.title); if (!t) throw new Error("a composition needs a title"); c.title = t; edited = true; }
     if ("composer" in patch) { c.composer = cleanComposer(patch.composer); edited = true; }
+    if ("subtitle" in patch) { const sub = String(patch.subtitle ?? "").trim().slice(0, 80); if (sub) c.subtitle = sub; else delete c.subtitle; edited = true; } // WSHED-169
     if ("tags" in patch) { c.tags = cleanTags(patch.tags); edited = true; }
     if ("measures" in patch) { c.measures = patch.measures; edited = true; }
     if ("v" in patch) { c.v = patch.v; edited = true; } // the document schema (an upgrade rewrites the measures with it)

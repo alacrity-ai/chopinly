@@ -4,6 +4,7 @@ import { icon } from "../../lib/icons.js";
 import { metGlyph, artGlyph, dynGlyph, G } from "../../lib/staff/glyphs.js";
 import { CLEFS } from "../../lib/music.js";
 import { esc } from "../logbook/util.js";
+import { CHORD_QUALITIES, chordText, qualityRuns } from "../../lib/compose/chordsym.js";
 
 export const MAIN_BASES = [1, 2, 4, 8, 16];
 export const MORE_BASES = [0, 32, 64];
@@ -44,15 +45,24 @@ const clefBtn = (c) => `<button type="button" class="cp-btn cp-clef" data-act="c
 
 /** The rolled-chord menu: the sign, its glyph, what the row says. */
 const ARP_ROWS = [["plain", G.arpeggio, "rolled"], ["up", G.arpeggioUp, "rolled upward"], ["down", G.arpeggioDown, "rolled downward"]];
+/** The glissando menu (WSHED-167): to the next note, or open — off the note with no landing, up or down. */
+const GLISS_ROWS = [["start", "╱●", "to the next note"], ["up", "╱", "up — off the note, no landing"], ["down", "╲", "down — off the note, no landing"]];
 /** What the mark buttons say; a mark not listed reads as its id. */
 const MARK_NAMES = { lowerMordent: "lower mordent — the one with the line through it" };
 /** The rails a reader can show or hide, in order — the header that holds the menu is not one of them. */
-export const RAILS = [["control", "Controls"], ["transport", "Transport"], ["palette", "Notes"], ["utility", "Key · time · clef · marks"], ["expression", "Dynamics · hairpins · text"], ["form", "Form · repeats · tempo"], ["piano", "Piano · pedal · 8va · fingering"], ["notes2", "Grace · tremolo · marks"]]; // expression marks arm a cursor and land on half-beats (docs/COMPOSE_EXPRESSIONS_DESIGN.md)
+export const RAILS = [["control", "Controls"], ["transport", "Transport"], ["palette", "Notes"], ["utility", "Key · time · clef · marks"], ["expression", "Dynamics · hairpins · text"], ["form", "Form · repeats · tempo"], ["piano", "Piano · pedal · 8va · fingering"], ["notes2", "Grace · tremolo · marks"], ["chords", "Chord symbols"]]; // expression marks arm a cursor and land on half-beats (docs/COMPOSE_EXPRESSIONS_DESIGN.md)
 /** Pen | Touch (v101): the switch exists only where a finger can touch the score. */
 const TOUCHY = typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
 /** The captions on the palette rails (v100): the word that says which rail this is, sticky at the left while the rail scrolls. */
-const CAPTIONS = { palette: "Notes", utility: "Key · time", expression: "Dynamics", form: "Form", piano: "Piano", notes2: "Marks" };
-export const DEFAULT_RAILS = { control: true, transport: true, palette: true, utility: false, expression: false, form: false, piano: false, notes2: false };
+const CAPTIONS = { palette: "Notes", utility: "Key · time", expression: "Dynamics", form: "Form", piano: "Piano", notes2: "Marks", chords: "Chords" };
+export const DEFAULT_RAILS = { control: true, transport: true, palette: true, utility: false, expression: false, form: false, piano: false, notes2: false, chords: false };
+/** The Chords rail (docs/COMPOSE_CHORDS_DESIGN.md §2, WSHED-166): the symbol being built, as HTML — ♭ / ♯ in the music font, a raised alteration small. */
+export const chordHtml = (c) => {
+  const acc = (a) => (a ? `<span class="cp-ch-acc">${{ "-2": "𝄫", "-1": "♭", 1: "♯", 2: "𝄪" }[a]}</span>` : "");
+  const q = qualityRuns(c.q ?? "").map((r) => { const t = esc(r.t).replace(/[♭♯]/g, (m) => `<span class="cp-ch-acc">${m}</span>`); return r.sup ? `<sup>${t}</sup>` : t; }).join("");
+  return `<b>${c.root.step}</b>${acc(c.root.alter)}${q}${c.bass ? `/${c.bass.step}${acc(c.bass.alter)}` : ""}`;
+};
+const qLabel = (q) => (q === "" ? "maj" : esc(q));
 export const TREMS = [1, 2, 3];
 export const FINGERS = [1, 2, 3, 4, 5];
 /** The Form rail (docs/COMPOSE_FORM_DESIGN.md §3): barline pictures, the ending numbers, the jump rows — each arms a tap on a bar. */
@@ -193,7 +203,10 @@ export function buildRails(host, { title, onAction, onCapture }) {
       ${["trill", "mordent", "lowerMordent", "turn"].map((m) => `<button type="button" class="cp-btn cp-sq cp-art-btn" data-act="art" data-mark="${m}" aria-label="${MARK_NAMES[m] ?? m}"><span class="cp-glyph">${artGlyph(m, true)}</span></button>`).join("")}
       </span>
       <span class="cp-group" role="group" aria-label="glissando, rolled chord">
-      <button type="button" class="cp-btn cp-gliss-btn" data-act="gliss" aria-label="glissando to the next note"><i>gliss.</i></button>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-gliss-btn" data-act="gliss" aria-label="glissando to the next note — hold for one that rises or falls off the note with no landing"><i>gliss.</i></button>
+        <span class="cp-more cp-menu" id="cp-gliss-more" hidden>${GLISS_ROWS.map(([m, pic, label]) => `<button type="button" class="cp-btn cp-menu-row cp-gliss-row" data-act="gliss" data-mode="${m}" aria-pressed="false"><span class="cp-gliss-pic" aria-hidden="true">${pic}</span><span>${label}</span></button>`).join("")}</span>
+      </span>
       <span class="cp-more-wrap">
         <button type="button" class="cp-btn cp-arp-btn" data-pop="cp-arp-more" aria-label="rolled chord — pick the roll" aria-expanded="false" disabled><span class="cp-glyph cp-glyph-xs">${G.arpeggio}</span>${CHEV}</button>
         <span class="cp-more cp-menu" id="cp-arp-more" hidden>${ARP_ROWS.map(([kind, glyph, label]) => `<button type="button" class="cp-btn cp-menu-row cp-arp-row" data-act="arp" data-kind="${kind}"><span class="cp-glyph cp-glyph-xs">${glyph}</span><span>${label}</span></button>`).join("")}</span>
@@ -225,6 +238,25 @@ export function buildRails(host, { title, onAction, onCapture }) {
         <span class="cp-more cp-menu cp-text-menu" id="cp-text-more" hidden>
           <span class="cp-text-chips">${TEXTS.map((t) => `<button type="button" class="cp-btn cp-chip" data-act="text" data-text="${t}"><i>${t}</i></button>`).join("")}</span>
           <span class="cp-text-row"><input class="cp-text-in" id="cp-text-in" type="text" maxlength="40" placeholder="your own…" aria-label="expression text"><button type="button" class="cp-btn cp-text-set" data-act="text-set">set</button></span>
+        </span>
+      </span>
+    </div>
+    <div class="cp-rail cp-chords" id="cp-chords" role="toolbar" aria-label="chord symbols" data-rail="chords" hidden>
+      <button type="button" class="cp-btn cp-chord-arm" data-act="chord-arm" aria-pressed="false" aria-label="the chord symbol — tap the beat it goes over; with chord symbols selected, the rail retypes them"><span class="cp-chord-sym" id="cp-chord-sym">${chordHtml({ root: { step: "C", alter: 0 }, q: "" })}</span></button>
+      <span class="cp-group" role="group" aria-label="root">
+      ${["C", "D", "E", "F", "G", "A", "B"].map((st) => `<button type="button" class="cp-btn cp-sq cp-chord-root" data-act="chord-root" data-step="${st}" aria-pressed="false" aria-label="root ${st}"><b>${st}</b></button>`).join("")}
+      </span>
+      <span class="cp-group" role="group" aria-label="sharp or flat on the root (or the bass after /)">
+      ${[[1, "sharp"], [-1, "flat"]].map(([a, name]) => `<button type="button" class="cp-btn cp-sq cp-chord-acc" data-act="chord-acc" data-alter="${a}" aria-pressed="false" aria-label="${name}"><span class="cp-glyph">${G[a]}</span></button>`).join("")}
+      </span>
+      <span class="cp-group" role="group" aria-label="quality">
+      ${CHORD_QUALITIES.map((q) => `<button type="button" class="cp-btn cp-chord-q" data-act="chord-q" data-q="${esc(q)}" aria-pressed="false" aria-label="${q === "" ? "major" : esc(q)}">${qLabel(q).replace(/[♭♯]/g, (m) => `<span class="cp-ch-acc">${m}</span>`)}</button>`).join("")}
+      </span>
+      <button type="button" class="cp-btn cp-sq cp-chord-slash" data-act="chord-slash" aria-pressed="false" aria-label="slash bass — the next root you tap is the bass; again to drop it"><b>/</b></button>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-chord-type" data-pop="cp-chord-more" aria-label="type a chord symbol — Bm7(b5)/A, F#dim7, E7alt." aria-expanded="false"><i>type…</i>${CHEV}</button>
+        <span class="cp-more cp-menu cp-text-menu" id="cp-chord-more" hidden>
+          <span class="cp-text-row"><input class="cp-text-in" id="cp-chord-in" type="text" maxlength="24" placeholder="Bm7(b5)/A" aria-label="chord symbol" autocapitalize="off" autocomplete="off" spellcheck="false"><button type="button" class="cp-btn cp-text-set" data-act="chord-set">set</button></span>
         </span>
       </span>
     </div>
@@ -323,7 +355,10 @@ export function buildRails(host, { title, onAction, onCapture }) {
       </span>
       <span class="cp-group" role="group" aria-label="stems and beams">
       <button type="button" class="cp-btn cp-sq cp-stem-btn" data-act="stem" aria-label="flip the stems of the selected notes (every one already set → automatic again)" disabled><span class="cp-glyph cp-glyph-xs cp-glyph-note">${metGlyph(4)}</span><small>flip</small></button>
-      <button type="button" class="cp-btn cp-sq cp-beam-btn" data-act="beam" aria-label="break the beam before the selected notes (again → join)" disabled><span class="cp-glyph cp-glyph-xs cp-glyph-note">${metGlyph(8)}${metGlyph(8)}</span><small>break</small></button>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-sq cp-beam-btn" data-act="beam" aria-label="break the beam before the selected notes (again → automatic); hold to join one across the beat" disabled><span class="cp-glyph cp-glyph-xs cp-glyph-note">${metGlyph(8)}${metGlyph(8)}</span><small>beam</small></button>
+        <span class="cp-more cp-menu" id="cp-beam-more" hidden>${[["break", "break the beam before the note"], ["join", "join across the beat — to the note before"]].map(([m, label]) => `<button type="button" class="cp-btn cp-menu-row cp-beam-row" data-act="beam" data-mode="${m}"><span>${label}</span></button>`).join("")}</span>
+      </span>
       </span>
     </div>`;
   // v100 (WSHED-128): every rail is one line that scrolls sideways — each sits in a lane that carries the
@@ -340,7 +375,7 @@ export function buildRails(host, { title, onAction, onCapture }) {
   const tupMore = host.querySelector("#cp-tup-more"), tupBtn = host.querySelector(".cp-tuplet");
   const graceMore = host.querySelector("#cp-grace-more"), graceBtn = host.querySelector(".cp-grace-btn");
   // the hold menus of v98 (docs/COMPOSE_RAILS2_DESIGN.md §4): a square and the menu behind it
-  const HOLDS = [[".cp-hold-pp", "#cp-pp-more"], [".cp-hold-ff", "#cp-ff-more"], [".cp-hairpin-btn[data-kind=cresc]", "#cp-cresc-more"], [".cp-hairpin-btn[data-kind=dim]", "#cp-dim-more"], [".cp-rehearsal-btn", "#cp-rehearsal-more"], [".cp-tempo-mark-btn", "#cp-tempo-unit-more"], [".cp-simile-btn", "#cp-simile-more"], [".cp-pedal-btn", "#cp-pedal-more"], [".cp-ottava-btn[data-dir='1'][data-size='8']", "#cp-8va-more"], [".cp-ottava-btn[data-dir='-1'][data-size='8']", "#cp-8vb-more"], ["#cp-rh", "#cp-hands-more"]].map(([b, m]) => [host.querySelector(m), host.querySelector(b)]);
+  const HOLDS = [[".cp-hold-pp", "#cp-pp-more"], [".cp-hold-ff", "#cp-ff-more"], [".cp-hairpin-btn[data-kind=cresc]", "#cp-cresc-more"], [".cp-hairpin-btn[data-kind=dim]", "#cp-dim-more"], [".cp-rehearsal-btn", "#cp-rehearsal-more"], [".cp-tempo-mark-btn", "#cp-tempo-unit-more"], [".cp-simile-btn", "#cp-simile-more"], [".cp-gliss-btn", "#cp-gliss-more"], [".cp-beam-btn", "#cp-beam-more"], [".cp-pedal-btn", "#cp-pedal-more"], [".cp-ottava-btn[data-dir='1'][data-size='8']", "#cp-8va-more"], [".cp-ottava-btn[data-dir='-1'][data-size='8']", "#cp-8vb-more"], ["#cp-rh", "#cp-hands-more"]].map(([b, m]) => [host.querySelector(m), host.querySelector(b)]);
   const pops = [...host.querySelectorAll("[data-pop]")].map((b) => [host.querySelector(`#${b.dataset.pop}`), b]).concat([[tupMore, tupBtn], [graceMore, graceBtn]], HOLDS);
   // Bravura glyphs sit on a musical anchor, not a typographic centre: measure each one's ink and
   // slide it so the ink is centred in its button (re-done whenever a glyph's text changes).
@@ -401,9 +436,15 @@ export function buildRails(host, { title, onAction, onCapture }) {
     if (act === "clef") { onAction("clef", b.dataset.clef); return; }
     if (act === "art") { onAction("art", b.dataset.mark); return; }
     if (act === "arp") { onAction("arp", b.dataset.kind); return; }
+    if (act === "gliss") { onAction("gliss", b.dataset.mode); return; }
+    if (act === "beam") { onAction("beam", b.dataset.mode ?? "break"); return; } // join since WSHED-170 // the hold menu names a mode; the button itself carries none
     if (act === "dyn") { onAction("dyn", b.dataset.dyn); return; }
     if (act === "text") { onAction("text", b.dataset.text ?? ""); return; }
     if (act === "text-set") { const inp = host.querySelector("#cp-text-in"); onAction("text", inp.value); inp.value = ""; inp.blur(); return; }
+    if (act === "chord-root") { onAction("chord-root", b.dataset.step); return; } // the Chords rail (WSHED-166)
+    if (act === "chord-acc") { onAction("chord-acc", Number(b.dataset.alter)); return; }
+    if (act === "chord-q") { onAction("chord-q", b.dataset.q); return; }
+    if (act === "chord-set") { const inp = host.querySelector("#cp-chord-in"); onAction("chord-set", inp.value); inp.value = ""; inp.blur(); return; }
     if (act === "acc") { onAction("acc", Number(b.dataset.alter)); return; }
     if (act === "voice") { onAction("voice", Number(b.dataset.v)); return; }
     if (act === "cross") { onAction("cross", Number(b.dataset.dir)); return; }
@@ -435,6 +476,10 @@ export function buildRails(host, { title, onAction, onCapture }) {
   hold(graceBtn, () => toggle(graceMore, graceBtn)); // hold Grace for slashed / plain / chord
   for (const [m, b] of HOLDS) if (m && b) hold(b, () => toggle(m, b));
   for (const b of [tupBtn, graceBtn, ...HOLDS.map(([, b]) => b)]) b?.classList.add("cp-hold"); // the dot that says "hold me" (v100)
+  // typing a chord symbol: Enter sets it (armed, or retyping the selection)
+  { const inp = host.querySelector("#cp-chord-in");
+    inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); closeMore(); onAction("chord-set", inp.value); inp.value = ""; inp.blur(); } else if (e.key === "Escape") { closeMore(); inp.blur(); } });
+    inp.addEventListener("pointerdown", (e) => e.stopPropagation()); }
   // typing in the text box: Enter sets; the editor's shortcuts stay out of inputs
   { const inp = host.querySelector("#cp-text-in");
     inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); closeMore(); onAction("text", inp.value); inp.value = ""; inp.blur(); } else if (e.key === "Escape") { closeMore(); inp.blur(); } }); // the words are armed: focus leaves the box so the pen (and Escape) go to the staff
@@ -470,7 +515,7 @@ export function buildRails(host, { title, onAction, onCapture }) {
       if (bpm !== undefined) host.querySelector("#cp-bpm").textContent = String(bpm);
     },
     /** Reflect the editor's state: { armed, mode, canUndo, canRedo, hasSelection, title }. */
-    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, rails = DEFAULT_RAILS, pending = null, title, voice = 0, used = new Set([0]), sel = {}, tempoUnit = { base: 4, dots: 0 }, hands = "en", pedalStyle = "line", input = "touch", gesture = false, favorites = false }) {
+    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, rails = DEFAULT_RAILS, pending = null, title, voice = 0, used = new Set([0]), sel = {}, tempoUnit = { base: 4, dots: 0 }, hands = "en", pedalStyle = "line", input = "touch", gesture = false, favorites = false, chord = { root: { step: "C", alter: 0 }, q: "" }, chordSlash = false, gliss = "start" }) {
       let shown = false;
       // the Options ▾ panel (v116, §8.5q): Pen | Touch (v101, §8.5i), Gesture (v102, §8.5j) and Favorites (v109, §8.5o) mirror the editor's state
       for (const b of host.querySelectorAll(".cp-inp")) b.setAttribute("aria-pressed", String(b.dataset.input === input));
@@ -545,6 +590,19 @@ export function buildRails(host, { title, onAction, onCapture }) {
         const tm = pending?.kind === "tempo-mark" ? pending.value : null;
         host.querySelector(".cp-tempo-mark-btn").setAttribute("aria-pressed", String(!!tm));
         const tl = host.querySelector("#cp-tempo-mark-lbl"), want = tm ? `= ${tm.bpm}${tm.text ? ` ${tm.text}` : ""}` : "= tempo"; if (tl.textContent !== want) tl.textContent = want; }
+      // the Chords rail (WSHED-166): the symbol being built on its button (lit while armed); its root, accidental, quality and slash lit
+      { const sym = host.querySelector("#cp-chord-sym"), html = chordHtml(chord);
+        if (sym.innerHTML !== html) sym.innerHTML = html;
+        host.querySelector(".cp-chord-arm").setAttribute("aria-pressed", String(pending?.kind === "chord"));
+        host.querySelector(".cp-chord-arm").setAttribute("aria-label", `${chordText(chord)} — tap the beat it goes over`);
+        const on = (b, v) => b.setAttribute("aria-pressed", String(v));
+        for (const b of host.querySelectorAll(".cp-chord-root")) on(b, chordSlash ? !!chord.bass && b.dataset.step === chord.bass.step : b.dataset.step === chord.root.step);
+        const acc = chordSlash && chord.bass ? chord.bass.alter : chord.root.alter;
+        for (const b of host.querySelectorAll(".cp-chord-acc")) on(b, Number(b.dataset.alter) === acc);
+        for (const b of host.querySelectorAll(".cp-chord-q")) on(b, b.dataset.q === chord.q);
+        on(host.querySelector(".cp-chord-slash"), chordSlash || !!chord.bass); }
+      // the open glissando (WSHED-167): the gliss. button names the one a tap sets
+      for (const r of host.querySelectorAll(".cp-gliss-row")) r.setAttribute("aria-pressed", String(r.dataset.mode === gliss));
       // the Piano rail (WSHED-125): the armed line or finger is lit
       host.querySelector(".cp-pedal-btn").setAttribute("aria-pressed", String(pending?.kind === "pedal"));
       for (const b of host.querySelectorAll(".cp-ottava-btn")) b.setAttribute("aria-pressed", String(pending?.kind === "ottava" && pending.value === Number(b.dataset.dir) && (pending.size ?? 8) === Number(b.dataset.size ?? 8)));
