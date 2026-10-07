@@ -44,7 +44,7 @@ test("model: the ten levels and five sudden dynamics validate; every new field i
   bad((c) => { at(c, 0)[0].trill = { line: true }; }, /trilled note/);
   bad((c) => { at(c, 0)[0].art = ["trill"]; at(c, 0)[0].trill = { alter: 2 }; }, /trilled note/);
   bad((c) => { at(c, 0)[0].stem = "left"; }, /stem/);
-  bad((c) => { at(c, 0)[0].beam = "join"; }, /beam/);
+  bad((c) => { at(c, 0)[0].beam = "merge"; }, /beam/);
   bad((c) => { at(c, 0)[0].art = ["turn", "invertedTurn"]; }, /one turn/);
   bad((c) => { c.measures[0].expressions.push({ id: "tl", kind: "textline", staff: 0, at: 0, end: { bar: 1, at: 0 }, text: "" }); }, /text line/);
   bad((c) => { c.measures[0].expressions.push({ id: "o15", kind: "ottava", staff: 0, at: 0, end: { bar: 1, at: 0 }, dir: 1, size: 22 }); }, /size is 15/);

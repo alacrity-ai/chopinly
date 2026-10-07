@@ -46,7 +46,7 @@ export function openExportSheet({ id, doc, primary = "export-pdf", onDoc = () =>
       <div class="cp-export-row"><span class="cp-export-label">margins</span>
         <span class="cp-export-seg" role="group" aria-label="margins">${Object.keys(MARGINS).map((k) => `<button type="button" class="cp-btn cp-seg" data-margins="${k}">${k}</button>`).join("")}</span></div>
       <div class="cp-export-row"><span class="cp-export-label">header</span>
-        <label class="cp-export-toggle"><input type="checkbox" id="cp-x-header"><span>title, composer, page numbers</span></label></div>
+        <label class="cp-export-toggle"><input type="checkbox" id="cp-x-header"><span>title, subtitle, composer, page numbers</span></label></div>
       <ul class="lb-acct-list cp-export-actions">
         <li><button type="button" class="lb-acct-row${primary === "export-pdf" ? " cp-export-primary" : ""}" id="cp-x-save">${icon("download")}<span><b>Save PDF</b><small id="cp-x-save-hint">${navigator.canShare ? "save to this device, or share it" : "downloads the file"}</small></span></button></li>
         <li><button type="button" class="lb-acct-row${primary === "save-pdf" ? " cp-export-primary" : ""}" id="cp-x-scores">${icon("score")}<span><b id="cp-x-scores-label">${linked() ? "Update in Scores" : "Add to Scores"}</b><small id="cp-x-scores-hint">${linked() ? `replaces the file of “${esc(linked().title)}”; bookmarks and brushes stay` : "the piece appears in your library, ready to read and practise"}</small></span></button></li>
@@ -65,7 +65,7 @@ export function openExportSheet({ id, doc, primary = "export-pdf", onDoc = () =>
     const n = plan.pages.length;
     pageNo = Math.max(0, Math.min(n - 1, pageNo));
     const k = pageNo;
-    paper.replaceChildren(planPageSvg(plan, k, { title: c.title, composer: c.composer ?? "" }));
+    paper.replaceChildren(planPageSvg(plan, k, { title: c.title, subtitle: c.subtitle ?? "", composer: c.composer ?? "" }));
     paper.__plan = plan; // the E2E reads the plan the preview was drawn from
     $("#cp-x-size").textContent = `staff ${(opts.staffMm * 4).toFixed(1)} mm · ${plural(n, "page")}`;
     $("#cp-x-pager").hidden = n < 2;
@@ -84,7 +84,7 @@ export function openExportSheet({ id, doc, primary = "export-pdf", onDoc = () =>
   }
   $("#cp-x-layout").addEventListener("click", async () => {
     if (busy) return;
-    const next = await openLayoutView({ doc, opts, title: c.title, composer: c.composer ?? "" });
+    const next = await openLayoutView({ doc, opts, title: c.title, subtitle: c.subtitle ?? "", composer: c.composer ?? "" });
     if (next) { doc = next; onDoc(next); }
     preview();
   });
@@ -100,7 +100,7 @@ export function openExportSheet({ id, doc, primary = "export-pdf", onDoc = () =>
   /** The PDF of the current plan as a File. */
   async function pdfFile() {
     const libs = await loadPdfLib();
-    const bytes = await renderPdf(plan, libs, { title: c.title, composer: c.composer ?? "" });
+    const bytes = await renderPdf(plan, libs, { title: c.title, subtitle: c.subtitle ?? "", composer: c.composer ?? "" });
     return new File([bytes], pdfFileName(c), { type: "application/pdf" });
   }
   async function run(hintSel, work) {

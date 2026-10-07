@@ -3,7 +3,8 @@
 // the new document; a refused edit throws Nudge(sentence) and the document is
 // untouched. Pure — node-testable.
 import { groupSize, ticks, capacity, splitRest, fromTicks, exprGrid, inMetre, PPQ } from "./ticks.js";
-import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, sigAt, shortMetre, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, tempoOf, MAX_VOICES, REST_Y_MAX, EXPR_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, DYN_VALUES, HAIRPINS, SPAN_KINDS, PEDAL_STYLES, TEMPO_UNITS, REHEARSAL_TEXT_MAX, REPEAT_TIMES_MAX, TRILL_ALTERS, FINGER_MAX, GRACE_BASES, TREM_MAX, TEXT_MAX, BARLINE_ENDS, JUMPS, FORM_KINDS, TEMPO_TEXT_MAX, ENDING_MAX, MIN_TEMPO, MAX_TEMPO, eid } from "./model.js";
+import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, sigAt, shortMetre, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, tempoOf, MAX_VOICES, REST_Y_MAX, EXPR_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, DYN_VALUES, HAIRPINS, SPAN_KINDS, PEDAL_STYLES, TEMPO_UNITS, REHEARSAL_TEXT_MAX, REPEAT_TIMES_MAX, TRILL_ALTERS, FINGER_MAX, GRACE_BASES, TREM_MAX, TEXT_MAX, BARLINE_ENDS, JUMPS, FORM_KINDS, TEMPO_TEXT_MAX, ENDING_MAX, MIN_TEMPO, MAX_TEMPO, GLISS, eid } from "./model.js";
+import { parseChord, prettyQuality } from "./chordsym.js";
 import { parsePitch, keyAlterations, CLEFS } from "../music.js";
 
 export class Nudge extends Error { constructor(msg, { bar = null } = {}) { super(msg); this.name = "Nudge"; this.bar = bar; } }
@@ -289,7 +290,7 @@ export function cleanTies(doc) {
       for (const ev of v) {
         if (ev.kind !== "note") continue;
         const nx = nextEvent(doc, { bar, staff, voice, ev }); // adjacent in time — never across a bar the voice is silent in
-        if (ev.gliss && nx?.kind !== "note") delete ev.gliss;
+        if (ev.gliss === "start" && nx?.kind !== "note") delete ev.gliss; // an open gliss ("up" / "down", WSHED-167) lands nowhere and needs nothing after it
         for (const p of ev.pitches) {
           if (p.tie !== "start" && p.tie !== "both") continue;
           const q = nx?.kind === "note" ? nx.pitches.find((x) => samePitch(p, x)) : null;
@@ -890,8 +891,9 @@ export function setKey(doc, bar, fifths) {
   return d;
 }
 /**
- * A clef change for one staff on a beat of a bar (`at` in ticks, 0 = the
- * barline; any beat of the metre — the dotted group in compound metres). It
+ * A clef change for one staff on a slot of a bar (`at` in ticks, 0 = the
+ * barline; any beat of the metre or half-way between — the expression grid,
+ * WSHED-168: a run can change clef after a held chord on the "and"). It
  * holds for that staff until the next change. Choosing the clef already in
  * force there removes a change on that beat instead. Pitches are absolute,
  * so nothing re-steps.
@@ -899,7 +901,7 @@ export function setKey(doc, bar, fifths) {
 export function setClef(doc, bar, staff, clef, at = 0) {
   if (!CLEFS[clef]) throw new Nudge("no such clef");
   const d = clone(doc), m = d.measures[bar], time = timeAt(d, bar);
-  if (!Number.isInteger(at) || at < 0 || at >= capacity(time) || inMetre(at, time) % groupSize(time)) throw new Nudge("a clef change goes on a beat", { bar });
+  if (!Number.isInteger(at) || at < 0 || at >= capacity(time) || inMetre(at, time) % exprGrid(time)) throw new Nudge("a clef change goes on a beat or half-way between", { bar });
   if (at === 0) { if (m.clefs) { delete m.clefs[staff]; if (!Object.keys(m.clefs).length) delete m.clefs; } }
   else if (m.clefChanges) { m.clefChanges = m.clefChanges.filter((c) => !(c.staff === staff && c.at === at)); if (!m.clefChanges.length) delete m.clefChanges; }
   const before = at > 0 ? clefAt(d, bar, staff, at - 1) : bar > 0 ? clefAt(d, bar - 1, staff, Infinity) : null;
@@ -948,8 +950,8 @@ export function setTime(doc, bar, time) {
   const nStaves = d.parts[0].staves;
   const fresh = Array.from({ length: nNew }, () => newMeasure(nStaves, time));
   const oldBars = d.measures.slice(bar, end);
-  // key / clef changes inside the stretch follow their tick (a clef lands on the beat of the new metre at or before it)
-  const beatNew = groupSize(time);
+  // key / clef changes inside the stretch follow their tick (a clef lands on the half-beat slot of the new metre at or before it)
+  const beatNew = exprGrid(time);
   const putClef = (abs, staff, clef) => {
     const nb = fresh[Math.min(nNew - 1, Math.floor(abs / capNew))], local = abs - Math.min(nNew - 1, Math.floor(abs / capNew)) * capNew, at = local - (local % beatNew);
     if (at === 0) { nb.clefs = { ...(nb.clefs ?? {}), [staff]: clef }; return; }
@@ -1081,12 +1083,13 @@ export function setStem(doc, evIds, dir) {
   return d;
 }
 /** Toggle a beam break before each selected note (every one already broken → joined again). */
-export function beamBreak(doc, evIds) {
+export function beamBreak(doc, evIds, mode = "break") {
+  if (mode !== "break" && mode !== "join") throw new Nudge("a beam breaks or joins");
   const d = clone(doc);
   const notes = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "note").map((f) => f.ev);
-  if (!notes.length) throw new Nudge("pick the note the beam breaks before");
-  const all = notes.every((e) => e.beam === "break");
-  for (const e of notes) { if (all) delete e.beam; else e.beam = "break"; }
+  if (!notes.length) throw new Nudge(mode === "join" ? "pick the note the beam joins to the one before" : "pick the note the beam breaks before");
+  const all = notes.every((e) => e.beam === mode);
+  for (const e of notes) { if (all) delete e.beam; else e.beam = mode; } // "join" (WSHED-170): beamed on from the note before, across the beat — the half-bar groups of 4/4
   return d;
 }
 // --- expressions (docs/COMPOSE_EXPRESSIONS_DESIGN.md §2): dynamics, hairpins and text on the half-beat slots of a bar ---
@@ -1141,15 +1144,25 @@ function putExpr(d, x, bar) {
   } else list = list.filter((o) => !(o.kind === x.kind && o.staff === x.staff && o.at === x.at));
   setExprs(m, [...list, x]);
 }
-/** Place a dynamic or a text on a slot of a staff → { doc, id }; the same kind already on that slot is replaced. */
+/** A chord symbol's fields from a typed symbol or a { root, q, bass? } record (null when it is not one). */
+export function chordOf(value) {
+  const c = typeof value === "string" ? parseChord(value) : value && typeof value === "object" && value.root ? { root: { step: value.root.step, alter: value.root.alter ?? 0 }, q: prettyQuality(value.q), ...(value.bass ? { bass: { step: value.bass.step, alter: value.bass.alter ?? 0 } } : {}) } : null;
+  if (!c || !/^[A-G]$/.test(c.root.step) || Math.abs(c.root.alter) > 2 || (c.bass && (!/^[A-G]$/.test(c.bass.step) || Math.abs(c.bass.alter) > 2))) return null;
+  return c;
+}
+/**
+ * Place a dynamic, a text or a chord symbol (WSHED-166: `value` = a typed symbol or { root, q, bass? }) on a slot of
+ * a staff → { doc, id }; the same kind already on that slot is replaced.
+ */
 export function addExpression(doc, { kind, staff, bar, at, value }) {
-  if (kind !== "dyn" && kind !== "text") throw new Nudge("no such mark");
+  if (kind !== "dyn" && kind !== "text" && kind !== "chord") throw new Nudge("no such mark");
   if (!doc.measures[bar] || !(staff >= 0 && staff < doc.parts[0].staves)) throw new Nudge("nowhere to put it");
   if (!onGrid(doc, bar, at)) throw new Nudge("that's off the grid", { bar });
   if (kind === "dyn" && !DYN_VALUES.includes(value)) throw new Nudge("no such dynamic");
   const v = kind === "text" ? cleanText(value) : value;
   if (kind === "text" && !v) throw new Nudge("say what the text is");
   const d = clone(doc), id = eid();
+  if (kind === "chord") { const c = chordOf(value); if (!c) throw new Nudge("that's not a chord symbol"); putExpr(d, { id, kind, staff, at, ...c }, bar); return { doc: d, id }; }
   putExpr(d, { id, kind, staff, at, value: v }, bar);
   return { doc: d, id };
 }
@@ -1266,6 +1279,22 @@ export function setExpressionValue(doc, ids, value) {
   if (!found.length) throw new Nudge("pick the marks to change");
   const kind = found[0].x.kind;
   if (SPAN_KINDS.includes(kind) || found.some((f) => f.x.kind !== kind)) throw new Nudge("pick dynamics or texts, not both");
+  if (kind === "chord") { // retype chord symbols (WSHED-166): `value` = a typed symbol, a whole record, or a part of one ({ q } alone keeps each root; { root: { alter } } keeps each letter; { bass: undefined } drops the bass)
+    const part = typeof value === "string" ? chordOf(value) : value;
+    if (!part) throw new Nudge("that's not a chord symbol");
+    const d = clone(doc);
+    let changed = false;
+    for (const f of found) {
+      const x = d.measures[f.bar].expressions[f.index];
+      const merge = (cur, ch) => (ch ? { step: ch.step ?? cur?.step, alter: ch.alter ?? (ch.step ? 0 : cur?.alter ?? 0) } : undefined); // a part with only an alter keeps the symbol's letter
+      const next = chordOf({ root: part.root ? merge(x.root, part.root) : x.root, q: part.q ?? x.q, bass: "bass" in part ? merge(x.bass, part.bass) : x.bass });
+      if (!next) throw new Nudge("that's not a chord symbol");
+      if (JSON.stringify([next.root, next.q, next.bass ?? null]) === JSON.stringify([x.root, x.q, x.bass ?? null])) continue;
+      x.root = next.root; x.q = next.q; if (next.bass) x.bass = next.bass; else delete x.bass;
+      changed = true;
+    }
+    return changed ? d : doc;
+  }
   const v = kind === "text" ? cleanText(value) : value;
   if (kind === "dyn" && !DYN_VALUES.includes(v)) throw new Nudge("no such dynamic");
   if (kind === "text" && !v) throw new Nudge("say what the text is");
@@ -1357,15 +1386,20 @@ export function arpeggio(doc, evIds, kind) {
   for (const e of notes) { if (all) delete e.arp; else e.arp = kind; }
   return d;
 }
-/** Toggle a glissando from each selected note to the next note of its staff; nothing after it → Nudge. */
-export function gliss(doc, evIds) {
+/**
+ * Toggle a glissando on each selected note: `mode` "start" slides to the next note of its voice (nothing after it →
+ * Nudge); "up" / "down" (WSHED-167) leave the note with no landing — a rise or fall into whatever follows.
+ * Choosing the mode every selected note already has removes it.
+ */
+export function gliss(doc, evIds, mode = "start") {
+  if (!GLISS.includes(mode)) throw new Nudge("no such glissando");
   const d = clone(doc);
   const fs = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "note");
   if (!fs.length) throw new Nudge("pick a note to slide from");
-  const can = fs.filter((f) => nextEvent(d, f)?.kind === "note");
-  if (!can.length) throw new Nudge("gliss needs a note after it", { bar: fs[0].bar });
-  const all = can.every((f) => f.ev.gliss === "start");
-  for (const f of can) { if (all) delete f.ev.gliss; else f.ev.gliss = "start"; }
+  const can = mode === "start" ? fs.filter((f) => nextEvent(d, f)?.kind === "note") : fs;
+  if (!can.length) throw new Nudge("gliss needs a note after it — hold gliss. for one that rises off the note", { bar: fs[0].bar });
+  const all = can.every((f) => f.ev.gliss === mode);
+  for (const f of can) { if (all) delete f.ev.gliss; else f.ev.gliss = mode; }
   return d;
 }
 

@@ -433,7 +433,7 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   if ((await page.locator("#cp-file-more .cp-menu-row:disabled").count()) !== 1 || (await page.locator("#cp-file-more .cp-menu-row:not(:disabled)").count()) !== 3) throw new Error("file menu: two PDF rows and MusicXML live, MIDI a placeholder");
   await page.click("[data-pop=cp-file-more]");
   await page.click("[data-pop=cp-options-more]");
-  if ((await page.locator("#cp-options-more .cp-rail-row").count()) !== 8) throw new Error("rail rows"); // controls · transport · notes · utility · expression · form · piano · notes2
+  if ((await page.locator("#cp-options-more .cp-rail-row").count()) !== 9) throw new Error("rail rows"); // controls · transport · notes · utility · expression · form · piano · notes2 · chords (WSHED-166)
   // Options ▾ (v116, WSHED-154): the panel is Input (Pen | Touch, Gesture, Favorites) over Rails; the control rail no longer carries them; a row's switch mirrors the state and the panel stays open
   if ((await page.locator(".cp-options-btn .cp-pick-label").textContent()) !== "Options" || (await page.locator("#cp-options-more .cp-opt-cap").allTextContents()).join(",") !== "Input,Rails,Help") throw new Error("the panel's captions");
   if (await page.locator(".cp-control .cp-inp, .cp-control .cp-gest, .cp-control .cp-favbtn").count()) throw new Error("the toggles still sit on the control rail");
@@ -1195,6 +1195,75 @@ await step("the rails filled out (WSHED-127, v98): sf ▾ → sfz on a beat; hol
   await page.waitForSelector(".cp-editor .cp-svg");
   await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
   await page.click(".cp-dur[data-base='4']");
+});
+
+await step("the Libertango round (WSHED-166…169): the Chords rail builds B m7(♭5)/A, arms it and a tap places it on beat 1 (still armed: a root tap and a second beat place E…); Select mode: a tap selects a symbol and the 7 chip retypes it alone, undo restores; hold gliss. → up on a selected note leaves an open gliss; a bass clef lands on the & of beat 2; the details sheet carries a subtitle", async () => {
+  await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
+  if ((await state()).mode !== "place") await page.keyboard.press("v");
+  await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
+  for (const rail of ["chords", "utility"]) if (await page.locator(`#cp-${rail}`).isHidden()) { await page.click("[data-pop=cp-options-more]"); await page.click(`.cp-rail-row[data-rail=${rail}]`); await page.click("[data-pop=cp-options-more]"); }
+  if (await page.locator("#cp-chords").isHidden()) throw new Error("the Chords rail did not open");
+  const hold = async (sel) => { const bb = await page.locator(sel).first().boundingBox(); await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2); await page.mouse.down(); await page.waitForTimeout(600); await page.mouse.up(); await page.waitForTimeout(120); };
+  const docOf = () => page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc);
+  const chordsIn = async (bar) => ((await docOf()).measures[bar].expressions ?? []).filter((x) => x.kind === "chord").map((x) => `${x.root.step}${x.root.alter || ""}${x.q}${x.bass ? "/" + x.bass.step : ""}@${x.at / PPQ}`).join(" ");
+  const d0 = await docOf();
+  const b = d0.measures.findIndex((m) => m.staves[0].voices[0].some((e) => e.kind === "note" && !e.dur.tuplet && !e.dur.dots && e.dur.base === 4));
+  if (b < 0) throw new Error("no bar with a plain quarter on the upper staff");
+  // build the symbol on the rail: root B, quality m7(♭5), / then A — every tap re-arms; the arm button spells it
+  await page.click(".cp-chord-root[data-step=B]"); await page.click('.cp-chord-q[data-q="m7(♭5)"]'); await page.click(".cp-chord-slash");
+  if ((await state()).pending?.kind !== "chord") throw new Error("the rail did not arm: " + JSON.stringify((await state()).pending));
+  await page.click(".cp-chord-root[data-step=A]");
+  const label = await page.getAttribute(".cp-chord-arm", "aria-label");
+  if (!label.startsWith("Bm7(♭5)/A") || (await page.getAttribute(".cp-chord-arm", "aria-pressed")) !== "true") throw new Error("arm button: " + label);
+  await tapAt({ bar: b, staff: 0, ticks: 200, step: 12 });
+  if ((await chordsIn(b)) !== "Bm7(♭5)/A@0") throw new Error("not placed: " + (await chordsIn(b)));
+  if ((await state()).pending?.kind !== "chord") throw new Error("a chord symbol should stay armed after placing");
+  await page.click(".cp-chord-root[data-step=E]"); // still slashed over A — the bass stays until / drops it
+  await tapAt({ bar: b, staff: 0, ticks: 2 * PPQ + 200, step: 12 });
+  if ((await chordsIn(b)) !== "Bm7(♭5)/A@0 Em7(♭5)/A@2") throw new Error("second not placed: " + (await chordsIn(b)));
+  if ((await page.locator(".cp-svg .cp-expr[data-kind=chord]").count()) < 2) throw new Error("chord symbols not drawn");
+  await page.keyboard.press("Escape");
+  if ((await state()).pending) throw new Error("Escape did not disarm");
+  // Select mode: tap the first symbol, the 7 chip retypes it alone; undo
+  await page.click("[data-act=select]");
+  const box = await page.locator(".cp-svg .cp-expr[data-kind=chord]").first().boundingBox();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  if ((await state()).selection.length !== 1) throw new Error("the symbol was not selected: " + JSON.stringify((await state()).selection));
+  await page.click('.cp-chord-q[data-q="7"]');
+  if ((await chordsIn(b)) !== "B7/A@0 Em7(♭5)/A@2") throw new Error("retype: " + (await chordsIn(b)));
+  if ((await state()).pending) throw new Error("a retype must not arm");
+  await page.keyboard.press("Control+z");
+  if ((await chordsIn(b)) !== "Bm7(♭5)/A@0 Em7(♭5)/A@2") throw new Error("undo: " + (await chordsIn(b)));
+  await page.keyboard.press("Escape"); await page.click(".cp-dur[data-base='4']"); // back to Place, the quarter armed
+  await page.screenshot({ path: `${S}/cp-27-chords.png` });
+  // hold gliss. → up on a selected note: an open gliss, drawn
+  const n = (await docOf()).measures[b].staves[0].voices[0].findIndex((e) => e.kind === "note");
+  const note = (await docOf()).measures[b].staves[0].voices[0][n];
+  const lines0 = await page.locator(".cp-svg .cp-gliss-line").count();
+  const hd = await page.evaluate((id) => { const d = document.querySelector(".cp-editor").__editor.layout.drawn.find((x) => x.id === id); return d && { ticks: d.ticks, step: d.heads[0].step }; }, note.id);
+  const hp = await point({ bar: b, staff: 0, ticks: hd.ticks, step: hd.step });
+  await page.mouse.click(hp.x, hp.y); // a tap on a head selects it
+  if (!(await state()).selection.length) throw new Error("no note selected for the gliss");
+  await hold(".cp-gliss-btn"); await page.click(".cp-gliss-row[data-mode=up]");
+  const gl = (await docOf()).measures[b].staves[0].voices[0].find((e) => e.kind === "note" && e.gliss);
+  if (gl?.gliss !== "up") throw new Error("open gliss not set: " + JSON.stringify(gl?.gliss));
+  if ((await page.locator(".cp-svg .cp-gliss-line").count()) !== lines0 + 1) throw new Error("open gliss not drawn");
+  await page.keyboard.press("Escape");
+  // a bass clef on the & of beat 2 of the upper staff
+  await page.click("[data-pop=cp-clef-more]"); await page.click(".cp-clef[data-clef=bass]");
+  await tapAt({ bar: b, staff: 0, ticks: Math.round(1.5 * PPQ), step: 4 });
+  const cc = (await docOf()).measures[b].clefChanges ?? [];
+  if (!cc.some((c) => c.staff === 0 && c.at === 1.5 * PPQ && c.clef === "bass")) throw new Error("clef on the half beat: " + JSON.stringify(cc));
+  await page.keyboard.press("Control+z");
+  // the subtitle in the details sheet
+  await page.click("#cp-title");
+  await page.waitForSelector("#cp-d-subtitle");
+  await page.fill("#cp-d-subtitle", "As played by the E2E");
+  await page.click("#cp-d-save");
+  await page.waitForFunction(() => document.querySelector(".cp-editor").__editor.state.doc.subtitle === "As played by the E2E", null, { timeout: 5000 });
+  const sub = await page.evaluate(async (id) => { const { logbook } = await import("/js/lib/logbook.js"); return logbook.composition(id).subtitle; }, d0.id);
+  if (sub !== "As played by the E2E") throw new Error("subtitle not saved: " + sub);
+  for (const rail of ["chords", "utility"]) if (!(await page.locator(`#cp-${rail}`).isHidden())) { await page.click("[data-pop=cp-options-more]"); await page.click(`.cp-rail-row[data-rail=${rail}]`); await page.click("[data-pop=cp-options-more]"); }
 });
 
 await step("MusicXML: File ▾ → Export MusicXML downloads a part-wise 4.0 file; import on the list (plain and .mxl) makes new compositions with the same bars; the file menu's Share… path hands over the file", async () => {

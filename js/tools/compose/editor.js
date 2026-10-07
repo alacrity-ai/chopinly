@@ -18,7 +18,7 @@ import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt, lasso, spans as spansOfLayout, isHandle, struck } from "../../lib/compose/hit.js";
 import { chevron } from "../../lib/compose/gesture.js";
-import { place, remove, snap, trimBars, find, setPitch, retype, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, addPedal, addOttava, addTextLine, finger, graceAt, toggleGrace, tremolo, setTrill, setStem, beamBreak, setSimile, pitchFromStep, moveExpressions, moveSpanEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, insertBar, deleteBar, setShort, stepAccidental, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
+import { chordOf, place, remove, snap, trimBars, find, setPitch, retype, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, addPedal, addOttava, addTextLine, finger, graceAt, toggleGrace, tremolo, setTrill, setStem, beamBreak, setSimile, pitchFromStep, moveExpressions, moveSpanEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, insertBar, deleteBar, setShort, stepAccidental, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { createPlayer } from "../../lib/compose/play.js";
@@ -31,13 +31,14 @@ import { openExportSheet } from "./exportsheet.js";
 import { saveFile } from "./savefile.js";
 import { createFavorites } from "./favorites.js";
 import { toMusicXml, musicXmlFileName, MUSICXML_TYPE } from "../../lib/compose/musicxml.js";
+import { chordText } from "../../lib/compose/chordsym.js";
 
 const TAP_MS = 300, TAP_PX = 10, PALM_PX = 40, S_MIN = 8, S_MAX = 22, SAVE_MS = 300, LASSO_PX = 6;
 const FINGER_PX = 22, AIM_PX = 40, AIM_MS = 500; // Touch mode (v101): a hit answers from a fingertip away; a finger held this long (or slid) aims with a ghost floating this far above it
 const FAV_MS = 2000; // Favorites (v109): a Place-mode pointer held still this long summons the panel
 const TOUCHY = typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
 const KEY_BASE = { 1: 64, 2: 32, 3: 16, 4: 8, 5: 4, 6: 2, 7: 1 };
-const EXPR_TYPES = new Set(["dyn", "text", "hairpin", "hairpin-start", "hairpin-end", "pedal", "pedal-start", "pedal-end", "ottava", "ottava-start", "ottava-end", "textline", "textline-start", "textline-end"]); // the selectable expressions and a selected span's two handles
+const EXPR_TYPES = new Set(["dyn", "text", "chord", "hairpin", "hairpin-start", "hairpin-end", "pedal", "pedal-start", "pedal-end", "ottava", "ottava-start", "ottava-end", "textline", "textline-start", "textline-end"]); // the selectable expressions and a selected span's two handles
 const SPAN_PENDING = new Set(["hairpin", "pedal", "ottava", "textline"]); // pending kinds placed by two taps (start, end)
 const LINE_NAME = { pedal: "pedal", 1: "8va", "-1": "8vb", "1:15": "15ma", "-1:15": "15mb" };
 const PEDAL_STYLES = ["line", "sign", "sost"], TEMPO_UNIT_BASES = [2, 4, 8];
@@ -69,6 +70,8 @@ export function openEditor({ id, ctx, onClose }) {
   let tempoUnit = TEMPO_UNIT_BASES.includes(savedUnit?.base) ? { base: savedUnit.base, dots: savedUnit.dots ? 1 : 0 } : { base: 4, dots: 0 };
   let hands = HANDS[savedHands] ? savedHands : "en";
   let pedalStyle = PEDAL_STYLES.includes(savedPedal) ? savedPedal : "line";
+  let chordDraft = { root: { step: "A", alter: 0 }, q: "m" }, chordSlash = false; // the Chords rail's symbol in the making (WSHED-166); slash = the next root is the bass
+  let glissMode = "start", lastChordPart = "root"; // lastChordPart: which name ♯ / ♭ change — the root, or the bass just tapped // the gliss. button's mode (WSHED-167): the hold menu's last pick
   let penSeen = store.get("penSeen", false) === true; // Pen | Touch (v101): the first pen contact on this device flips the switch once
   let input = store.get("input", null); if (input !== "pen" && input !== "touch") input = penSeen ? "pen" : "touch"; // what a finger may do — remembered per device
   let gestureOn = store.get("gesture", false) === true; // Gesture mode (v102): drag to lasso in Place mode, strike to delete — a device opts in
@@ -124,10 +127,10 @@ export function openEditor({ id, ctx, onClose }) {
     const notes = fs.filter((f) => f.ev.kind === "note"), rests = fs.filter((f) => f.ev.kind === "rest");
     const xs = ids.map((id) => findExpression(doc, id)).filter(Boolean), exprs = xs.length > 0 && xs.length === ids.length;
     const n = doc.parts[0].staves;
-    return { any: fs.length > 0, exprs, dyns: exprs && xs.every((f) => f.x.kind === "dyn"), texts: exprs && xs.every((f) => f.x.kind === "text"), notes: notes.length > 0, rests: rests.length > 0, hidden: rests.length > 0 && rests.every((f) => f.ev.hidden), up: notes.some((f) => f.staff + (f.ev.cross ?? 0) - 1 >= 0 && Math.abs((f.ev.cross ?? 0) - 1) <= 1), down: notes.some((f) => f.staff + (f.ev.cross ?? 0) + 1 < n && Math.abs((f.ev.cross ?? 0) + 1) <= 1) };
+    return { any: fs.length > 0, exprs, dyns: exprs && xs.every((f) => f.x.kind === "dyn"), texts: exprs && xs.every((f) => f.x.kind === "text"), chords: exprs && xs.every((f) => f.x.kind === "chord"), notes: notes.length > 0, rests: rests.length > 0, hidden: rests.length > 0 && rests.every((f) => f.ev.hidden), up: notes.some((f) => f.staff + (f.ev.cross ?? 0) - 1 >= 0 && Math.abs((f.ev.cross ?? 0) - 1) <= 1), down: notes.some((f) => f.staff + (f.ev.cross ?? 0) + 1 < n && Math.abs((f.ev.cross ?? 0) + 1) <= 1) };
   }
   function sync() {
-    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title: heading(), voice, used: usedVoices(doc), sel: selFacts(), tempoUnit, hands, pedalStyle, input, gesture: gestureOn, favorites: fav.on });
+    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title: heading(), voice, used: usedVoices(doc), sel: selFacts(), tempoUnit, hands, pedalStyle, input, gesture: gestureOn, favorites: fav.on, chord: chordDraft, chordSlash, gliss: glissMode });
     fav.sync(); // the slots mirror their rail buttons' state
     view.dataset.mode = mode; view.classList.toggle("pasting", pasting); view.classList.toggle("arming", !!pending);
     syncTransport();
@@ -221,12 +224,12 @@ export function openEditor({ id, ctx, onClose }) {
     if (pending.kind === "grace") return { bar: slot.bar, staff: slot.staff, ticks: slot.ticks, step: slot.step };
     if (isExprPending()) { const s = exprSlot(doc, slot.bar, slot.ticks); return { bar: s.bar, at: s.at, staff: pending.start ? pending.start.staff : slot.staff }; }
     if (pending.kind !== "clef") return { bar: slot.bar };
-    const time = timeAt(doc, slot.bar), beat = groupSize(time), cap = capacity(time);
+    const time = timeAt(doc, slot.bar), beat = exprGrid(time), cap = capacity(time); // a clef lands on a beat or half-way between (WSHED-168)
     let bar = slot.bar, at = Math.round(slot.ticks / beat) * beat;
     if (at >= cap) { if (bar + 1 < doc.measures.length) { bar++; at = 0; } else at = cap - beat; } // the tail of the last beat means the next barline
     return { bar, staff: slot.staff, at };
   }
-  const isExprPending = () => pending && (pending.kind === "dyn" || pending.kind === "text" || SPAN_PENDING.has(pending.kind));
+  const isExprPending = () => pending && (pending.kind === "dyn" || pending.kind === "text" || pending.kind === "chord" || SPAN_PENDING.has(pending.kind));
   const graceBase = () => (GRACE_BASES.includes(armed.base) ? armed.base : 8); // the palette's value is the grace's; a longer one reads as an eighth
   const absOf = (bar, at) => barStarts(doc).starts[bar] + at;
   /** "beat 2" / "the & of 2" of a bar, for toasts. */
@@ -239,6 +242,7 @@ export function openEditor({ id, ctx, onClose }) {
       const si = L.hit.systems.indexOf(hb.sys), x = xOfTicks(hb.bar, t.at), abs = absOf(t.bar, t.at);
       if (pending.kind === "dyn") return R.showGhost({ dyn: pending.value, x: x + 0.59, y: L.exprLine(si, t.staff, abs, abs + 1) });
       if (pending.kind === "text") return R.showGhost({ text: pending.value, x, y: L.textLine(si, t.staff, abs) });
+      if (pending.kind === "chord") return R.showGhost({ text: chordText(pending.value), chord: true, x, y: L.chordLine(si, t.staff) });
       const lineY = (k, staff, a, b) => (pending.kind === "hairpin" || pending.kind === "textline" ? L.exprLine(k, staff, a, b) : pending.kind === "pedal" ? L.pedalLine(k, staff, a, b) : L.ottavaLine(k, staff, a, b + 1, pending.value));
       const lineSpec = (x1, x2, y) => (pending.kind === "textline" ? { line: "textline", text: pending.value.text, x1, x2, y } : { line: pending.kind, dir: pending.value, size: pending.size, style: pending.value, x1, x2, y });
       if (!pending.start) return pending.kind === "hairpin" ? R.showGhost({ hairpin: pending.value, x1: x, x2: x + 3, y: lineY(si, t.staff, abs, abs + 1) }) : R.showGhost(lineSpec(x - 0.2, x + 4, lineY(si, t.staff, abs, abs + 1)));
@@ -279,6 +283,7 @@ export function openEditor({ id, ctx, onClose }) {
         if (r.after > r.before && !confirm(`${v.beats}/${v.unit} from bar ${t.bar + 1} spills into ${r.after - r.before} more ${r.after - r.before === 1 ? "bar" : "bars"} — go ahead?`)) { setPending(null); return; }
         commit(r.doc); toast(`${v.beats}/${v.unit} from bar ${t.bar + 1}`);
       } else if (p.kind === "dyn" || p.kind === "text") { commit(addExpression(doc, { kind: p.kind, staff: t.staff, bar: t.bar, at: t.at, value: p.value }).doc); toast(`${p.value} on ${slotName(t.bar, t.at)}`); }
+      else if (p.kind === "chord") { commit(addExpression(doc, { kind: "chord", staff: t.staff, bar: t.bar, at: t.at, value: p.value }).doc); toast(`${chordText(p.value)} on ${slotName(t.bar, t.at)}`); setPending({ ...p }); return; } // stays armed: a lead sheet is chord after chord
       else if (p.kind === "hairpin") {
         if (!p.start) { pending = { ...p, start: t }; toast("now tap where it ends"); haptic(6); sync(); return; } // the first tap of three is the start; the second is the end
         commit(addHairpin(doc, { staff: p.start.staff, bar: p.start.bar, at: p.start.at, dir: p.value, end: { bar: t.bar, at: t.at }, niente: !!p.niente }).doc);
@@ -826,7 +831,7 @@ export function openEditor({ id, ctx, onClose }) {
       case "back": close(); return;
       case "details": { // title · composer · tags in the shared modal; the header follows a rename, a delete leaves the editor
         flush();
-        openCompositionDetails(id).then((r) => { if (closed) return; if (r.deleted) { close(); return; } if (r.saved) { title = r.saved.title; composer = r.saved.composer ?? ""; held = logbook.composition(id); doc = history.replace({ ...doc, title, composer, tags: [...(r.saved.tags ?? [])] }); el.setAttribute("aria-label", heading()); sync(); } }); // the working document carries the identity too (it is a snapshot of its own since v104, not the stored object)
+        openCompositionDetails(id).then((r) => { if (closed) return; if (r.deleted) { close(); return; } if (r.saved) { title = r.saved.title; composer = r.saved.composer ?? ""; held = logbook.composition(id); const { subtitle: _old, ...rest } = doc; doc = history.replace({ ...rest, title, ...(r.saved.subtitle ? { subtitle: r.saved.subtitle } : {}), composer, tags: [...(r.saved.tags ?? [])] }); el.setAttribute("aria-label", heading()); sync(); } }); // the working document carries the identity too (it is a snapshot of its own since v104, not the stored object)
         return;
       }
       case "export-pdf": case "save-pdf": { // the export sheet: size, page, margins, header, preview → Save PDF / Add to Scores (WSHED-121)
@@ -837,7 +842,7 @@ export function openEditor({ id, ctx, onClose }) {
       case "export-xml": { // MusicXML 4.0 of the piece as it stands (WSHED-119): save to the device or share it, like the PDF
         flush();
         const c = logbook.composition(id) ?? { title, composer };
-        const file = new File([toMusicXml(doc, { title: c.title, composer: c.composer ?? "" })], musicXmlFileName(c), { type: MUSICXML_TYPE });
+        const file = new File([toMusicXml(doc, { title: c.title, subtitle: c.subtitle ?? "", composer: c.composer ?? "" })], musicXmlFileName(c), { type: MUSICXML_TYPE });
         saveFile(file, { title: "save MusicXML", shareTitle: c.title }).then((way) => { if (way === "device") toast(`saved as ${file.name}`); else if (way === "share") toast("shared"); }).catch((e) => { console.error(e); toast(e.message || "the export failed"); });
         return;
       }
@@ -943,9 +948,32 @@ export function openEditor({ id, ctx, onClose }) {
         try { commit(articulate(doc, selEvIds(), arg)); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
         return;
       }
-      case "gliss": {
-        if (!selection.size) { toast("select the note to slide from"); return; }
-        try { commit(gliss(doc, selEvIds())); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+      case "gliss": { // the button sets the last mode; the hold menu picks one (WSHED-167: to the next note, or open up / down)
+        if (arg) { glissMode = arg; sync(); }
+        if (!selection.size) { toast(arg ? `${arg === "start" ? "gliss to the next note" : `gliss ${arg}, no landing`} — select the note to slide from` : "select the note to slide from"); return; }
+        try { commit(gliss(doc, selEvIds(), glissMode)); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+        return;
+      }
+      // the Chords rail (WSHED-166): every tap shapes the symbol; with chord symbols selected it retypes them, otherwise it arms it
+      case "chord-arm": case "chord-root": case "chord-acc": case "chord-q": case "chord-slash": case "chord-set": {
+        const sel = selection.size && selFacts().chords;
+        let part = null; // what changed, for a retype of the selection
+        if (name === "chord-root") {
+          const pitch = { step: arg, alter: 0 };
+          if (chordSlash) { chordDraft = { ...chordDraft, bass: pitch }; chordSlash = false; part = { bass: pitch }; }
+          else { chordDraft = { ...chordDraft, root: pitch }; part = { root: pitch }; }
+        } else if (name === "chord-acc") {
+          const onBass = !!chordDraft.bass && (chordSlash || lastChordPart === "bass"), cur = onBass ? chordDraft.bass : chordDraft.root;
+          const next = { step: cur.step, alter: cur.alter === arg ? 0 : arg };
+          chordDraft = onBass ? { ...chordDraft, bass: next } : { ...chordDraft, root: next }; part = onBass ? { bass: { alter: next.alter } } : { root: { alter: next.alter } }; // a selection keeps each symbol's own letter
+        } else if (name === "chord-q") { chordDraft = { ...chordDraft, q: arg }; part = { q: arg }; }
+        else if (name === "chord-slash") { if (chordDraft.bass) { const { bass: _, ...rest } = chordDraft; chordDraft = rest; chordSlash = false; part = { bass: undefined }; } else { chordSlash = !chordSlash; if (chordSlash) { toast("now tap the bass"); sync(); return; } } }
+        else if (name === "chord-set") { const c = chordOf(String(arg ?? "")); if (!c) { toast("that's not a chord symbol — try Bm7(b5)/A"); return; } chordDraft = c; chordSlash = false; part = { ...c, bass: c.bass }; }
+        lastChordPart = name === "chord-root" && part?.bass ? "bass" : name === "chord-root" ? "root" : lastChordPart;
+        if (sel && name !== "chord-arm") { try { commit(setExpressionValue(doc, selEvIds(), part)); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); } return; }
+        if (name === "chord-arm" && pending?.kind === "chord") { setPending(null); return; }
+        setPending({ kind: "chord", value: chordDraft });
+        if (name === "chord-arm" || name === "chord-set") toast(`${chordText(chordDraft)} — tap the beat it goes over`);
         return;
       }
       case "slur": {
@@ -998,7 +1026,8 @@ export function openEditor({ id, ctx, onClose }) {
       }
       case "beam": {
         if (!selection.size) { toast("select the note the beam breaks before"); return; }
-        try { const next = beamBreak(doc, selEvIds()); commit(next); toast(selEvIds().every((id) => find(next, id)?.ev.beam === "break") ? `beam broken before ${selEvIds().length === 1 ? "the note" : `${selEvIds().length} notes`}` : "beam joined"); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+        const mode = arg === "join" ? "join" : "break";
+        try { const next = beamBreak(doc, selEvIds(), mode); commit(next); const on = selEvIds().every((id) => find(next, id)?.ev.beam === mode), n = selEvIds().length === 1 ? "the note" : `${selEvIds().length} notes`; toast(on ? (mode === "join" ? `beam joined across the beat to ${n}` : `beam broken before ${n}`) : "beam automatic again"); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
         return;
       }
       case "grace-chord": { // with Grace on: the next taps stack pitches on the last grace; off Grace: arms it so

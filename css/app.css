@@ -2362,6 +2362,8 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-svg .cp-dyn { fill: var(--fg); }
 .cp-svg .cp-hairpin { fill: none; stroke: var(--fg); stroke-width: 1.3; stroke-linecap: round; }
 .cp-svg .cp-expr-text { font: italic 500 1em var(--serif); fill: var(--fg); }
+.cp-svg .cp-chord { font: 500 1em var(--serif); fill: var(--fg); } /* chord symbols (WSHED-166): upright serif, accidentals are Bravura glyphs */
+.cp-svg .cp-expr.sel .cp-chord, .cp-svg .cp-expr.sel .cp-chord-acc { fill: var(--hi); }
 /* expressions are selectable things (WSHED-122): the selected one takes the highlight; a selected hairpin's end handles ride the overlay; ghosts are faint */
 .cp-svg .cp-expr.sel .cp-dyn, .cp-svg .cp-expr.sel .cp-expr-text { fill: var(--hi); }
 .cp-svg .cp-expr.sel .cp-hairpin { stroke: var(--hi); }
@@ -2384,6 +2386,14 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-overlay .cp-ottava-line { fill: none; stroke: var(--fg); stroke-width: 1.2; stroke-dasharray: 4 3; opacity: 0.42; }
 .cp-handle { fill: var(--bg); stroke: var(--hi); stroke-width: 1.6; }
 .cp-overlay .cp-expr-text { font: italic 500 1em var(--serif); fill: var(--fg); opacity: 0.42; }
+.cp-overlay .cp-ghost-chord { font: 500 1em var(--serif); fill: var(--fg); opacity: 0.42; }
+/* the Chords rail (WSHED-166): the symbol being built on its arm button; root letters; quality chips */
+.cp-chord-arm { min-width: 4.6rem; font: 500 1.05rem var(--serif); }
+.cp-chord-sym sup { font-size: 0.68em; vertical-align: 0.55em; line-height: 0; }
+.cp-ch-acc { font-family: var(--serif); }
+.cp-chord-root b, .cp-chord-slash b { font: 600 1.05rem var(--serif); }
+.cp-chord-q { min-width: 2.6rem; padding: 0 0.45rem; font: 500 0.95rem var(--serif); white-space: nowrap; }
+.cp-gliss-pic { display: inline-block; min-width: 1.6rem; font: 600 1rem var(--sans); text-align: center; }
 .cp-overlay .cp-hairpin { fill: none; stroke: var(--fg); stroke-width: 1.3; stroke-linecap: round; opacity: 0.42; }
 .cp-text-btn[aria-pressed="true"] i { color: var(--accent); }
 .cp-svg .cp-gliss-text { font: italic 500 1em var(--serif); fill: var(--fg); }

@@ -484,9 +484,10 @@ test("setKey / setClef: a change holds until the next one; the value already in 
   f = place(f, { bar: 3, staff: 1, ticks: 0, step: 4 }, Q).doc;                                // middle line, bass → D3
   const notes = f.measures[3].staves[1].voices[0].filter((e) => e.kind === "note").map((e) => e.pitches[0].step + e.pitches[0].octave);
   assert.deepEqual(notes, ["D3", "A3"]);
-  // the clef already in force on that beat removes the change; off the beat refuses; bass again at the barline after → an explicit change back
+  // the clef already in force on that beat removes the change; off the half-beat grid refuses (WSHED-168: the "and" of a beat is a slot); bass again at the barline after → an explicit change back
   assert.equal(setClef(d, 3, 1, "bass", 2 * Qt).measures[3].clefChanges, undefined);
-  assert.throws(() => setClef(d, 3, 1, "alto", Qt / 2), Nudge);
+  assert.deepEqual(setClef(d, 3, 1, "alto", Qt / 2).measures[3].clefChanges, [{ staff: 1, at: Qt / 2, clef: "alto" }, { staff: 1, at: 2 * Qt, clef: "tenor" }]);
+  assert.throws(() => setClef(d, 3, 1, "alto", Qt / 4), Nudge);
   const g = setClef(d, 4, 1, "bass");
   assert.deepEqual(g.measures[4].clefs, { 1: "bass" }); assert.equal(clefAt(g, 5, 1), "bass");
   // a time change carries a mid-bar clef to the beat that now holds its tick

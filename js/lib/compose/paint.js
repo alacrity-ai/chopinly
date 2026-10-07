@@ -22,10 +22,36 @@ const vcls = (vi) => (vi ? ` cp-v${vi + 1}` : ""); // voices 2–4 tint on scree
  *   path(segs, cls)                                — [["M", x, y], ["C", x1, y1, x2, y2, x, y], ["L", x, y], ["Z"]]; filled unless cls says stroke
  *   circle(cx, cy, r, cls)                         — the selection halo (screen only)
  *   glyph(x, y, ch, cls, { scale, anchor, rotate, centre, data }) — Bravura text; scale × 4 S em; centre → ink-centred on x
- *   text(x, y, str, cls, { size, anchor, rotate }) — words in the serif face; size in S
+ *   text(x, y, str, cls, { size, anchor, rotate }) — words in the serif face; size in S (upright when cls has cp-chord, else italic on paper)
+ *   measure(str, size, cls)                        — the advance of `text` in S (optional; an estimate stands in)
+ *   at(system)                                     — the system the next primitives belong to (optional): paper routes ink to a
+ *                                                    page by it, so a staccato dot far under a low note or a chord symbol high over
+ *                                                    the staff stays with its own system (WSHED-165) — never by its height alone
  */
+const ACC_GLYPH = { "-2": "\uE264", "-1": "\uE260", 1: "\uE262", 2: "\uE263", 0: "\uE261" };
+const ACC_W = { "-2": 1.65, "-1": 0.9, 1: 1.0, 2: 1.0, 0: 0.67 }; // S advance per accidental at glyph scale 1 (Bravura's baked advances / 250)
+/**
+ * A chord symbol (WSHED-166): the root letter, its accidental as a Bravura glyph (the serif face has no ♭ ♯), the
+ * quality — a bracketed alteration after a digit raised and small, every ♭ / ♯ inside it a glyph too — then "/" and
+ * the bass. The painter measures each run, so screen and paper set the same symbol with their own font's widths.
+ */
+export function paintChord(p, c) {
+  const z = c.size, cls = "cp-chord";
+  const width = (str, size) => (p.measure ? p.measure(str, size, cls) : 0.58 * size * str.length);
+  let x = c.x;
+  const word = (str, size, y) => { if (!str) return; p.text(x, y, str, cls, { size }); x += width(str, size); };
+  const acc = (alter, size, y) => { const k = 0.38 * size; p.glyph(x + 0.04, y - (alter === 1 || alter === 2 ? 0.36 : 0.08) * size, ACC_GLYPH[alter], `glyph ${cls}-acc`, { scale: k }); x += ACC_W[alter] * k + 0.1; };
+  const runText = (str, size, y) => { for (const part of str.split(/([♭♯𝄫𝄪])/u)) { if (!part) continue; const a = { "♭": -1, "♯": 1, "𝄫": -2, "𝄪": 2 }[part]; if (a) acc(a, size, y); else word(part, size, y); } };
+  word(c.root.step, z, c.y);
+  if (c.root.alter) acc(c.root.alter, z, c.y);
+  for (const r of c.runs) runText(r.t, r.sup ? z * 0.68 : z, r.sup ? c.y - 0.5 * z : c.y);
+  if (c.bass) { word("/", z, c.y); word(c.bass.step, z, c.y); if (c.bass.alter) acc(c.bass.alter, z, c.y); }
+}
+
 export function paintScore(L, p) {
-  for (const sys of L.systems) {
+  const on = (o) => p.at?.(o?.system ?? null);
+  L.systems.forEach((sys, si) => {
+    p.at?.(si);
     const lastBar = sys.endX ?? sys.barlines[sys.barlines.length - 1].x;
     p.group("cp-sys");
     // staff lines
@@ -38,7 +64,7 @@ export function paintScore(L, p) {
     for (const lead of sys.leading) {
       lead.staves.forEach((st) => {
         const topY = st.topY;
-        if (lead.clef) { const clefStep = (st.clef.line - 1) * 2; p.glyph(lead.x + 0.2, topY + (8 - clefStep) / 2, G[st.clef.glyph], "glyph", lead.small ? { scale: 0.8 } : {}); }
+        if (lead.clef && st.showClef !== false) { const clefStep = (st.clef.line - 1) * 2; p.glyph(lead.x + 0.2, topY + (8 - clefStep) / 2, G[st.clef.glyph], "glyph", lead.small ? { scale: 0.8 } : {}); }
         if (lead.key) st.keysig.forEach((k, i) => p.glyph(lead.keyX + i * 1.15, topY + (8 - k.step) / 2, G[k.acc], "glyph"));
         if (lead.time) { const b = sys.bars[sys.leading.indexOf(lead)], t = timeSig(b.time.beats, b.time.unit); p.glyph(lead.timeX + t.topDx, topY + 1, t.top, "glyph"); p.glyph(lead.timeX + t.botDx, topY + 3, t.bottom, "glyph"); }
       });
@@ -62,17 +88,19 @@ export function paintScore(L, p) {
       if (bl.startX !== undefined) { p.rect(bl.startX + 0.05, t0, 0.5, t1 - t0, "sline-bar"); p.rect(bl.startX + 0.85, t0, 0.13, t1 - t0, "sline-bar"); dots(bl.startX + 1.25); }
     }
     p.end();
-  }
+  });
   // clef changes inside a bar (small, before the beat they take effect on)
-  for (const c of L.clefs) p.glyph(c.x, c.y, G[c.glyph], "glyph cp-clef-change", { scale: 0.8, data: { bar: c.bar, staff: c.staff } });
+  for (const c of L.clefs) on(c), p.glyph(c.x, c.y, G[c.glyph], "glyph cp-clef-change", { scale: 0.8, data: { bar: c.bar, staff: c.staff } });
   // beams (under the notes); a cross-staff beam runs between the staves
   for (const b of L.beams) {
+    on(b);
     const t = b.dir === "up" ? b.t : -b.t;
     p.polygon([[b.x1, b.y1], [b.x2, b.y2], [b.x2, b.y2 + t], [b.x1, b.y1 + t]], `beam${vcls(b.voice)}`);
   }
   // grace notes (docs/COMPOSE_NOTES2_DESIGN.md §5): small heads, stems up, a flag or a shared flat beam, a slash on a slashed run, then the small slur to the principal
-  for (const b of L.graceBeams ?? []) for (let k = 0; k < b.levels; k++) { const y = b.y + k * 0.45; p.polygon([[b.x1, y], [b.x2, y], [b.x2, y + 0.3], [b.x1, y + 0.3]], "beam cp-grace-beam"); }
+  for (const b of L.graceBeams ?? []) if (on(b), true) for (let k = 0; k < b.levels; k++) { const y = b.y + k * 0.45; p.polygon([[b.x1, y], [b.x2, y], [b.x2, y + 0.3], [b.x1, y + 0.3]], "beam cp-grace-beam"); }
   for (const g of L.graces ?? []) {
+    on(g);
     p.group("cp-grace", { ev: g.ev, gi: g.gi });
     for (const l of g.ledgers) p.line(l.x - 0.25, l.y, l.x + g.headW + 0.25, l.y, "sline");
     p.rect(g.stemX - 0.05, g.stemTipY, 0.1, g.stemFromY - g.stemTipY, "stem");
@@ -82,15 +110,17 @@ export function paintScore(L, p) {
     p.end();
   }
   for (const t of L.graceSlurs ?? []) {
+    on(t);
     const sgn = t.dir === "up" ? -1 : 1, len = Math.max(0.6, t.x2 - t.x1);
     const x1 = t.x1 + 0.05, x2 = t.x2 - 0.05, y1 = t.y1 + 0.5 * sgn, y2 = t.y2 + 0.5 * sgn;
     const b = Math.max(0.5, Math.min(1.1, len / 4)) * sgn, b2 = b - 0.2 * sgn, cx = Math.min(len * 0.3, 2);
     p.path([["M", x1, y1], ["C", x1 + cx, y1 + b, x2 - cx, y2 + b, x2, y2], ["C", x2 - cx, y2 + b2, x1 + cx, y1 + b2, x1, y1], ["Z"]], "cp-grace-slur");
   }
   // tremolo bars: slanted parallelograms on the stem
-  for (const t of L.trems ?? []) for (const y of t.bars) p.polygon([[t.x - 0.55, y + 0.25], [t.x + 0.55, y - 0.25], [t.x + 0.55, y + 0.1], [t.x - 0.55, y + 0.6]], "cp-trem");
+  for (const t of L.trems ?? []) if (on(t), true) for (const y of t.bars) p.polygon([[t.x - 0.55, y + 0.25], [t.x + 0.55, y - 0.25], [t.x + 0.55, y + 0.1], [t.x - 0.55, y + 0.6]], "cp-trem");
   // notes + rests
   for (const d of L.drawn) {
+    on(d);
     if (!d.rest) for (const l of d.ledgers) p.line(l.x - 0.35, l.y, l.x + d.headW + 0.35, l.y, "sline");
     p.group(`cp-ev note${vcls(d.voice)}${d.hidden ? " cp-hidden" : ""}`, { ev: d.id, bar: d.bar, staff: d.staff, voice: d.voice });
     if (d.rest) { // a hidden rest is drawn faint on screen so it can still be picked and shown again; paper leaves it out
@@ -114,25 +144,28 @@ export function paintScore(L, p) {
   }
   // ties (a tapered filled curve) and slurs (the same shape, arched by the layout's h)
   for (const t of L.ties) {
+    on(t);
     const sgn = t.dir === "up" ? -1 : 1, len = Math.max(0.6, t.x2 - t.x1);
     const x1 = t.x1 + 0.12, x2 = t.x2 - 0.12, y1 = t.y1 + 0.62 * sgn, y2 = t.y2 + 0.62 * sgn;
     const b = Math.max(0.55, Math.min(1.35, len / 4)) * sgn, b2 = b - 0.26 * sgn, cx = Math.min(len * 0.3, 2.5);
     p.path([["M", x1, y1], ["C", x1 + cx, y1 + b, x2 - cx, y2 + b, x2, y2], ["C", x2 - cx, y2 + b2, x1 + cx, y1 + b2, x1, y1], ["Z"]], `cp-tie${vcls(t.voice)}`);
   }
   for (const t of L.slurs) {
+    on(t);
     const sgn = t.dir === "up" ? -1 : 1, len = Math.max(1, t.x2 - t.x1);
     const x1 = t.x1, x2 = t.x2, y1 = t.y1, y2 = t.y2;
     const b = t.h * sgn, b2 = b - 0.3 * sgn, cx = Math.min(len * 0.32, 4);
     p.path([["M", x1, y1], ["C", x1 + cx, y1 + b, x2 - cx, y2 + b, x2, y2], ["C", x2 - cx, y2 + b2, x1 + cx, y1 + b2, x1, y1], ["Z"]], `cp-slur${vcls(t.voice)}`);
   }
-  for (const m of L.marks) p.glyph(m.x, m.y, artGlyph(m.mark, m.above), "glyph cp-art", m.after ? {} : { centre: true }); // m.x is the head's centre; the glyph's ink is centred on it (a mark after the note starts there)
-  for (const t of L.trillLines ?? []) p.glyph(t.x1, t.y, G.wiggleTrill.repeat(Math.max(1, Math.floor((t.x2 - t.x1) / TRILL_SEG))), "glyph cp-art cp-trill-line"); // the trill's wavy extension
-  for (const a of L.trillAccs ?? []) p.glyph(a.x, a.y, G[a.alter], "glyph cp-art", { centre: true, scale: 0.7 });
+  for (const m of L.marks) on(m), p.glyph(m.x, m.y, artGlyph(m.mark, m.above), "glyph cp-art", m.after ? {} : { centre: true }); // m.x is the head's centre; the glyph's ink is centred on it (a mark after the note starts there)
+  for (const t of L.trillLines ?? []) on(t), p.glyph(t.x1, t.y, G.wiggleTrill.repeat(Math.max(1, Math.floor((t.x2 - t.x1) / TRILL_SEG))), "glyph cp-art cp-trill-line"); // the trill's wavy extension
+  for (const a of L.trillAccs ?? []) on(a), p.glyph(a.x, a.y, G[a.alter], "glyph cp-art", { centre: true, scale: 0.7 });
   // bar repeats (docs/COMPOSE_RAILS2_DESIGN.md §5): the % sign on each staff; a two-bar sign on the barline with its 2
-  for (const sm of L.similes ?? []) { p.group("cp-simile", { bar: sm.bar }); p.glyph(sm.x, sm.y, sm.n === 2 ? G.repeat2Bars : G.repeat1Bar, "glyph cp-simile-sign", { centre: true }); if (sm.n === 2) p.text(sm.x, sm.y - 2.3, "2", "cp-simile-num", { size: 1.1, anchor: "middle" }); p.end(); }
+  for (const sm of L.similes ?? []) { on(sm); p.group("cp-simile", { bar: sm.bar }); p.glyph(sm.x, sm.y, sm.n === 2 ? G.repeat2Bars : G.repeat1Bar, "glyph cp-simile-sign", { centre: true }); if (sm.n === 2) p.text(sm.x, sm.y - 2.3, "2", "cp-simile-num", { size: 1.1, anchor: "middle" }); p.end(); }
   // a roll: wiggle segments (each 1.02 S long, ink 0.48 S wide beside the baseline) rotated to run along the chord, an arrowhead segment (2.06 S) for up / down.
   // rotate(−90) runs the text upward from the bottom point with its ink to the left of the anchor; rotate(+90) runs it downward with the ink to the right.
   for (const a of L.arps) {
+    on(a);
     const arrow = a.kind !== "plain", span = a.y1 - a.y2;
     const n = Math.max(2, Math.ceil((span - (arrow ? 2.06 : 0)) / 1.02));
     const down = a.kind === "down";
@@ -140,9 +173,11 @@ export function paintScore(L, p) {
     const ax = a.x + (down ? -0.24 : 0.24), ay = down ? a.y2 : a.y1;
     p.glyph(ax, ay, text, "glyph cp-arp", { rotate: [down ? 90 : -90, ax, ay] });
   }
+  p.at?.(null);
   // expressions: each in its own selectable group (`data-ev` is the selection key, like an event's; `data-kind` says which)
-  for (const dy of L.dynamics) { p.group("cp-expr", { ev: dy.id, kind: "dyn" }); p.glyph(dy.x, dy.y, dynGlyph(dy.dyn), "glyph cp-dyn", { centre: true }); p.end(); } // ink-centred on the slot like a mark
+  for (const dy of L.dynamics) { on(dy); p.group("cp-expr", { ev: dy.id, kind: "dyn" }); p.glyph(dy.x, dy.y, dynGlyph(dy.dyn), "glyph cp-dyn", { centre: true }); p.end(); } // ink-centred on the slot like a mark
   for (const hp of L.hairpins) { // two lines meeting at the closed end; a hairpin over a system break stays open at the break
+    on(hp);
     const o = 0.55, cresc = hp.kind === "cresc";
     let a1 = cresc ? 0 : o, a2 = cresc ? o : 0; // half-opening at x1 / x2
     if (hp.half === "out" || hp.half === "both") a2 = o * (cresc ? 0.55 : 0.45);
@@ -157,9 +192,11 @@ export function paintScore(L, p) {
     p.path([["M", x1, hp.y - a1], ["L", x2, hp.y - a2], ["M", x1, hp.y + a1], ["L", x2, hp.y + a2]], "cp-hairpin");
     p.end();
   }
-  for (const tx of L.texts) { p.group("cp-expr", { ev: tx.id, kind: "text" }); p.text(tx.x, tx.y, tx.text, "cp-expr-text", { size: 1.15 }); p.end(); }
+  for (const tx of L.texts) { on(tx); p.group("cp-expr", { ev: tx.id, kind: "text" }); p.text(tx.x, tx.y, tx.text, "cp-expr-text", { size: 1.15 }); p.end(); }
+  for (const c of L.chords ?? []) { on(c); p.group("cp-expr", { ev: c.id, kind: "chord" }); paintChord(p, c); p.end(); }
   // text lines (docs/COMPOSE_RAILS2_DESIGN.md §5): the words, dashes to the end, the end words; a piece open at a break carries no words after / before it
   for (const tl of L.textLines ?? []) {
+    on(tl);
     p.group("cp-expr", { ev: tl.id, kind: "textline" });
     const words = tl.half !== "in" && tl.half !== "both", endWords = !!tl.endText && tl.half !== "out" && tl.half !== "both";
     let x1 = tl.x1;
@@ -171,6 +208,7 @@ export function paintScore(L, p) {
   // the Piano rail's lines (docs/COMPOSE_PIANO_DESIGN.md §5): Ped. + a line with an up-hook at the lift (a notch at a retake, no sign after one);
   // 8va / 8vb + a dashed line with a hook toward the staff; a piece open at a system break has no sign after it / no hook before it
   for (const pd of L.pedals ?? []) {
+    on(pd);
     p.group("cp-expr", { ev: pd.id, kind: "pedal" });
     if (pd.style === "sign") { // Ped. … ✱: the signs only (docs/COMPOSE_RAILS2_DESIGN.md §5)
       if (pd.half !== "in" && pd.half !== "both") p.glyph(pd.x1, pd.y, G.pedal, "glyph cp-pedal-sign", { scale: 0.85 });
@@ -186,6 +224,7 @@ export function paintScore(L, p) {
     p.end();
   }
   for (const ot of L.ottavas ?? []) {
+    on(ot);
     p.group("cp-expr", { ev: ot.id, kind: "ottava" });
     const up = ot.dir > 0, quind = ot.size === 15, signW = quind ? (up ? 2.4 : 4.1) : 2.2, x1 = ot.half === "in" || ot.half === "both" ? ot.x1 : ot.x1 + signW;
     if (ot.half !== "in" && ot.half !== "both") p.glyph(ot.x1, ot.y, up ? (quind ? G.quindicesimaAlta : G.ottavaAlta) : quind ? G.quindicesimaBassa : G.ottavaBassa, "glyph cp-ottava-sign", { scale: 0.8 });
@@ -195,9 +234,10 @@ export function paintScore(L, p) {
     if (x1 < ot.x2 - 0.2) p.polyline(pts, "cp-ottava-line");
     p.end();
   }
-  for (const f of L.fingers ?? []) p.glyph(f.x, f.y, fingerGlyph(f.n), "glyph cp-finger", { centre: true, scale: 0.9, data: { ev: f.ev, pi: f.pi } });
+  for (const f of L.fingers ?? []) on(f), p.glyph(f.x, f.y, fingerGlyph(f.n), "glyph cp-finger", { centre: true, scale: 0.9, data: { ev: f.ev, pi: f.pi } });
   // form: signs, the boxed rehearsal letter, a tempo mark (word, then ♩ = n) at a bar's start; Fine / To Coda / jumps right-aligned at its end; ending brackets with their number
   for (const f of L.form) {
+    on(f);
     p.group("cp-form", { bar: f.bar, kind: f.kind });
     if (f.kind === "sign") p.glyph(f.x, f.y, f.sign === "segno" ? G.segno : G.coda, "glyph cp-sign", { scale: 0.75 });
     else if (f.kind === "rehearsal") { p.polyline([[f.x, f.y + 0.45], [f.x + f.w, f.y + 0.45], [f.x + f.w, f.y - 1.35], [f.x, f.y - 1.35], [f.x, f.y + 0.45]], "cp-rehearsal-box"); p.text(f.x + f.w / 2, f.y, f.text, "cp-rehearsal", { size: 1.25, anchor: "middle" }); }
@@ -206,6 +246,7 @@ export function paintScore(L, p) {
     p.end();
   }
   for (const e of L.endings) {
+    on(e);
     p.group("cp-ending", { bar: e.bar });
     const pts = [];
     if (e.hookStart) pts.push([e.x1, e.y + 1.4]);
@@ -216,13 +257,15 @@ export function paintScore(L, p) {
     p.end();
   }
   for (const gl of L.glisses) {
+    on(gl);
     p.group("cp-gliss");
     p.line(gl.x1, gl.y1, gl.x2, gl.y2, "cp-gliss-line");
     const ang = (Math.atan2(gl.y2 - gl.y1, gl.x2 - gl.x1) * 180) / Math.PI, mx = (gl.x1 + gl.x2) / 2, my = (gl.y1 + gl.y2) / 2;
-    p.text(mx, my - 0.35, "gliss.", "cp-gliss-text", { size: 1.05, anchor: "middle", rotate: [Number(ang.toFixed(1)), mx, my] });
+    if (gl.half !== "in" && Math.hypot(gl.x2 - gl.x1, gl.y2 - gl.y1) >= 3) p.text(mx, my - 0.35, "gliss.", "cp-gliss-text", { size: 1.05, anchor: "middle", rotate: [Number(ang.toFixed(1)), mx, my] }); // the word once (on the half leaving the note), where it fits
     p.end();
   }
   for (const t of L.tuplets) {
+    on(t);
     p.group("cp-tuplet");
     const mid = (t.x1 + t.x2) / 2, hook = t.above ? 0.8 : -0.8;
     if (t.bracket) {

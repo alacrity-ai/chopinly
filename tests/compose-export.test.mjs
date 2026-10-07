@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { loadUmd } from "../dev/lib/umd.mjs";
 import { planPages, renderPdf, exportOptions, outlineOps, STAFF_MM, PAGES, MARGINS, DEFAULTS } from "../js/lib/compose/export/pdf.js";
 import { BRAVURA } from "../js/lib/compose/export/bravura.js";
-import { SYS_H, BLOCK_H } from "../js/lib/compose/layout.js";
+import { SYS_H, SYS_GAP, BLOCK_H } from "../js/lib/compose/layout.js";
 import { newComposition } from "../js/lib/compose/model.js";
 import { place, hideRest, nudgeRest, setTime } from "../js/lib/compose/engine.js";
 import { G, timeDigit, timeSig, tupletDigit } from "../js/lib/staff/glyphs.js";
@@ -163,10 +163,17 @@ test("planPages keeps every page's ink inside the printable box — first system
     plan.pages.forEach((p, k) => {
       if (k) assert.equal(p.first, plan.pages[k - 1].last + 1, "contiguous");
       const headS = (header ? (k ? 22 : 66) : 0) / plan.S;
-      const topInk = p.top - plan.ink[p.first].above, botInk = p.top + (p.last - p.first) * SYS_H + BLOCK_H + plan.ink[p.last].below;
+      const yOf = (i) => TOP_PAD + i * SYS_H + plan.dyOf(i); // a system's top line on its page (WSHED-165: each system has its own offset)
+      assert.ok(Math.abs(yOf(p.first) - p.top) < 1e-9);
+      const topInk = p.top - plan.ink[p.first].above, botInk = yOf(p.last) + BLOCK_H + plan.ink[p.last].below;
+      for (let i = p.first + 1; i <= p.last; i++) { // systems never closer than SYS_GAP, and one's lowest ink clears the next one's highest
+        const gap = yOf(i) - (yOf(i - 1) + BLOCK_H);
+        assert.ok(gap >= SYS_GAP - 1e-9, `gap ${gap}`);
+        assert.ok(yOf(i - 1) + BLOCK_H + plan.ink[i - 1].below < yOf(i) - plan.ink[i].above, `systems ${i} and ${i + 1} overlap`);
+      }
       assert.ok(topInk >= headS - 1e-9, `${page} ${margins} ${staffMm} ${header}: page ${k + 1}'s first ink (${topInk.toFixed(1)} S) is under the header (${headS.toFixed(1)} S)`);
       assert.ok(botInk <= availS + 1e-9, `${page} ${margins} ${staffMm} ${header}: page ${k + 1}'s last ink (${botInk.toFixed(1)} S) is inside ${availS.toFixed(1)} S`);
-      if (p.last < n - 1) { const nextBot = p.top + (p.last + 1 - p.first) * SYS_H + BLOCK_H + Math.max(3, plan.ink[p.last + 1].below); assert.ok(nextBot > availS, "the page is as full as it can be"); }
+      if (p.last < n - 1) { const nextBot = yOf(p.last) + BLOCK_H + Math.max(SYS_GAP, plan.ink[p.last].below + plan.ink[p.last + 1].above + 1.2) + BLOCK_H + Math.max(3, plan.ink[p.last + 1].below); assert.ok(nextBot > availS, "the page is as full as it can be"); }
       for (let i = p.first; i <= p.last; i++) assert.equal(plan.pageOf(i), k);
       checked++;
     });

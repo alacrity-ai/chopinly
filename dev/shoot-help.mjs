@@ -100,8 +100,8 @@ await settle(700);
 await shoot("editor", ".cp-editor");
 
 // ---- one shot per rail ----------------------------------------------------
-const RAILS = ["control", "transport", "palette", "utility", "expression", "form", "piano", "notes2"];
-const RAIL_SHOT = { control: "rail-controls", transport: "rail-transport", palette: "rail-notes", utility: "rail-keys", expression: "rail-dynamics", form: "rail-form", piano: "rail-piano", notes2: "rail-marks" };
+const RAILS = ["control", "transport", "palette", "utility", "expression", "form", "piano", "notes2", "chords"];
+const RAIL_SHOT = { control: "rail-controls", transport: "rail-transport", palette: "rail-notes", utility: "rail-keys", expression: "rail-dynamics", form: "rail-form", piano: "rail-piano", notes2: "rail-marks", chords: "rail-chords" };
 for (const key of RAILS) {
   if (!want(RAIL_SHOT[key])) continue;
   await railOn(key, true);

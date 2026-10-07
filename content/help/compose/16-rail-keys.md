@@ -21,7 +21,7 @@ Tap **time**, choose the signature, tap the bar. The bars from there are re-cut 
 
 ## Clef
 
-Tap **clef**, choose it from the `▾`, then tap **a staff and a beat**. Unlike key and time, a clef change can land *inside* a bar, on any beat, because that is how a clef change is actually used.
+Tap **clef**, choose it from the `▾`, then tap **a staff and a beat**. Unlike key and time, a clef change can land *inside* a bar — on any beat, or **half-way between two** (the `&`), because that is how a clef change is actually used: a run that crosses down onto the lower staff after a held chord changes clef right after the chord, not on the beat before it.
 
 ## Articulations and ornaments
 
@@ -37,7 +37,9 @@ Select a run and tap **slur**: it draws from the earliest selected note of a sta
 
 ## Glissando
 
-Select two notes and tap **gliss**: a line runs from the first to the second.
+Select two notes and tap **gliss**: a line runs from the first to the second — across a system break too, leaving the first system and arriving in the next.
+
+**Hold gliss** for a slide with **no landing note**: *up* or *down* draws a line rising or falling off the note into whatever follows — the rip at the end of a phrase. The button then sets the mode you picked last.
 
 ## Rolled chords
 

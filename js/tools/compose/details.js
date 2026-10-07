@@ -1,4 +1,4 @@
-// The composition details modal (WSHED-117): title · composer · tags — the same
+// The composition details modal (WSHED-117): title · subtitle (WSHED-169) · composer · tags — the same
 // form Scores uses, so a composition saved to Scores carries its identity 1:1.
 // With an id it edits that composition (and can delete it); without one it
 // creates a new composition on save.
@@ -28,7 +28,7 @@ export function openCompositionDetails(id = null) {
     title: c ? "composition" : "new composition",
     cls: "lb-acct-wrap sc-details-wrap cp-details-wrap",
     html: `
-      ${detailsFormHtml({ prefix: "cp-d", item: c ?? { title: "", composer: "", tags: [] }, composers, allTags, save: c ? "save" : "start composing" })}
+      ${detailsFormHtml({ prefix: "cp-d", item: c ?? { title: "", composer: "", tags: [] }, composers, allTags, save: c ? "save" : "start composing", subtitle: true })}
       ${c ? `
       <ul class="lb-acct-list">
         <li><button type="button" class="lb-acct-row lb-danger" id="cp-d-delete">${icon("trash")}<span><b>delete this composition</b><small>${plural(barsOf(c), "bar")} — gone from this device</small></span></button></li>
@@ -40,7 +40,7 @@ export function openCompositionDetails(id = null) {
   const form = wireDetailsForm(body, { prefix: "cp-d", items: catalogue, onSubmit: (v) => {
     try {
       if (c) { result = { saved: logbook.updateComposition(id, v) }; toast("saved"); }
-      else { const fresh = newComposition({ id: uuid(), title: v.title, composer: v.composer, tags: v.tags }); result = { created: logbook.addComposition(fresh) }; }
+      else { const fresh = newComposition({ id: uuid(), title: v.title, composer: v.composer, tags: v.tags }); const sub = String(v.subtitle ?? "").trim().slice(0, 80); if (sub) fresh.subtitle = sub; result = { created: logbook.addComposition(fresh) }; }
       form.clearError(); haptic(); stamp(body.querySelector("#cp-d-save")); close();
     } catch (e) { form.fail(e.message); }
   } });

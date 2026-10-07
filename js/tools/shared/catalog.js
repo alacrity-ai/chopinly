@@ -69,11 +69,13 @@ export function openTagSheet({ items, picked, toggle, clear, hint }) {
  * The details form — title · composer (with suggestions) · tags (with the rail).
  * Ids are `<prefix>-title` …; `save` is the submit button's label.
  */
-export function detailsFormHtml({ prefix, item = {}, composers = [], allTags = [], save = "save", autofocusTitle = false }) {
+export function detailsFormHtml({ prefix, item = {}, composers = [], allTags = [], save = "save", autofocusTitle = false, subtitle = false }) {
   return `
     <form class="lb-acct-form sc-details" id="${prefix}-form" novalidate>
       <label class="lb-acct-label" for="${prefix}-title">title</label>
-      <input class="lb-input lb-input-lg" id="${prefix}-title" value="${esc(item.title ?? "")}" placeholder="title" maxlength="160" autocomplete="off" autocapitalize="sentences" required ${autofocusTitle ? "autofocus" : ""}>
+      <input class="lb-input lb-input-lg" id="${prefix}-title" value="${esc(item.title ?? "")}" placeholder="title" maxlength="160" autocomplete="off" autocapitalize="sentences" required ${autofocusTitle ? "autofocus" : ""}>${subtitle ? `
+      <label class="lb-acct-label" for="${prefix}-subtitle">subtitle</label>
+      <input class="lb-input" id="${prefix}-subtitle" value="${esc(item.subtitle ?? "")}" placeholder="as played by …, for …, op. …" maxlength="80" autocomplete="off" autocapitalize="sentences">` : ""}
       <label class="lb-acct-label" for="${prefix}-composer">composer</label>
       <input class="lb-input" id="${prefix}-composer" value="${esc(item.composer ?? "")}" placeholder="composer" maxlength="80" autocomplete="off" autocapitalize="words" list="${prefix}-composers">
       <datalist id="${prefix}-composers">${composers.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
@@ -112,7 +114,8 @@ export function wireDetailsForm(body, { prefix, items, onSubmit }) {
   }
   tagsEl.addEventListener("input", paintRail);
   paintRail();
-  const values = () => ({ title: title.value, composer: composer.value, tags: picked() });
+  const subtitle = body.querySelector(`#${prefix}-subtitle`); // compositions only (WSHED-169)
+  const values = () => ({ title: title.value, ...(subtitle ? { subtitle: subtitle.value } : {}), composer: composer.value, tags: picked() });
   body.querySelector(`#${prefix}-form`).addEventListener("submit", (e) => { e.preventDefault(); onSubmit(values()); });
   return { values, fail(message) { err.textContent = message; }, clearError() { err.textContent = ""; }, focus() { if (finePointer()) title.focus(); } };
 }
