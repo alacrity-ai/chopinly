@@ -6,18 +6,42 @@
 import { keyAlterations, keySignatureGlyphs, CLEFS, staffStep } from "../music.js";
 import { timeSig } from "../staff/glyphs.js";
 import { ticks, capacity, groupSize, groupOf } from "./ticks.js";
-import { timeAt, keyAt, clefAt, evTicks } from "./model.js";
-import { onsets, diatonicOf, nextEvent, slurEnd, expressionsOf, spansOf, barStarts, formMarksOf, simileTail } from "./engine.js";
+import { timeAt, keyAt, clefAt, evTicks, lyricVersesOf } from "./model.js";
+import { onsets, diatonicOf, nextEvent, slurEnd, expressionsOf, spansOf, barStarts, formMarksOf, simileTail, lyricRuns, tiedIn, seqOf } from "./engine.js";
 import { xOfTicks } from "./hit.js";
 import { qualityRuns } from "./chordsym.js";
 
-export const STAFF_GAP = 8;      // S between the treble's bottom line and the bass's top line
+export const STAFF_GAP = 8;      // S between one staff's bottom line and the next staff's top line, with no lyrics between
 export const SYS_GAP = 10;       // S between systems
 export const TOP_PAD = 6, BOTTOM_PAD = 4;
-export const BLOCK_H = 4 + STAFF_GAP + 4; // one grand-staff block
-export const SYS_H = BLOCK_H + SYS_GAP;
-/** Which of n systems a layout y belongs to: the band around its block, split halfway through the gap (paper routes ink to pages by it). */
-export const systemAt = (y, n) => Math.max(0, Math.min(n - 1, Math.floor((y - TOP_PAD + SYS_GAP / 2) / SYS_H)));
+/** Lyrics (docs/COMPOSE_LYRICS_DESIGN.md §2–3): verse 1's baseline LYRIC_Y under the staff's bottom line, each further verse LYRIC_STEP lower; the band a staff with lyrics reserves below it, in S. */
+export const LYRIC_Y = 2.6, LYRIC_STEP = 1.6, LYRIC_SIZE = 1.15, LYRIC_AIR = 0.5, HYPHEN_MIN = 0.9;
+export const lyricBand = (verses) => (verses ? 1.4 + LYRIC_STEP * verses : 0);
+/** The staves of the document in score order, each with its part (WSHED-175; the parts epic WSHED-180 widens the record). */
+export const staffList = (doc) => doc.parts.flatMap((p, pi) => Array.from({ length: p.staves }, (_, k) => ({ part: pi, index: k })));
+/**
+ * The vertical shape of every system of this document, in S (docs/COMPOSE_LYRICS_DESIGN.md §2, WSHED-175). The same
+ * for every system — the engraver's systems stay uniform (hit-testing, the ghost and the playhead rely on it); paper
+ * parts them further by their ink. `staffTop[i]` is staff i's top line from the system's top line, `gaps[i]` the S
+ * between staff i's bottom line and the next staff's top line (STAFF_GAP plus the band a staff with lyrics
+ * reserves), `blockH` the first top line to the last bottom line, `sysGap` the room after the last staff (grown when
+ * three or more verses hang there), `sysH` one system's pitch. A piece without lyrics gets the historic constants:
+ * blockH 16, sysH 26.
+ */
+export function metricsOf(doc) {
+  const staves = staffList(doc), verses = lyricVersesOf(doc);
+  const gaps = staves.map((s, i) => (i === staves.length - 1 ? 0 : STAFF_GAP + lyricBand(verses[i] ?? 0)));
+  const staffTop = [];
+  let y = 0;
+  staves.forEach((s, i) => { staffTop.push(y); y += 4 + gaps[i]; });
+  const blockH = y, sysGap = Math.max(SYS_GAP, lyricBand(verses[staves.length - 1] ?? 0) + 4), sysH = blockH + sysGap;
+  /** Which of n systems a layout y belongs to: the band around its block, split halfway through the gap (paper routes ink to pages by it). */
+  const systemAt = (yy, n) => Math.max(0, Math.min(n - 1, Math.floor((yy - TOP_PAD + sysGap / 2) / sysH)));
+  return { staffTop, gaps, blockH, sysGap, sysH, topPad: TOP_PAD, bottomPad: BOTTOM_PAD, systemAt };
+}
+const DEFAULT_METRICS = metricsOf({ parts: [{ staves: 2 }], measures: [] });
+/** @deprecated (WSHED-175) — the metrics of a plain grand staff; read `L.metrics.systemAt` for the layout at hand. Goes next release. */
+export const systemAt = DEFAULT_METRICS.systemAt;
 const MAX_BARS_PER_SYSTEM = 6;
 /** Paper only (docs/COMPOSE_LAYOUT_DESIGN.md §2): a pinned row whose tightest bar falls under this share of natural spacing is `tight` — refused in the Layout view, red when a size change made it so.
  *  0.3 since v119 (0.8 before): Leif judges what looks crammed; the floor only stops what cannot be read at all (a sixteenth's column is then 0.75 S, heads 1.18 S wide already overlap). */
@@ -64,6 +88,7 @@ const stepsOf = (pitches, clef) => pitches.map((p) => staffStep({ letter: p.step
 export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false } = {}) {
   const nStaves = doc.parts[0].staves;
   const widthS = width / S;
+  const M = metricsOf(doc);
 
   // -- per bar: columns (union of onsets across staves and voices), leading symbols, ideal width --
   const bars = doc.measures.map((m, bi) => {
@@ -86,7 +111,10 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
       c.w = colWidth(next - c.ticks) + (c.evs.some((x) => x.ev.art?.some((m) => AFTER_MARKS.has(m))) ? AFTER_PAD : 0);
       c.accPad = 0; c.dotPad = 0; c.collPad = 0; c.gracePad = 0; // set by the accidental / collision pass below
       c.clefPad = 0; c.clefs = [];  // clef changes drawn just before this column
+      c.lyricW = Math.max(0, ...c.evs.filter((x) => x.ev.kind === "note").flatMap((x) => (x.ev.lyrics ?? []).map((l) => 0.58 * LYRIC_SIZE * l.text.length))); // the widest syllable under this column (the layout's estimate of the serif advance)
     });
+    // a syllable centred on its head needs room to the next column's syllable (or head): stretch room, so a crowded vocal bar spreads evenly (docs/COMPOSE_LYRICS_DESIGN.md §3.3)
+    cols.forEach((c, i) => { if (!c.lyricW) return; const nx = cols[i + 1]; c.w = Math.max(c.w, c.lyricW / 2 + (nx ? (nx.lyricW ? nx.lyricW / 2 : 0.6) : 0.3) + LYRIC_AIR); });
     // a clef change inside the bar draws before the first column on or after its beat, else at the bar's end
     const tailClefs = [];
     for (const ch of m.clefChanges ?? []) {
@@ -238,15 +266,15 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
   const hit = { systems: [] };
   const barPlace = []; // bar index → { hbar, si, sys, first } once placed
   systems.forEach((sys, si) => {
-    const sysTop = TOP_PAD + si * SYS_H;
-    const staffTop = (st) => sysTop + st * (4 + STAFF_GAP);
+    const sysTop = M.topPad + si * M.sysH;
+    const staffTop = (st) => sysTop + M.staffTop[st];
     const yOfStep = (st, step) => staffTop(st) + (8 - step) / 2;
     sys.top = sysTop; sys.staffTop = Array.from({ length: nStaves }, (_, st) => staffTop(st));
     sys.leading = [];
     sys.barlines = [];
     sys.courtesyLead = null;
     sys.endX = null; // where the staff lines stop when it is not the last barline
-    const hsys = { top: sysTop - 3, bottom: sysTop + BLOCK_H + 3, staves: sys.staffTop.map((t) => ({ topY: t })), bars: [], ...(pins ? { room: sys.room, scale: sys.scale, capped: sys.scale === sys.cap, cap: sys.cap, pinned: sys.pinned, tight: sys.tight } : {}) };
+    const hsys = { top: sysTop - 3, bottom: sysTop + M.blockH + 3, staves: sys.staffTop.map((t) => ({ topY: t })), bars: [], ...(pins ? { room: sys.room, scale: sys.scale, capped: sys.scale === sys.cap, cap: sys.cap, pinned: sys.pinned, tight: sys.tight } : {}) };
     let cursor = LEFT;
     sys.bars.forEach((b, k) => {
       const first = k === 0;
@@ -524,7 +552,57 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
     for (const h of heads) { fingers.push({ x, y, n: d.fingers[h.pi], ev: d.id, pi: h.pi, system: d.system }); y += above ? -FINGER_STEP : FINGER_STEP; }
     if (above) d.fingerTop = y + FINGER_STEP - 1.15; else d.fingerBot = y - FINGER_STEP + 0.25;
   }
-  const exprLine = (si, staff, items) => Math.max(systems[si].staffTop[staff] + 4 + 2.6, ...items.map((d) => belowOf(d) + 1.6));
+  // -- tuplets: a bracket (unless one beamed run) and the digit over each group --
+  const tuplets = [];
+  const groups = new Map();
+  for (const d of drawn) { if (!d.tupletId) continue; const k = `${d.system}:${d.staff}:${d.tupletId}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(d); }
+  for (const list of groups.values()) {
+    list.sort((a, b) => a.ticks - b.ticks);
+    const notes = list.filter((d) => !d.rest);
+    const stems = notes.filter((d) => d.stem);
+    const above = !stems.length || stems.filter((d) => d.stem === "up").length >= stems.length / 2;
+    const first = list[0], last = list[list.length - 1];
+    const x1 = first.x - 0.3, x2 = last.x + (last.rest ? 1.5 : last.headW) + 0.3;
+    let y = above ? Infinity : -Infinity;
+    for (const d of list) {
+      const ext = d.rest ? [d.y - 1, d.y + 1] : [Math.min(d.topY, d.stem === "up" ? d.stemTipY : d.topY, d.fingerTop ?? Infinity), Math.max(d.botY, d.stem === "down" ? d.stemTipY : d.botY, d.fingerBot ?? -Infinity)]; // past the fingering too (WSHED-165: a "1" under a 7 read as "71")
+      y = above ? Math.min(y, ext[0]) : Math.max(y, ext[1]);
+    }
+    y += above ? -1.3 : 1.3;
+    const bracket = !(notes.length === list.length && notes.every((d) => d.beamed && d.beamRun === notes[0].beamRun));
+    if (!bracket && notes[0].crossBeam) { // one beam between the staves (WSHED-165, Libertango bar 2): the number rides the beam on the side its secondary beams leave free
+      const bm = beams[notes[0].beamRun];
+      if (bm) { const by = (bm.y1 + bm.y2) / 2; tuplets.push({ x1, x2, y: bm.dir === "up" ? by - 1.15 : by + 1.75, above: bm.dir === "up", n: first.tupletN, bracket: false, system: first.system }); continue; }
+    }
+    tuplets.push({ x1, x2, y, above, n: first.tupletN, bracket, system: first.system });
+  }
+  // -- the lyric line (docs/COMPOSE_LYRICS_DESIGN.md §3.1, WSHED-176): one baseline per system, staff and verse — the mirror of the
+  //    chord line above — LYRIC_Y under the bottom line, or under everything the staff's notes reach in this system (a low ledger
+  //    note, a down-stem, a slur or tuplet digit below) plus a space of air; verse n sits (n − 1) LYRIC_STEP lower. Lyrics read as
+  //    a line (Gould): they never dodge single notes --
+  const runs = lyricRuns(doc);
+  const lyricSys = new Set(); // "si:staff" — the systems that draw a syllable on a staff; dynamics and hairpins go above there (§3.2)
+  const lyricVerses = new Map(); // "si:staff" → the highest verse drawn there
+  const drawsLyric = (it) => !tiedIn(it.ev) || (it.lyric.syl ?? "single") === "single"; // a tied-in note's syllable is still sounding from before — unless it is the whole word
+  for (const r of runs) for (const it of r.items) { const place = barPlace[it.bar]; if (!place || !drawsLyric(it)) continue; const key = `${place.si}:${it.staff}`; lyricSys.add(key); lyricVerses.set(key, Math.max(lyricVerses.get(key) ?? 0, it.lyric.n)); }
+  const lyricOn = (si, staff) => lyricSys.has(`${si}:${staff}`);
+  const lyricBases = new Map();
+  const lyricLine = (si, staff, n = 1) => {
+    const key = `${si}:${staff}`;
+    if (!lyricBases.has(key)) {
+      let y = systems[si].staffTop[staff] + 4 + LYRIC_Y;
+      for (const d of drawn) if (d.system === si && d.drawStaff === staff && !d.hidden) y = Math.max(y, belowOf(d) + 1.0);
+      for (const sl of slurs) if (sl.system === si && sl.staff === staff && sl.dir === "down") y = Math.max(y, Math.max(sl.y1, sl.y2) + 0.75 * sl.h + 0.9);
+      for (const t of tuplets) if (t.system === si && !t.above && t.y > systems[si].staffTop[staff] + 2 && t.y < systems[si].staffTop[staff] + 14) y = Math.max(y, t.y + 1.9);
+      lyricBases.set(key, y);
+    }
+    return lyricBases.get(key) + (n - 1) * LYRIC_STEP;
+  };
+  /** The lowest edge of a staff's lyric band in a system (its last verse's descenders), for what must go under it. */
+  const lyricBottom = (si, staff) => lyricLine(si, staff, lyricVerses.get(`${si}:${staff}`) ?? 1) + 0.4;
+  const belowLine = (si, staff, items) => Math.max(systems[si].staffTop[staff] + 4 + 2.6, ...items.map((d) => belowOf(d) + 1.6));
+  // dynamics, hairpins and text lines on a staff that draws lyrics in this system go above it (Gould, vocal music); elsewhere below, as ever
+  const exprLine = (si, staff, items) => (lyricOn(si, staff) ? Math.min(systems[si].staffTop[staff] - 2.6, ...items.map((d) => aboveOf(d) - 1.6)) : belowLine(si, staff, items));
   /** Drawn things (not hidden rests) on a staff sounding inside [a, b) absolute ticks, in one system when given. */
   const under = (staff, a, b, si = null) => drawn.filter((d) => d.drawStaff === staff && !d.hidden && (si === null || d.system === si) && barStart[d.bar] + (d.ticks ?? 0) < b && barStart[d.bar] + (d.ticks ?? 0) + (d.whole ? capacity(timeAt(doc, d.bar)) : evTicks(evOf(d))) > a); // a whole-bar rest sounds the bar
   const exprs = expressionsOf(doc);
@@ -532,13 +610,14 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
   /** Whether a dynamic or a hairpin on the staff shares [a, b) — the pedal (and an 8vb) then goes under the dynamics line. */
   const dynUnder = (staff, a, b) => exprs.some((o) => o.x.staff === staff && (o.x.kind === "dyn" ? o.abs >= a && o.abs < b : (o.x.kind === "hairpin" || o.x.kind === "textline") && o.abs < b && o.absEnd > a)); // a text line ("una corda") shares the dynamics line
   const ottavaBelow = (staff, a, b) => exprs.some((o) => o.x.kind === "ottava" && o.x.dir < 0 && o.x.staff === staff && o.abs < b && o.absEnd >= a); // an 8vb shares the range: the pedal goes under it
-  const pedalLine = (si, staff, a, b) => exprLine(si, staff, under(staff, a, b, si)) + (dynUnder(staff, a, b) ? 2.0 : 0.6) + (ottavaBelow(staff, a, b) ? 1.8 : 0); // under the dynamics, under an 8vb — the stack stays inside the system gap
-  const ottavaLine = (si, staff, a, b, dir) => (dir > 0 ? Math.min(systems[si].staffTop[staff] - 2.6, ...under(staff, a, b, si).map((d) => aboveOf(d) - 1.0)) : exprLine(si, staff, under(staff, a, b, si)) + 0.6 + (dynUnder(staff, a, b) ? 1.7 : 0)); // an 8vb's numeral stands above its line: 0.6 S more so it clears an accent under the notes
+  // the pedal and an 8vb have no "above": on a staff with lyrics they go under the lyric band (the dynamics are above then)
+  const pedalLine = (si, staff, a, b) => (lyricOn(si, staff) ? Math.max(belowLine(si, staff, under(staff, a, b, si)) + 0.6, lyricBottom(si, staff) + 1.2) + (ottavaBelow(staff, a, b) ? 1.8 : 0) : belowLine(si, staff, under(staff, a, b, si)) + (dynUnder(staff, a, b) ? 2.0 : 0.6) + (ottavaBelow(staff, a, b) ? 1.8 : 0)); // under the dynamics, under an 8vb — the stack stays inside the system gap
+  const ottavaLine = (si, staff, a, b, dir) => (dir > 0 ? Math.min(systems[si].staffTop[staff] - 2.6, ...under(staff, a, b, si).map((d) => aboveOf(d) - 1.0)) : lyricOn(si, staff) ? Math.max(belowLine(si, staff, under(staff, a, b, si)) + 0.6, lyricBottom(si, staff) + 1.4) : belowLine(si, staff, under(staff, a, b, si)) + 0.6 + (dynUnder(staff, a, b) ? 1.7 : 0)); // an 8vb's numeral stands above its line: 0.6 S more so it clears an accent under the notes
   for (const e of exprs) {
     const x0 = e.x, where = hbarOf.get(e.bar);
     if (!where) continue;
     const { si, hb } = where, x = xOfTicks(hb, x0.at), base = { id: x0.id, staff: x0.staff, bar: e.bar, at: x0.at }, lift = (x0.dy ?? 0) / 2; // `dy` staff steps up off the automatic line (a step is half a space)
-    if (x0.kind === "dyn") { dynamics.push({ ...base, x: x + 0.59, y: exprLine(si, x0.staff, under(x0.staff, e.abs, e.abs + 1)) - lift, dyn: x0.value, system: si }); continue; }
+    if (x0.kind === "dyn") { dynamics.push({ ...base, x: x + 0.59, y: exprLine(si, x0.staff, under(x0.staff, e.abs, e.abs + 1)) - lift, dyn: x0.value, system: si, ...(lyricOn(si, x0.staff) ? { above: true } : {}) }); continue; }
     if (x0.kind === "chord") { chordAt.push({ ...base, x, lift, si, x0 }); continue; } // placed on its system's chord line once every other ink above the staff is known (below)
     if (x0.kind === "text") {
       const items = under(x0.staff, e.abs, e.abs + 1);
@@ -597,30 +676,6 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
     glisses.push({ x1, y1, x2: Math.max(x1 + 1.5, endX), y2: midOut, system: d.system, half: "out" });
     glisses.push({ x1: startX, y1: midIn, x2: Math.max(startX + 1.5, d2.x - 0.35), y2, system: d2.system, half: "in" });
   }
-  // -- tuplets: a bracket (unless one beamed run) and the digit over each group --
-  const tuplets = [];
-  const groups = new Map();
-  for (const d of drawn) { if (!d.tupletId) continue; const k = `${d.system}:${d.staff}:${d.tupletId}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(d); }
-  for (const list of groups.values()) {
-    list.sort((a, b) => a.ticks - b.ticks);
-    const notes = list.filter((d) => !d.rest);
-    const stems = notes.filter((d) => d.stem);
-    const above = !stems.length || stems.filter((d) => d.stem === "up").length >= stems.length / 2;
-    const first = list[0], last = list[list.length - 1];
-    const x1 = first.x - 0.3, x2 = last.x + (last.rest ? 1.5 : last.headW) + 0.3;
-    let y = above ? Infinity : -Infinity;
-    for (const d of list) {
-      const ext = d.rest ? [d.y - 1, d.y + 1] : [Math.min(d.topY, d.stem === "up" ? d.stemTipY : d.topY, d.fingerTop ?? Infinity), Math.max(d.botY, d.stem === "down" ? d.stemTipY : d.botY, d.fingerBot ?? -Infinity)]; // past the fingering too (WSHED-165: a "1" under a 7 read as "71")
-      y = above ? Math.min(y, ext[0]) : Math.max(y, ext[1]);
-    }
-    y += above ? -1.3 : 1.3;
-    const bracket = !(notes.length === list.length && notes.every((d) => d.beamed && d.beamRun === notes[0].beamRun));
-    if (!bracket && notes[0].crossBeam) { // one beam between the staves (WSHED-165, Libertango bar 2): the number rides the beam on the side its secondary beams leave free
-      const bm = beams[notes[0].beamRun];
-      if (bm) { const by = (bm.y1 + bm.y2) / 2; tuplets.push({ x1, x2, y: bm.dir === "up" ? by - 1.15 : by + 1.75, above: bm.dir === "up", n: first.tupletN, bracket: false, system: first.system }); continue; }
-    }
-    tuplets.push({ x1, x2, y, above, n: first.tupletN, bracket, system: first.system });
-  }
   // -- chord symbols (docs/COMPOSE_CHORDS_DESIGN.md §3, WSHED-166): every chord symbol of a system sits on one baseline
   //    over its staff, CHORD_AIR above the highest ink there (heads, stems, marks, fingerings, slurs, tuplet digits,
   //    words, an 8va line) and never lower than CHORD_Y above the top line --
@@ -635,6 +690,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
     for (const t of tuplets) if (t.system === si && t.above && t.y < systems[si].staffTop[staff] + 2 && t.y > systems[si].staffTop[staff] - 12) y = Math.min(y, t.y - 1.9); // a tuplet number over this staff (its digit stands ~1 S tall)
     for (const t of texts) if (t.system === si && t.staff === staff) y = Math.min(y, t.y - 1.3 - 0.4);
     for (const o of ottavaLines) if (o.system === si && o.staff === staff && o.dir > 0) y = Math.min(y, o.y - 2.4); // clear of the "8va" numeral, which stands above its line
+    if (lyricOn(si, staff)) { for (const dy of dynamics) if (dy.system === si && dy.staff === staff) y = Math.min(y, dy.y - 2.2); for (const hp of hairpins) if (hp.system === si && hp.staff === staff) y = Math.min(y, hp.y - 1.6); for (const tl of textLines) if (tl.system === si && tl.staff === staff) y = Math.min(y, tl.y - 1.7); } // a vocal staff's dynamics stand above it (§3.2)
     chordLines.set(key, y);
     return y;
   };
@@ -648,7 +704,8 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
   const JUMP_TEXT = { dc: "D.C.", ds: "D.S.", dcAlFine: "D.C. al Fine", dsAlFine: "D.S. al Fine", dcAlCoda: "D.C. al Coda", dsAlCoda: "D.S. al Coda", fine: "Fine", toCoda: "To Coda" };
   const form = [], endings = [];
   const chordTop = new Map(); for (const c of chords) if (c.staff === 0) chordTop.set(c.system, Math.min(chordTop.get(c.system) ?? Infinity, c.y)); // a system with chord symbols lifts its form lane (and endings) above them
-  const laneY = (si) => Math.min(systems[si].staffTop[0] - FORM_Y, (chordTop.get(si) ?? Infinity) - CHORD_SIZE - 1.0);
+  const dynTop = new Map(); for (const dy of dynamics) if (dy.staff === 0 && dy.above) dynTop.set(dy.system, Math.min(dynTop.get(dy.system) ?? Infinity, dy.y)); // a vocal top staff's dynamics stand above it: the lane goes over them
+  const laneY = (si) => Math.min(systems[si].staffTop[0] - FORM_Y, (chordTop.get(si) ?? Infinity) - CHORD_SIZE - 1.0, (dynTop.get(si) ?? Infinity) - 1.5);
   const startX = new Map(); // bar → the next free x at its start
   for (const { bar, x, letter } of formMarksOf(doc)) {
     const place = barPlace[bar];
@@ -683,7 +740,36 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
       endings.push({ n: m.ending.n, x1, x2, y: Math.min(sys.staffTop[0] - ENDING_Y, laneY(si) - (ENDING_Y - FORM_Y)), system: si, hookStart: from === a, hookEnd: to === b && closed, half: from > a ? (to < b ? "both" : "in") : to < b ? "out" : null, bar: a });
     }
   });
-  const height = (TOP_PAD + systems.length * SYS_H - SYS_GAP + BOTTOM_PAD) * S;
+  // -- lyrics (docs/COMPOSE_LYRICS_DESIGN.md §3.4): every syllable centred on its head on the verse's line; a hyphen centred in
+  //    the gap after a begin / middle syllable (dropped when the syllables nearly touch; at the next system's start over a break);
+  //    an extender from a melisma's syllable to the last note it is sung through, in two pieces over a break --
+  const lyrics = [], lyricLines = [];
+  const lyricW = (text) => 0.58 * LYRIC_SIZE * text.length; // the layout's estimate of the serif advance (the painters measure for real)
+  for (const r of runs) {
+    const placed = r.items.filter(drawsLyric).map((it) => ({ it, d: byId.get(it.ev.id) })).filter(({ d }) => d && !d.rest);
+    const ly = placed.map(({ it, d }) => { const w = lyricW(it.lyric.text), x = d.x + d.headW / 2; return { id: `${it.ev.id}:${r.n}`, ev: it.ev.id, bar: it.bar, staff: r.staff, voice: it.voice, n: r.n, x, y: lyricLine(d.system, r.staff, r.n), text: it.lyric.text, w, system: d.system, syl: it.lyric.syl ?? "single", ext: !!it.lyric.ext, d, it }; });
+    lyrics.push(...ly.map(({ d, it, ...o }) => o));
+    ly.forEach((a, k) => {
+      const b = ly[k + 1];
+      if (b && (a.syl === "begin" || a.syl === "middle")) {
+        if (b.system === a.system) { const gap = (b.x - b.w / 2) - (a.x + a.w / 2); if (gap >= HYPHEN_MIN) lyricLines.push({ kind: "hyphen", x: a.x + a.w / 2 + gap / 2, y: a.y, system: a.system }); }
+        else lyricLines.push({ kind: "hyphen", x: Math.max(hit.systems[b.system].bars[0].bodyX0 - 1.2, b.x - b.w / 2 - 0.9), y: b.y, system: b.system }); // the word continues: its hyphen opens the next system
+      }
+      if (!a.ext) return;
+      // the melisma: the voice's notes after this one up to the next note that carries this verse, or a rest, or the voice's end
+      const seq = seqOf(doc, a.staff, a.voice);
+      let last = null;
+      for (let i = seq.indexOf(a.it.ev) + 1; i < seq.length; i++) { const e = seq[i]; if (e.kind !== "note" || e.lyrics?.some((l) => l.n === r.n)) break; const dd = byId.get(e.id); if (!dd) break; last = dd; }
+      if (!last) return;
+      const x1 = a.x + a.w / 2 + 0.3, x2 = last.x + last.headW;
+      if (last.system === a.system) { if (x2 - x1 >= 0.6) lyricLines.push({ kind: "extend", x1, x2, y: a.y, system: a.system }); return; }
+      for (let k2 = a.system; k2 <= last.system; k2++) {
+        const endX = systems[k2].barlines[systems[k2].barlines.length - 1].x - 0.3, startX = hit.systems[k2].bars[0].bodyX0 + 0.3;
+        lyricLines.push({ kind: "extend", x1: k2 === a.system ? x1 : startX, x2: k2 === last.system ? x2 : endX, y: lyricLine(k2, a.staff, r.n), system: k2, half: k2 === a.system ? "out" : k2 === last.system ? "in" : "both" });
+      }
+    });
+  }
+  const height = (M.topPad + systems.length * M.sysH - M.sysGap + M.bottomPad) * S;
   // the first system's ink above the layout's top (a chord-symbol line over high notes, an 8va, a tempo mark — WSHED-165):
   // y0 ≤ 0 is where the screen's drawing must start so none of it is cut off; paper measures its own ink and ignores it
   let inkTop = systems.length ? systems[0].staffTop[0] - 1 : 0;
@@ -694,13 +780,15 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
   for (const e of endings) if (e.system === 0) up(e.y - 1.4);
   for (const o of ottavaLines) if (o.system === 0) up(o.y - 1.5);
   for (const t of texts) if (t.system === 0) up(t.y - 1.3);
+  for (const dy of dynamics) if (dy.system === 0 && dy.above) up(dy.y - 1.5);
+  for (const hp of hairpins) if (hp.system === 0 && lyricOn(0, hp.staff)) up(hp.y - 0.8);
   for (const t of tuplets) if (t.system === 0) up(t.y - 1.2);
   for (const sl of slurs) if (sl.system === 0) up(Math.min(sl.y1, sl.y2) - 0.75 * sl.h - 0.3);
   const y0 = Math.min(0, Math.floor((inkTop - 0.8) * 4) / 4);
   /** The expression line of a staff in a system over [a, b) absolute ticks, and the text line at `a` — where a ghost mark would land. */
   const exprLineAt = (si, staff, a, b) => exprLine(si, staff, under(staff, a, b, si));
   const textLineAt = (si, staff, a) => Math.min(systems[si].staffTop[staff] - 2.3, ...under(staff, a, a + 1, si).map((d) => aboveOf(d) - 1.3));
-  return { S, unit: S, width, height, y0, systems, drawn, beams, ties, slurs, tuplets, marks, trillLines, trillAccs, glisses, arps, dynamics, hairpins, texts, chords, pedals, ottavas: ottavaLines, textLines, fingers, graces, graceBeams, graceSlurs, trems, similes, clefs, form, endings, hit, nStaves, exprLine: exprLineAt, textLine: textLineAt, chordLine, pedalLine, ottavaLine };
+  return { S, unit: S, width, height, y0, metrics: M, systems, drawn, beams, ties, slurs, tuplets, marks, trillLines, trillAccs, glisses, arps, dynamics, hairpins, texts, chords, pedals, ottavas: ottavaLines, textLines, fingers, graces, graceBeams, graceSlurs, trems, similes, clefs, form, endings, lyrics, lyricLines, hit, nStaves, exprLine: exprLineAt, textLine: textLineAt, chordLine, pedalLine, ottavaLine, lyricLine, lyricOn };
 }
 
 function restBetween(drawn, a, b) {

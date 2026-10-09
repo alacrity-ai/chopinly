@@ -63,6 +63,7 @@ export function thingAt(L, x, y, handles = new Set(), tol = 0) {
   for (const dy of L.dynamics) if (Math.abs(x - dy.x) <= Math.max(1.2, tol) && Math.abs(y - dy.y + 0.3) <= Math.max(0.9, tol)) return { type: "dyn", ev: dy.id, bar: dy.bar, staff: dy.staff, x: dy.x, y: dy.y };
   for (const tx of L.texts) if (x >= tx.x - 0.3 - tol && x <= tx.x + 0.6 * tx.text.length + tol && y >= tx.y - 1.1 - tol && y <= tx.y + 0.3 + tol) return { type: "text", ev: tx.id, bar: tx.bar, staff: tx.staff, x: tx.x, y: tx.y };
   for (const c of L.chords ?? []) if (x >= c.x - 0.3 - tol && x <= c.x + c.w + tol && y >= c.y - 1.15 * c.size - tol && y <= c.y + 0.35 + tol) return { type: "chord", ev: c.id, bar: c.bar, staff: c.staff, x: c.x, y: c.y }; // chord symbols (WSHED-166)
+  for (const ly of L.lyrics ?? []) if (Math.abs(x - ly.x) <= Math.max(ly.w / 2 + 0.3, tol) && y >= ly.y - 1.1 - tol && y <= ly.y + 0.3 + tol) return { type: "lyric", ev: ly.id, note: ly.ev, n: ly.n, bar: ly.bar, staff: ly.staff, voice: ly.voice, x: ly.x, y: ly.y }; // a syllable (docs/COMPOSE_LYRICS_DESIGN.md §3.6): its id is "<note>:<verse>"
   for (const hp of spans(L)) { // hairpins, pedal lines, octave lines (docs/COMPOSE_PIANO_DESIGN.md §6) answer alike
     if (Math.abs(y - hp.y) > Math.max(0.9, tol) || x < hp.x1 - 0.6 - tol || x > hp.x2 + 0.6 + tol) continue;
     const t = { type: hp.type, ev: hp.id, bar: hp.bar, staff: hp.staff, x: (hp.x1 + hp.x2) / 2, y: hp.y };
@@ -89,6 +90,7 @@ export function things(L) {
   for (const dy of L.dynamics) out.push({ type: "dyn", ev: dy.id, bar: dy.bar, staff: dy.staff, x: dy.x, y: dy.y - 0.3 });
   for (const tx of L.texts) out.push({ type: "text", ev: tx.id, bar: tx.bar, staff: tx.staff, x: tx.x + 0.3 * tx.text.length, y: tx.y - 0.4 });
   for (const c of L.chords ?? []) out.push({ type: "chord", ev: c.id, bar: c.bar, staff: c.staff, x: c.x + c.w / 2, y: c.y - 0.5 });
+  for (const ly of L.lyrics ?? []) out.push({ type: "lyric", ev: ly.id, note: ly.ev, n: ly.n, bar: ly.bar, staff: ly.staff, voice: ly.voice, x: ly.x, y: ly.y - 0.4 });
   const seen = new Set();
   for (const hp of spans(L)) { if (seen.has(hp.id)) continue; seen.add(hp.id); out.push({ type: hp.type, ev: hp.id, bar: hp.bar, staff: hp.staff, x: (hp.x1 + hp.x2) / 2, y: hp.y }); } // a split span is one thing, anchored on its first half
   return out;

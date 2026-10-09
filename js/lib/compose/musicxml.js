@@ -4,7 +4,7 @@
 // keeping what Compose can hold and refusing, with the bar number, anything that would corrupt a
 // bar. Pure — node-testable; the .mxl container is `mxl.js`.
 import { PPQ, ticks, capacity, fromTicks, splitRest, groupSize, exprGrid } from "./ticks.js";
-import { newComposition, newMeasure, noteEvent, restEvent, barRests, timeAt, shortMetre, keyAt, clefAt, evTicks, voicesOf, tempoOf, validate, eid, DYNAMICS, DYN_VALUES, HAIRPINS, SPAN_KINDS, FINGER_MAX, GRACE_BASES, TREM_MAX, TEXT_MAX, EXPR_Y_MAX, REST_Y_MAX, MAX_VOICES, MIN_TEMPO, MAX_TEMPO, DEFAULT_BARS } from "./model.js";
+import { newComposition, newMeasure, noteEvent, restEvent, barRests, timeAt, shortMetre, keyAt, clefAt, evTicks, voicesOf, tempoOf, validate, eid, DYNAMICS, DYN_VALUES, HAIRPINS, SPAN_KINDS, FINGER_MAX, GRACE_BASES, TREM_MAX, TEXT_MAX, EXPR_Y_MAX, REST_Y_MAX, MAX_VOICES, MIN_TEMPO, MAX_TEMPO, DEFAULT_BARS, LYRIC_MAX, LYRIC_VERSES_MAX, SYLLABICS } from "./model.js";
 import { onsets, normalizeBar, cleanTies, cleanExpressions, trimBars, decompose, diatonicOf, MARKS, formMarksOf, quarterBpm, simileTail } from "./engine.js";
 import { keyAlterations, CLEFS, parsePitch } from "../music.js";
 import { parseXml, child, children, textOf, numOf, esc } from "./xml.js";
@@ -205,7 +205,8 @@ export function toMusicXml(doc, { title = doc.title, subtitle = doc.subtitle ?? 
               const tie = `${p.tie === "stop" || p.tie === "both" ? '<tie type="stop"/>' : ""}${p.tie === "start" || p.tie === "both" ? '<tie type="start"/>' : ""}`;
               const tied = `${p.tie === "stop" || p.tie === "both" ? '<tied type="stop"/>' : ""}${p.tie === "start" || p.tie === "both" ? '<tied type="start"/>' : ""}`;
               const nots = [tied, ...(pi === 0 ? first : []), p.finger ? `<technical><fingering>${p.finger}</fingering></technical>` : "", arp].join("");
-              w(`      <note>${pi ? "<chord/>" : ""}<pitch><step>${p.step}</step>${p.alter ? `<alter>${p.alter}</alter>` : ""}<octave>${p.octave}</octave></pitch><duration>${o.len}</duration>${tie}<voice>${voiceNo}</voice>${type}${shown[pi] ? `<accidental>${ACC_NAME[p.alter]}</accidental>` : ""}${tm}${ev.stem ? `<stem>${ev.stem}</stem>` : ""}<staff>${si + 1 + (ev.cross ?? 0)}</staff>${nots ? `<notations>${nots}</notations>` : ""}</note>`);
+              const lyrics = pi === 0 ? (ev.lyrics ?? []).map((l) => `<lyric number="${l.n}"><syllabic>${l.syl ?? "single"}</syllabic><text>${esc(l.text)}</text>${l.ext ? '<extend type="start"/>' : ""}</lyric>`).join("") : ""; // on the chord's first note (docs/COMPOSE_LYRICS_DESIGN.md §1.4)
+              w(`      <note>${pi ? "<chord/>" : ""}<pitch><step>${p.step}</step>${p.alter ? `<alter>${p.alter}</alter>` : ""}<octave>${p.octave}</octave></pitch><duration>${o.len}</duration>${tie}<voice>${voiceNo}</voice>${type}${shown[pi] ? `<accidental>${ACC_NAME[p.alter]}</accidental>` : ""}${tm}${ev.stem ? `<stem>${ev.stem}</stem>` : ""}<staff>${si + 1 + (ev.cross ?? 0)}</staff>${nots ? `<notations>${nots}</notations>` : ""}${lyrics}</note>`);
             });
           }
           cursor = o.start + o.len;
@@ -267,6 +268,33 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
   // pass 1: every bar of every used part → records with tick positions
   const bars = Array.from({ length: nBars }, () => ({ key: null, time: null, clefs: {}, clefChanges: [], notes: [], dirs: [], len: 0, implicit: false, barline: {}, endingStart: null, endingStop: false, form: [], simileStart: null, simileStop: false }));
   const state = new Map(used.map((p) => [p, { div: 1 }]));
+  // lyrics (docs/COMPOSE_LYRICS_DESIGN.md §1.4): a <lyric number="…"> names a verse; a numeric number is the verse, a word
+  // ("verse1", Sibelius) takes the next free verse on that staff; verses past LYRIC_VERSES_MAX are dropped with one warning
+  const verseNames = new Map(); // "staff:number" → verse
+  const verseOf = (si, number) => {
+    const key = `${si}:${number}`;
+    if (verseNames.has(key)) return verseNames.get(key);
+    const numeric = /^\d+$/.test(number) ? parseInt(number, 10) : null;
+    let n = numeric;
+    if (n === null) { const taken = [...verseNames].filter(([k]) => k.startsWith(`${si}:`)).map(([, v]) => v); n = 1; while (taken.includes(n)) n++; }
+    verseNames.set(key, n);
+    return n;
+  };
+  const lyricsOf = (el, si) => {
+    const out = [];
+    for (const ly of children(el, "lyric")) {
+      const texts = children(ly, "text").map((t) => t.text.replace(/\s+/g, " ").trim()).filter(Boolean);
+      if (!texts.length) continue;
+      const n = verseOf(si, ly.attrs.number ?? "1");
+      if (n > LYRIC_VERSES_MAX) { warnings.add(`verses past ${LYRIC_VERSES_MAX} were dropped`); continue; }
+      if (out.some((l) => l.n === n)) continue;
+      const elision = children(ly, "elision")[0]?.text?.trim() || " "; // two syllables on one note join with the file's elision mark (no elision model this round)
+      const text = texts.join(elision).slice(0, LYRIC_MAX);
+      const syl = textOf(ly, "syllabic", "single"), ext = children(ly, "extend").some((x) => !x.attrs.type || x.attrs.type === "start");
+      out.push({ n, text, ...(SYLLABICS.includes(syl) && syl !== "single" ? { syl } : {}), ...(ext ? { ext: true } : {}) });
+    }
+    return out.sort((a, b) => a.n - b.n);
+  };
   let time = null; // the time signature in force (the file's, persisted)
   const timeOf = (bi) => { for (let b = Math.min(bi, bars.length - 1); b >= 0; b--) if (bars[b].time) return bars[b].time; return { beats: 4, unit: 4 }; };
   for (const part of used) {
@@ -316,10 +344,10 @@ export function fromMusicXml(text, { id = eid(), now = Date.now(), fileName = ""
           const not = child(el, "notations");
           if (pitch) for (const t of children(not, "tied")) if (t.attrs.type === "start" || t.attrs.type === "stop") pitch.tie = pitch.tie && pitch.tie !== t.attrs.type ? "both" : t.attrs.type;
           if (pitch) { const fg = parseInt(textOf(child(not, "technical"), "fingering"), 10); if (fg >= 1 && fg <= FINGER_MAX) pitch.finger = fg; } // docs/COMPOSE_PIANO_DESIGN.md §8
-          if (chord && last && pitch) { last.pitches.push(pitch); if (children(not, "arpeggiate").length && !last.arp) last.arp = children(not, "arpeggiate")[0].attrs.direction ?? "plain"; continue; }
+          if (chord && last && pitch) { last.pitches.push(pitch); if (children(not, "arpeggiate").length && !last.arp) last.arp = children(not, "arpeggiate")[0].attrs.direction ?? "plain"; for (const l of lyricsOf(el, si)) if (!last.lyrics.some((o) => o.n === l.n)) last.lyrics.push(l); continue; } // a syllable on a chord's later note counts for the chord
           if (!pitch && !restEl) { if (!chord) cursor += dur; continue; }
           const voiceNo = numOf(el, "voice", 1);
-          const rec = { part, voiceNo, si, onset: cursor, dur, kind: pitch ? "note" : "rest", pitches: pitch ? [pitch] : null, type: textOf(el, "type", ""), dots: children(el, "dot").length, tm: null, tStart: false, tStop: false, slurs: [], gliss: false, art: [], arp: null, trem: null, graces: null, hidden: el.attrs["print-object"] === "no", display: null, wholeBar: restEl?.attrs.measure === "yes" };
+          const rec = { part, voiceNo, si, onset: cursor, dur, kind: pitch ? "note" : "rest", pitches: pitch ? [pitch] : null, type: textOf(el, "type", ""), dots: children(el, "dot").length, tm: null, tStart: false, tStop: false, slurs: [], gliss: false, art: [], arp: null, trem: null, graces: null, hidden: el.attrs["print-object"] === "no", display: null, wholeBar: restEl?.attrs.measure === "yes", lyrics: pitch ? lyricsOf(el, si) : [] };
           if (pitch) { const gk = `${voiceNo}:${si}`; if (pendingGraces.has(gk)) { rec.graces = pendingGraces.get(gk); pendingGraces.delete(gk); } }
           const tm = child(el, "time-modification"); if (tm) rec.tm = { n: numOf(tm, "actual-notes", 1), in: numOf(tm, "normal-notes", 1) };
           if (restEl && child(restEl, "display-step")) rec.display = { step: textOf(restEl, "display-step"), octave: numOf(restEl, "display-octave", 4) };
@@ -566,7 +594,7 @@ function buildVoice(grp, si, vi, nV, bi, time, shift, doc0, refuse) {
     durs.forEach((d, k) => {
       const ev = r.kind === "rest" ? restEvent(d) : noteEvent(d, r.pitches.map((p) => { const q = { step: p.step, alter: p.alter, octave: p.octave }; if (p.tie === "start" || p.tie === "both") { if (k === durs.length - 1) q.tie = p.tie; else q.tie = k === 0 && p.tie === "both" ? "both" : "start"; } else if (p.tie === "stop" && k === 0) q.tie = "stop"; if (k < durs.length - 1) q.tie = q.tie === "stop" || q.tie === "both" ? "both" : "start"; if (p.accShown && k === 0) q.accShown = true; if (p.finger) q.finger = p.finger; return q; }).sort((a, b) => diatonicOf(a) - diatonicOf(b)));
       if (r.kind === "note") {
-        if (k === 0) { if (r.art.length) ev.art = r.art.filter((a) => MARKS.includes(a)); if (ev.art?.includes("trill") && (r.trillLine || r.trillAlter !== undefined)) ev.trill = { ...(r.trillLine ? { line: true } : {}), ...(r.trillAlter !== undefined ? { alter: r.trillAlter } : {}) }; if (r.arp) ev.arp = r.arp; if (r.trem) ev.trem = r.trem; if (r.graces?.length) ev.graces = r.graces; if (r.slurs.some((s) => s.at === "start")) ev.slurs = r.slurs.filter((s) => s.at === "start"); }
+        if (k === 0) { if (r.lyrics?.length) ev.lyrics = r.lyrics.sort((a, b) => a.n - b.n); if (r.art.length) ev.art = r.art.filter((a) => MARKS.includes(a)); if (ev.art?.includes("trill") && (r.trillLine || r.trillAlter !== undefined)) ev.trill = { ...(r.trillLine ? { line: true } : {}), ...(r.trillAlter !== undefined ? { alter: r.trillAlter } : {}) }; if (r.arp) ev.arp = r.arp; if (r.trem) ev.trem = r.trem; if (r.graces?.length) ev.graces = r.graces; if (r.slurs.some((s) => s.at === "start")) ev.slurs = r.slurs.filter((s) => s.at === "start"); }
         if (k === durs.length - 1) { if (r.gliss) ev.gliss = r.gliss === true ? "start" : r.gliss; if (r.slurs.some((s) => s.at === "stop")) ev.slurs = [...(ev.slurs ?? []), ...r.slurs.filter((s) => s.at === "stop")]; }
         if (r.si !== si) ev.cross = r.si - si;
       } else {

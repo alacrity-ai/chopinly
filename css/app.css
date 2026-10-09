@@ -2364,6 +2364,10 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-svg .cp-expr-text { font: italic 500 1em var(--serif); fill: var(--fg); }
 .cp-svg .cp-chord { font: 500 1em var(--serif); fill: var(--fg); } /* chord symbols (WSHED-166): upright serif, accidentals are Bravura glyphs */
 .cp-svg .cp-expr.sel .cp-chord, .cp-svg .cp-expr.sel .cp-chord-acc { fill: var(--hi); }
+.cp-svg .cp-lyric-text { font: 500 1em var(--serif); fill: var(--fg); } /* lyrics (WSHED-176): upright serif under the staff; hyphens and extenders in the same ink */
+.cp-svg .cp-lyric-ext { stroke: var(--fg); stroke-width: 1.2px; }
+.cp-svg .cp-lyric.sel .cp-lyric-text { fill: var(--hi); }
+.cp-svg .cp-lyric.cursor .cp-lyric-text { fill: var(--accent); } /* the Lyrics rail's cursor sits on this syllable's note (WSHED-177) */
 /* expressions are selectable things (WSHED-122): the selected one takes the highlight; a selected hairpin's end handles ride the overlay; ghosts are faint */
 .cp-svg .cp-expr.sel .cp-dyn, .cp-svg .cp-expr.sel .cp-expr-text { fill: var(--hi); }
 .cp-svg .cp-expr.sel .cp-hairpin { stroke: var(--hi); }

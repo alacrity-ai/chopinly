@@ -22,7 +22,7 @@ const vcls = (vi) => (vi ? ` cp-v${vi + 1}` : ""); // voices 2–4 tint on scree
  *   path(segs, cls)                                — [["M", x, y], ["C", x1, y1, x2, y2, x, y], ["L", x, y], ["Z"]]; filled unless cls says stroke
  *   circle(cx, cy, r, cls)                         — the selection halo (screen only)
  *   glyph(x, y, ch, cls, { scale, anchor, rotate, centre, data }) — Bravura text; scale × 4 S em; centre → ink-centred on x
- *   text(x, y, str, cls, { size, anchor, rotate }) — words in the serif face; size in S (upright when cls has cp-chord, else italic on paper)
+ *   text(x, y, str, cls, { size, anchor, rotate }) — words in the serif face; size in S (upright when cls has cp-chord or cp-lyric, else italic on paper)
  *   measure(str, size, cls)                        — the advance of `text` in S (optional; an estimate stands in)
  *   at(system)                                     — the system the next primitives belong to (optional): paper routes ink to a
  *                                                    page by it, so a staccato dot far under a low note or a chord symbol high over
@@ -235,6 +235,9 @@ export function paintScore(L, p) {
     p.end();
   }
   for (const f of L.fingers ?? []) on(f), p.glyph(f.x, f.y, fingerGlyph(f.n), "glyph cp-finger", { centre: true, scale: 0.9, data: { ev: f.ev, pi: f.pi } });
+  // lyrics (docs/COMPOSE_LYRICS_DESIGN.md §3.5): each syllable its own selectable group (`data-ev` = "<note>:<verse>"), upright; hyphens and extenders between them
+  for (const ly of L.lyrics ?? []) { on(ly); p.group("cp-lyric", { ev: ly.id, note: ly.ev, n: ly.n }); p.text(ly.x, ly.y, ly.text, "cp-lyric-text", { size: 1.15, anchor: "middle" }); p.end(); }
+  for (const l of L.lyricLines ?? []) { on(l); if (l.kind === "hyphen") p.text(l.x, l.y, "-", "cp-lyric-text cp-lyric-hyphen", { size: 1.15, anchor: "middle" }); else p.line(l.x1, l.y, l.x2, l.y, "cp-lyric-ext"); }
   // form: signs, the boxed rehearsal letter, a tempo mark (word, then ♩ = n) at a bar's start; Fine / To Coda / jumps right-aligned at its end; ending brackets with their number
   for (const f of L.form) {
     on(f);

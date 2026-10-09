@@ -8,7 +8,7 @@
 // baked outlines (bravura.js) as one form XObject per glyph, words are set in Fraunces (embedded
 // subsets), hidden rests and halos are left out, every voice is ink. Pure given the libraries, so
 // node tests render real PDFs.
-import { layoutComposition, SYS_H, SYS_GAP, TOP_PAD, BLOCK_H, systemAt } from "../layout.js";
+import { layoutComposition } from "../layout.js";
 import { paintScore } from "../paint.js";
 import { trimBars } from "../engine.js";
 import { BRAVURA } from "./bravura.js";
@@ -26,7 +26,7 @@ export const headerBlock = ({ subtitle = "" } = {}) => { const sub = subtitle ? 
 const AIR = 3;                          // S of air above a page's first staff (slurs, marks, the 8va of a high note)
 const GAP_AIR = 1.2;                    // S of air between one system's lowest ink and the next one's highest (WSHED-165)
 // paper line weights in S (Bravura's engraving defaults are of this order; the screen uses fixed CSS px)
-const W = { sline: 0.1, "cp-tuplet-line": 0.12, "cp-gliss-line": 0.13, "cp-hairpin": 0.12, "cp-pedal-line": 0.12, "cp-ottava-line": 0.11, "cp-grace-slash": 0.12, "cp-textline": 0.11, "cp-niente": 0.11 };
+const W = { sline: 0.1, "cp-tuplet-line": 0.12, "cp-gliss-line": 0.13, "cp-hairpin": 0.12, "cp-pedal-line": 0.12, "cp-ottava-line": 0.11, "cp-grace-slash": 0.12, "cp-textline": 0.11, "cp-niente": 0.11, "cp-lyric-ext": 0.1 };
 
 /** Normalise the sheet's choices. */
 export function exportOptions(opts = {}) {
@@ -43,9 +43,9 @@ export function exportOptions(opts = {}) {
  * outlines' boxes, words an estimate of the serif face; hidden rests are left out like paper.
  */
 class InkMeter {
-  constructor(L) { this.n = L.systems.length; this.box = L.systems.map(() => ({ top: Infinity, bottom: -Infinity, left: Infinity, right: -Infinity })); this.skip = 0; this.sys = null; }
+  constructor(L) { this.n = L.systems.length; this.systemAt = L.metrics.systemAt; this.box = L.systems.map(() => ({ top: Infinity, bottom: -Infinity, left: Infinity, right: -Infinity })); this.skip = 0; this.sys = null; }
   at(si) { this.sys = si; } // the system the next primitives belong to (WSHED-165): its ink counts there however far it reaches
-  mark(x, y) { if (this.skip) return; const b = this.box[this.sys ?? systemAt(y, this.n)]; b.top = Math.min(b.top, y); b.bottom = Math.max(b.bottom, y); b.left = Math.min(b.left, x); b.right = Math.max(b.right, x); }
+  mark(x, y) { if (this.skip) return; const b = this.box[this.sys ?? this.systemAt(y, this.n)]; b.top = Math.min(b.top, y); b.bottom = Math.max(b.bottom, y); b.left = Math.min(b.left, x); b.right = Math.max(b.right, x); }
   group(cls) { if (this.skip || /\bcp-hidden\b/.test(cls)) this.skip++; }
   end() { if (this.skip) this.skip--; }
   line(x1, y1, x2, y2) { this.mark(x1, y1); this.mark(x2, y2); }
@@ -80,8 +80,9 @@ class InkMeter {
 export function inkExtents(L) {
   const m = new InkMeter(L);
   paintScore(L, m);
+  const M = L.metrics;
   return m.box.map((b, i) => {
-    const top = TOP_PAD + i * SYS_H, bottom = top + BLOCK_H, widthS = L.width / L.S;
+    const top = M.topPad + i * M.sysH, bottom = top + M.blockH, widthS = L.width / L.S;
     return { above: Math.max(0, top - Math.min(b.top, top)), below: Math.max(0, Math.max(b.bottom, bottom) - bottom), left: Math.max(0, -Math.min(b.left, 0)), right: Math.max(0, Math.max(b.right, widthS) - widthS) };
   });
 }
@@ -103,25 +104,25 @@ export function planPages(doc, opts = {}) {
   const d = trimBars(doc);
   const L = layoutComposition(d, { unit: S, width, pins: true }); // paper honours the piece's layout pins (docs/COMPOSE_LAYOUT_DESIGN.md)
   const ink = inkExtents(L);
-  const n = L.systems.length, availS = height / S;
+  const n = L.systems.length, availS = height / S, M = L.metrics;
   const pages = [];
-  // systems sit SYS_GAP apart unless their ink needs more (WSHED-165: a chord-symbol line over high notes, ledger notes far
+  // systems sit the layout's system gap apart unless their ink needs more (WSHED-165: a chord-symbol line over high notes, ledger notes far
   // below): then the gap is the lower ink of one plus the upper ink of the next plus GAP_AIR — each system has its own `dy`
   const sysDy = [];
   for (let i = 0; i < n;) {
     const top = (o.header ? (pages.length ? RUN_HEAD_PT : headerBlock({ subtitle: opts.subtitle ?? doc.subtitle }).room) : 0) / S + Math.max(AIR, ink[i].above);
     let y = top, last = i;
-    sysDy[i] = top - (TOP_PAD + i * SYS_H);
+    sysDy[i] = top - (M.topPad + i * M.sysH);
     while (last + 1 < n) {
-      const j = last + 1, yj = y + BLOCK_H + Math.max(SYS_GAP, ink[last].below + ink[j].above + GAP_AIR);
-      if (yj + BLOCK_H + Math.max(AIR, ink[j].below) > availS) break;
-      y = yj; sysDy[j] = yj - (TOP_PAD + j * SYS_H); last = j;
+      const j = last + 1, yj = y + M.blockH + Math.max(M.sysGap, ink[last].below + ink[j].above + GAP_AIR);
+      if (yj + M.blockH + Math.max(AIR, ink[j].below) > availS) break;
+      y = yj; sysDy[j] = yj - (M.topPad + j * M.sysH); last = j;
     }
     pages.push({ first: i, last, top, dy: sysDy[i] });
     i = last + 1;
   }
   const pageOfSys = []; pages.forEach((p, k) => { for (let i = p.first; i <= p.last; i++) pageOfSys[i] = k; });
-  const pageOf = (sys) => pageOfSys[sys], pageAt = (y) => pageOfSys[systemAt(y, n)], dyOf = (sys) => sysDy[sys];
+  const pageOf = (sys) => pageOfSys[sys], pageAt = (y) => pageOfSys[M.systemAt(y, n)], dyOf = (sys) => sysDy[sys];
   const tight = L.hit.systems.map((s, k) => (s.tight ? k : -1)).filter((k) => k >= 0); // pinned rows that do not fit at this size: the sheet will not save over them
   return { doc: d, L, S, ink, pages, page: pg, margin, width, height, opts: o, pageOf, pageAt, dyOf, tight };
 }
@@ -187,7 +188,7 @@ class PdfPainter {
   pageAt(y) { return this.sys !== null ? this.plan.pageOf(this.sys) : this.plan.pageAt(y); }
   /** Layout (x, y) in S → page space (pt, y up) on page k. */
   /** The offset of the system a primitive belongs to (its own, else the one its height falls in). */
-  dy(y) { return this.plan.dyOf(this.sys ?? systemAt(y, this.plan.L.systems.length)); }
+  dy(y) { return this.plan.dyOf(this.sys ?? this.plan.L.metrics.systemAt(y, this.plan.L.systems.length)); }
   pt(x, y, k) { return { x: this.plan.margin + x * this.S, y: this.plan.page.h - this.plan.margin - (y + this.dy(y)) * this.S }; }
   /** Layout (x, y) → SVG-space (pt, y down from the page's top-left) for drawSvgPath. */
   sv(x, y, k) { return [this.plan.margin + x * this.S, this.plan.margin + (y + this.dy(y)) * this.S]; }
@@ -262,8 +263,8 @@ class PdfPainter {
       pen += glyphs[i].a;
     }
   }
-  /** The face a run is set in: chord symbols upright, every other word italic (the screen's styles). */
-  font(cls) { return /\bcp-chord\b/.test(cls ?? "") ? this.regular : this.italic; }
+  /** The face a run is set in: chord symbols and lyrics upright, every other word italic (the screen's styles). */
+  font(cls) { return /\bcp-(chord|lyric)\b/.test(cls ?? "") ? this.regular : this.italic; }
   measure(str, size, cls) { return this.font(cls).widthOfTextAtSize(str, size * this.S) / this.S; }
   text(x, y, str, cls, { size, anchor, rotate } = {}) {
     if (this.skip) return;

@@ -74,7 +74,7 @@ class SvgPainter {
     if (typeof document === "undefined" || !document.fonts?.check?.('500 1em "Fraunces"')) return 0.58 * size * str.length;
     textMeter ??= document.createElement("canvas").getContext("2d");
     const px = Math.max(1, this.S * size); // measured at the size it is drawn: Fraunces has an optical-size axis, so 100 px glyphs are narrower than 20 px ones
-    textMeter.font = `${/\bcp-chord\b/.test(cls) ? "" : "italic "}500 ${px.toFixed(2)}px "Fraunces"`;
+    textMeter.font = `${/\bcp-(chord|lyric)\b/.test(cls) ? "" : "italic "}500 ${px.toFixed(2)}px "Fraunces"`; // chord symbols and lyrics are upright
     return textMeter.measureText(str).width / this.S;
   }
   text(x, y, str, cls, { size, anchor, rotate } = {}) {
