@@ -2354,6 +2354,8 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-svg .cp-ev.sel .head, .cp-svg .cp-ev.sel .rest, .cp-svg .cp-ev.sel .stem, .cp-svg .cp-ev.sel .head-part, .cp-svg .cp-head-g.sel .head, .cp-svg .cp-head-g.sel .head-part { fill: var(--hi); }
 .cp-svg .cp-head-g.sel .halo { fill: color-mix(in srgb, var(--hi) 22%, transparent); }
 .cp-svg .cp-brace { fill: var(--fg); }
+.cp-svg .cp-bracket { fill: var(--fg); } /* parts (WSHED-181): the bracket's rule and its hooks before an ensemble group */
+.cp-svg .cp-part-name { font: 500 1em var(--serif); fill: var(--fg); } /* part names before the first system, abbreviations after — upright like a chord symbol */
 .cp-svg .cp-tie, .cp-svg .cp-slur { fill: var(--fg); }
 .cp-svg .cp-tuplet-line { fill: none; stroke: var(--fg); stroke-width: 1.2; stroke-linecap: square; }
 .cp-svg .cp-tuplet-digit { fill: var(--fg); } /* its size (0.62 em) comes from paint.js, like every other glyph's */

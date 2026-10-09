@@ -4,7 +4,7 @@
 const cp = (n) => String.fromCodePoint(n);
 
 export const G = {
-  brace: cp(0xe000),
+  brace: cp(0xe000), bracketTop: cp(0xe003), bracketBottom: cp(0xe004), // the brace joins a keyboard's staves; the bracket hooks cap an ensemble group's rule (docs/COMPOSE_PARTS_DESIGN.md §2.2)
   gClef: cp(0xe050), cClef: cp(0xe05c), fClef: cp(0xe062),
   dblWhole: cp(0xe0a0), whole: cp(0xe0a2), half: cp(0xe0a3), black: cp(0xe0a4),
   "-2": cp(0xe264), "-1": cp(0xe260), 0: cp(0xe261), 1: cp(0xe262), 2: cp(0xe263), // ♭♭ ♭ ♮ ♯ 𝄪

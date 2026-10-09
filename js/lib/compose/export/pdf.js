@@ -264,7 +264,7 @@ class PdfPainter {
     }
   }
   /** The face a run is set in: chord symbols and lyrics upright, every other word italic (the screen's styles). */
-  font(cls) { return /\bcp-(chord|lyric)\b/.test(cls ?? "") ? this.regular : this.italic; }
+  font(cls) { return /\bcp-(chord|lyric|part-name)\b/.test(cls ?? "") ? this.regular : this.italic; }
   measure(str, size, cls) { return this.font(cls).widthOfTextAtSize(str, size * this.S) / this.S; }
   text(x, y, str, cls, { size, anchor, rotate } = {}) {
     if (this.skip) return;
