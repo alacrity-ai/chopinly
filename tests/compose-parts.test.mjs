@@ -191,3 +191,13 @@ test("renamePart, setPartInstrument and setPartStaves: names bounded, instrument
   const { d: q, id } = put(quartet(), 0, 2, 0);
   assert.equal(find(finger(q, [{ ev: id, pi: 0 }], 2), id).ev.pitches[0].finger, 2);
 });
+
+test("playback (WSHED-184): a quartet's timeline carries every part's notes with their staff; every part sounds on the piano", async () => {
+  const { timeline } = await import("../js/lib/compose/play.js");
+  let d = quartet();
+  for (let st = 0; st < 4; st++) for (let q = 0; q < 4; q++) d = put(d, 0, st, q, 4 + st).d;
+  const { notes } = timeline(d);
+  assert.equal(notes.length, 16, "sixteen notes across four staves");
+  assert.deepEqual([...new Set(notes.map((n) => n.staff))].sort(), [0, 1, 2, 3]);
+  assert.ok(Object.values(INSTRUMENTS).every((i) => i.sound === "piano"));
+});

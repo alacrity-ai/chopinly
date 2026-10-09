@@ -124,6 +124,13 @@ export function openEditor({ id, ctx, onClose, then = null }) {
     sync();
     showPlayhead(player.position);
   }
+  /** "the upper staff" on a piano piece; "Violin I" / "the Piano's lower staff" once there are several instruments (WSHED-184). */
+  function staffName(k) {
+    const pi = partOfStaff(doc, k), p = doc.parts[pi], idx = k - doc.parts.slice(0, pi).reduce((n, q) => n + q.staves, 0);
+    const which = p.staves === 1 ? "" : p.staves === 2 ? (idx === 0 ? "upper" : "lower") : ["top", "middle", "bottom"][idx];
+    if (doc.parts.length === 1) return which ? `the ${which} staff` : "the staff";
+    return which ? `the ${p.name}'s ${which} staff` : p.name;
+  }
   /** What the selection allows the voice menu and the expression rail to do. */
   function selFacts() {
     const ids = selEvIds(), fs = ids.map((id) => find(doc, id)).filter(Boolean);
@@ -131,10 +138,10 @@ export function openEditor({ id, ctx, onClose, then = null }) {
     const xs = ids.map((id) => findExpression(doc, id)).filter(Boolean), exprs = xs.length > 0 && xs.length === ids.length;
     const n = nStavesOf(doc);
     const lyrics = selection.size > 0 && [...selection].every(isLyricKey);
-    return { any: fs.length > 0, exprs, lyrics, dyns: exprs && xs.every((f) => f.x.kind === "dyn"), texts: exprs && xs.every((f) => f.x.kind === "text"), chords: exprs && xs.every((f) => f.x.kind === "chord"), notes: notes.length > 0, rests: rests.length > 0, hidden: rests.length > 0 && rests.every((f) => f.ev.hidden), up: notes.some((f) => f.staff + (f.ev.cross ?? 0) - 1 >= 0 && Math.abs((f.ev.cross ?? 0) - 1) <= 1), down: notes.some((f) => f.staff + (f.ev.cross ?? 0) + 1 < n && Math.abs((f.ev.cross ?? 0) + 1) <= 1) };
+    return { any: fs.length > 0, exprs, lyrics, dyns: exprs && xs.every((f) => f.x.kind === "dyn"), texts: exprs && xs.every((f) => f.x.kind === "text"), chords: exprs && xs.every((f) => f.x.kind === "chord"), notes: notes.length > 0, rests: rests.length > 0, hidden: rests.length > 0 && rests.every((f) => f.ev.hidden), up: notes.some((f) => f.staff + (f.ev.cross ?? 0) - 1 >= 0 && Math.abs((f.ev.cross ?? 0) - 1) <= 1 && partOfStaff(doc, f.staff + (f.ev.cross ?? 0) - 1) === partOfStaff(doc, f.staff)), down: notes.some((f) => f.staff + (f.ev.cross ?? 0) + 1 < n && Math.abs((f.ev.cross ?? 0) + 1) <= 1 && partOfStaff(doc, f.staff + (f.ev.cross ?? 0) + 1) === partOfStaff(doc, f.staff)) }; // a cross stays inside the instrument (docs/COMPOSE_PARTS_DESIGN.md §5)
   }
   function sync() {
-    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title: heading(), voice, used: usedVoices(doc), sel: selFacts(), tempoUnit, hands, pedalStyle, input, gesture: gestureOn, favorites: fav.on, chord: chordDraft, chordSlash, gliss: glissMode, lyric: { n: lyric.n, cursor: !!lyric.cursor || selFacts().lyrics, used: new Set(lyricRuns(doc).map((r) => r.n)) } });
+    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title: heading(), voice, used: usedVoices(doc), sel: selFacts(), tempoUnit, hands, pedalStyle, input, gesture: gestureOn, favorites: fav.on, chord: chordDraft, chordSlash, gliss: glissMode, lyric: { n: lyric.n, cursor: !!lyric.cursor || selFacts().lyrics, used: new Set(lyricRuns(doc).map((r) => r.n)) }, keyboard: doc.parts.some((p) => partGroup(p) === "keyboard") });
     fav.sync(); // the slots mirror their rail buttons' state
     view.dataset.mode = mode; view.classList.toggle("pasting", pasting); view.classList.toggle("arming", !!pending);
     syncTransport();
@@ -345,7 +352,7 @@ export function openEditor({ id, ctx, onClose, then = null }) {
         const unitName = mark.unit ? ({ 8: "♪", 4: "♩", 2: "𝅗𝅥" }[mark.unit.base] + (mark.unit.dots ? "." : "")) : "♩";
         const name = mark.kind === "tempo" ? `${unitName} = ${mark.bpm}${mark.text ? ` ${mark.text}` : ""}` : mark.kind === "rehearsal" ? (mark.text ? `"${mark.text}"` : mark.style === "number" ? "rehearsal number" : "rehearsal mark") : mark.kind === "segno" ? "segno" : mark.kind === "coda" ? "coda sign" : JUMP_LABEL[mark.kind];
         toast(had ? `${name} removed from bar ${t.bar + 1}` : `${name} ${JUMP_LABEL[mark.kind] ? "at the end of" : "on"} bar ${t.bar + 1}`);
-      } else { commit(setClef(doc, t.bar, t.staff, p.value, t.at)); toast(`${p.value} clef on the ${t.staff === 0 ? "upper" : "lower"} staff from ${t.at ? `beat ${t.at / groupSize(timeAt(doc, t.bar)) + 1} of ` : ""}bar ${t.bar + 1}`); }
+      } else { commit(setClef(doc, t.bar, t.staff, p.value, t.at)); toast(`${p.value} clef on ${staffName(t.staff)} from ${t.at ? `beat ${t.at / groupSize(timeAt(doc, t.bar)) + 1} of ` : ""}bar ${t.bar + 1}`); }
       haptic(8);
     } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar ?? t.bar); }
     setPending(null);

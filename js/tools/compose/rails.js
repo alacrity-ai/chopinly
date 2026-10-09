@@ -567,7 +567,7 @@ export function buildRails(host, { title, onAction, onCapture }) {
       if (bpm !== undefined) host.querySelector("#cp-bpm").textContent = String(bpm);
     },
     /** Reflect the editor's state: { armed, mode, canUndo, canRedo, hasSelection, title }. */
-    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, rails = DEFAULT_RAILS, pending = null, title, voice = 0, used = new Set([0]), sel = {}, tempoUnit = { base: 4, dots: 0 }, hands = "en", pedalStyle = "line", input = "touch", gesture = false, favorites = false, chord = { root: { step: "C", alter: 0 }, q: "" }, chordSlash = false, gliss = "start", lyric = { n: 1, cursor: false, used: new Set() } }) {
+    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, rails = DEFAULT_RAILS, pending = null, title, voice = 0, used = new Set([0]), sel = {}, tempoUnit = { base: 4, dots: 0 }, hands = "en", pedalStyle = "line", input = "touch", gesture = false, favorites = false, chord = { root: { step: "C", alter: 0 }, q: "" }, chordSlash = false, gliss = "start", lyric = { n: 1, cursor: false, used: new Set() }, keyboard = true }) {
       let shown = false;
       // the Options ▾ panel (v116, §8.5q): Pen | Touch (v101, §8.5i), Gesture (v102, §8.5j) and Favorites (v109, §8.5o) mirror the editor's state
       for (const b of host.querySelectorAll(".cp-inp")) b.setAttribute("aria-pressed", String(b.dataset.input === input));
@@ -663,6 +663,7 @@ export function buildRails(host, { title, onAction, onCapture }) {
       for (const r of host.querySelectorAll(".cp-gliss-row")) r.setAttribute("aria-pressed", String(r.dataset.mode === gliss));
       // the Piano rail (WSHED-125): the armed line or finger is lit
       host.querySelector(".cp-pedal-btn").setAttribute("aria-pressed", String(pending?.kind === "pedal"));
+      for (const b of [host.querySelector(".cp-pedal-btn"), host.querySelector(".cp-textline-btn")]) { b.disabled = !keyboard; b.title = keyboard ? "" : "the pedal belongs to the piano — this piece has none"; } // parts (WSHED-184): a tap on a non-keyboard staff is refused by the engine; with no keyboard at all the buttons go dark
       for (const b of host.querySelectorAll(".cp-ottava-btn")) b.setAttribute("aria-pressed", String(pending?.kind === "ottava" && pending.value === Number(b.dataset.dir) && (pending.size ?? 8) === Number(b.dataset.size ?? 8)));
       for (const b of host.querySelectorAll(".cp-finger-btn")) b.setAttribute("aria-pressed", String(pending?.kind === "finger" && pending.value === Number(b.dataset.n)));
       // the armed change (key / time / clef waiting for a tap) shows on its picker and its button
