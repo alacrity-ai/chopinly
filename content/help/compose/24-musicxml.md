@@ -4,12 +4,12 @@ title: "MusicXML in and out"
 section: keeping
 order: 4
 summary: "Take a piece to Sibelius, MuseScore, Finale or Dorico — and bring one back."
-keywords: [musicxml, xml, mxl, import, export, sibelius, musescore, finale, dorico, interchange, open, file]
+keywords: [musicxml, xml, mxl, import, export, sibelius, musescore, finale, dorico, interchange, open, file, parts, ensemble, quartet]
 ---
 
 ## Out
 
-**File ▾ → Export MusicXML** writes a MusicXML 4.0 part-wise file and offers the same save-or-share choice the PDF does.
+**File ▾ → Export MusicXML** writes a MusicXML 4.0 part-wise file — one part per instrument, the brackets marked as part groups — and offers the same save-or-share choice the PDF does.
 
 It is a full serialisation, not a sketch: both staves, all four voices, chords, ties, tuplets, cross-staff notes, articulations, ornaments, glissandi, rolled chords, grace notes, tremolo, trills, stem and beam overrides, dynamics, hairpins, text and text lines, pedal and octave lines at their exact tick, barlines, repeats, endings, jumps, rehearsal marks, tempo marks, bar repeats, rest offsets, fingering, and the accidentals spelled the way the engraver drew them.
 
@@ -27,7 +27,7 @@ A bar every voice leaves short is kept as a short bar: the first bar, or one the
 
 ## What does not travel
 
-Layout pins (see [the Layout editor](help:layout)) are not written or read — a page layout is a property of *your* paper, not of the music. Parts beyond the piano are not in Compose yet, so a file carrying them arrives without them. Lyrics travel both ways — verses, hyphenation, extenders — as do chord symbols, as harmony, keeping their spelling; a piece's subtitle travels as a subtitle credit; a glissando with no landing note is written as a doit (up) or a fall-off (down).
+Layout pins (see [the Layout editor](help:layout)) are not written or read — a page layout is a property of *your* paper, not of the music. Every part of a score travels — name, abbreviation, instrument, staves and clefs, up to twelve instruments on sixteen staves (see [instruments and parts](help:instruments)); a bracket in the file is read from the instruments, not stored; a transposing part is read at its written pitch, with a note. Lyrics travel both ways — verses, hyphenation, extenders — as do chord symbols, as harmony, keeping their spelling; a piece's subtitle travels as a subtitle credit; a glissando with no landing note is written as a doit (up) or a fall-off (down).
 
 ## MIDI
 

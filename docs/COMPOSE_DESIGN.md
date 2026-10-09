@@ -1048,7 +1048,7 @@ per dynamic, no tempo map beyond a default 100 bpm. A follow-up card, not the MV
 | later | what it touches |
 |---|---|
 | Voices | landed v86 — see the voices design |
-| Instruments / more staves | `parts[]`, `staves`; layout already takes N staves per system |
+| Instruments / more staves | landed v128 — `parts[] = { id, name, abbr, instrument, staves, clefs }` (v4), the Instruments sheet, N-part MusicXML; see `docs/COMPOSE_PARTS_DESIGN.md` (WSHED-179) |
 | Cross-staff beams | landed v86 — `ev.cross`, `makeCrossBeam` |
 | Rest vertical offset (drag a rest out of another voice's way) | landed v87 — `ev.restY`, `nudgeRest`, ↑/↓ |
 | Chord symbols | landed v125 — an expression kind `chord` + the Chords rail; see `docs/COMPOSE_CHORDS_DESIGN.md` (WSHED-166) |

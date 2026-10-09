@@ -430,7 +430,7 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   // the header's Options ▾ panel shows and hides lanes; the File ▾ menu is a placeholder for export
   if (!(await page.locator(".cp-header [data-act=back]").count()) || !(await page.locator(".cp-header #cp-title").count())) throw new Error("back / title not on the header rail");
   await page.click("[data-pop=cp-file-more]");
-  if ((await page.locator("#cp-file-more .cp-menu-row:disabled").count()) !== 1 || (await page.locator("#cp-file-more .cp-menu-row:not(:disabled)").count()) !== 3) throw new Error("file menu: two PDF rows and MusicXML live, MIDI a placeholder");
+  if ((await page.locator("#cp-file-more .cp-menu-row:disabled").count()) !== 1 || (await page.locator("#cp-file-more .cp-menu-row:not(:disabled)").count()) !== 4) throw new Error("file menu: Instruments…, two PDF rows and MusicXML live, MIDI a placeholder");
   await page.click("[data-pop=cp-file-more]");
   await page.click("[data-pop=cp-options-more]");
   if ((await page.locator("#cp-options-more .cp-rail-row").count()) !== 10) throw new Error("rail rows"); // controls · transport · notes · utility · expression · form · piano · notes2 · chords (WSHED-166) · lyrics (WSHED-177)
@@ -1433,12 +1433,12 @@ await step("an older (v2) piece with marks on its notes opens with them as expre
   await page.goto(`${BASE}/?app=1&t=1#/compose/${seeded.id}`);
   await page.waitForSelector(".cp-editor .cp-svg");
   const opened = await page.evaluate(async () => { const { logbook } = await import("/js/lib/logbook.js"); const ed = document.querySelector(".cp-editor").__editor, c = logbook.composition(ed.id); return { memV: ed.state.doc.v, exprs: (ed.state.doc.measures[0].expressions ?? []).map((x) => x.kind), storedV: c.v, updatedAt: c.updatedAt, drawn: document.querySelectorAll(".cp-svg .cp-expr").length }; });
-  if (opened.memV !== 3 || opened.exprs.join() !== "dyn,hairpin,text" || opened.drawn !== 3) throw new Error("upgrade in memory: " + JSON.stringify(opened));
+  if (opened.memV !== 4 || opened.exprs.join() !== "dyn,hairpin,text" || opened.drawn !== 3) throw new Error("upgrade in memory: " + JSON.stringify(opened)); // v4 since WSHED-180: the piano part filled in as well
   if (opened.storedV !== 2 || opened.updatedAt !== seeded.updatedAt) throw new Error("opening persisted or touched the piece: " + JSON.stringify({ seeded, opened }));
   await tapAt({ bar: 1, staff: 0, ticks: 300, step: 4 }); // a real edit persists the upgraded piece with a fresh clock
   await page.waitForTimeout(500);
-  const edited = await page.evaluate(async () => { const { logbook } = await import("/js/lib/logbook.js"); const c = logbook.composition(document.querySelector(".cp-editor").__editor.id); return { storedV: c.v, updatedAt: c.updatedAt, exprs: (c.measures[0].expressions ?? []).length }; });
-  if (edited.storedV !== 3 || !(edited.updatedAt > seeded.updatedAt) || edited.exprs !== 3) throw new Error("the edit did not persist the upgrade: " + JSON.stringify(edited));
+  const edited = await page.evaluate(async () => { const { logbook } = await import("/js/lib/logbook.js"); const c = logbook.composition(document.querySelector(".cp-editor").__editor.id); return { storedV: c.v, updatedAt: c.updatedAt, exprs: (c.measures[0].expressions ?? []).length, instrument: c.parts[0].instrument }; });
+  if (edited.storedV !== 4 || !(edited.updatedAt > seeded.updatedAt) || edited.exprs !== 3 || edited.instrument !== "piano") throw new Error("the edit did not persist the upgrade: " + JSON.stringify(edited));
   await page.evaluate(async (id) => { const { logbook } = await import("/js/lib/logbook.js"); document.querySelector(".cp-editor").__editor.close({ silent: true }); logbook.removeComposition(id); }, seeded.id); // the seed leaves with its editor, so the list below holds one piece
   await page.goto(`${BASE}/?app=1&t=1#/compose/${orig}`);
   await page.waitForSelector(".cp-editor .cp-svg");
@@ -2426,6 +2426,89 @@ await step("v118: the Layout step — Export → Layout shows the plan's pages f
   const kept = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.measures.filter((m) => m.lay).length);
   if (!kept) throw new Error("the pins survive a reload");
   await lb((m, [id]) => m.logbook.removeComposition(id), id);
+});
+
+await step("parts (WSHED-179, v128): a new piece for a string quartet draws four named staves under one bracket; File ▾ → Instruments… adds a piano (a brace below), removes, renames and reorders with one undo step each; the pedal is dark with no keyboard and the cross rows stay inside an instrument; a MuseScore quartet imports as four parts and exports back with its part-list; the export sheet proposes a smaller staff and the Layout view's handles span the whole system", async () => {
+  await page.setViewportSize({ width: 1194, height: 834 });
+  await page.goto(`${BASE}/?app=1&t=5#/compose`);
+  await page.waitForSelector("#cp-new");
+  await page.click("#cp-new");
+  await page.waitForSelector("#cp-d-for");
+  await page.fill("#cp-d-title", "E2E quartet");
+  await page.selectOption("#cp-d-for", "quartet");
+  await page.click("#cp-d-save");
+  await page.waitForSelector(".cp-editor .cp-svg");
+  const parts = () => page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.parts.map((p) => `${p.name}/${p.staves}`).join(","));
+  const eng = () => page.evaluate(() => { const L = document.querySelector(".cp-editor").__editor.layout; return { blockH: L.metrics.blockH, names: L.partNames.filter((n) => n.system === 0).map((n) => n.text), groups: L.systems[0].groups.map((g) => g.kind), spans: L.systems[0].barlineSpans.length, x0: L.systems[0].x0, brackets: document.querySelectorAll(".cp-editor .cp-svg rect.cp-bracket").length, nameEls: document.querySelectorAll(".cp-editor .cp-svg .cp-part-name").length }; });
+  if ((await parts()) !== "Violin I/1,Violin II/1,Viola/1,Cello/1") throw new Error("the template's parts: " + (await parts()));
+  let e = await eng();
+  if (e.blockH !== 46 || e.names.join() !== "Violin I,Violin II,Viola,Cello" || e.groups.join() !== "bracket" || e.spans !== 1 || !(e.x0 > 2) || e.brackets < 1 || e.nameEls < 4) throw new Error("quartet engraving: " + JSON.stringify(e));
+  await page.screenshot({ path: `${S}/cp-41-quartet.png` });
+  // the Piano rail's pedal is dark on a piece with no keyboard; the clef toast names the instrument
+  await page.click("[data-pop=cp-options-more]"); await page.click(".cp-rail-row[data-rail=piano]"); await page.click("[data-pop=cp-options-more]");
+  if (!(await page.locator("#cp-piano .cp-pedal-btn").isDisabled()) || !(await page.locator("#cp-piano .cp-textline-btn").isDisabled())) throw new Error("the pedal belongs to the piano — dark on a quartet");
+  await page.click("[data-pop=cp-options-more]"); await page.click(".cp-rail-row[data-rail=piano]"); await page.click("[data-pop=cp-options-more]");
+  // the sheet: add a piano → a brace below the bracket and the pedal wakes; remove Violin II; rename; move; undo brings each back
+  await page.click("[data-pop=cp-file-more]"); await page.click("#cp-file-more [data-act=instruments]");
+  await page.waitForSelector(".cp-ins-list .cp-ins-row");
+  if ((await page.locator(".cp-ins-row").count()) !== 4) throw new Error("four rows");
+  await page.selectOption(".cp-ins-add-select", "piano");
+  await page.waitForFunction(() => document.querySelectorAll(".cp-ins-row").length === 5);
+  e = await eng();
+  if (e.groups.join() !== "bracket,brace" || e.spans !== 2 || e.blockH !== 46 + 10 + 16) throw new Error("quartet + piano: " + JSON.stringify(e));
+  await page.click('.cp-ins-row [data-act=remove][data-part="p2"]');
+  await page.waitForFunction(() => document.querySelectorAll(".cp-ins-row").length === 4);
+  const name = page.locator('.cp-ins-name[data-part="p4"]');
+  await name.fill("Violoncello"); await name.press("Enter");
+  await page.waitForFunction(() => document.querySelector(".cp-editor").__editor.state.doc.parts.some((p) => p.name === "Violoncello"));
+  await page.click('.cp-ins-row [data-act=move][data-part="p5"][data-dir="-1"]');
+  await page.waitForFunction(() => document.querySelector(".cp-editor").__editor.state.doc.parts[2].id === "p5");
+  if ((await parts()) !== "Violin I/1,Viola/1,Piano/2,Violoncello/1") throw new Error("after the sheet: " + (await parts()));
+  await page.screenshot({ path: `${S}/cp-42-instruments.png` });
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".cp-ins-list", { state: "detached" });
+  await noWiden();
+  for (let i = 0; i < 4; i++) await page.click("[data-act=undo]");
+  if ((await parts()) !== "Violin I/1,Violin II/1,Viola/1,Cello/1") throw new Error("four undos restore the template: " + (await parts()));
+  // a note on the cello: the voice menu's cross rows are disabled (no staff of its own instrument above or below)
+  await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
+  await tapAt({ bar: 0, staff: 3, ticks: 0, step: 4 });
+  if ((await kinds(0, 3)) !== "n4 r4 r2") throw new Error("a quarter on the cello: " + (await kinds(0, 3)));
+  await page.keyboard.press("v");
+  await tapAt({ bar: 0, staff: 3, ticks: 0, step: 4 });
+  if ((await state()).selection.length !== 1) throw new Error("the cello note selected");
+  await page.click(".cp-voice-pick");
+  const cross = await page.evaluate(() => [...document.querySelectorAll(".cp-voice-row[data-act=cross]")].map((r) => r.disabled));
+  if (cross.join() !== "true,true") throw new Error("cross rows on a one-staff instrument: " + cross.join());
+  await page.keyboard.press("Escape"); await page.keyboard.press("Escape"); await page.keyboard.press("v");
+  const qid = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.id);
+  // the export sheet proposes 1.6 mm for three or more staves; the Layout view's handles are the height of the four-staff system
+  await page.click("[data-pop=cp-file-more]"); await page.click("#cp-file-more [data-act=export-pdf]");
+  await page.waitForSelector(".cp-export-wrap .cp-paper .cp-page");
+  if (!/^staff 6\.4 mm/.test(await page.textContent("#cp-x-size"))) throw new Error("a quartet proposes a 6.4 mm staff (1.6 mm a space): " + (await page.textContent("#cp-x-size")));
+  await page.click("#cp-x-layout");
+  await page.waitForSelector(".cp-lay .cp-lay-handle");
+  const hs = await page.evaluate(() => [...document.querySelectorAll(".cp-lay-handle")].map((h) => h.getBoundingClientRect().height));
+  if (!hs.length || hs.some((h) => h < 200)) throw new Error("layout handles span the four staves: " + JSON.stringify(hs));
+  await page.keyboard.press("Escape"); await page.waitForSelector(".cp-lay", { state: "detached" });
+  await page.keyboard.press("Escape"); await page.waitForSelector(".cp-export-wrap", { state: "detached" });
+  // a MuseScore quartet opens as four parts and goes back out with its part-list
+  await page.click("[data-act=back]");
+  await page.waitForSelector("#cp-import-file", { state: "attached" });
+  await page.setInputFiles("#cp-import-file", new URL("../fixtures/musicxml/quartet.musicxml", import.meta.url).pathname);
+  await page.waitForFunction(() => document.querySelector(".lb-toast.show")?.textContent.includes("imported"), null, { timeout: 10000 });
+  await page.waitForSelector(".cp-editor .cp-svg");
+  if ((await parts()) !== "Violin I/1,Violin II/1,Viola/1,Violoncello/1") throw new Error("the MuseScore quartet's parts: " + (await parts()));
+  e = await eng();
+  if (e.groups.join() !== "bracket" || e.names.join() !== "Violin I,Violin II,Viola,Violoncello") throw new Error("imported quartet engraving: " + JSON.stringify(e));
+  if ((await kinds(0, 0)) !== "n8 n8 n8 n8 n8 n8 n8 n8" || (await kinds(0, 2)) !== "n4 n4 n4 n4") throw new Error("the parts' notes: " + (await kinds(0, 0)) + " / " + (await kinds(0, 2)));
+  await page.screenshot({ path: `${S}/cp-43-quartet-import.png` });
+  await page.click("[data-pop=cp-file-more]");
+  const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 20000 }), page.click("#cp-file-more [data-act=export-xml]")]);
+  const xml = readFileSync(await dl.path(), "utf8");
+  if ((xml.match(/<score-part id=/g) ?? []).length !== 4 || (xml.match(/<part id="P\d+">/g) ?? []).length !== 4 || !/<group-symbol>bracket<\/group-symbol>/.test(xml) || !/<part-abbreviation>Vln\. II<\/part-abbreviation>/.test(xml) || !/<instrument-sound>strings\.viola<\/instrument-sound>/.test(xml)) throw new Error("the exported part-list");
+  const iid = await page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc.id);
+  await page.evaluate(async ([a, b]) => { const { logbook } = await import("/js/lib/logbook.js"); document.querySelector(".cp-editor").__editor.close({ silent: true }); logbook.removeComposition(a); logbook.removeComposition(b); }, [iid, qid]);
 });
 
 await step("phone width: the rails scroll, nothing widens, the editor still places", async () => {

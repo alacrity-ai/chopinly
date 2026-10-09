@@ -2,11 +2,11 @@
 name: Compose
 order: 7
 route: compose
-title: "Free music notation for piano — tap to write, play back, export PDF and MusicXML | Chopinly"
+title: "Free music notation — tap to write for piano, quartet or choir, play back, export PDF and MusicXML | Chopinly"
 description: "Write piano music on an iPad or a phone without handwriting recognition: pick a note value, tap the staff, and the note lands exactly there on an engraved grand staff. Chords, ties, tuplets, voices, dynamics and hairpins, repeats and endings, D.C. and coda jumps, tempo changes, pedal lines, 8va and fingering, grace notes and tremolo, playback that follows the form, vector PDF into your scores, MusicXML export and import for Sibelius, MuseScore and Finale. Free, offline, no sign-up."
-short: "Tap-to-write notation on a grand staff: playback, PDF into your scores, MusicXML both ways."
+short: "Tap-to-write notation for a piano, a quartet or a choir: playback, PDF into your scores, MusicXML both ways."
 h1: "Compose"
-lede: "A grand staff that takes a tap where a pen would go. Choose the value, touch the line or the space, and the note is there — engraved, in time, ready to play back, print or hand to Sibelius."
+lede: "A staff that takes a tap where a pen would go — a piano's grand staff, a string quartet's four, a choir's. Choose the value, touch the line or the space, and the note is there — engraved, in time, ready to play back, print or hand to Sibelius."
 cta: "Open compose"
 ---
 
@@ -20,6 +20,8 @@ cta: "Open compose"
 
 **Mark it for the hands.** A Piano rail puts a pedal line (*Ped.* to the lift, with retakes), an *8va* or *8vb* line (the notes under it draw an octave lower or higher; the pitch is untouched) and fingering — a digit on each notehead, stamped on a selection or by tapping heads with the digit armed — where you tap.
 
+**Score it for an ensemble.** A piece starts as a piano, a voice and piano, a string quartet, a choir or a guitar, and the Instruments sheet adds, renames, reorders and removes instruments from a catalogue of twenty — up to twelve on sixteen staves. Families share a bracket, a keyboard keeps its brace, names stand before the first line and abbreviations after; the pedal belongs to the keyboard and a note crosses only within its own instrument. Everything is written at concert pitch and, for now, every instrument plays with the piano's sound.
+
 **Ornament it.** A second Notes rail turns grace notes on: the value you have armed becomes a small note before the next note you tap towards, slashed or plain, beamed when there are several; tremolo strokes, marcato and staccatissimo go on a selection.
 
 **And the rest of the page.** Hold a button for its family: ppp and fff behind pp and ff, sudden dynamics (sfz, fp) behind sf ▾, dashed *cresc.* lines and hairpins from nothing behind the hairpins, 15ma behind 8va, Ped. ✱ and Sost. Ped. behind Ped., beat units behind ♩ =, numbers or a word behind the rehearsal letter. A % repeats the bar before it; u.c. lays an *una corda* line; r.h. / l.h. mark the hands; the Notes rail adds portato, breath and caesura marks, trills with a wavy line or an accidental, inverted and delayed turns, and a stem flip and beam break (or join) for when the automatic engraving is not what you meant. The **Chords** rail writes chord symbols over the staff — *Am*, *B7/A*, *Bm7(♭5)*, *E7alt.* — from a root, a quality and an optional bass, or typed. All of it is heard: rit. and accel. shape the tempo, ornaments play as written, a fermata holds, a caesura pauses.
@@ -32,7 +34,7 @@ cta: "Open compose"
 
 **PDF.** The export sheet shows page one at the staff size you choose, on Letter or A4, with the margins and a title block, then saves the file to the device or shares it. *Add to Scores* puts the same PDF into your [Scores](/scores) library with the title, composer and tags, so the piece you wrote is the piece you practise, with bookmarks and Pencil ink like any other score; send it again after a change and the library copy is replaced in place.
 
-**MusicXML.** *Export MusicXML* writes a MusicXML 4.0 file — pitches, rhythms, chords, ties, tuplets, voices, cross-staff notes, key, time and clef changes, articulations, ornaments, dynamics, hairpins, text, tempo, pedal and octave lines, fingering, grace notes, tremolo, chord symbols, lyrics — that Sibelius, MuseScore, Finale and Dorico open. The reverse works too: **import** a `.musicxml`, `.xml` or compressed `.mxl` file from any of those programs (or from a scan you had recognised elsewhere) and it becomes a composition you can edit, play and print. What Compose cannot hold is set aside and named: parts beyond the piano.
+**MusicXML.** *Export MusicXML* writes a MusicXML 4.0 file — pitches, rhythms, chords, ties, tuplets, voices, cross-staff notes, key, time and clef changes, articulations, ornaments, dynamics, hairpins, text, tempo, pedal and octave lines, fingering, grace notes, tremolo, chord symbols, lyrics, every part with its name and bracket — that Sibelius, MuseScore, Finale and Dorico open. The reverse works too: **import** a `.musicxml`, `.xml` or compressed `.mxl` file from any of those programs (or from a scan you had recognised elsewhere) — a quartet, a choir, a song with piano — and it becomes a composition you can edit, play and print, every part kept. What Compose cannot hold is set aside and named: percussion and tablature, more than three staves to an instrument, a transposing part's transposition.
 
 ## Made for the glass
 

@@ -141,6 +141,16 @@ phase's card (WSHED-115 … 122).
 - [ ] Export PDF: the pickup bar is narrow on the page too. Export MusicXML → import on the list: the pickup and the closing bar come back short. Open the file in MuseScore / Dorico: a pickup measure, numbered from 1 after it.
 - [ ] Insert a bar before the pickup → the new bar is full and the pickup stays short; delete the bar after it → still short. Time → 6/8 from bar 1 → the stretch re-flows full (the cut has to be made again).
 
+## Parts — instruments and staves (WSHED-179, v128)
+
+- [ ] iPad, compositions list → start a composition, **for ▾** String quartet → four staves under one bracket, *Violin I / Violin II / Viola / Cello* before the first system, *Vln. I …* before the next, the viola in alto clef, the cello in bass; a piano piece started the same way is unchanged (brace, no name).
+- [ ] File ▾ → Instruments…: + add an instrument → Piano → a brace appears below the bracket, barlines break between the strings and the piano; ✕ on Violin II (no notes) → gone at once; tap a cello note first, then ✕ on Cello → the confirm names its bars; rename Cello → Violoncello shows on system 1; ▲ moves it; each is one undo step (undo ×4 restores the quartet exactly). Phone width: the sheet scrolls, nothing widens.
+- [ ] Tap a note on the viola, voice ▾: *cross to the upper / lower staff* disabled; on the piano's staves enabled. Piano rail on a quartet: Ped. and u.c. dark with the hint; add a piano → they wake; Ped. by three taps on a violin staff → "the pedal belongs to the piano".
+- [ ] Clef ▾ → alto, tap bar 3 of the cello → the toast says *alto clef on Cello from bar 3*.
+- [ ] Export PDF on the quartet: the size opens at 6.4 mm (5.6 mm from six staves), the preview shows the bracket, names and abbreviations, pages fill with whole systems; Layout: the barline handles span all four staves, a break and a weight work. A 12-staff piece at 10 mm: the fine print refuses and names the largest size that fits; − until it fits → save enabled.
+- [ ] Import a MuseScore string quartet (tests/fixtures/musicxml/quartet.musicxml) → four named parts, nothing dropped, no warning; Export MusicXML → MuseScore opens it with the same four parts under one bracket; the voice-piano fixture → voice with lyrics over a braced piano; the quintet → one warning about written pitch.
+- [ ] An existing piano piece opens unchanged (byte-identical layout), *instruments* in its details reads *Piano*; a real edit saves it as v4; another device still shows it.
+
 ## Lyrics (WSHED-173, v127)
 
 - [ ] iPad, Options ▾ → Rails → Lyrics: tap the field → the on-screen keyboard rises, the score pane shrinks (no page widening); tap the first note → it turns the accent colour and the field keeps the keyboard.

@@ -360,6 +360,20 @@ rule later); octave clefs (tenor voice's treble-8); percussion / TAB; MIDI expor
 
 ---
 
+## 7b · As built (v128, 2026-10-09) — where the landing differs from the plan
+
+- **One release** (Leif's call), branch `WSHED-179-parts`, in the order of §8.
+- `staffList` / `nStavesOf` / `partOfStaff` / `partStart` / `partGroup` live in **`model.js`** (layout's interim `staffList` and the deprecated `systemAt` export are gone); `groupsOf(doc, staffTop)` in `layout.js` computes `metrics.groups` and `metrics.barlineSpans`.
+- `removePart` / `setPartStaves` / `addPart` also run `uncrossOutside` + `cleanTies` / `cleanSlurs` / `cleanExpressions`; `setPartInstrument(doc, id, key, { resetClefs })` was added for the sheet (an empty part may take the new instrument's clefs); `partIsEmpty(doc, pi)` too.
+- Names keep clear of a **brace** as well as a bracket: on a named piece with a keyboard the left edge grows by the brace's width (`0.07 × height + 0.15`) — a solo piano is untouched.
+- A lone non-keyboard part of 2+ staves (not only `other`) gets its own bracket.
+- The sheet's instrument menu is a **native `<select>`** over its label (one picker that behaves on every device), not a custom menu; the staves control is a 1 · 2 · 3 segment; ▲▼ are chevrons.
+- The Piano rail's pedal / *una corda* go dark only when the piece has **no keyboard part**; on a non-keyboard staff the engine refuses the tap ("the pedal belongs to the piano"). The editor tracks no "active staff".
+- MusicXML export writes **barlines, repeats, endings and bar repeats on every part**; only the score directions (tempo, rehearsal, segno / coda, jumps) go on the first part. A solo piano writes the historic one-line part-list (the golden file is byte-identical).
+- MusicXML import warns `transposing parts were read at their written pitch` on a `<transpose>`.
+- `STAFF_MM` runs **1.0–2.5 mm** (1.4 before) so a 16-staff system still fits a page; the chosen size is remembered **per piece** (`store export.sizes`), the proposal applies on a piece's first export.
+- Fixtures are MuseScore-*shaped* but hand-authored (`tests/fixtures/musicxml/{quartet,voice-piano,quintet}.musicxml`) — no MuseScore runs on the build box; the MuseScore round trip on a desktop is on the QA list for Leif.
+
 ## 8 · Order of work, and what each story leaves working
 
 | story | lands | the app after it |

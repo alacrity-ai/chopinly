@@ -4,7 +4,7 @@ title: "What Compose is"
 section: start
 order: 1
 summary: "Music notation by tapping — nothing is guessed, and every bar adds up."
-keywords: [compose, notation, start, intro, what, piano, grand staff]
+keywords: [compose, notation, start, intro, what, piano, grand staff, instruments, parts, quartet]
 ---
 
 Compose is music notation you write by **tapping**. You arm a value on the Notes rail — a quarter, an eighth, a dotted half — and tap the staff. The note lands on the nearest line or space at the nearest slot of that value, and you hear it as it lands.
@@ -19,13 +19,13 @@ Compose is music notation you write by **tapping**. You arm a value on the Notes
 
 ## What you can write today
 
-A piano grand staff — treble and bass — with up to **four voices** on each staff and notes that cross between them. Values from the double whole to the 64th, with dots, ties and tuplets. Chords, accidentals, articulations and ornaments. Key, time and clef changes anywhere in the piece. Dynamics, hairpins, text and pedal on the beat and the half-beat. Repeats, endings, jumps, rehearsal marks and tempo changes. Grace notes, tremolo and trills. Pickup bars.
+Any set of instruments — a piano on its grand staff, a string quartet, voice and piano, a choir — up to twelve on sixteen staves (see [instruments and parts](help:instruments)), with up to **four voices** on each staff and notes that cross between an instrument's own staves. Values from the double whole to the 64th, with dots, ties and tuplets. Chords, accidentals, articulations and ornaments. Key, time and clef changes anywhere in the piece. Dynamics, hairpins, text and pedal on the beat and the half-beat. Repeats, endings, jumps, rehearsal marks and tempo changes. Grace notes, tremolo and trills. Pickup bars.
 
 It prints as a **vector PDF** — real outlines, not a picture of a page — which you can lay out bar by bar first, drop straight into your [Scores](app:scores) library, or send to a student. It reads and writes **MusicXML**, so a piece travels to Sibelius, MuseScore, Finale or Dorico and back.
 
 ## What is not here yet
 
-More than two staves, parts, and MIDI export. (Chord symbols arrived with [the Chords rail](help:rail-chords), lyrics with [the Lyrics rail](help:rail-lyrics).) The model is shaped like MusicXML, so each of those is an addition rather than a rewrite.
+A second instrument sound, transposing instruments at written pitch, printing one part alone, and MIDI export. (Chord symbols arrived with [the Chords rail](help:rail-chords), lyrics with [the Lyrics rail](help:rail-lyrics), ensembles with [instruments and parts](help:instruments).) The model is shaped like MusicXML, so each of those is an addition rather than a rewrite.
 
 ## Where to go next
 
