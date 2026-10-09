@@ -119,17 +119,18 @@ test("import: a pickup bar stays short (v113, §8.5p): a quarter's pickup is a q
   assert.deepEqual(nearly.warnings, ["the pickup bar was filled from the front"]);
 });
 
-test("import: a time-wise score with two single-staff parts becomes the upper and lower staff; a third part is ignored; title and composer read", () => {
+test("import: a time-wise score with three single-staff parts becomes three instruments (WSHED-183: every part is kept), named from the part-list; title and composer read", () => {
   const p = (id, s, o) => `<part id="${id}">${id === "P1" ? '<attributes><divisions>1</divisions><key><fifths>2</fifths></key><time><beats>2</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>' : id === "P2" ? '<attributes><divisions>1</divisions><clef><sign>F</sign><line>4</line></clef></attributes>' : '<attributes><divisions>1</divisions></attributes>'}<note><pitch><step>${s}</step><octave>${o}</octave></pitch><duration>2</duration><type>half</type></note></part>`;
   const xml = `<score-timewise version="4.0"><work><work-title>Two hands</work-title></work><identification><creator type="composer">Someone</creator><creator type="lyricist">Else</creator></identification><part-list><score-part id="P1"><part-name>RH</part-name></score-part><score-part id="P2"><part-name>LH</part-name></score-part><score-part id="P3"><part-name>Voice</part-name></score-part></part-list><measure number="1">${p("P1", "A", 4)}${p("P2", "D", 3)}${p("P3", "C", 4)}</measure></score-timewise>`;
   const { doc } = fromMusicXml(xml, { id: "t" });
   assert.equal(doc.title, "Two hands"); assert.equal(doc.composer, "Someone");
-  assert.deepEqual(doc.measures[0].key, { fifths: 2 }); assert.deepEqual(doc.measures[0].time, { beats: 2, unit: 4 }); assert.deepEqual(doc.measures[0].clefs, { 0: "treble", 1: "bass" });
-  assert.equal(pitches(doc, 0, 0), "A4"); assert.equal(pitches(doc, 0, 0, 1), "D3");
+  assert.deepEqual(doc.measures[0].key, { fifths: 2 }); assert.deepEqual(doc.measures[0].time, { beats: 2, unit: 4 }); assert.deepEqual(doc.measures[0].clefs, { 0: "treble", 1: "bass", 2: "treble" });
+  assert.deepEqual(doc.parts.map((p) => [p.id, p.name, p.instrument, p.staves, p.clefs]), [["p1", "RH", "other", 1, ["treble"]], ["p2", "LH", "other", 1, ["bass"]], ["p3", "Voice", "voice", 1, ["treble"]]], "a part's clefs are the first bar's");
+  assert.equal(pitches(doc, 0, 0), "A4"); assert.equal(pitches(doc, 0, 0, 1), "D3"); assert.equal(pitches(doc, 0, 0, 2), "C4");
   validate(doc);
 });
 
-test("import: a two-staff part among others is the one taken; voices are ranked per staff; a note on the other staff crosses", () => {
+test("import: a flute over a two-staff piano is two instruments (the piano's staves 2–3); voices are ranked per staff; a note on the piano's other staff crosses", () => {
   const m = `<note><pitch><step>C</step><octave>5</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type><staff>1</staff></note>
     <backup><duration>16</duration></backup>
     <note><pitch><step>E</step><octave>4</octave></pitch><duration>8</duration><voice>3</voice><type>half</type><staff>1</staff></note>
@@ -139,8 +140,10 @@ test("import: a two-staff part among others is the one taken; voices are ranked 
     <note><pitch><step>G</step><octave>3</octave></pitch><duration>8</duration><voice>5</voice><type>half</type><staff>1</staff></note>`;
   const xml = `<score-partwise version="4.0"><part-list><score-part id="V"><part-name>Flute</part-name></score-part><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="V"><measure number="1"><attributes><divisions>4</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>${note("A", 5, 16, "whole")}</measure></part>${score([m]).replace(/^[\s\S]*?<part id="P1">/, '<part id="P1">').replace(/<\/part>[\s\S]*$/, "</part>")}</score-partwise>`;
   const { doc } = fromMusicXml(xml, { id: "v" });
-  assert.equal(kinds(doc, 0, 0, 0), "n1"); assert.equal(kinds(doc, 0, 0, 1), "n2 r2", "voice 3 of the file is the upper staff's second voice");
-  assert.equal(kinds(doc, 0, 1, 0), "n2 n2"); assert.equal(doc.measures[0].staves[1].voices[0][1].cross, -1, "the G3 is drawn on the upper staff");
+  assert.deepEqual(doc.parts.map((p) => [p.name, p.instrument, p.staves]), [["Flute", "flute", 1], ["Piano", "piano", 2]]);
+  assert.equal(kinds(doc, 0, 0, 0), "n1"); assert.equal(pitches(doc, 0, 0, 0), "A5", "the flute is the first staff");
+  assert.equal(kinds(doc, 0, 1, 0), "n1"); assert.equal(kinds(doc, 0, 1, 1), "n2 r2", "voice 3 of the file is the piano's upper staff's second voice");
+  assert.equal(kinds(doc, 0, 2, 0), "n2 n2"); assert.equal(doc.measures[0].staves[2].voices[0][1].cross, -1, "the G3 is drawn on the piano's upper staff");
   validate(doc);
 });
 
