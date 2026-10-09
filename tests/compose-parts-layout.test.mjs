@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { loadUmd } from "../dev/lib/umd.mjs";
-import { newComposition } from "../js/lib/compose/model.js";
+import { newComposition, nStavesOf } from "../js/lib/compose/model.js";
 import { templateParts, partsFrom } from "../js/lib/compose/instruments.js";
 import { place, finger, addPart, setLyric, addExpression, slur, tie, crossStaff, setClef } from "../js/lib/compose/engine.js";
 import { layoutComposition, metricsOf, groupsOf, STAFF_GAP, PART_GAP, BRACKET_W } from "../js/lib/compose/layout.js";
@@ -147,4 +147,25 @@ test("paper: a quartet plans to pages with the taller block, the PDF renders wit
   const txt = Buffer.from(bytes).toString("latin1");
   assert.ok((txt.match(/\/Type \/Page(?!s)/g) ?? []).length === plan.pages.length);
   assert.ok(/\/Subtype \/Form/.test(txt), "glyph outlines are form XObjects");
+});
+
+test("paper (WSHED-185): a system taller than the page is tooTall and minStaffMm names the largest size that fits (monotone in the staff count); a quartet at 1.8 mm fits Letter; a 16-staff score needs 1.4 mm or less; the proposal steps down at 3 and 6 staves", async () => {
+  const { minStaffMm, proposedStaffMm, STAFF_MM } = await import("../js/lib/compose/export/pdf.js");
+  const q = fill(quartet(), 2);
+  assert.equal(planPages(q, { staffMm: 1.8, page: "letter" }).tooTall, false);
+  let big = newComposition({ id: "big", now: 1, parts: partsFrom(["organ", "organ", "organ", "organ", "organ"]).map((p, i) => ({ ...p, id: `p${i + 1}` })) }); // 15 staves
+  big = addPart(big, "voice"); // 16
+  assert.equal(nStavesOf(big), 16);
+  assert.equal(planPages(big, { staffMm: 2.5, page: "letter" }).tooTall, true);
+  const fit = minStaffMm(big, { page: "letter", margins: "normal" });
+  assert.ok(fit !== null && fit <= 1.4, `16 staves fit at ${fit}`);
+  assert.equal(planPages(big, { staffMm: fit, page: "letter" }).tooTall, false);
+  assert.equal(planPages(big, { staffMm: STAFF_MM[STAFF_MM.indexOf(fit) + 1], page: "letter" }).tooTall, true, "the next size up runs off the page");
+  let prev = Infinity;
+  for (const parts of [["piano"], ["violin", "viola", "cello"], ["organ", "organ"], ["organ", "organ", "organ"], ["organ", "organ", "organ", "organ", "organ"]]) {
+    const d = newComposition({ id: "m", now: 1, parts: partsFrom(parts) });
+    const mm = minStaffMm(d, { page: "a4", margins: "wide" });
+    assert.ok(mm === null || mm <= prev, "monotone"); prev = mm ?? prev;
+  }
+  assert.deepEqual([1, 2, 3, 5, 6, 16].map(proposedStaffMm), [1.8, 1.8, 1.6, 1.6, 1.4, 1.4]);
 });
