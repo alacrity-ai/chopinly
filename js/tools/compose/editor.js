@@ -27,6 +27,7 @@ import { ticks as ticksOf, capacity, groupSize, exprGrid, WHOLE } from "../../li
 import { CLEFS } from "../../lib/music.js";
 import { buildRails, MAIN_BASES, MORE_BASES, KEYS, RAILS, DEFAULT_RAILS, JUMP_LABEL, HANDS, durName, tupletName } from "./rails.js";
 import { openCompositionDetails } from "./details.js";
+import { openInstrumentsSheet } from "./instruments.js";
 import { openExportSheet } from "./exportsheet.js";
 import { saveFile } from "./savefile.js";
 import { createFavorites } from "./favorites.js";
@@ -44,7 +45,7 @@ const LINE_NAME = { pedal: "pedal", 1: "8va", "-1": "8vb", "1:15": "15ma", "-1:1
 const PEDAL_STYLES = ["line", "sign", "sost"], TEMPO_UNIT_BASES = [2, 4, 8];
 let clipboard = null; // the copied phrase — lives for the session, so it can travel between compositions
 
-export function openEditor({ id, ctx, onClose }) {
+export function openEditor({ id, ctx, onClose, then = null }) {
   const stored = logbook.composition(id);
   if (!stored) { toast("that composition is gone"); onClose?.(); return null; }
   const c = upgrade(stored); // a v1 / v2 piece: its note-attached marks become expressions (docs/COMPOSE_EXPRESSIONS_DESIGN.md §1.1)
@@ -178,7 +179,7 @@ export function openEditor({ id, ctx, onClose }) {
   function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(flush, SAVE_MS); }
   function flush() {
     clearTimeout(saveTimer); if (!dirty || closed && !doc) return;
-    put({ measures: doc.measures, v: doc.v }); dirty = false; // the schema travels with the measures (an upgraded piece is persisted by its first real edit)
+    put({ measures: doc.measures, parts: doc.parts, v: doc.v }); dirty = false; // the schema and the parts travel with the measures (an upgraded piece is persisted by its first real edit; the Instruments sheet changes both at once, WSHED-182)
     // a piece past the sync cap is kept here but no longer follows the account — say so once
     if (!warnedBig && !logbook.compositionSyncable(held)) { warnedBig = true; toast("this piece is now too big to back up — it stays on this device"); }
   }
@@ -941,7 +942,12 @@ export function openEditor({ id, ctx, onClose }) {
       case "back": close(); return;
       case "details": { // title · composer · tags in the shared modal; the header follows a rename, a delete leaves the editor
         flush();
-        openCompositionDetails(id).then((r) => { if (closed) return; if (r.deleted) { close(); return; } if (r.saved) { title = r.saved.title; composer = r.saved.composer ?? ""; held = logbook.composition(id); const { subtitle: _old, ...rest } = doc; doc = history.replace({ ...rest, title, ...(r.saved.subtitle ? { subtitle: r.saved.subtitle } : {}), composer, tags: [...(r.saved.tags ?? [])] }); el.setAttribute("aria-label", heading()); sync(); } }); // the working document carries the identity too (it is a snapshot of its own since v104, not the stored object)
+        openCompositionDetails(id).then((r) => { if (closed) return; if (r.deleted) { close(); return; } if (r.instruments) { act("instruments"); return; } if (r.saved) { title = r.saved.title; composer = r.saved.composer ?? ""; held = logbook.composition(id); const { subtitle: _old, ...rest } = doc; doc = history.replace({ ...rest, title, ...(r.saved.subtitle ? { subtitle: r.saved.subtitle } : {}), composer, tags: [...(r.saved.tags ?? [])] }); el.setAttribute("aria-label", heading()); sync(); } }); // the working document carries the identity too (it is a snapshot of its own since v104, not the stored object)
+        return;
+      }
+      case "instruments": { // the piece's parts (docs/COMPOSE_PARTS_DESIGN.md §3, WSHED-182): each change is one engine operation, one undo step
+        flush(); if (lyric.armed) lyricLeave();
+        openInstrumentsSheet({ getDoc: () => doc, apply: (fn) => { const next = fn(doc); if (next === doc) return; selection.clear(); pending = null; commit(next); pruneSelection(); sync(); } });
         return;
       }
       case "export-pdf": case "save-pdf": { // the export sheet: size, page, margins, header, preview → Save PDF / Add to Scores (WSHED-121)
@@ -1343,13 +1349,14 @@ export function openEditor({ id, ctx, onClose }) {
   // marks are centred on measured ink; if Bravura is not in yet the first render centred their advance box — lay out again once it is
   if (document.fonts && !document.fonts.check('1em "Bravura"')) document.fonts.load('1em "Bravura"').then(() => { if (!closed) layout(); }, () => {});
   toast(`${durName(armed.base)} armed — tap the staff`);
+  if (then?.instruments) queueMicrotask(() => { if (!closed) act("instruments"); }); // a new piece "for … choose…" (WSHED-182)
 
   function close({ silent = false } = {}) {
     if (closed) return;
     closed = true;
     flush();
     const trimmed = trimBars(doc, { forEditing: true }); // one empty bar stays to write into; a file ends at the music (WSHED-132)
-    if (trimmed.measures.length !== doc.measures.length && logbook.composition(id)) put({ measures: trimmed.measures, v: doc.v });
+    if (trimmed.measures.length !== doc.measures.length && logbook.composition(id)) put({ measures: trimmed.measures, parts: doc.parts, v: doc.v });
     offRemote();
     document.removeEventListener("keydown", onKey);
     window.removeEventListener("resize", onResize);

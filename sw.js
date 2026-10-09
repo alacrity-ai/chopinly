@@ -99,6 +99,7 @@ const SHELL = [
   "/js/tools/compose/savefile.js",
   "/js/tools/compose/favorites.js",
   "/js/tools/compose/help.js",
+  "/js/tools/compose/instruments.js",
   "/js/lib/help/content.js",
   "/js/lib/help/search.js",
   "/js/lib/help/figures.js",

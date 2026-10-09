@@ -85,7 +85,7 @@ const hairpinRows = (kind) => { const cresc = kind === "cresc"; return [`<button
 /** The voice menu (hold a voice button, or ▾ at phone width): rows are enabled by what the selection allows. */
 const VOICE_ROWS = [...[0, 1, 2, 3].map((v) => ["voice", `voice ${v + 1}`, { v }]), ["voice-swap", "swap 1 ↔ 2 in these bars", {}], ["cross", "cross to the upper staff", { dir: -1 }], ["cross", "cross to the lower staff", { dir: 1 }], ["hide-rest", "hide rest", {}]];
 /** The File menu: the two PDF rows open the export sheet (WSHED-121); MusicXML / MIDI wait for WSHED-119. */
-const FILE_ITEMS = [["save-pdf", "Save to Scores as PDF", true], ["export-pdf", "Export PDF", true], ["export-xml", "Export MusicXML", true], ["export-midi", "Export MIDI", false]];
+const FILE_ITEMS = [["instruments", "Instruments…", true], ["save-pdf", "Save to Scores as PDF", true], ["export-pdf", "Export PDF", true], ["export-xml", "Export MusicXML", true], ["export-midi", "Export MIDI", false]]; // Instruments… since WSHED-182: the piece's parts
 
 export function buildRails(host, { title, onAction, onCapture }) {
   host.innerHTML = `
