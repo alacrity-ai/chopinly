@@ -7,7 +7,7 @@ summary: "One grammar behind every button on every rail — arm it, or act on th
 keywords: [rail, rails, button, buttons, grammar, arm, armed, hold, menu, caption, lane, scroll]
 ---
 
-There are eight rails. Whichever you have showing, every button on them obeys the same three rules.
+There are nine rails. Whichever you have showing, every button on them obeys the same three rules.
 
 ![One rail: its caption, its buttons, and a corner that means "hold for more".](figure:anatomy-rail)
 

@@ -253,6 +253,7 @@ test("hit-testing: a syllable answers as a lyric with its note and verse; the la
   const L = layoutComposition(d, { unit: 12, width: 1024 });
   const ly = L.lyrics[1];
   const t = thingAt(L, ly.x, ly.y - 0.4);
+  assert.equal(ly.id, `${ly.ev}:l1`);
   assert.equal(t.type, "lyric"); assert.equal(t.ev, ly.id); assert.equal(t.note, ly.ev); assert.equal(t.n, 1);
   assert.equal(things(L).filter((x) => x.type === "lyric").length, 4);
   // the painter: four cp-lyric groups, one hyphen text, one extender line, all upright

@@ -747,7 +747,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
   const lyricW = (text) => 0.58 * LYRIC_SIZE * text.length; // the layout's estimate of the serif advance (the painters measure for real)
   for (const r of runs) {
     const placed = r.items.filter(drawsLyric).map((it) => ({ it, d: byId.get(it.ev.id) })).filter(({ d }) => d && !d.rest);
-    const ly = placed.map(({ it, d }) => { const w = lyricW(it.lyric.text), x = d.x + d.headW / 2; return { id: `${it.ev.id}:${r.n}`, ev: it.ev.id, bar: it.bar, staff: r.staff, voice: it.voice, n: r.n, x, y: lyricLine(d.system, r.staff, r.n), text: it.lyric.text, w, system: d.system, syl: it.lyric.syl ?? "single", ext: !!it.lyric.ext, d, it }; });
+    const ly = placed.map(({ it, d }) => { const w = lyricW(it.lyric.text), x = d.x + d.headW / 2; return { id: `${it.ev.id}:l${r.n}`, ev: it.ev.id, bar: it.bar, staff: r.staff, voice: it.voice, n: r.n, x, y: lyricLine(d.system, r.staff, r.n), text: it.lyric.text, w, system: d.system, syl: it.lyric.syl ?? "single", ext: !!it.lyric.ext, d, it }; });
     lyrics.push(...ly.map(({ d, it, ...o }) => o));
     ly.forEach((a, k) => {
       const b = ly[k + 1];

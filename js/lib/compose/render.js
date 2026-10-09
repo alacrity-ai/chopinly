@@ -181,6 +181,11 @@ export function renderComposition(container, L) {
         for (const hg of g.querySelectorAll(".cp-head-g")) hg.classList.toggle("sel", whole || ids.has(`${id}:${hg.dataset.pi}`));
       }
     },
+    /** The lyric cursor (WSHED-177): the note whose syllable the Lyrics rail is writing, or null. */
+    setCursor(evId) {
+      for (const g of svg.querySelectorAll(".cp-ev.cursor")) g.classList.remove("cursor");
+      if (evId) for (const g of groups.get(evId) ?? []) g.classList.add("cursor");
+    },
     /** The end handles of a selected hairpin: [{ x, y }, …] in S, or null to hide. */
     showHandles(points) {
       if (!points?.length) { handles.setAttribute("hidden", ""); return; }

@@ -69,7 +69,7 @@ test("the help is reachable and the route is what the app uses", () => {
 // fails this test until somebody writes the sentence.
 const RAIL_ARTICLE = {
   control: "rail-controls", transport: "rail-transport", palette: "rail-notes", utility: "rail-keys",
-  expression: "rail-dynamics", form: "rail-form", piano: "rail-piano", notes2: "rail-marks", chords: "rail-chords",
+  expression: "rail-dynamics", form: "rail-form", piano: "rail-piano", notes2: "rail-marks", chords: "rail-chords", lyrics: "rail-lyrics",
   header: "options", // the header's own controls are documented with the Options panel
 };
 /** Buttons documented somewhere other than their rail's own article. */
@@ -98,6 +98,8 @@ const ACT_WORDS = {
   grace: "Grace", "grace-chord": "grace-chord", trem: "Tremolo", stem: "stem", beam: "beam",
   // chords (WSHED-166)
   "chord-arm": "armed", "chord-root": "root", "chord-acc": "♭", "chord-q": "quality", "chord-slash": "Slash chords", "chord-set": "type…",
+  // lyrics (WSHED-177)
+  "lyric-verse": "verse", "lyric-commit": "melisma", "lyric-move": "←", "lyric-clear": "clear",
 };
 
 test("every rail has an article, and every button on a rail is named in it", () => {

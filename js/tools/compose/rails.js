@@ -50,12 +50,12 @@ const GLISS_ROWS = [["start", "╱●", "to the next note"], ["up", "╱", "up �
 /** What the mark buttons say; a mark not listed reads as its id. */
 const MARK_NAMES = { lowerMordent: "lower mordent — the one with the line through it" };
 /** The rails a reader can show or hide, in order — the header that holds the menu is not one of them. */
-export const RAILS = [["control", "Controls"], ["transport", "Transport"], ["palette", "Notes"], ["utility", "Key · time · clef · marks"], ["expression", "Dynamics · hairpins · text"], ["form", "Form · repeats · tempo"], ["piano", "Piano · pedal · 8va · fingering"], ["notes2", "Grace · tremolo · marks"], ["chords", "Chord symbols"]]; // expression marks arm a cursor and land on half-beats (docs/COMPOSE_EXPRESSIONS_DESIGN.md)
+export const RAILS = [["control", "Controls"], ["transport", "Transport"], ["palette", "Notes"], ["utility", "Key · time · clef · marks"], ["expression", "Dynamics · hairpins · text"], ["form", "Form · repeats · tempo"], ["piano", "Piano · pedal · 8va · fingering"], ["notes2", "Grace · tremolo · marks"], ["chords", "Chord symbols"], ["lyrics", "Lyrics"]]; // expression marks arm a cursor and land on half-beats (docs/COMPOSE_EXPRESSIONS_DESIGN.md)
 /** Pen | Touch (v101): the switch exists only where a finger can touch the score. */
 const TOUCHY = typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
 /** The captions on the palette rails (v100): the word that says which rail this is, sticky at the left while the rail scrolls. */
-const CAPTIONS = { palette: "Notes", utility: "Key · time", expression: "Dynamics", form: "Form", piano: "Piano", notes2: "Marks", chords: "Chords" };
-export const DEFAULT_RAILS = { control: true, transport: true, palette: true, utility: false, expression: false, form: false, piano: false, notes2: false, chords: false };
+const CAPTIONS = { palette: "Notes", utility: "Key · time", expression: "Dynamics", form: "Form", piano: "Piano", notes2: "Marks", chords: "Chords", lyrics: "Lyrics" };
+export const DEFAULT_RAILS = { control: true, transport: true, palette: true, utility: false, expression: false, form: false, piano: false, notes2: false, chords: false, lyrics: false };
 /** The Chords rail (docs/COMPOSE_CHORDS_DESIGN.md §2, WSHED-166): the symbol being built, as HTML — ♭ / ♯ in the music font, a raised alteration small. */
 export const chordHtml = (c) => {
   const acc = (a) => (a ? `<span class="cp-ch-acc">${{ "-2": "𝄫", "-1": "♭", 1: "♯", 2: "𝄪" }[a]}</span>` : "");
@@ -260,6 +260,23 @@ export function buildRails(host, { title, onAction, onCapture }) {
         </span>
       </span>
     </div>
+    <div class="cp-rail cp-lyrics" id="cp-lyrics" role="toolbar" aria-label="lyrics — tap a note, type its syllable, then − space or — to move on" data-rail="lyrics" hidden>
+      <span class="cp-more-wrap">
+        <button type="button" class="cp-btn cp-pick cp-verse-pick" data-pop="cp-verse-more" data-n="1" aria-label="verse — the one you are writing; with syllables selected, the one they move to" aria-expanded="false"><span class="cp-pick-label">verse</span><b class="cp-verse-n">1</b>${CHEV}</button>
+        <span class="cp-more cp-menu" id="cp-verse-more" hidden>${[1, 2, 3, 4].map((n) => `<button type="button" class="cp-btn cp-menu-row cp-verse-row" data-act="lyric-verse" data-n="${n}" aria-pressed="false"><span>verse ${n}</span><small></small></button>`).join("")}</span>
+      </span>
+      <input class="cp-text-in cp-lyric-in" id="cp-lyric-in" type="text" maxlength="40" placeholder="tap a note, then type" aria-label="the syllable under the note" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="next">
+      <span class="cp-group" role="group" aria-label="commit the syllable and move to the next note">
+        <button type="button" class="cp-btn cp-sq cp-lyric-key" data-act="lyric-commit" data-key="hyphen" aria-label="hyphen — the word goes on to the next note"><b>-</b></button>
+        <button type="button" class="cp-btn cp-sq cp-lyric-key" data-act="lyric-commit" data-key="space" aria-label="space — the word ends here"><span class="cp-lyric-space" aria-hidden="true">␣</span></button>
+        <button type="button" class="cp-btn cp-sq cp-lyric-key" data-act="lyric-commit" data-key="melisma" aria-label="melisma — the syllable is sung on through the notes that follow"><b>—</b></button>
+      </span>
+      <span class="cp-group" role="group" aria-label="move along the voice">
+        <button type="button" class="cp-btn cp-sq cp-lyric-key" data-act="lyric-move" data-dir="-1" aria-label="the previous note">${icon("back")}</button>
+        <button type="button" class="cp-btn cp-sq cp-lyric-key cp-lyric-fwd" data-act="lyric-move" data-dir="1" aria-label="the next note">${icon("back")}</button>
+      </span>
+      <button type="button" class="cp-btn cp-lyric-clear" data-act="lyric-clear" aria-label="clear this verse's syllable from the note"><span>clear</span></button>
+    </div>
     <div class="cp-rail cp-form" id="cp-form" role="toolbar" aria-label="barlines, repeats, endings, jumps, rehearsal marks and tempo" data-rail="form" hidden>
       <span class="cp-more-wrap">
         <button type="button" class="cp-btn cp-pick" data-pop="cp-bar-more" aria-label="barline — pick one, then tap the bar" aria-expanded="false" aria-pressed="false"><span class="cp-pick-label">Barline</span>${pickIc(`<span class="cp-glyph cp-glyph-xs">${G.barDouble}</span>`)}<span class="cp-pick-val cp-bar-val" id="cp-bar-val"></span>${CHEV}</button>
@@ -391,7 +408,12 @@ export function buildRails(host, { title, onAction, onCapture }) {
     let left = r.left + r.width / 2 > innerWidth / 2 ? r.right - mw : r.left;
     left = Math.max(pad, Math.min(left, innerWidth - mw - pad));
     let top = r.bottom + 6;
-    if (top + mh > innerHeight - pad) top = Math.max(pad, innerHeight - mh - pad);
+    m.style.maxHeight = "";
+    if (top + mh > innerHeight - pad) {
+      // a tall menu (Options ▾ with its ten rail rows, WSHED-177) stays under its button and scrolls, so the button that closes it is never covered; a short one near the bottom slides up
+      if (innerHeight - pad - top >= 160 && getComputedStyle(m).overflowY === "auto") m.style.maxHeight = `${innerHeight - pad - top}px`;
+      else top = Math.max(pad, innerHeight - mh - pad);
+    }
     m.style.left = `${left}px`; m.style.top = `${top}px`;
     m.style.setProperty("--ox", `${Math.max(0, Math.min(mw, r.left + r.width / 2 - left)).toFixed(1)}px`);
   };
@@ -445,6 +467,10 @@ export function buildRails(host, { title, onAction, onCapture }) {
     if (act === "chord-acc") { onAction("chord-acc", Number(b.dataset.alter)); return; }
     if (act === "chord-q") { onAction("chord-q", b.dataset.q); return; }
     if (act === "chord-set") { const inp = host.querySelector("#cp-chord-in"); onAction("chord-set", inp.value); inp.value = ""; inp.blur(); return; }
+    if (act === "lyric-verse") { onAction("lyric-verse", Number(b.dataset.n)); return; } // the Lyrics rail (WSHED-177)
+    if (act === "lyric-commit") { onAction("lyric-commit", { key: b.dataset.key, text: lyricIn.value }); return; }
+    if (act === "lyric-move") { onAction("lyric-move", { dir: Number(b.dataset.dir), text: lyricIn.value }); return; }
+    if (act === "lyric-clear") { onAction("lyric-clear"); return; }
     if (act === "acc") { onAction("acc", Number(b.dataset.alter)); return; }
     if (act === "voice") { onAction("voice", Number(b.dataset.v)); return; }
     if (act === "cross") { onAction("cross", Number(b.dataset.dir)); return; }
@@ -484,6 +510,24 @@ export function buildRails(host, { title, onAction, onCapture }) {
   { const inp = host.querySelector("#cp-text-in");
     inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); closeMore(); onAction("text", inp.value); inp.value = ""; inp.blur(); } else if (e.key === "Escape") { closeMore(); inp.blur(); } }); // the words are armed: focus leaves the box so the pen (and Escape) go to the staff
     inp.addEventListener("pointerdown", (e) => e.stopPropagation()); }
+  // the Lyrics rail's field (docs/COMPOSE_LYRICS_DESIGN.md §4.1): - and Space commit and move on (a syllable never holds a space),
+  // Enter = space, Shift+Space = melisma, the arrows move, Backspace on an empty field steps back, Escape leaves
+  const lyricIn = host.querySelector("#cp-lyric-in");
+  lyricIn.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    const commit = (key) => { e.preventDefault(); onAction("lyric-commit", { key, text: lyricIn.value }); };
+    if (e.key === "-" || e.key === "‐" || e.key === "–") commit("hyphen");
+    else if (e.key === " " || e.code === "Space") commit(e.shiftKey ? "melisma" : "space");
+    else if (e.key === "Enter") commit("space");
+    else if (e.key === "_" || e.key === "—") commit("melisma");
+    else if (e.key === "ArrowLeft" || e.key === "ArrowRight") { if (e.key === "ArrowRight" ? lyricIn.selectionEnd >= lyricIn.value.length : lyricIn.selectionStart === 0) { e.preventDefault(); onAction("lyric-move", { dir: e.key === "ArrowLeft" ? -1 : 1, text: lyricIn.value }); } }
+    else if (e.key === "Backspace" && !lyricIn.value) { e.preventDefault(); onAction("lyric-move", { dir: -1, text: "" }); }
+    else if (e.key === "Escape") { e.preventDefault(); onAction("lyric-leave", { text: lyricIn.value }); lyricIn.blur(); }
+    else if (e.key === "Tab") { commit(e.shiftKey ? "hyphen" : "space"); }
+  });
+  lyricIn.addEventListener("focus", () => onAction("lyric-arm"));
+  for (const b of host.querySelectorAll(".cp-lyric-key, .cp-lyric-clear, .cp-verse-pick, .cp-verse-row")) b.addEventListener("pointerdown", (e) => { if (document.activeElement === lyricIn) e.preventDefault(); }); // the keys never take the keyboard away from the field
+  lyricIn.addEventListener("pointerdown", (e) => e.stopPropagation());
   const onDocDown = (e) => { if (![...host.querySelectorAll(".cp-more-wrap")].some((w) => w.contains(e.target))) closeMore(); };
   document.addEventListener("pointerdown", onDocDown);
   const onResize = () => { closeMore(); flagAll(); };
@@ -506,6 +550,14 @@ export function buildRails(host, { title, onAction, onCapture }) {
 
   return {
     destroy() { document.removeEventListener("pointerdown", onDocDown); removeEventListener("resize", onResize); ro?.disconnect(); },
+    /** The Lyrics rail's field (WSHED-177): set its text (the cursor note's syllable) and, when asked, focus it — the editor calls this on every cursor move, never on a plain sync, so typing is never overwritten. */
+    lyricField({ text, focus = false, select = false } = {}) {
+      if (text !== undefined && lyricIn.value !== text) lyricIn.value = text;
+      if (focus && document.activeElement !== lyricIn) { try { lyricIn.focus({ preventScroll: true }); } catch { lyricIn.focus(); } }
+      if (select) lyricIn.select(); else if (focus || document.activeElement === lyricIn) { const n = lyricIn.value.length; try { lyricIn.setSelectionRange(n, n); } catch { /* not a text field */ } }
+    },
+    get lyricText() { return lyricIn.value; },
+    get lyricFocused() { return document.activeElement === lyricIn; },
     /** The playhead: { pos, total, bar, bars, playing?, bpm? } — called every frame while playing, so it touches only what changed. */
     transport({ pos: t, total, bar, bars, playing, bpm }) {
       if (total !== undefined && Number(pos.max) !== total) pos.max = String(total);
@@ -515,7 +567,7 @@ export function buildRails(host, { title, onAction, onCapture }) {
       if (bpm !== undefined) host.querySelector("#cp-bpm").textContent = String(bpm);
     },
     /** Reflect the editor's state: { armed, mode, canUndo, canRedo, hasSelection, title }. */
-    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, rails = DEFAULT_RAILS, pending = null, title, voice = 0, used = new Set([0]), sel = {}, tempoUnit = { base: 4, dots: 0 }, hands = "en", pedalStyle = "line", input = "touch", gesture = false, favorites = false, chord = { root: { step: "C", alter: 0 }, q: "" }, chordSlash = false, gliss = "start" }) {
+    update({ armed, mode, canUndo, canRedo, hasSelection, hasClip = false, pasting = false, tupletN = 3, rails = DEFAULT_RAILS, pending = null, title, voice = 0, used = new Set([0]), sel = {}, tempoUnit = { base: 4, dots: 0 }, hands = "en", pedalStyle = "line", input = "touch", gesture = false, favorites = false, chord = { root: { step: "C", alter: 0 }, q: "" }, chordSlash = false, gliss = "start", lyric = { n: 1, cursor: false, used: new Set() } }) {
       let shown = false;
       // the Options ▾ panel (v116, §8.5q): Pen | Touch (v101, §8.5i), Gesture (v102, §8.5j) and Favorites (v109, §8.5o) mirror the editor's state
       for (const b of host.querySelectorAll(".cp-inp")) b.setAttribute("aria-pressed", String(b.dataset.input === input));
@@ -601,6 +653,12 @@ export function buildRails(host, { title, onAction, onCapture }) {
         for (const b of host.querySelectorAll(".cp-chord-acc")) on(b, Number(b.dataset.alter) === acc);
         for (const b of host.querySelectorAll(".cp-chord-q")) on(b, b.dataset.q === chord.q);
         on(host.querySelector(".cp-chord-slash"), chordSlash || !!chord.bass); }
+      // the Lyrics rail (WSHED-177): the verse being written on its picker; the menu's rows — used verses in full ink; the keys live while a note holds the cursor (or syllables are selected)
+      { const pick = host.querySelector(".cp-verse-pick"); pick.dataset.n = String(lyric.n); pick.querySelector(".cp-verse-n").textContent = String(lyric.n);
+        for (const r of host.querySelectorAll(".cp-verse-row")) { const n = Number(r.dataset.n); r.setAttribute("aria-pressed", String(n === lyric.n)); r.classList.toggle("cp-unused", n !== lyric.n && !lyric.used.has(n)); r.querySelector("small").textContent = sel.lyrics ? (n === lyric.n ? "here" : "move") : n === lyric.n ? "writing" : lyric.used.has(n) ? "write" : "write (new)"; }
+        for (const b of host.querySelectorAll(".cp-lyric-key, .cp-lyric-clear")) b.disabled = !lyric.cursor;
+        lyricIn.placeholder = sel.lyrics ? "retype the syllable, Enter" : lyric.cursor ? "type the syllable" : "tap a note, then type";
+        host.querySelector(".cp-lyrics").classList.toggle("cp-lyrics-on", !!lyric.cursor); }
       // the open glissando (WSHED-167): the gliss. button names the one a tap sets
       for (const r of host.querySelectorAll(".cp-gliss-row")) r.setAttribute("aria-pressed", String(r.dataset.mode === gliss));
       // the Piano rail (WSHED-125): the armed line or finger is lit

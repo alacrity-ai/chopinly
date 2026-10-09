@@ -54,6 +54,17 @@ With a selection these retype it; with nothing selected they arm. That is [the o
 | `Space` | play / pause |
 | `Home` | stop |
 
+## In the Lyrics rail's field
+
+| key | does |
+|---|---|
+| `-` | commit the syllable as part of a word, move to the next note |
+| `Space` `Enter` | commit it as the end of a word (or a whole one), move on |
+| `Shift` `Space` `_` | commit it as a melisma — sung on through the notes that follow |
+| `←` `→` | the previous / next note of the voice |
+| `Backspace` on an empty field | back to the previous note |
+| `Esc` | leave — an unfinished syllable is kept |
+
 ## Help
 
 | key | does |

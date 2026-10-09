@@ -32,7 +32,7 @@ cta: "Open compose"
 
 **PDF.** The export sheet shows page one at the staff size you choose, on Letter or A4, with the margins and a title block, then saves the file to the device or shares it. *Add to Scores* puts the same PDF into your [Scores](/scores) library with the title, composer and tags, so the piece you wrote is the piece you practise, with bookmarks and Pencil ink like any other score; send it again after a change and the library copy is replaced in place.
 
-**MusicXML.** *Export MusicXML* writes a MusicXML 4.0 file — pitches, rhythms, chords, ties, tuplets, voices, cross-staff notes, key, time and clef changes, articulations, ornaments, dynamics, hairpins, text, tempo, pedal and octave lines, fingering, grace notes, tremolo, chord symbols — that Sibelius, MuseScore, Finale and Dorico open. The reverse works too: **import** a `.musicxml`, `.xml` or compressed `.mxl` file from any of those programs (or from a scan you had recognised elsewhere) and it becomes a composition you can edit, play and print. What Compose cannot hold is set aside and named: lyrics.
+**MusicXML.** *Export MusicXML* writes a MusicXML 4.0 file — pitches, rhythms, chords, ties, tuplets, voices, cross-staff notes, key, time and clef changes, articulations, ornaments, dynamics, hairpins, text, tempo, pedal and octave lines, fingering, grace notes, tremolo, chord symbols, lyrics — that Sibelius, MuseScore, Finale and Dorico open. The reverse works too: **import** a `.musicxml`, `.xml` or compressed `.mxl` file from any of those programs (or from a scan you had recognised elsewhere) and it becomes a composition you can edit, play and print. What Compose cannot hold is set aside and named: parts beyond the piano.
 
 ## Made for the glass
 

@@ -2367,7 +2367,15 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-svg .cp-lyric-text { font: 500 1em var(--serif); fill: var(--fg); } /* lyrics (WSHED-176): upright serif under the staff; hyphens and extenders in the same ink */
 .cp-svg .cp-lyric-ext { stroke: var(--fg); stroke-width: 1.2px; }
 .cp-svg .cp-lyric.sel .cp-lyric-text { fill: var(--hi); }
-.cp-svg .cp-lyric.cursor .cp-lyric-text { fill: var(--accent); } /* the Lyrics rail's cursor sits on this syllable's note (WSHED-177) */
+.cp-svg .cp-ev.cursor .head, .cp-svg .cp-ev.cursor .stem, .cp-svg .cp-ev.cursor .head-part { fill: var(--accent); } /* the Lyrics rail's cursor: the note whose syllable is being written (WSHED-177) */
+.cp-svg .cp-ev.cursor .halo { fill: color-mix(in srgb, var(--accent) 22%, transparent); }
+.cp-lyrics .cp-lyric-in { width: 9.5rem; flex: none; height: 2.4rem; font-style: normal; }
+.cp-lyrics .cp-lyric-key b { font: 700 1.15rem var(--serif); }
+.cp-lyrics .cp-lyric-space { font: 500 1.05rem var(--sans); }
+.cp-lyrics .cp-lyric-fwd svg { transform: scaleX(-1); }
+.cp-lyrics .cp-lyric-clear { padding: 0 0.7rem; }
+.cp-verse-pick b { font: 700 1.1rem var(--sans); min-width: 1.1ch; text-align: center; }
+.cp-verse-row.cp-unused { opacity: 0.55; }
 /* expressions are selectable things (WSHED-122): the selected one takes the highlight; a selected hairpin's end handles ride the overlay; ghosts are faint */
 .cp-svg .cp-expr.sel .cp-dyn, .cp-svg .cp-expr.sel .cp-expr-text { fill: var(--hi); }
 .cp-svg .cp-expr.sel .cp-hairpin { stroke: var(--hi); }

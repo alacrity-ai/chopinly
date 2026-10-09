@@ -100,14 +100,24 @@ await settle(700);
 await shoot("editor", ".cp-editor");
 
 // ---- one shot per rail ----------------------------------------------------
-const RAILS = ["control", "transport", "palette", "utility", "expression", "form", "piano", "notes2", "chords"];
-const RAIL_SHOT = { control: "rail-controls", transport: "rail-transport", palette: "rail-notes", utility: "rail-keys", expression: "rail-dynamics", form: "rail-form", piano: "rail-piano", notes2: "rail-marks", chords: "rail-chords" };
+const RAILS = ["control", "transport", "palette", "utility", "expression", "form", "piano", "notes2", "chords", "lyrics"];
+const RAIL_SHOT = { control: "rail-controls", transport: "rail-transport", palette: "rail-notes", utility: "rail-keys", expression: "rail-dynamics", form: "rail-form", piano: "rail-piano", notes2: "rail-marks", chords: "rail-chords", lyrics: "rail-lyrics" };
 for (const key of RAILS) {
   if (!want(RAIL_SHOT[key])) continue;
   await railOn(key, true);
   await options(null, { close: true });
+  if (key === "lyrics") { // the Lyrics rail is shot live (WSHED-177): the field focused, the cursor on bar 1's first note with "Glo" under it
+    await page.evaluate(() => { const ed = document.querySelector(".cp-editor").__editor; const f = ed.state.doc.measures[0].staves[0].voices[0].find((e) => e.kind === "note"); return f.id; });
+    await page.click("#cp-lyric-in");
+    const pt = await page.evaluate(() => document.querySelector(".cp-editor").__editor.pointFor({ bar: 0, staff: 0, ticks: 0, step: 2 }));
+    await page.mouse.click(pt.x, pt.y);
+    await page.keyboard.type("Glo");
+    await page.keyboard.press("-");
+    await page.keyboard.type("ry");
+  }
   await settle();
   await shoot(RAIL_SHOT[key], `.cp-rail[data-rail="${key}"]`, { pad: 2 });
+  if (key === "lyrics") { await page.keyboard.press("Escape"); await page.evaluate(() => { for (let i = 0; i < 3; i++) document.querySelector(".cp-editor").__editor && document.querySelector("[data-act=undo]").click(); }); }
   if (!["control", "transport", "palette"].includes(key)) await railOn(key, false), await options(null, { close: true });
 }
 
