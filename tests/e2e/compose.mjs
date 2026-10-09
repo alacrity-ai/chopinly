@@ -16,7 +16,7 @@ page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resourc
 page.on("dialog", (d) => d.accept(d.type() === "prompt" ? d.defaultValue() : undefined));
 const step = async (name, f) => { try { await f(); console.log("ok  ", name, errors.length ? `(${errors.length} page errors so far)` : ""); } catch (e) { console.log("FAIL", name, "—", e.message); if (errors.length) console.log("  page errors:", errors.join("\n  ")); try { console.log("  toast:", await page.evaluate(() => document.querySelector(".lb-toast")?.textContent), "url:", page.url()); } catch { /* gone */ } try { console.log("  state:", JSON.stringify(await state())); } catch { /* no editor */ } await page.screenshot({ path: `${S}/fail-compose.png` }); throw e; } };
 const lb = (fn, ...args) => page.evaluate(async ([src, a]) => { const m = await import("/js/lib/logbook.js"); return (new Function("m", "a", src))(m, a); }, [`return (${fn})(m, a)`, args]);
-const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, voice: s.voice, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging, lassoing: s.lassoing, pasting: s.pasting, hasClip: s.hasClip, pending: s.pending, input: s.input, penSeen: s.penSeen, gesture: s.gesture, favorites: s.favorites }; });
+const state = () => page.evaluate(() => { const s = document.querySelector(".cp-editor").__editor.state; return { mode: s.mode, armed: s.armed, voice: s.voice, S: s.S, selection: s.selection, bars: s.bars, dragging: s.dragging, lassoing: s.lassoing, pasting: s.pasting, hasClip: s.hasClip, pending: s.pending, input: s.input, penSeen: s.penSeen, gesture: s.gesture, favorites: s.favorites, lyric: s.lyric }; });
 /** Every visible icon/glyph button (.cp-sq) is one exact square per rail height: the header's own, the lanes' shared one. */
 const squares = () => page.evaluate(() => {
   const out = { header: new Set(), lanes: new Set(), n: 0, bad: [] };
@@ -433,7 +433,7 @@ await step("utility rail: Key → G then tap bar 3; Time → 3/4 then tap bar 3 
   if ((await page.locator("#cp-file-more .cp-menu-row:disabled").count()) !== 1 || (await page.locator("#cp-file-more .cp-menu-row:not(:disabled)").count()) !== 3) throw new Error("file menu: two PDF rows and MusicXML live, MIDI a placeholder");
   await page.click("[data-pop=cp-file-more]");
   await page.click("[data-pop=cp-options-more]");
-  if ((await page.locator("#cp-options-more .cp-rail-row").count()) !== 9) throw new Error("rail rows"); // controls · transport · notes · utility · expression · form · piano · notes2 · chords (WSHED-166)
+  if ((await page.locator("#cp-options-more .cp-rail-row").count()) !== 10) throw new Error("rail rows"); // controls · transport · notes · utility · expression · form · piano · notes2 · chords (WSHED-166) · lyrics (WSHED-177)
   // Options ▾ (v116, WSHED-154): the panel is Input (Pen | Touch, Gesture, Favorites) over Rails; the control rail no longer carries them; a row's switch mirrors the state and the panel stays open
   if ((await page.locator(".cp-options-btn .cp-pick-label").textContent()) !== "Options" || (await page.locator("#cp-options-more .cp-opt-cap").allTextContents()).join(",") !== "Input,Rails,Help") throw new Error("the panel's captions");
   if (await page.locator(".cp-control .cp-inp, .cp-control .cp-gest, .cp-control .cp-favbtn").count()) throw new Error("the toggles still sit on the control rail");
@@ -1267,6 +1267,83 @@ await step("the Libertango round (WSHED-166…169): the Chords rail builds B m7(
   const sub = await page.evaluate(async (id) => { const { logbook } = await import("/js/lib/logbook.js"); return logbook.composition(id).subtitle; }, d0.id);
   if (sub !== "As played by the E2E") throw new Error("subtitle not saved: " + sub);
   for (const rail of ["chords", "utility"]) if (!(await page.locator(`#cp-${rail}`).isHidden())) { await page.click("[data-pop=cp-options-more]"); await page.click(`.cp-rail-row[data-rail=${rail}]`); await page.click("[data-pop=cp-options-more]"); }
+});
+
+await step("lyrics (WSHED-173, v127): Rails ▾ → Lyrics; the field focused, a tap on a note takes the lyric cursor; Glo − ry ␣ be — write three syllables (one line, a hyphen, an extender) and the cursor walks the voice; a dynamic on that staff sits above it; undo takes the last syllable back; ← shows a syllable to retype; a tap elsewhere keeps an unfinished word; a tap on a syllable selects it and Delete removes it; verse 2 draws a second line; export → import keeps every syllable", async () => {
+  await page.keyboard.press("Escape"); if ((await state()).selection.length) await page.keyboard.press("Escape");
+  if ((await state()).mode !== "place") await page.keyboard.press("v");
+  await page.evaluate(() => { document.querySelector("#cp-view").scrollTop = 0; });
+  if (await page.locator("#cp-lyrics").isHidden()) { await page.click("[data-pop=cp-options-more]"); await page.click(".cp-rail-row[data-rail=lyrics]"); await page.click("[data-pop=cp-options-more]"); }
+  if (await page.locator("#cp-lyrics").isHidden()) throw new Error("the Lyrics rail did not open");
+  const docOf = () => page.evaluate(() => document.querySelector(".cp-editor").__editor.state.doc);
+  const words = async (b, n = 1) => (await docOf()).measures[b].staves[0].voices[0].filter((e) => e.kind === "note").map((e) => { const l = e.lyrics?.find((x) => x.n === n); return l ? `${l.text}${l.syl === "begin" || l.syl === "middle" ? "-" : ""}${l.ext ? "_" : ""}` : "·"; }).join(" ");
+  const headOf = async (b, k) => page.evaluate(([b, k]) => { const L = document.querySelector(".cp-editor").__editor.layout; const ds = L.drawn.filter((d) => d.bar === b && d.staff === 0 && d.voice === 0 && !d.rest).sort((p, q) => p.ticks - q.ticks); const d = ds[k]; return d && { id: d.id, ticks: d.ticks, step: d.heads[0].step }; }, [b, k]);
+  const d0 = await docOf();
+  const b = d0.measures.findIndex((m) => m.staves[0].voices[0].filter((e) => e.kind === "note" && !e.dur.tuplet).length >= 4);
+  if (b < 0) throw new Error("no bar with four notes on the upper staff");
+  const nNotes = d0.measures[b].staves[0].voices[0].filter((e) => e.kind === "note").length;
+  // the field, then the first note: the cursor is on it and the field keeps the keyboard
+  await page.click("#cp-lyric-in");
+  if (!(await state()).lyric.armed) throw new Error("the field did not arm the rail");
+  const h0 = await headOf(b, 0);
+  let hp = await point({ bar: b, staff: 0, ticks: h0.ticks, step: h0.step });
+  await page.evaluate((y) => { const v = document.querySelector("#cp-view"); v.scrollTop += y - v.getBoundingClientRect().top - v.clientHeight * 0.5; }, hp.y);
+  hp = await point({ bar: b, staff: 0, ticks: h0.ticks, step: h0.step });
+  await page.mouse.click(hp.x, hp.y);
+  if ((await state()).lyric.cursor !== h0.id) throw new Error("the cursor is not on the first note: " + JSON.stringify((await state()).lyric));
+  if (!(await page.evaluate(() => document.activeElement?.id === "cp-lyric-in"))) throw new Error("the field lost the keyboard");
+  if ((await page.locator(".cp-svg .cp-ev.cursor").count()) < 1) throw new Error("no cursor halo on the note");
+  await page.keyboard.type("Glo"); await page.keyboard.press("-");
+  await page.keyboard.type("ry"); await page.keyboard.press("Space");
+  await page.keyboard.type("be"); await page.keyboard.press("Shift+Space");
+  if ((await words(b)) !== `Glo- ry be_${" ·".repeat(nNotes - 3)}`) throw new Error("the syllables: " + (await words(b)));
+  const h3 = await headOf(b, 3);
+  if ((await state()).lyric.cursor !== h3.id) throw new Error("the cursor did not walk to the fourth note");
+  const ly = await page.evaluate(() => document.querySelector(".cp-editor").__editor.layout.lyrics.map((l) => [l.text, l.y, l.system]));
+  if (ly.length !== 3 || new Set(ly.map((l) => l[1].toFixed(3))).size !== 1) throw new Error("three syllables on one line: " + JSON.stringify(ly));
+  if ((await page.locator(".cp-svg .cp-lyric").count()) !== 3 || (await page.locator(".cp-svg .cp-lyric-hyphen").count()) !== 1 || (await page.locator(".cp-svg .cp-lyric-ext").count()) !== 1) throw new Error("drawn: " + [await page.locator(".cp-svg .cp-lyric").count(), await page.locator(".cp-svg .cp-lyric-hyphen").count(), await page.locator(".cp-svg .cp-lyric-ext").count()].join("/"));
+  // the dynamics of that staff stand above it in this system
+  const dyn = await page.evaluate(([b]) => { const L = document.querySelector(".cp-editor").__editor.layout; const si = L.hit.systems.findIndex((hs) => hs.bars.some((x) => x.index === b)); return { on: L.lyricOn(si, 0), dyns: L.dynamics.filter((d) => d.system === si && d.staff === 0).map((d) => d.y - L.systems[si].staffTop[0]) }; }, [b]);
+  if (!dyn.on || dyn.dyns.some((y) => y > 0)) throw new Error("dynamics not above the singing staff: " + JSON.stringify(dyn));
+  await page.screenshot({ path: `${S}/cp-28-lyrics.png` });
+  // undo takes the last syllable back; ← back onto "ry", retype it with Enter
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Control+z");
+  if ((await words(b)) !== `Glo- ry${" ·".repeat(nNotes - 2)}`) throw new Error("undo: " + (await words(b)));
+  await page.click("#cp-lyric-in");
+  hp = await point({ bar: b, staff: 0, ticks: h3.ticks, step: h3.step }); await page.mouse.click(hp.x, hp.y);
+  await page.click(".cp-lyric-key[data-dir='-1']"); await page.click(".cp-lyric-key[data-dir='-1']");
+  const h1 = await headOf(b, 1);
+  if ((await state()).lyric.cursor !== h1.id) throw new Error("← did not step back to the second note");
+  if ((await page.inputValue("#cp-lyric-in")) !== "ry") throw new Error("the field does not show the syllable: " + (await page.inputValue("#cp-lyric-in")));
+  await page.keyboard.type("rie"); await page.keyboard.press("Enter");
+  if ((await words(b)) !== `Glo- rie${" ·".repeat(nNotes - 2)}`) throw new Error("retype: " + (await words(b)));
+  // an unfinished word is kept when the tap goes elsewhere
+  await page.keyboard.type("yes");
+  const empty = await point({ bar: b, staff: 1, ticks: PPQ / 2, step: 16 });
+  await page.mouse.click(empty.x, empty.y);
+  if ((await state()).lyric.cursor !== null || (await state()).lyric.armed) throw new Error("the tap elsewhere did not leave lyric entry");
+  if ((await words(b)) !== `Glo- rie yes${" ·".repeat(nNotes - 3)}`) throw new Error("kept: " + (await words(b)));
+  // tap a syllable → selected; Delete removes it; undo
+  const syl = await page.locator(".cp-svg .cp-lyric").nth(2).boundingBox();
+  await page.mouse.click(syl.x + syl.width / 2, syl.y + syl.height / 2);
+  if (!(await state()).selection[0]?.endsWith(":l1")) throw new Error("the syllable was not selected: " + JSON.stringify((await state()).selection));
+  await page.keyboard.press("Delete");
+  if ((await words(b)) !== `Glo- rie${" ·".repeat(nNotes - 2)}`) throw new Error("delete: " + (await words(b)));
+  // verse 2 on the first note draws a second line below the first
+  await page.click("[data-pop=cp-verse-more]"); await page.click(".cp-verse-row[data-n='2']");
+  hp = await point({ bar: b, staff: 0, ticks: h0.ticks, step: h0.step }); await page.mouse.click(hp.x, hp.y);
+  await page.keyboard.type("Two"); await page.keyboard.press("Space");
+  if ((await words(b, 2)) !== `Two${" ·".repeat(nNotes - 1)}`) throw new Error("verse 2: " + (await words(b, 2)));
+  const two = await page.evaluate(() => document.querySelector(".cp-editor").__editor.layout.lyrics.filter((l) => l.n === 2).map((l) => l.y)[0] - document.querySelector(".cp-editor").__editor.layout.lyrics.filter((l) => l.n === 1).map((l) => l.y)[0]);
+  if (!(two > 1.5 && two < 1.7)) throw new Error("verse 2 not one step under verse 1: " + two);
+  await page.keyboard.press("Escape");
+  // export → import keeps them
+  const rt = await page.evaluate(async () => { const [{ toMusicXml, fromMusicXml }, ed] = [await import("/js/lib/compose/musicxml.js"), document.querySelector(".cp-editor").__editor]; const xml = toMusicXml(ed.state.doc); const back = fromMusicXml(xml, { id: "rt" }).doc; const w = (d) => JSON.stringify(d.measures.flatMap((m) => m.staves[0].voices[0].filter((e) => e.kind === "note").map((e) => e.lyrics ?? null))); return { same: w(ed.state.doc) === w(back), a: w(ed.state.doc), b: w(back) }; });
+  if (!rt.same) throw new Error("round trip: " + rt.a + " vs " + rt.b);
+  await page.click("[data-pop=cp-options-more]"); await page.click(".cp-rail-row[data-rail=lyrics]"); await page.click("[data-pop=cp-options-more]");
+  if ((await state()).lyric.armed) throw new Error("hiding the rail did not leave lyric entry");
+  await page.click(".cp-dur[data-base='4']");
 });
 
 await step("MusicXML: File ▾ → Export MusicXML downloads a part-wise 4.0 file; import on the list (plain and .mxl) makes new compositions with the same bars; the file menu's Share… path hands over the file", async () => {

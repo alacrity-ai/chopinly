@@ -27,7 +27,7 @@ A bar every voice leaves short is kept as a short bar: the first bar, or one the
 
 ## What does not travel
 
-Layout pins (see [the Layout editor](help:layout)) are not written or read — a page layout is a property of *your* paper, not of the music. Lyrics and parts are not in Compose yet, so a file carrying them arrives without them. Chord symbols travel both ways as harmony, keeping their spelling; a piece's subtitle travels as a subtitle credit; a glissando with no landing note is written as a doit (up) or a fall-off (down).
+Layout pins (see [the Layout editor](help:layout)) are not written or read — a page layout is a property of *your* paper, not of the music. Parts beyond the piano are not in Compose yet, so a file carrying them arrives without them. Lyrics travel both ways — verses, hyphenation, extenders — as do chord symbols, as harmony, keeping their spelling; a piece's subtitle travels as a subtitle credit; a glissando with no landing note is written as a doit (up) or a fall-off (down).
 
 ## MIDI
 

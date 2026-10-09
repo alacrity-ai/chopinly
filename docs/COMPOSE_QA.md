@@ -141,6 +141,16 @@ phase's card (WSHED-115 … 122).
 - [ ] Export PDF: the pickup bar is narrow on the page too. Export MusicXML → import on the list: the pickup and the closing bar come back short. Open the file in MuseScore / Dorico: a pickup measure, numbered from 1 after it.
 - [ ] Insert a bar before the pickup → the new bar is full and the pickup stays short; delete the bar after it → still short. Time → 6/8 from bar 1 → the stretch re-flows full (the cut has to be made again).
 
+## Lyrics (WSHED-173, v127)
+
+- [ ] iPad, Options ▾ → Rails → Lyrics: tap the field → the on-screen keyboard rises, the score pane shrinks (no page widening); tap the first note → it turns the accent colour and the field keeps the keyboard.
+- [ ] Type `Glo` −, `ry` ␣, `be` — on four quarters: three syllables on one line, a hyphen between the first two, an extender from `be` to the fourth note; each key moved the cursor and the cursor note scrolled into view.
+- [ ] A word hyphenated over a system break: the hyphen opens the next system; an extender over a break runs out of one system and into the next.
+- [ ] A chord under a syllable shows one syllable, centred; a tied pair shows the syllable once; a verse-2 line sits under verse 1.
+- [ ] Dynamics on the singing staff sit above it in the systems that have words and below in the ones that do not; a pedal line goes under the words.
+- [ ] Tap elsewhere with an unfinished syllable → it is kept as a whole word; undo takes syllables back one at a time; tap a syllable → selected (gold), Delete removes it.
+- [ ] Export PDF: the words print upright in the serif face, on the same lines as the screen. Export MusicXML → open in MuseScore: the verses, hyphens and extenders are there; re-import → identical.
+
 ## Favorites (WSHED-148, v109; v110 the lift after a drag)
 
 - [ ] Place mode, Pencil: hold still on empty staff for 2 s → the Favorites panel appears with its grabber under the tip, a tick, and no note on the lift. Hold again elsewhere → it moves there. Slide before 2 s (Gesture on) → a lasso, no panel. Hold on a notehead → a grab, no panel.

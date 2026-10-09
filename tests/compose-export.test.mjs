@@ -4,7 +4,6 @@ import { readFileSync } from "node:fs";
 import { loadUmd } from "../dev/lib/umd.mjs";
 import { planPages, renderPdf, exportOptions, outlineOps, STAFF_MM, PAGES, MARGINS, DEFAULTS } from "../js/lib/compose/export/pdf.js";
 import { BRAVURA } from "../js/lib/compose/export/bravura.js";
-import { SYS_H, SYS_GAP, BLOCK_H } from "../js/lib/compose/layout.js";
 import { newComposition } from "../js/lib/compose/model.js";
 import { place, hideRest, nudgeRest, setTime } from "../js/lib/compose/engine.js";
 import { G, timeDigit, timeSig, tupletDigit } from "../js/lib/staff/glyphs.js";
@@ -72,7 +71,7 @@ test("planPages: systems page in order without splitting, page 1 keeps the heade
     assert.ok(n >= 4, `${staffMm} mm: ${n} systems`);
     assert.equal(plan.pages[0].first, 0); assert.equal(plan.pages[plan.pages.length - 1].last, n - 1);
     for (let i = 1; i < plan.pages.length; i++) assert.equal(plan.pages[i].first, plan.pages[i - 1].last + 1, "contiguous pages");
-    const availS = plan.height / plan.S;
+    const availS = plan.height / plan.S, { sysH: SYS_H, blockH: BLOCK_H } = plan.L.metrics; // the layout's own vertical metrics (WSHED-175)
     for (const p of plan.pages) {
       const usedS = p.top + (p.last - p.first) * SYS_H + BLOCK_H + 3;
       assert.ok(usedS <= availS + 1e-9, `${page} ${margins} ${staffMm} mm: page ${p.first}–${p.last} needs ${usedS.toFixed(1)} S of ${availS.toFixed(1)}`);
@@ -118,7 +117,6 @@ test("paper leaves hidden rests out and follows a dragged rest; an empty piece p
 
 // --- the plan measures the ink and routes every painter (WSHED-133, v104) ---
 import { inkExtents } from "../js/lib/compose/export/pdf.js";
-import { TOP_PAD, systemAt } from "../js/lib/compose/layout.js";
 import { toggleFormMark, addPedal, addOttava, addExpression, setEnding } from "../js/lib/compose/engine.js";
 import { paintScore } from "../js/lib/compose/paint.js";
 
@@ -158,7 +156,7 @@ test("planPages keeps every page's ink inside the printable box — first system
   let checked = 0;
   for (const page of Object.keys(PAGES)) for (const margins of Object.keys(MARGINS)) for (const staffMm of STAFF_MM) for (const header of [true, false]) {
     const plan = planPages(d, { page, staffMm, margins, header });
-    const availS = plan.height / plan.S, n = plan.L.systems.length;
+    const availS = plan.height / plan.S, n = plan.L.systems.length, { sysH: SYS_H, blockH: BLOCK_H, sysGap: SYS_GAP, topPad: TOP_PAD } = plan.L.metrics;
     assert.equal(plan.pages[0].first, 0); assert.equal(plan.pages[plan.pages.length - 1].last, n - 1);
     plan.pages.forEach((p, k) => {
       if (k) assert.equal(p.first, plan.pages[k - 1].last + 1, "contiguous");
@@ -187,7 +185,7 @@ test("planPages keeps every page's ink inside the printable box — first system
 test("pageAt: every primitive the painters draw lands on the page of its system — the same routing the preview and the PDF share", () => {
   const plan = planPages(decorated(), { staffMm: 2.2, margins: "wide" });
   assert.ok(plan.pages.length >= 2, "more than one page: " + plan.pages.length);
-  const n = plan.L.systems.length, ys = inkYs(plan.L);
+  const n = plan.L.systems.length, ys = inkYs(plan.L), { systemAt, sysH: SYS_H, blockH: BLOCK_H, topPad: TOP_PAD } = plan.L.metrics;
   assert.ok(ys.length > 500);
   const perPage = plan.pages.map(() => 0);
   for (const y of ys) { const k = plan.pageAt(y); assert.equal(k, plan.pageOf(systemAt(y, n))); assert.ok(k >= 0 && k < plan.pages.length); perPage[k]++; }

@@ -25,7 +25,7 @@ It prints as a **vector PDF** — real outlines, not a picture of a page — whi
 
 ## What is not here yet
 
-Lyrics, more than two staves, parts, and MIDI export. (Chord symbols arrived with [the Chords rail](help:rail-chords).) The model is shaped like MusicXML, so each of those is an addition rather than a rewrite.
+More than two staves, parts, and MIDI export. (Chord symbols arrived with [the Chords rail](help:rail-chords), lyrics with [the Lyrics rail](help:rail-lyrics).) The model is shaped like MusicXML, so each of those is an addition rather than a rewrite.
 
 ## Where to go next
 

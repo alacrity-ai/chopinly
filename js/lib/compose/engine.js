@@ -3,7 +3,7 @@
 // the new document; a refused edit throws Nudge(sentence) and the document is
 // untouched. Pure — node-testable.
 import { groupSize, ticks, capacity, splitRest, fromTicks, exprGrid, inMetre, PPQ } from "./ticks.js";
-import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, sigAt, shortMetre, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, tempoOf, MAX_VOICES, REST_Y_MAX, EXPR_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, DYN_VALUES, HAIRPINS, SPAN_KINDS, PEDAL_STYLES, TEMPO_UNITS, REHEARSAL_TEXT_MAX, REPEAT_TIMES_MAX, TRILL_ALTERS, FINGER_MAX, GRACE_BASES, TREM_MAX, TEXT_MAX, BARLINE_ENDS, JUMPS, FORM_KINDS, TEMPO_TEXT_MAX, ENDING_MAX, MIN_TEMPO, MAX_TEMPO, GLISS, eid } from "./model.js";
+import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, sigAt, shortMetre, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, tempoOf, MAX_VOICES, REST_Y_MAX, EXPR_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, DYN_VALUES, HAIRPINS, SPAN_KINDS, PEDAL_STYLES, TEMPO_UNITS, REHEARSAL_TEXT_MAX, REPEAT_TIMES_MAX, TRILL_ALTERS, FINGER_MAX, GRACE_BASES, TREM_MAX, TEXT_MAX, BARLINE_ENDS, JUMPS, FORM_KINDS, TEMPO_TEXT_MAX, ENDING_MAX, MIN_TEMPO, MAX_TEMPO, GLISS, LYRIC_MAX, LYRIC_VERSES_MAX, SYLLABICS, eid } from "./model.js";
 import { parseChord, prettyQuality } from "./chordsym.js";
 import { parsePitch, keyAlterations, CLEFS } from "../music.js";
 
@@ -301,6 +301,7 @@ export function cleanTies(doc) {
     }
   }
   cleanSlurs(doc); // slurs are re-derived with the ties, so every edit path keeps them whole
+  cleanLyrics(doc); // and a note that became a rest leaves no words behind
   return doc;
 }
 
@@ -805,11 +806,11 @@ export function clipFrom(doc, items) {
     const ev = f.ev;
     const asRest = ev.kind === "rest" || pis.has("rest");
     const pitches = asRest ? null : (pis.has("*") ? ev.pitches : ev.pitches.filter((_, i) => pis.has(i))).map((p) => ({ ...p }));
-    raw.push({ abs, staff: f.staff, voice: f.voice, kind: asRest ? "rest" : "note", dur: durOf(ev.dur), pitches, len: evTicks(ev), ...(ev.cross && !asRest ? { cross: ev.cross } : {}) }); // a rest never crosses
+    raw.push({ abs, staff: f.staff, voice: f.voice, kind: asRest ? "rest" : "note", dur: durOf(ev.dur), pitches, len: evTicks(ev), ...(ev.cross && !asRest ? { cross: ev.cross } : {}), ...(ev.lyrics && !asRest ? { lyrics: structuredClone(ev.lyrics) } : {}) }); // a rest never crosses; the words travel with the note (docs/COMPOSE_LYRICS_DESIGN.md §1.3)
   }
   if (!raw.length) return null;
   const origin = Math.min(...raw.map((r) => r.abs)), top = Math.min(...raw.map((r) => r.staff)), low = Math.min(...raw.map((r) => r.voice));
-  const events = raw.sort((a, b) => a.abs - b.abs || a.staff - b.staff || a.voice - b.voice).map((r) => ({ dStaff: r.staff - top, dVoice: r.voice - low, offset: r.abs - origin, kind: r.kind, dur: r.dur, pitches: r.pitches, len: r.len, ...(r.cross ? { cross: r.cross } : {}) }));
+  const events = raw.sort((a, b) => a.abs - b.abs || a.staff - b.staff || a.voice - b.voice).map((r) => ({ dStaff: r.staff - top, dVoice: r.voice - low, offset: r.abs - origin, kind: r.kind, dur: r.dur, pitches: r.pitches, len: r.len, ...(r.cross ? { cross: r.cross } : {}), ...(r.lyrics ? { lyrics: r.lyrics } : {}) }));
   return { events, span: Math.max(...raw.map((r) => r.abs + r.len)) - origin, staves: Math.max(...events.map((e) => e.dStaff)) + 1 };
 }
 
@@ -842,6 +843,7 @@ export function paste(doc, clip, { bar, ticks: t, staff = 0, voice = 0 }) {
     const ev = e.kind === "rest" ? restEvent(dur) : noteEvent(dur, e.pitches.map((p) => ({ ...p })));
     const st = top + e.dStaff;
     if (e.cross && ev.kind === "note" && st + e.cross >= 0 && st + e.cross < nStaves) ev.cross = e.cross;
+    if (e.lyrics && ev.kind === "note") ev.lyrics = structuredClone(e.lyrics);
     placed.push({ bar: loc.bar, staff: st, voice: vOf(e), start: loc.ticks, ev });
   }
   // rebuild every touched (bar, staff, voice): keep what lies outside the region, drop what overlaps it (tuplets whole), add the phrase, fill the gaps
@@ -1401,6 +1403,84 @@ export function gliss(doc, evIds, mode = "start") {
   const all = can.every((f) => f.ev.gliss === mode);
   for (const f of can) { if (all) delete f.ev.gliss; else f.ev.gliss = mode; }
   return d;
+}
+
+// --- lyrics (docs/COMPOSE_LYRICS_DESIGN.md §1.3, WSHED-174) --------------------------------
+// A lyric is a syllable on a note (never a rest, never a grace): `ev.lyrics = [{ n, text, syl, ext? }]`, sorted by verse.
+
+/** A note whose every pitch is tied in cannot start a syllable (Gould): the previous one is still sounding. */
+export const tiedIn = (ev) => ev.kind === "note" && ev.pitches.every((p) => p.tie === "stop" || p.tie === "both");
+/**
+ * Set verse `n` of a note: `text` (trimmed) with its `syl` and `ext`; an empty text removes that verse, and the key
+ * goes when no verse is left. A rest or a missing note → Nudge.
+ */
+export function setLyric(doc, evId, n, { text = "", syl = "single", ext = false } = {}) {
+  if (!Number.isInteger(n) || n < 1 || n > LYRIC_VERSES_MAX) throw new Nudge(`verses go 1–${LYRIC_VERSES_MAX}`);
+  const d = clone(doc);
+  const f = find(d, evId);
+  if (!f) throw new Nudge("pick a note for the words");
+  if (f.ev.kind !== "note") throw new Nudge("lyrics go on notes", { bar: f.bar });
+  const t = String(text ?? "").replace(/\s+/g, " ").trim();
+  const rest = (f.ev.lyrics ?? []).filter((l) => l.n !== n);
+  if (!t) { if (rest.length) f.ev.lyrics = rest; else delete f.ev.lyrics; return d; }
+  if (t.length > LYRIC_MAX) throw new Nudge(`a syllable is at most ${LYRIC_MAX} letters`, { bar: f.bar });
+  if (!SYLLABICS.includes(syl)) throw new Nudge("a syllable is single, begin, middle or end");
+  f.ev.lyrics = [...rest, { n, text: t, ...(syl !== "single" ? { syl } : {}), ...(ext ? { ext: true } : {}) }].sort((a, b) => a.n - b.n);
+  return d;
+}
+/** Drop verse `n` (every verse when null) from the selected notes; unchanged when nothing matched. */
+export function removeLyrics(doc, evIds, n = null) {
+  const d = clone(doc);
+  let hit = false;
+  for (const id of new Set(evIds)) {
+    const f = find(d, id);
+    if (!f?.ev.lyrics) continue;
+    const keep = n === null ? [] : f.ev.lyrics.filter((l) => l.n !== n);
+    if (keep.length === f.ev.lyrics.length) continue;
+    if (keep.length) f.ev.lyrics = keep; else delete f.ev.lyrics;
+    hit = true;
+  }
+  return hit ? d : doc;
+}
+/** Lyrics never sit on a rest: an edit that turned a note into a rest, or an import, leaves none behind. */
+export function cleanLyrics(doc) {
+  for (const m of doc.measures) for (const s of m.staves) for (const v of s.voices) for (const ev of v ?? []) if (ev.lyrics && ev.kind !== "note") delete ev.lyrics;
+  return doc;
+}
+/** The syllabic a key gives (docs/COMPOSE_LYRICS_DESIGN.md §4.2): a hyphen after a word's start continues it, a space ends it — or starts and ends a word in one. */
+export const sylFor = (prev, key) => (key === "hyphen" ? (prev === "begin" || prev === "middle" ? "middle" : "begin") : prev === "begin" || prev === "middle" ? "end" : "single");
+/**
+ * The next (dir 1) or previous (dir −1) note of the voice that can carry a syllable — across bars, skipping rests and
+ * tied-in notes — as `{ bar, staff, voice, index, ev }`, or null at the voice's end. The entry flow's "space advances".
+ */
+export function nextLyricNote(doc, f, dir = 1) {
+  const seq = seqOf(doc, f.staff, f.voice);
+  const i = seq.indexOf(f.ev);
+  if (i < 0) return null;
+  for (let k = i + dir; k >= 0 && k < seq.length; k += dir) if (seq[k].kind === "note" && !tiedIn(seq[k])) return find(doc, seq[k].id);
+  return null;
+}
+/**
+ * Every syllable of the piece, per staff and verse, in time order — what the engraver and the exporter walk:
+ * `[{ staff, n, items: [{ bar, staff, voice, index, ev, abs, lyric }] }]`.
+ */
+export function lyricRuns(doc) {
+  const { starts } = barStarts(doc);
+  const runs = new Map();
+  doc.measures.forEach((m, bar) => m.staves.forEach((s, staff) => s.voices.forEach((v, voice) => {
+    if (!v) return;
+    const os = onsets(v);
+    v.forEach((ev, index) => {
+      for (const lyric of ev.lyrics ?? []) {
+        const key = `${staff}:${lyric.n}`;
+        if (!runs.has(key)) runs.set(key, { staff, n: lyric.n, items: [] });
+        runs.get(key).items.push({ bar, staff, voice, index, ev, abs: starts[bar] + os[index].start, lyric });
+      }
+    });
+  })));
+  const out = [...runs.values()].sort((a, b) => a.staff - b.staff || a.n - b.n);
+  for (const r of out) r.items.sort((a, b) => a.abs - b.abs || a.voice - b.voice);
+  return out;
 }
 
 // --- voices (docs/COMPOSE_VOICES_DESIGN.md §4) ---------------------------------------

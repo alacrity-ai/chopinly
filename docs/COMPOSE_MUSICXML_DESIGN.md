@@ -111,7 +111,7 @@ rests. Anything else in the file is ignored.
 | a short bar (`implicit="yes"`, a pickup) | rests at the **front** of bar 1, at the end elsewhere | Compose bars are always full |
 | `<work-title>` / `<movement-title>`, `<creator type="composer">` | title, composer | the file name when the title is missing |
 
-Ignored on purpose: repeats, endings, lyrics, harmony, pedal and octave-shift lines, breath marks,
+Ignored on purpose: repeats, endings, harmony, pedal and octave-shift lines, breath marks,
 fingerings, tremolos, transposition, stem and beam hints, page and system breaks, colours and
 positions other than `relative-y` on expressions. A file with none of what Compose holds (no notes
 at all) still imports as empty bars.

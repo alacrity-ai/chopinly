@@ -18,7 +18,7 @@ import { layoutComposition } from "../../lib/compose/layout.js";
 import { renderComposition } from "../../lib/compose/render.js";
 import { slotAt, thingAt, xOfTicks, barAt, lasso, spans as spansOfLayout, isHandle, struck } from "../../lib/compose/hit.js";
 import { chevron } from "../../lib/compose/gesture.js";
-import { chordOf, place, remove, snap, trimBars, find, setPitch, retype, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, addPedal, addOttava, addTextLine, finger, graceAt, toggleGrace, tremolo, setTrill, setStem, beamBreak, setSimile, pitchFromStep, moveExpressions, moveSpanEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, insertBar, deleteBar, setShort, stepAccidental, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
+import { chordOf, place, remove, snap, trimBars, find, setPitch, retype, clipFrom, paste, locate, barStarts, stepOf, onsetOf, dot, tie, tuplet, accidental, setKey, setTime, setClef, articulate, gliss, arpeggio, slur, addExpression, addHairpin, addPedal, addOttava, addTextLine, finger, graceAt, toggleGrace, tremolo, setTrill, setStem, beamBreak, setSimile, pitchFromStep, moveExpressions, moveSpanEnd, nudgeExpressionY, setExpressionValue, removeExpressions, findExpression, exprSlot, slotOfAbs, upgrade, setVoice, swapVoices, crossStaff, hideRest, nudgeRest, setBarline, setEnding, toggleFormMark, insertBar, deleteBar, setShort, stepAccidental, setLyric, removeLyrics, sylFor, nextLyricNote, lyricRuns, TUPLET_IN, TIME_UNITS, Nudge } from "../../lib/compose/engine.js";
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { createPlayer } from "../../lib/compose/play.js";
@@ -71,6 +71,7 @@ export function openEditor({ id, ctx, onClose }) {
   let hands = HANDS[savedHands] ? savedHands : "en";
   let pedalStyle = PEDAL_STYLES.includes(savedPedal) ? savedPedal : "line";
   let chordDraft = { root: { step: "A", alter: 0 }, q: "m" }, chordSlash = false; // the Chords rail's symbol in the making (WSHED-166); slash = the next root is the bass
+  let lyric = { n: 1, cursor: null, armed: false, lastToast: false }; // the Lyrics rail (WSHED-177): the verse being written, the note under the lyric cursor, whether the field is live
   let glissMode = "start", lastChordPart = "root"; // lastChordPart: which name ♯ / ♭ change — the root, or the bass just tapped // the gliss. button's mode (WSHED-167): the hold menu's last pick
   let penSeen = store.get("penSeen", false) === true; // Pen | Touch (v101): the first pen contact on this device flips the switch once
   let input = store.get("input", null); if (input !== "pen" && input !== "touch") input = penSeen ? "pen" : "touch"; // what a finger may do — remembered per device
@@ -118,6 +119,7 @@ export function openEditor({ id, ctx, onClose }) {
     L = layoutComposition(doc, { unit: S, width: width() });
     R = renderComposition(sheet, L);
     showSel();
+    R.setCursor(lyric.cursor);
     sync();
     showPlayhead(player.position);
   }
@@ -127,10 +129,11 @@ export function openEditor({ id, ctx, onClose }) {
     const notes = fs.filter((f) => f.ev.kind === "note"), rests = fs.filter((f) => f.ev.kind === "rest");
     const xs = ids.map((id) => findExpression(doc, id)).filter(Boolean), exprs = xs.length > 0 && xs.length === ids.length;
     const n = doc.parts[0].staves;
-    return { any: fs.length > 0, exprs, dyns: exprs && xs.every((f) => f.x.kind === "dyn"), texts: exprs && xs.every((f) => f.x.kind === "text"), chords: exprs && xs.every((f) => f.x.kind === "chord"), notes: notes.length > 0, rests: rests.length > 0, hidden: rests.length > 0 && rests.every((f) => f.ev.hidden), up: notes.some((f) => f.staff + (f.ev.cross ?? 0) - 1 >= 0 && Math.abs((f.ev.cross ?? 0) - 1) <= 1), down: notes.some((f) => f.staff + (f.ev.cross ?? 0) + 1 < n && Math.abs((f.ev.cross ?? 0) + 1) <= 1) };
+    const lyrics = selection.size > 0 && [...selection].every(isLyricKey);
+    return { any: fs.length > 0, exprs, lyrics, dyns: exprs && xs.every((f) => f.x.kind === "dyn"), texts: exprs && xs.every((f) => f.x.kind === "text"), chords: exprs && xs.every((f) => f.x.kind === "chord"), notes: notes.length > 0, rests: rests.length > 0, hidden: rests.length > 0 && rests.every((f) => f.ev.hidden), up: notes.some((f) => f.staff + (f.ev.cross ?? 0) - 1 >= 0 && Math.abs((f.ev.cross ?? 0) - 1) <= 1), down: notes.some((f) => f.staff + (f.ev.cross ?? 0) + 1 < n && Math.abs((f.ev.cross ?? 0) + 1) <= 1) };
   }
   function sync() {
-    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title: heading(), voice, used: usedVoices(doc), sel: selFacts(), tempoUnit, hands, pedalStyle, input, gesture: gestureOn, favorites: fav.on, chord: chordDraft, chordSlash, gliss: glissMode });
+    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title: heading(), voice, used: usedVoices(doc), sel: selFacts(), tempoUnit, hands, pedalStyle, input, gesture: gestureOn, favorites: fav.on, chord: chordDraft, chordSlash, gliss: glissMode, lyric: { n: lyric.n, cursor: !!lyric.cursor || selFacts().lyrics, used: new Set(lyricRuns(doc).map((r) => r.n)) } });
     fav.sync(); // the slots mirror their rail buttons' state
     view.dataset.mode = mode; view.classList.toggle("pasting", pasting); view.classList.toggle("arming", !!pending);
     syncTransport();
@@ -372,8 +375,10 @@ export function openEditor({ id, ctx, onClose }) {
     if (pasting) { dropAt(clientX, clientY); return; }
     const { x, y } = toS(clientX, clientY);
     const thing = thingAt(L, x, y, mode === "select" ? selectedSpans() : undefined, mode === "select" ? tol : 0);
-    // In Place mode a rest (and a chord's stem, and an expression) is where the next note goes; only a notehead selects.
-    if (thing && (mode === "select" || thing.type === "head")) { if (isHandle(thing.type)) return; select(thing); return; }
+    // the Lyrics rail is live (WSHED-177): a note takes the lyric cursor; a tap anywhere else leaves lyric entry (an unfinished syllable is kept)
+    if (lyric.armed) { if (thing?.type === "head") { lyricCursorTo(thing.ev); return; } if (thing?.type === "lyric") { lyricLeave(); select(thing); return; } lyricLeave(); return; }
+    // In Place mode a rest (and a chord's stem, and an expression) is where the next note goes; only a notehead (or a syllable) selects.
+    if (thing && (mode === "select" || thing.type === "head" || thing.type === "lyric")) { if (isHandle(thing.type)) return; select(thing); return; }
     if (mode === "select") { if (selection.size) { selection.clear(); showSel(); sync(); } return; }
     const slot = slotAt(L, x, y);
     if (!slot) return;
@@ -392,15 +397,19 @@ export function openEditor({ id, ctx, onClose }) {
     }
   }
   /** The selection as engine items and as event ids; whether every selected thing is a notehead / a note. */
-  const selItems = () => [...selection].map((k) => { const [ev, pi] = k.split(":"); return pi === undefined ? { ev } : { ev, pi: Number(pi) }; });
+  const isLyricKey = (k) => /:l\d$/.test(k); // a syllable's key is "<note>:l<verse>" (docs/COMPOSE_LYRICS_DESIGN.md §3.6)
+  const lyricKeyParts = (k) => { const m = /^(.+):l(\d)$/.exec(k); return m ? { ev: m[1], n: Number(m[2]) } : null; };
+  const selItems = () => [...selection].filter((k) => !isLyricKey(k)).map((k) => { const [ev, pi] = k.split(":"); return pi === undefined ? { ev } : { ev, pi: Number(pi) }; });
   const selEvIds = () => [...new Set(selItems().map((it) => it.ev))];
-  const allHeads = () => selection.size > 0 && [...selection].every((k) => k.includes(":"));
+  const selLyrics = () => [...selection].map(lyricKeyParts).filter(Boolean);
+  const allHeads = () => selection.size > 0 && [...selection].every((k) => k.includes(":") && !isLyricKey(k));
   const allRests = () => selection.size > 0 && [...selection].every((k) => !k.includes(":") && find(doc, k)?.ev.kind === "rest");
   const allNotes = () => selection.size > 0 && selEvIds().every((id) => find(doc, id)?.ev.kind === "note");
   const allExprs = () => selection.size > 0 && [...selection].every((k) => !k.includes(":") && findExpression(doc, k));
   /** After undo / redo: keep whatever is still there (a note that came back stays selected). */
   function pruneSelection() {
-    for (const k of [...selection]) { const [ev, pi] = k.split(":"); const f = find(doc, ev); if (!f) { if (pi !== undefined || !findExpression(doc, ev)) selection.delete(k); continue; } if (pi !== undefined && (f.ev.kind !== "note" || Number(pi) >= f.ev.pitches.length)) selection.delete(k); }
+    if (lyric.cursor && find(doc, lyric.cursor)?.ev.kind !== "note") { lyric.cursor = null; R?.setCursor(null); }
+    for (const k of [...selection]) { const lk = lyricKeyParts(k); if (lk) { if (!find(doc, lk.ev)?.ev.lyrics?.some((l) => l.n === lk.n)) selection.delete(k); continue; } const [ev, pi] = k.split(":"); const f = find(doc, ev); if (!f) { if (pi !== undefined || !findExpression(doc, ev)) selection.delete(k); continue; } if (pi !== undefined && (f.ev.kind !== "note" || Number(pi) >= f.ev.pitches.length)) selection.delete(k); }
   }
   // --- clipboard: copy / cut take the selection as a phrase; paste arms a cursor and a tap drops it ---
   function copySelection() {
@@ -551,6 +560,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (cancel) return;
     const tol = l.type === "touch" && input === "touch" ? FINGER_PX / S : 0;
     if (!l.active) { // a plain tap: on a rest (or a stem) it selects that; on empty staff it clears
+      if (lyric.armed) { tapAt(l.x0, l.y0, tol); return; } // lyric entry is live: the tap moves the cursor or ends it (WSHED-177)
       if (mode === "place") { // Gesture mode (v102): a Place-mode stroke that never travelled is the tap it always was
         if (l.type === "touch" ? input === "touch" : performance.now() - l.t <= TAP_MS) tapAt(l.x0, l.y0, tol);
         if (l.type !== "touch") ghostAt(e.clientX, e.clientY);
@@ -627,8 +637,9 @@ export function openEditor({ id, ctx, onClose }) {
   }
   /** Gesture mode's strike: the crossed selected things go — notes to rests, dynamics gone — in one undo step; the rest of the selection stays. */
   function strike(keys) {
-    const items = [...keys].map((k) => { const [ev, pi] = k.split(":"); return pi === undefined ? { ev } : { ev, pi: Number(pi) }; });
-    const next = removeExpressions(remove(doc, items), [...new Set(items.map((it) => it.ev))]);
+    const items = [...keys].filter((k) => !isLyricKey(k)).map((k) => { const [ev, pi] = k.split(":"); return pi === undefined ? { ev } : { ev, pi: Number(pi) }; });
+    let next = removeExpressions(remove(doc, items), [...new Set(items.map((it) => it.ev))]);
+    for (const lk of [...keys].map(lyricKeyParts).filter(Boolean)) next = removeLyrics(next, [lk.ev], lk.n);
     for (const k of keys) selection.delete(k);
     const heads = items.filter((it) => it.pi !== undefined).length, dyns = items.length - heads;
     commit(next); haptic(8);
@@ -636,10 +647,106 @@ export function openEditor({ id, ctx, onClose }) {
   }
   function deleteSelection() {
     if (!selection.size) return;
-    const items = [...selection].map((k) => { const [ev, pi] = k.split(":"); return pi === undefined ? { ev } : { ev, pi: Number(pi) }; });
-    const next = removeExpressions(remove(doc, items), selEvIds()); // notes to rests, expressions gone — one undo step
+    const items = selItems();
+    let next = removeExpressions(remove(doc, items), selEvIds()); // notes to rests, expressions gone, syllables gone — one undo step
+    for (const lk of selLyrics()) next = removeLyrics(next, [lk.ev], lk.n);
     selection.clear();
     commit(next); haptic(8);
+  }
+  // --- the Lyrics rail (docs/COMPOSE_LYRICS_DESIGN.md §4, WSHED-177): a cursor on a note, a field, keys that commit and move on ---
+  const syllableAt = (evId, n = lyric.n) => find(doc, evId)?.ev.lyrics?.find((l) => l.n === n) ?? null;
+  /** The syllabic of the previous syllable of this verse in the note's voice (null when there is none) — what − and space build on. */
+  function prevSyllabic(f) {
+    const v = (bar) => doc.measures[bar]?.staves[f.staff].voices[f.voice] ?? [];
+    for (let bar = f.bar, i = f.index - 1; bar >= 0; bar--, i = v(bar).length - 1) for (; i >= 0; i--) { const l = v(bar)[i].lyrics?.find((x) => x.n === lyric.n); if (l) return l.syl ?? "single"; }
+    return null;
+  }
+  /** Put the lyric cursor on a note: the rail's field shows its syllable (selected, so typing replaces it) and takes the keyboard; the note is scrolled into view. */
+  function lyricCursorTo(evId) {
+    const f = find(doc, evId);
+    if (!f || f.ev.kind !== "note") return;
+    if (lyric.cursor && lyric.cursor !== evId) lyricKeep(rails.lyricText); // an unfinished syllable on the note we are leaving is kept
+    lyric.cursor = evId; lyric.armed = true;
+    if (selection.size) { selection.clear(); showSel(); }
+    follow({ voice: f.voice });
+    R.setCursor(evId);
+    rails.lyricField({ text: syllableAt(evId)?.text ?? "", focus: true, select: true });
+    sheet.querySelector(`.cp-ev[data-ev="${CSS.escape(evId)}"]`)?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    sync();
+  }
+  /** Keep what is typed on the cursor note when the user moves on without a key: its syllabic stays, a new word is a whole one. */
+  function lyricKeep(text) {
+    const id = lyric.cursor, t = String(text ?? "").trim();
+    if (!id) return;
+    const have = syllableAt(id);
+    if (t === (have?.text ?? "")) return;
+    try { commit(setLyric(doc, id, lyric.n, { text: t, syl: have?.syl ?? "single", ext: !!have?.ext })); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+  }
+  /** Commit the field under the key and move to the next note of the voice: − continues the word, space ends it, — sings it on (a melisma). An empty field just moves on. */
+  function lyricCommit({ key, text }) {
+    if (!lyric.cursor && selFacts().lyrics) { lyricRetype(text); return; } // syllables selected: the field retypes them
+    const id = lyric.cursor;
+    if (!id) { toast("tap a note first"); return; }
+    const f = find(doc, id);
+    if (!f || f.ev.kind !== "note") { lyricLeave(); return; }
+    const t = String(text ?? "").trim();
+    if (t) {
+      const syl = sylFor(prevSyllabic(f), key === "hyphen" ? "hyphen" : "space");
+      try { commit(setLyric(doc, id, lyric.n, { text: t, syl, ext: key === "melisma" })); haptic(4); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); return; }
+    }
+    const nx = nextLyricNote(doc, find(doc, id), 1);
+    if (nx) { lyricCursorTo(nx.ev.id); return; }
+    if (!lyric.lastToast) { toast("last note of the voice"); lyric.lastToast = true; }
+    rails.lyricField({ text: syllableAt(id)?.text ?? "", focus: true, select: true }); sync();
+  }
+  /** ← → : the previous / next note of the voice, keeping whatever is typed. */
+  function lyricMove({ dir, text }) {
+    if (!lyric.cursor) { toast("tap a note first"); return; }
+    lyricKeep(text);
+    const nx = nextLyricNote(doc, find(doc, lyric.cursor), dir);
+    if (nx) lyricCursorTo(nx.ev.id); else { toast(dir > 0 ? "last note of the voice" : "first note of the voice"); rails.lyricField({ focus: true, select: true }); }
+  }
+  /** Leave lyric entry: keep an unfinished syllable (never dropped), drop the cursor, give the keyboard back. */
+  function lyricLeave(text = rails.lyricText) {
+    if (lyric.cursor) lyricKeep(text);
+    const had = lyric.cursor || lyric.armed;
+    lyric.cursor = null; lyric.armed = false;
+    R?.setCursor(null);
+    rails.lyricField({ text: "" });
+    if (document.activeElement?.id === "cp-lyric-in") document.activeElement.blur();
+    if (had) sync();
+  }
+  /** With syllables selected (WSHED-176): the field's text replaces each one's (its syllabic kept); the verse picker moves them. */
+  function lyricRetype(text) {
+    const t = String(text ?? "").trim(), sel = selLyrics();
+    if (!t || !sel.length) return;
+    let next = doc;
+    try { for (const lk of sel) { const have = syllableAt(lk.ev, lk.n); next = setLyric(next, lk.ev, lk.n, { text: t, syl: have?.syl ?? "single", ext: !!have?.ext }); } commit(next); haptic(8); toast(sel.length === 1 ? `“${t}”` : `${sel.length} syllables → “${t}”`); }
+    catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+  }
+  function lyricVerse(n) {
+    const sel = selLyrics();
+    if (sel.length && !lyric.cursor) { // move the selected syllables to verse n
+      if (sel.every((lk) => lk.n === n)) { lyric.n = n; sync(); return; }
+      let next = doc;
+      try {
+        for (const lk of sel) {
+          if (lk.n === n) continue;
+          const have = syllableAt(lk.ev, lk.n), f = find(doc, lk.ev);
+          if (syllableAt(lk.ev, n)) throw new Nudge(`verse ${n} already has a syllable on that note`, { bar: f?.bar });
+          next = setLyric(setLyric(next, lk.ev, lk.n, { text: "" }), lk.ev, n, { text: have.text, syl: have.syl ?? "single", ext: !!have.ext });
+        }
+        const keys = sel.map((lk) => `${lk.ev}:l${n}`);
+        selection.clear(); for (const k of keys) selection.add(k);
+        lyric.n = n; commit(next); haptic(8);
+      } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); }
+      return;
+    }
+    lyric.n = n; lyric.armed = true;
+    if (lyric.cursor) rails.lyricField({ text: syllableAt(lyric.cursor)?.text ?? "", focus: true, select: true });
+    else if (selection.size === 1 && allHeads()) lyricCursorTo(selEvIds()[0]); // a note already selected: the cursor goes there
+    else rails.lyricField({ focus: true });
+    sync();
   }
 
   // --- pointer policy --------------------------------------------------------
@@ -697,6 +804,7 @@ export function openEditor({ id, ctx, onClose }) {
   const fingerRests = (e) => e.pointerType === "touch" && input === "pen" && mode !== "pan";
   view.addEventListener("pointerdown", (e) => {
     if (fingerRests(e)) return;
+    if (lyric.armed && rails.lyricFocused) e.preventDefault(); // the Lyrics rail's field keeps the keyboard through a tap on the score (WSHED-177): the tap decides whether the cursor moves or entry ends
     favDisarm(); // a second contact of any kind is not a held one
     if (e.pointerType === "pen" && !penSeen) { // the first pencil on this device: fingers rest from here on, once, unless the user says otherwise (§8.5i)
       penSeen = true; store.set("penSeen", true);
@@ -712,6 +820,7 @@ export function openEditor({ id, ctx, onClose }) {
       if (!valid) { if (gesture?.type !== "touch") return; gesture = { id: e.pointerId, type: "touch", valid: false }; return; }
       if (lassoState?.type === "touch") { lassoEnd({ pointerId: lassoState.id }, { cancel: true }); return; } // a second finger lets go
       const head = pasting || pending ? null : headUnder(e);
+      if (head?.type === "head" && lyric.armed) { gesture = null; lyricCursorTo(head.ev); return; } // the Lyrics rail is live: the note takes the lyric cursor (WSHED-177)
       if (head) { gesture = null; grabStart(e, head); return; }
       if (mode === "select" && !pasting && !pending) { gesture = null; lassoStart(e); return; }
       gesture = { id: e.pointerId, type: "touch", x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, t: performance.now(), valid: true, aim: false, timer: trusted ? setTimeout(() => startAim(e.pointerId), AIM_MS) : 0 };
@@ -721,6 +830,7 @@ export function openEditor({ id, ctx, onClose }) {
     }
     if (e.button && e.button !== 0) return;
     const head = pasting || pending ? null : headUnder(e);
+    if (head?.type === "head" && lyric.armed) { gesture = null; lyricCursorTo(head.ev); return; }
     if (head) { gesture = null; grabStart(e, head); return; }
     if ((mode === "select" || (mode === "place" && gestureOn)) && !pasting && !pending) { gesture = null; lassoStart(e); return; } // Gesture mode (§8.5j): a Place-mode stroke may lasso or strike
     gesture = { id: e.pointerId, type: e.pointerType, x: e.clientX, y: e.clientY, t: performance.now(), valid: true };
@@ -846,8 +956,15 @@ export function openEditor({ id, ctx, onClose }) {
         saveFile(file, { title: "save MusicXML", shareTitle: c.title }).then((way) => { if (way === "device") toast(`saved as ${file.name}`); else if (way === "share") toast("shared"); }).catch((e) => { console.error(e); toast(e.message || "the export failed"); });
         return;
       }
-      case "undo": if (history.canUndo) { doc = history.undo(); dirty = true; pruneSelection(); layout(); flush(); } return;
-      case "redo": if (history.canRedo) { doc = history.redo(); dirty = true; pruneSelection(); layout(); flush(); } return;
+      case "undo": if (history.canUndo) { doc = history.undo(); dirty = true; pruneSelection(); layout(); flush(); if (lyric.cursor) rails.lyricField({ text: syllableAt(lyric.cursor)?.text ?? "" }); } return;
+      case "redo": if (history.canRedo) { doc = history.redo(); dirty = true; pruneSelection(); layout(); flush(); if (lyric.cursor) rails.lyricField({ text: syllableAt(lyric.cursor)?.text ?? "" }); } return;
+      // the Lyrics rail (WSHED-177)
+      case "lyric-arm": { if (lyric.armed && lyric.cursor) return; lyric.armed = true; if (!lyric.cursor && selection.size === 1 && allHeads()) lyricCursorTo(selEvIds()[0]); else sync(); return; }
+      case "lyric-verse": lyricVerse(arg); return;
+      case "lyric-commit": lyricCommit(arg); return;
+      case "lyric-move": lyricMove(arg); return;
+      case "lyric-clear": { if (!lyric.cursor) return; try { commit(setLyric(doc, lyric.cursor, lyric.n, { text: "" })); rails.lyricField({ text: "", focus: true }); haptic(8); } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar); } return; }
+      case "lyric-leave": lyricLeave(arg?.text); return;
       case "input": setInput(arg); return; // Pen | Touch (v101)
       case "gesture": setGesture(!gestureOn); return; // Gesture mode (v102)
       case "favorites": fav.toggle(); return; // Favorites (v109): show / hide the panel
@@ -866,7 +983,7 @@ export function openEditor({ id, ctx, onClose }) {
       case "tempo-down": setTempo(tempo - 1); return;
       case "tempo-up": setTempo(tempo + 1); return;
       case "tempo": { const v = prompt("tempo (beats per minute)", String(tempo)); if (v !== null) setTempo(v); return; }
-      case "rail": if (!(arg in railsOn)) return; railsOn = { ...railsOn, [arg]: !railsOn[arg] }; store.set("rails", railsOn); sync(); setTimeout(layout, 0); return; // the rails' height changed: the view re-measures
+      case "rail": if (!(arg in railsOn)) return; railsOn = { ...railsOn, [arg]: !railsOn[arg] }; store.set("rails", railsOn); if (arg === "lyrics" && !railsOn.lyrics) lyricLeave(); sync(); setTimeout(layout, 0); return; // the rails' height changed: the view re-measures
       case "key": { // arm the key; the next tap on a bar puts the change there (the armed one again → off)
         if (pending?.kind === "key" && pending.value === arg) { setPending(null); return; }
         const k = KEYS.find((x) => x.fifths === arg);
@@ -1181,7 +1298,7 @@ export function openEditor({ id, ctx, onClose }) {
     favDisarm();
     if (drag) grabEnd({ pointerId: drag.id }, { cancel: true });
     if (lassoState) lassoEnd({ pointerId: lassoState.id }, { cancel: true });
-    if (next === "pan") { pasting = false; pending = null; R?.showTarget(null); }
+    if (next === "pan") { pasting = false; pending = null; R?.showTarget(null); if (lyric.armed) lyricLeave(); }
     mode = next; R?.showGhost(null);
     if (mode === "pan") { gesture = null; } else { cancelAnimationFrame(pan?.inertia); pan = null; }
     sync();
@@ -1203,6 +1320,7 @@ export function openEditor({ id, ctx, onClose }) {
     if (e.key === " " || e.code === "Space") { e.preventDefault(); act("play"); return; }
     if (e.key === "Home") { e.preventDefault(); act("stop"); return; }
     if (e.key === "Escape" && fav.state.listening >= 0) { fav.cancel(); return; } // Favorites (v109): a listening slot lets go first
+    if (e.key === "Escape" && lyric.armed) { lyricLeave(); return; }
     if (e.key === "Escape" && pending) { setPending(null); return; }
     if (e.key === "Escape" && pasting) { setPasting(false); return; }
     if (e.key === "Escape") { if (selection.size) { selection.clear(); showSel(); sync(); } else setMode(mode === "select" ? "place" : "select"); return; }
@@ -1252,7 +1370,7 @@ export function openEditor({ id, ctx, onClose }) {
     /** The editor's own layer — the router hides it while the help page is up (docs/COMPOSE_HELP_DESIGN.md §7). */
     el,
     /** For tests: the live state. */
-    get state() { return { mode, armed, voice, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, pending, rails: railsOn, title, doc, input, penSeen, gesture: gestureOn, favorites: fav.state, canUndo: history.canUndo, canRedo: history.canRedo }; },
+    get state() { return { mode, armed, voice, S, selection: [...selection], bars: doc.measures.length, dragging: !!drag, lassoing: !!lassoState?.active, pasting, hasClip: !!clipboard, playing: player.playing, position: player.position, tempo, pending, rails: railsOn, title, doc, input, penSeen, gesture: gestureOn, favorites: fav.state, canUndo: history.canUndo, canRedo: history.canRedo, lyric: { n: lyric.n, cursor: lyric.cursor, armed: lyric.armed } }; },
     /** For tests: the current layout. */
     get layout() { return L; },
     /** For tests: the client point of a musical place. */

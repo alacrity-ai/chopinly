@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { newComposition } from "../js/lib/compose/model.js";
 import { place, setClef, setKey, setTime, articulate, arpeggio, accidental, stepAccidental, slur, addExpression, addHairpin, nudgeExpressionY, MARKS } from "../js/lib/compose/engine.js";
 import { things } from "../js/lib/compose/hit.js";
-import { layoutComposition, SYS_H, TOP_PAD } from "../js/lib/compose/layout.js";
+import { layoutComposition, metricsOf } from "../js/lib/compose/layout.js";
 import { slotAt, thingAt, ticksAt, xOfTicks, barAt } from "../js/lib/compose/hit.js";
 import { PPQ } from "../js/lib/compose/ticks.js";
 
@@ -15,7 +15,7 @@ test("an empty piece lays out eight bars with a brace, both staves, and only who
   assert.ok(L.systems.length >= 2);
   assert.equal(L.systems.reduce((n, s) => n + s.bars.length, 0), 8);
   assert.equal(L.drawn.filter((d) => d.rest && d.whole).length, 16);
-  assert.ok(L.height > (TOP_PAD + SYS_H) * 12);
+  assert.ok(L.height > (L.metrics.topPad + L.metrics.sysH) * 12);
   assert.equal(L.systems[0].staffTop.length, 2);
   assert.ok(L.systems[0].staffTop[1] - L.systems[0].staffTop[0] === 12);
 });

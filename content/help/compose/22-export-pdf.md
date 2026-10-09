@@ -13,7 +13,7 @@ keywords: [export, pdf, print, page, letter, a4, margins, staff size, preview, s
 
 ## It is a real PDF
 
-Vector outlines, not a picture of a page. The notes are drawn from Bravura's own outlines and the words are embedded font subsets, so it prints at any size and a reader can select the title. There is no raster fallback anywhere.
+Vector outlines, not a picture of a page. The notes are drawn from Bravura's own outlines and the words — expression text in italic, chord symbols and lyrics upright — are embedded font subsets, so it prints at any size and a reader can select the title. There is no raster fallback anywhere.
 
 ## The controls
 

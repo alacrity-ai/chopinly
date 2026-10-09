@@ -22,6 +22,15 @@ export const CHORD_Q_MAX = 16;
 export const SUBTITLE_MAX = 80; // a piece's subtitle ("As played by …", WSHED-169)
 /** A glissando (WSHED-167): "start" slides to the voice's next note; "up" / "down" leave the note with no landing (an open gliss). */
 export const GLISS = ["start", "up", "down"];
+/** Lyrics (docs/COMPOSE_LYRICS_DESIGN.md §1, WSHED-174): `ev.lyrics = [{ n, text, syl, ext? }]` on a note — the verse (1-based), the syllable as sung, its place in the word (MusicXML's syllabic), a melisma through the notes that follow. */
+export const LYRIC_MAX = 40, LYRIC_VERSES_MAX = 4;
+export const SYLLABICS = ["single", "begin", "middle", "end"];
+/** The highest verse number used on each staff of the document (0 where a staff carries no lyrics) — what sizes the band below a staff. */
+export function lyricVersesOf(doc) {
+  const out = doc.parts.flatMap((p) => Array.from({ length: p.staves }, () => 0));
+  doc.measures.forEach((m) => m.staves.forEach((s, si) => { for (const v of s.voices) for (const ev of v ?? []) for (const l of ev.lyrics ?? []) if (l.n > out[si]) out[si] = l.n; }));
+  return out;
+}
 const isPitchName = (r) => !!r && typeof r === "object" && /^[A-G]$/.test(r.step) && Number.isInteger(r.alter ?? 0) && Math.abs(r.alter ?? 0) <= 2 && Object.keys(r).every((k) => k === "step" || k === "alter");
 export const MAX_VOICES = 4;
 /** How far a rest may be dragged from its automatic place, in staff steps (`ev.restY`). */
@@ -226,6 +235,18 @@ export function validate(doc) {
           for (const g of ev.graces) if (!GRACE_BASES.includes(g.base) || !(g.pitches?.length > 0) || g.pitches.some((p) => !/^[A-G]$/.test(p.step) || !Number.isInteger(p.octave) || !Number.isInteger(p.alter ?? 0) || Math.abs(p.alter ?? 0) > 2)) throw new Error(`${ev.id}: a grace note needs a value of 8, 16 or 32 and pitches`);
         }
         if (ev.gliss !== undefined && (ev.kind !== "note" || !GLISS.includes(ev.gliss))) throw new Error(`${ev.id}: a glissando is start, up or down, on a note`);
+        if (ev.lyrics !== undefined) { // docs/COMPOSE_LYRICS_DESIGN.md §1.2: syllables on a note, one per verse, verses ascending
+          if (ev.kind !== "note" || !Array.isArray(ev.lyrics) || !ev.lyrics.length) throw new Error(`${ev.id}: lyrics go on a note, at least one syllable`);
+          let lastN = 0;
+          for (const l of ev.lyrics) {
+            if (!l || typeof l !== "object" || !Number.isInteger(l.n) || l.n < 1 || l.n > LYRIC_VERSES_MAX || l.n <= lastN) throw new Error(`${ev.id}: a lyric's verse is 1–${LYRIC_VERSES_MAX}, each once, in order`);
+            if (typeof l.text !== "string" || !l.text.trim() || l.text !== l.text.trim() || l.text.length > LYRIC_MAX || /[\r\n]/.test(l.text)) throw new Error(`${ev.id}: a syllable is 1–${LYRIC_MAX} letters with no line break`);
+            if (l.syl !== undefined && !SYLLABICS.includes(l.syl)) throw new Error(`${ev.id}: a syllable is single, begin, middle or end`);
+            if (l.ext !== undefined && l.ext !== true) throw new Error(`${ev.id}: a melisma is true or absent`);
+            if (Object.keys(l).some((k) => !["n", "text", "syl", "ext"].includes(k))) throw new Error(`${ev.id}: a lyric carries only n, text, syl and ext`);
+            lastN = l.n;
+          }
+        }
         if (ev.trem !== undefined && (ev.kind !== "note" || !Number.isInteger(ev.trem) || ev.trem < 1 || ev.trem > TREM_MAX)) throw new Error(`${ev.id}: a tremolo is 1–${TREM_MAX} strokes on a note`);
         if (ev.trill !== undefined && (ev.kind !== "note" || !ev.art?.includes("trill") || typeof ev.trill !== "object" || !ev.trill || (ev.trill.line !== undefined && ev.trill.line !== true) || (ev.trill.alter !== undefined && !TRILL_ALTERS.includes(ev.trill.alter)) || (ev.trill.line === undefined && ev.trill.alter === undefined))) throw new Error(`${ev.id}: trill options belong on a trilled note — a line, an accidental`);
         if (ev.stem !== undefined && (ev.kind !== "note" || (ev.stem !== "up" && ev.stem !== "down"))) throw new Error(`${ev.id}: a stem is up or down, on a note`);
