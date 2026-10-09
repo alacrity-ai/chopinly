@@ -13,12 +13,12 @@ keywords: [export, pdf, print, page, letter, a4, margins, staff size, preview, s
 
 ## It is a real PDF
 
-Vector outlines, not a picture of a page. The notes are drawn from Bravura's own outlines and the words — expression text in italic, chord symbols and lyrics upright — are embedded font subsets, so it prints at any size and a reader can select the title. There is no raster fallback anywhere.
+Vector outlines, not a picture of a page. The notes are drawn from Bravura's own outlines and the words — expression text in italic, chord symbols, lyrics and instrument names upright — are embedded font subsets, so it prints at any size and a reader can select the title. There is no raster fallback anywhere.
 
 ## The controls
 
 - **Layout** — opens [the Layout editor](help:layout), where you arrange bars into rows on the paper itself. The hint beside it reads *automatic*, or how many pins you have set.
-- **size** — the staff size, from 1.4 to 2.5 mm a staff space, in small steps. The readout shows the staff height and the page count as you go.
+- **size** — the staff size, from 1.0 to 2.5 mm a staff space, in small steps. The readout shows the staff height and the page count as you go. A piece of three staves or more opens at a smaller size the first time (6.4 mm; 5.6 mm from six staves), and the size you pick is remembered for that piece. A size whose system would run off the page is refused, and the fine print names the largest that fits — see [instruments and parts](help:instruments).
 - **page** — Letter or A4.
 - **margins** — narrow, normal or wide.
 - **header** — the title, the subtitle (if the piece has one) and the composer on page 1, and a running head with the page number after it.

@@ -156,5 +156,34 @@ if (want("export-sheet") || want("layout-view")) {
   await page.keyboard.press("Escape");
 }
 
+// ---- instruments (WSHED-182): a seeded string quartet — the score with its bracket and names, and the Instruments sheet ----
+if (want("instruments-score") || want("instruments-sheet")) {
+  const qid = await page.evaluate(async () => {
+    const [model, engine, ins, lb] = await Promise.all([import("/js/lib/compose/model.js"), import("/js/lib/compose/engine.js"), import("/js/lib/compose/instruments.js"), import("/js/lib/logbook.js")]);
+    const PPQ = 6720, Q = { base: 4, dots: 0, rest: false, alter: null }, E = { base: 8, dots: 0, rest: false, alter: null }, H = { base: 2, dots: 0, rest: false, alter: null };
+    let doc = model.newComposition({ id: "help-quartet", title: "Quartet in D", composer: "Claude", parts: ins.templateParts("quartet") });
+    const lines = [[8, 7, 6, 5, 4, 5, 6, 7], [4, 4, 5, 5, 4, 4, 2, 2], [4, 2, 4, 2, 4, 2, 4, 2], [2, 2, 0, 0, 2, 2, 4, 4]];
+    for (let bar = 0; bar < 2; bar++) for (let st = 0; st < 4; st++) {
+      if (st === 0) for (let k = 0; k < 8; k++) doc = engine.place(doc, { bar, staff: st, ticks: (k * PPQ) / 2, step: lines[0][(k + bar) % 8], voice: 0 }, E).doc;
+      else if (st === 3) for (let k = 0; k < 2; k++) doc = engine.place(doc, { bar, staff: st, ticks: k * 2 * PPQ, step: lines[3][(k + bar) % 8], voice: 0 }, H).doc;
+      else for (let k = 0; k < 4; k++) doc = engine.place(doc, { bar, staff: st, ticks: k * PPQ, step: lines[st][(k + bar) % 8], voice: 0 }, Q).doc;
+    }
+    doc = engine.addExpression(doc, { kind: "dyn", staff: 0, bar: 0, at: 0, value: "p" }).doc;
+    lb.logbook.addComposition(doc);
+    return doc.id;
+  });
+  await page.goto(`${BASE}/?app=1#/compose/${qid}`);
+  await page.waitForSelector(".cp-editor .cp-svg");
+  await page.evaluate(() => document.fonts.ready);
+  await page.evaluate(() => { const ed = document.querySelector(".cp-editor").__editor; while (ed.state.S > 10) document.querySelector("[data-act=zoom-out]")?.click(); });
+  await settle(3200); // the armed toast fades
+  await shoot("instruments-score", "#cp-view", { pad: 0 });
+  await page.click("[data-pop=cp-file-more]"); await page.click('[data-act="instruments"]');
+  await page.waitForSelector(".cp-ins-list .cp-ins-row");
+  await settle(400);
+  await shoot("instruments-sheet", ".cp-ins-wrap .lb-sheet", { pad: 4 });
+  await page.keyboard.press("Escape");
+}
+
 await browser.close();
 console.log(`\n${shots.length} shot${shots.length === 1 ? "" : "s"} → img/help/`);

@@ -22,11 +22,12 @@ import { chordOf, place, remove, snap, trimBars, find, setPitch, retype, clipFro
 import { createHistory } from "../../lib/compose/history.js";
 import { createSound } from "../../lib/compose/sound.js";
 import { createPlayer } from "../../lib/compose/play.js";
-import { clefAt, keyAt, timeAt, sigAt, tempoOf, usedVoices, MAX_VOICES, MIN_TEMPO, MAX_TEMPO, GRACE_BASES } from "../../lib/compose/model.js";
+import { clefAt, keyAt, timeAt, sigAt, tempoOf, usedVoices, MAX_VOICES, MIN_TEMPO, MAX_TEMPO, GRACE_BASES, nStavesOf, partOfStaff, partGroup } from "../../lib/compose/model.js";
 import { ticks as ticksOf, capacity, groupSize, exprGrid, WHOLE } from "../../lib/compose/ticks.js";
 import { CLEFS } from "../../lib/music.js";
 import { buildRails, MAIN_BASES, MORE_BASES, KEYS, RAILS, DEFAULT_RAILS, JUMP_LABEL, HANDS, durName, tupletName } from "./rails.js";
 import { openCompositionDetails } from "./details.js";
+import { openInstrumentsSheet } from "./instruments.js";
 import { openExportSheet } from "./exportsheet.js";
 import { saveFile } from "./savefile.js";
 import { createFavorites } from "./favorites.js";
@@ -44,7 +45,7 @@ const LINE_NAME = { pedal: "pedal", 1: "8va", "-1": "8vb", "1:15": "15ma", "-1:1
 const PEDAL_STYLES = ["line", "sign", "sost"], TEMPO_UNIT_BASES = [2, 4, 8];
 let clipboard = null; // the copied phrase — lives for the session, so it can travel between compositions
 
-export function openEditor({ id, ctx, onClose }) {
+export function openEditor({ id, ctx, onClose, then = null }) {
   const stored = logbook.composition(id);
   if (!stored) { toast("that composition is gone"); onClose?.(); return null; }
   const c = upgrade(stored); // a v1 / v2 piece: its note-attached marks become expressions (docs/COMPOSE_EXPRESSIONS_DESIGN.md §1.1)
@@ -123,17 +124,24 @@ export function openEditor({ id, ctx, onClose }) {
     sync();
     showPlayhead(player.position);
   }
+  /** "the upper staff" on a piano piece; "Violin I" / "the Piano's lower staff" once there are several instruments (WSHED-184). */
+  function staffName(k) {
+    const pi = partOfStaff(doc, k), p = doc.parts[pi], idx = k - doc.parts.slice(0, pi).reduce((n, q) => n + q.staves, 0);
+    const which = p.staves === 1 ? "" : p.staves === 2 ? (idx === 0 ? "upper" : "lower") : ["top", "middle", "bottom"][idx];
+    if (doc.parts.length === 1) return which ? `the ${which} staff` : "the staff";
+    return which ? `the ${p.name}'s ${which} staff` : p.name;
+  }
   /** What the selection allows the voice menu and the expression rail to do. */
   function selFacts() {
     const ids = selEvIds(), fs = ids.map((id) => find(doc, id)).filter(Boolean);
     const notes = fs.filter((f) => f.ev.kind === "note"), rests = fs.filter((f) => f.ev.kind === "rest");
     const xs = ids.map((id) => findExpression(doc, id)).filter(Boolean), exprs = xs.length > 0 && xs.length === ids.length;
-    const n = doc.parts[0].staves;
+    const n = nStavesOf(doc);
     const lyrics = selection.size > 0 && [...selection].every(isLyricKey);
-    return { any: fs.length > 0, exprs, lyrics, dyns: exprs && xs.every((f) => f.x.kind === "dyn"), texts: exprs && xs.every((f) => f.x.kind === "text"), chords: exprs && xs.every((f) => f.x.kind === "chord"), notes: notes.length > 0, rests: rests.length > 0, hidden: rests.length > 0 && rests.every((f) => f.ev.hidden), up: notes.some((f) => f.staff + (f.ev.cross ?? 0) - 1 >= 0 && Math.abs((f.ev.cross ?? 0) - 1) <= 1), down: notes.some((f) => f.staff + (f.ev.cross ?? 0) + 1 < n && Math.abs((f.ev.cross ?? 0) + 1) <= 1) };
+    return { any: fs.length > 0, exprs, lyrics, dyns: exprs && xs.every((f) => f.x.kind === "dyn"), texts: exprs && xs.every((f) => f.x.kind === "text"), chords: exprs && xs.every((f) => f.x.kind === "chord"), notes: notes.length > 0, rests: rests.length > 0, hidden: rests.length > 0 && rests.every((f) => f.ev.hidden), up: notes.some((f) => f.staff + (f.ev.cross ?? 0) - 1 >= 0 && Math.abs((f.ev.cross ?? 0) - 1) <= 1 && partOfStaff(doc, f.staff + (f.ev.cross ?? 0) - 1) === partOfStaff(doc, f.staff)), down: notes.some((f) => f.staff + (f.ev.cross ?? 0) + 1 < n && Math.abs((f.ev.cross ?? 0) + 1) <= 1 && partOfStaff(doc, f.staff + (f.ev.cross ?? 0) + 1) === partOfStaff(doc, f.staff)) }; // a cross stays inside the instrument (docs/COMPOSE_PARTS_DESIGN.md §5)
   }
   function sync() {
-    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title: heading(), voice, used: usedVoices(doc), sel: selFacts(), tempoUnit, hands, pedalStyle, input, gesture: gestureOn, favorites: fav.on, chord: chordDraft, chordSlash, gliss: glissMode, lyric: { n: lyric.n, cursor: !!lyric.cursor || selFacts().lyrics, used: new Set(lyricRuns(doc).map((r) => r.n)) } });
+    rails.update({ armed, mode, canUndo: history.canUndo, canRedo: history.canRedo, hasSelection: selection.size > 0, hasClip: !!clipboard, pasting, tupletN, pending, rails: railsOn, title: heading(), voice, used: usedVoices(doc), sel: selFacts(), tempoUnit, hands, pedalStyle, input, gesture: gestureOn, favorites: fav.on, chord: chordDraft, chordSlash, gliss: glissMode, lyric: { n: lyric.n, cursor: !!lyric.cursor || selFacts().lyrics, used: new Set(lyricRuns(doc).map((r) => r.n)) }, keyboard: doc.parts.some((p) => partGroup(p) === "keyboard") });
     fav.sync(); // the slots mirror their rail buttons' state
     view.dataset.mode = mode; view.classList.toggle("pasting", pasting); view.classList.toggle("arming", !!pending);
     syncTransport();
@@ -178,7 +186,7 @@ export function openEditor({ id, ctx, onClose }) {
   function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(flush, SAVE_MS); }
   function flush() {
     clearTimeout(saveTimer); if (!dirty || closed && !doc) return;
-    put({ measures: doc.measures, v: doc.v }); dirty = false; // the schema travels with the measures (an upgraded piece is persisted by its first real edit)
+    put({ measures: doc.measures, parts: doc.parts, v: doc.v }); dirty = false; // the schema and the parts travel with the measures (an upgraded piece is persisted by its first real edit; the Instruments sheet changes both at once, WSHED-182)
     // a piece past the sync cap is kept here but no longer follows the account — say so once
     if (!warnedBig && !logbook.compositionSyncable(held)) { warnedBig = true; toast("this piece is now too big to back up — it stays on this device"); }
   }
@@ -344,7 +352,7 @@ export function openEditor({ id, ctx, onClose }) {
         const unitName = mark.unit ? ({ 8: "♪", 4: "♩", 2: "𝅗𝅥" }[mark.unit.base] + (mark.unit.dots ? "." : "")) : "♩";
         const name = mark.kind === "tempo" ? `${unitName} = ${mark.bpm}${mark.text ? ` ${mark.text}` : ""}` : mark.kind === "rehearsal" ? (mark.text ? `"${mark.text}"` : mark.style === "number" ? "rehearsal number" : "rehearsal mark") : mark.kind === "segno" ? "segno" : mark.kind === "coda" ? "coda sign" : JUMP_LABEL[mark.kind];
         toast(had ? `${name} removed from bar ${t.bar + 1}` : `${name} ${JUMP_LABEL[mark.kind] ? "at the end of" : "on"} bar ${t.bar + 1}`);
-      } else { commit(setClef(doc, t.bar, t.staff, p.value, t.at)); toast(`${p.value} clef on the ${t.staff === 0 ? "upper" : "lower"} staff from ${t.at ? `beat ${t.at / groupSize(timeAt(doc, t.bar)) + 1} of ` : ""}bar ${t.bar + 1}`); }
+      } else { commit(setClef(doc, t.bar, t.staff, p.value, t.at)); toast(`${p.value} clef on ${staffName(t.staff)} from ${t.at ? `beat ${t.at / groupSize(timeAt(doc, t.bar)) + 1} of ` : ""}bar ${t.bar + 1}`); }
       haptic(8);
     } catch (e) { if (!(e instanceof Nudge)) throw e; nudge(e.message, e.bar ?? t.bar); }
     setPending(null);
@@ -941,7 +949,12 @@ export function openEditor({ id, ctx, onClose }) {
       case "back": close(); return;
       case "details": { // title · composer · tags in the shared modal; the header follows a rename, a delete leaves the editor
         flush();
-        openCompositionDetails(id).then((r) => { if (closed) return; if (r.deleted) { close(); return; } if (r.saved) { title = r.saved.title; composer = r.saved.composer ?? ""; held = logbook.composition(id); const { subtitle: _old, ...rest } = doc; doc = history.replace({ ...rest, title, ...(r.saved.subtitle ? { subtitle: r.saved.subtitle } : {}), composer, tags: [...(r.saved.tags ?? [])] }); el.setAttribute("aria-label", heading()); sync(); } }); // the working document carries the identity too (it is a snapshot of its own since v104, not the stored object)
+        openCompositionDetails(id).then((r) => { if (closed) return; if (r.deleted) { close(); return; } if (r.instruments) { act("instruments"); return; } if (r.saved) { title = r.saved.title; composer = r.saved.composer ?? ""; held = logbook.composition(id); const { subtitle: _old, ...rest } = doc; doc = history.replace({ ...rest, title, ...(r.saved.subtitle ? { subtitle: r.saved.subtitle } : {}), composer, tags: [...(r.saved.tags ?? [])] }); el.setAttribute("aria-label", heading()); sync(); } }); // the working document carries the identity too (it is a snapshot of its own since v104, not the stored object)
+        return;
+      }
+      case "instruments": { // the piece's parts (docs/COMPOSE_PARTS_DESIGN.md §3, WSHED-182): each change is one engine operation, one undo step
+        flush(); if (lyric.armed) lyricLeave();
+        openInstrumentsSheet({ getDoc: () => doc, apply: (fn) => { const next = fn(doc); if (next === doc) return; selection.clear(); pending = null; commit(next); pruneSelection(); sync(); } });
         return;
       }
       case "export-pdf": case "save-pdf": { // the export sheet: size, page, margins, header, preview → Save PDF / Add to Scores (WSHED-121)
@@ -1343,13 +1356,14 @@ export function openEditor({ id, ctx, onClose }) {
   // marks are centred on measured ink; if Bravura is not in yet the first render centred their advance box — lay out again once it is
   if (document.fonts && !document.fonts.check('1em "Bravura"')) document.fonts.load('1em "Bravura"').then(() => { if (!closed) layout(); }, () => {});
   toast(`${durName(armed.base)} armed — tap the staff`);
+  if (then?.instruments) queueMicrotask(() => { if (!closed) act("instruments"); }); // a new piece "for … choose…" (WSHED-182)
 
   function close({ silent = false } = {}) {
     if (closed) return;
     closed = true;
     flush();
     const trimmed = trimBars(doc, { forEditing: true }); // one empty bar stays to write into; a file ends at the music (WSHED-132)
-    if (trimmed.measures.length !== doc.measures.length && logbook.composition(id)) put({ measures: trimmed.measures, v: doc.v });
+    if (trimmed.measures.length !== doc.measures.length && logbook.composition(id)) put({ measures: trimmed.measures, parts: doc.parts, v: doc.v });
     offRemote();
     document.removeEventListener("keydown", onKey);
     window.removeEventListener("resize", onResize);

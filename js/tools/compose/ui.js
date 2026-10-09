@@ -34,15 +34,17 @@ export function buildUI(root, ctx) {
   };
   const closeHelp = () => { help?.destroy(); help = null; };
 
+  let openWith = null; // what the editor does right after opening (the list's "choose…" → the Instruments sheet, WSHED-182)
   const show = () => {
     const r = route();
     if (r.kind === "help") { openHelp(r.slug, r.at); return; }
     closeHelp();
-    if (!list) list = mountList(root, ctx, { open: (cid) => { location.hash = `#/compose/${encodeURIComponent(cid)}`; }, help: () => { location.hash = "#/compose/help"; } });
+    if (!list) list = mountList(root, ctx, { open: (cid, then = null) => { openWith = then; location.hash = `#/compose/${encodeURIComponent(cid)}`; }, help: () => { location.hash = "#/compose/help"; } });
     if (r.kind === "editor") {
       if (editor?.id === r.id) { editor.el?.removeAttribute("hidden"); return; }
       editor?.close({ silent: true });
-      editor = openEditor({ id: r.id, ctx, onClose: () => { editor = null; if (route().kind === "editor") history.replaceState(null, "", "#/compose"); list?.refresh(); } });
+      editor = openEditor({ id: r.id, ctx, then: openWith, onClose: () => { editor = null; if (route().kind === "editor") history.replaceState(null, "", "#/compose"); list?.refresh(); } });
+      openWith = null;
       if (!editor) { history.replaceState(null, "", "#/compose"); list.refresh(); }
     } else if (editor) { editor.close({ silent: true }); editor = null; list.refresh(); }
   };

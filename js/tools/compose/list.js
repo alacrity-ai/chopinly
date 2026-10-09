@@ -61,7 +61,7 @@ export function mountList(root, { store }, { open, help }) {
     root.querySelector("#cp-help").addEventListener("click", () => help?.());
     root.querySelector("#cp-new").addEventListener("click", async () => {
       const r = await openCompositionDetails(null);
-      if (r.created) { haptic(8); open(r.created.id); }
+      if (r.created) { haptic(8); open(r.created.id, r.instruments ? { instruments: true } : null); }
     });
     const input = root.querySelector("#cp-import-file");
     root.querySelector("#cp-import").addEventListener("click", () => input.click());

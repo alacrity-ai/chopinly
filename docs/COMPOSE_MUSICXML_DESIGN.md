@@ -80,10 +80,12 @@ skipped), plain or compressed (`.mxl`: the zip's `META-INF/container.xml` names 
 without one the first `.musicxml` / `.xml` entry is taken; entries are stored or deflated — inflated
 with `DecompressionStream("deflate-raw")`, which every current browser and node have).
 
-**Which part.** The first part with two or more staves supplies staves 1–2 (an organ's pedal staff
-is dropped). Otherwise the first two single-staff parts become the upper and lower staff (a
-right-hand / left-hand pair). A lone single-staff part fills the upper staff and the lower staff
-rests. Anything else in the file is ignored.
+**Which part.** Every part (WSHED-183, v128 — `docs/COMPOSE_PARTS_DESIGN.md` §4). Each `<score-part>`
+in part-list order becomes a part of the document — name, abbreviation, instrument (from
+`<instrument-sound>`, else the name), its `<staves>` count (at most three) and the first bar's clefs —
+and its staves land on the flat staff array in turn. More than sixteen staves, twelve parts or three
+staves to a part refuse with the count; a `<transpose>` warns that the part was read at written pitch.
+Before v128 only the first two-staff part (or the first two single-staff parts) was kept.
 
 | MusicXML | Document | Rule |
 |---|---|---|
@@ -138,7 +140,7 @@ import's sentence, never as a half-composition.
   on purpose with `node -e 'import("./tests/fixtures/compose-golden.mjs").then(m => m.writeXml())'`);
   the golden piece round-trips (export → import → the same measures up to ids); a voices piece
   round-trips with cross-staff notes, hidden and dragged rests; pickup bars, timewise scores,
-  two single-staff parts, tuplets without `<tuplet>` notations, unsupported tuplets, overlapping
+  three single-staff parts (each kept since v128), tuplets without `<tuplet>` notations, unsupported tuplets, overlapping
   notes, an `.mxl` built in the test; the XML reader's entities, CDATA, comments and a BOM.
 - One-off XSD check (2026-09-14): `xmllint --noout --schema musicxml.xsd` against the W3C
   MusicXML 4.0 schema passes on the golden export and on a voices export.

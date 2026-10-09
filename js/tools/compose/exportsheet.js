@@ -10,7 +10,8 @@ import { makeStore } from "../../lib/store.js";
 import { icon } from "../../lib/icons.js";
 import { esc, toast, openSheet, plural } from "../logbook/util.js";
 import { haptic, stamp } from "../logbook/motion.js";
-import { planPages, renderPdf, exportOptions, PAGES, STAFF_MM, MARGINS } from "../../lib/compose/export/pdf.js";
+import { planPages, renderPdf, exportOptions, minStaffMm, proposedStaffMm, PAGES, STAFF_MM, MARGINS } from "../../lib/compose/export/pdf.js";
+import { nStavesOf } from "../../lib/compose/model.js";
 import { loadPdfLib } from "../../lib/compose/export/pdflib.js";
 import { importFile } from "../scores/library.js";
 import { saveFile } from "./savefile.js";
@@ -29,6 +30,10 @@ export function openExportSheet({ id, doc, primary = "export-pdf", onDoc = () =>
   const c = logbook.composition(id);
   if (!c) { toast("that composition is gone"); return Promise.resolve(); }
   let opts = exportOptions(store.get("export", {}));
+  // a big score proposes a smaller staff the first time it is exported (docs/COMPOSE_PARTS_DESIGN.md §6); a size chosen for this piece is remembered for it
+  const sizes = store.get("export.sizes", {});
+  if (sizes[id]) opts.staffMm = exportOptions({ staffMm: sizes[id] }).staffMm;
+  else if (nStavesOf(doc) >= 3) opts.staffMm = Math.min(opts.staffMm, proposedStaffMm(nStavesOf(doc)));
   const linked = () => (c.scoreId && logbook.score(c.scoreId)) || null;
   const sheet = openSheet({
     title: "export",
@@ -77,10 +82,12 @@ export function openExportSheet({ id, doc, primary = "export-pdf", onDoc = () =>
     for (const b of body.querySelectorAll("[data-margins]")) b.setAttribute("aria-pressed", String(b.dataset.margins === opts.margins));
     $("#cp-x-header").checked = opts.header;
     const tight = plan.tight.length; // pinned rows that do not fit at this size: nothing is saved over them — the Layout view releases or re-pins them
+    const fit = plan.tooTall ? minStaffMm(doc, opts) : null; // a system taller than the page (WSHED-185): the size is refused and the largest that fits is named
     $("#cp-x-pins").textContent = pinSummary(doc);
-    $("#cp-x-fine").textContent = `${PAGES[opts.page].label} · ${opts.margins} margins (${MARGINS[opts.margins]} mm) · ${plural(plan.doc.measures.length, "bar")} on ${plural(plan.L.systems.length, "system")}${tight ? ` · ${plural(tight, "pinned row")} ${tight === 1 ? "does" : "do"} not fit — open Layout` : ""}`;
-    $("#cp-x-fine").classList.toggle("bad", tight > 0);
-    if (!busy) for (const b of body.querySelectorAll(".cp-export-actions button")) b.disabled = tight > 0;
+    $("#cp-x-fine").textContent = plan.tooTall ? `a ${plural(plan.nStaves, "staff", "staves")} system needs ${fit ? `${(fit * 4).toFixed(1)} mm or smaller` : "a bigger page"} on ${PAGES[opts.page].label} — this size runs off the page` : `${PAGES[opts.page].label} · ${opts.margins} margins (${MARGINS[opts.margins]} mm) · ${plural(plan.doc.measures.length, "bar")} on ${plural(plan.L.systems.length, "system")}${tight ? ` · ${plural(tight, "pinned row")} ${tight === 1 ? "does" : "do"} not fit — open Layout` : ""}`;
+    $("#cp-x-fine").classList.toggle("bad", tight > 0 || plan.tooTall);
+    if (!busy) for (const b of body.querySelectorAll(".cp-export-actions button")) b.disabled = tight > 0 || plan.tooTall;
+    $("#cp-x-layout").disabled = plan.tooTall;
   }
   $("#cp-x-layout").addEventListener("click", async () => {
     if (busy) return;
@@ -90,7 +97,7 @@ export function openExportSheet({ id, doc, primary = "export-pdf", onDoc = () =>
   });
   $("#cp-x-prev").addEventListener("click", () => { pageNo--; haptic(3); preview(); });
   $("#cp-x-next").addEventListener("click", () => { pageNo++; haptic(3); preview(); });
-  const set = (patch) => { opts = exportOptions({ ...opts, ...patch }); store.set("export", opts); haptic(3); preview(); };
+  const set = (patch) => { opts = exportOptions({ ...opts, ...patch }); store.set("export", opts); if ("staffMm" in patch) store.set("export.sizes", { ...store.get("export.sizes", {}), [id]: opts.staffMm }); haptic(3); preview(); };
   $("#cp-x-smaller").addEventListener("click", () => set({ staffMm: STAFF_MM[Math.max(0, STAFF_MM.indexOf(opts.staffMm) - 1)] }));
   $("#cp-x-larger").addEventListener("click", () => set({ staffMm: STAFF_MM[Math.min(STAFF_MM.length - 1, STAFF_MM.indexOf(opts.staffMm) + 1)] }));
   for (const b of body.querySelectorAll("[data-page]")) b.addEventListener("click", () => set({ page: b.dataset.page }));
@@ -111,7 +118,7 @@ export function openExportSheet({ id, doc, primary = "export-pdf", onDoc = () =>
     hint.textContent = "preparing the PDF…";
     try { await work(); }
     catch (e) { console.error(e); toast(e.message || "the export failed"); hint.textContent = was; }
-    finally { busy = false; for (const b of body.querySelectorAll(".cp-export-actions button")) b.disabled = plan.tight.length > 0; }
+    finally { busy = false; for (const b of body.querySelectorAll(".cp-export-actions button")) b.disabled = plan.tight.length > 0 || plan.tooTall; }
   }
   $("#cp-x-save").addEventListener("click", () => run("#cp-x-save-hint", async () => {
     const file = await pdfFile();

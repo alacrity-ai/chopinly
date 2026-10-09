@@ -6,19 +6,20 @@
 import { keyAlterations, keySignatureGlyphs, CLEFS, staffStep } from "../music.js";
 import { timeSig } from "../staff/glyphs.js";
 import { ticks, capacity, groupSize, groupOf } from "./ticks.js";
-import { timeAt, keyAt, clefAt, evTicks, lyricVersesOf } from "./model.js";
+import { timeAt, keyAt, clefAt, evTicks, lyricVersesOf, nStavesOf, staffList, partGroup } from "./model.js";
 import { onsets, diatonicOf, nextEvent, slurEnd, expressionsOf, spansOf, barStarts, formMarksOf, simileTail, lyricRuns, tiedIn, seqOf } from "./engine.js";
 import { xOfTicks } from "./hit.js";
 import { qualityRuns } from "./chordsym.js";
 
-export const STAFF_GAP = 8;      // S between one staff's bottom line and the next staff's top line, with no lyrics between
+export const STAFF_GAP = 8;      // S between one staff's bottom line and the next staff's top line inside one instrument, with no lyrics between
+export const PART_GAP = 10;      // S between the last staff of one instrument and the first of the next (docs/COMPOSE_PARTS_DESIGN.md §2.1, Gould: instruments sit further apart than an instrument's own staves)
 export const SYS_GAP = 10;       // S between systems
+export const BRACKET_W = 1.1;    // S the system's left edge moves right by when a bracket stands before it
+export const NAME_SIZE = 1.3, ABBR_SIZE = 1.15; // part names on the first system, abbreviations after
 export const TOP_PAD = 6, BOTTOM_PAD = 4;
 /** Lyrics (docs/COMPOSE_LYRICS_DESIGN.md §2–3): verse 1's baseline LYRIC_Y under the staff's bottom line, each further verse LYRIC_STEP lower; the band a staff with lyrics reserves below it, in S. */
 export const LYRIC_Y = 2.6, LYRIC_STEP = 1.6, LYRIC_SIZE = 1.15, LYRIC_AIR = 0.5, HYPHEN_MIN = 0.9;
 export const lyricBand = (verses) => (verses ? 1.4 + LYRIC_STEP * verses : 0);
-/** The staves of the document in score order, each with its part (WSHED-175; the parts epic WSHED-180 widens the record). */
-export const staffList = (doc) => doc.parts.flatMap((p, pi) => Array.from({ length: p.staves }, (_, k) => ({ part: pi, index: k })));
 /**
  * The vertical shape of every system of this document, in S (docs/COMPOSE_LYRICS_DESIGN.md §2, WSHED-175). The same
  * for every system — the engraver's systems stay uniform (hit-testing, the ghost and the playhead rely on it); paper
@@ -30,18 +31,38 @@ export const staffList = (doc) => doc.parts.flatMap((p, pi) => Array.from({ leng
  */
 export function metricsOf(doc) {
   const staves = staffList(doc), verses = lyricVersesOf(doc);
-  const gaps = staves.map((s, i) => (i === staves.length - 1 ? 0 : STAFF_GAP + lyricBand(verses[i] ?? 0)));
+  const gaps = staves.map((s, i) => (i === staves.length - 1 ? 0 : (s.last ? PART_GAP : STAFF_GAP) + lyricBand(verses[i] ?? 0)));
   const staffTop = [];
   let y = 0;
   staves.forEach((s, i) => { staffTop.push(y); y += 4 + gaps[i]; });
   const blockH = y, sysGap = Math.max(SYS_GAP, lyricBand(verses[staves.length - 1] ?? 0) + 4), sysH = blockH + sysGap;
   /** Which of n systems a layout y belongs to: the band around its block, split halfway through the gap (paper routes ink to pages by it). */
   const systemAt = (yy, n) => Math.max(0, Math.min(n - 1, Math.floor((yy - TOP_PAD + sysGap / 2) / sysH)));
-  return { staffTop, gaps, blockH, sysGap, sysH, topPad: TOP_PAD, bottomPad: BOTTOM_PAD, systemAt };
+  const { groups, barlineSpans } = groupsOf(doc, staffTop);
+  return { staffTop, gaps, blockH, sysGap, sysH, topPad: TOP_PAD, bottomPad: BOTTOM_PAD, systemAt, groups, barlineSpans };
 }
-const DEFAULT_METRICS = metricsOf({ parts: [{ staves: 2 }], measures: [] });
-/** @deprecated (WSHED-175) — the metrics of a plain grand staff; read `L.metrics.systemAt` for the layout at hand. Goes next release. */
-export const systemAt = DEFAULT_METRICS.systemAt;
+/**
+ * What stands left of the system (docs/COMPOSE_PARTS_DESIGN.md §2.2): a brace for each keyboard part of 2+ staves, a
+ * bracket for each run of 2+ consecutive parts of one other group (or a lone non-keyboard part of 2+ staves), and the
+ * spans barlines run through — the staves of one part, and of one bracket group; broken between groups and lone parts.
+ * `top` / `bottom` are from the system's top line (add `sys.top`).
+ */
+export function groupsOf(doc, staffTop) {
+  const parts = doc.parts ?? [{ staves: staffTop.length }];
+  const starts = []; let k = 0; for (const p of parts) { starts.push(k); k += p.staves; }
+  const span = (a, b) => ({ top: staffTop[starts[a]], bottom: staffTop[starts[b] + parts[b].staves - 1] + 4, parts: Array.from({ length: b - a + 1 }, (_, i) => a + i) });
+  const groups = [], barlineSpans = [];
+  for (let a = 0; a < parts.length; a++) {
+    const g = partGroup(parts[a]);
+    if (g === "keyboard") { if (parts[a].staves >= 2) groups.push({ kind: "brace", ...span(a, a) }); barlineSpans.push(span(a, a)); continue; }
+    let b = a;
+    while (b + 1 < parts.length && partGroup(parts[b + 1]) === g) b++;
+    if (b > a || parts[a].staves >= 2) groups.push({ kind: "bracket", ...span(a, b) });
+    barlineSpans.push(span(a, b));
+    a = b;
+  }
+  return { groups, barlineSpans };
+}
 const MAX_BARS_PER_SYSTEM = 6;
 /** Paper only (docs/COMPOSE_LAYOUT_DESIGN.md §2): a pinned row whose tightest bar falls under this share of natural spacing is `tight` — refused in the Layout view, red when a size change made it so.
  *  0.3 since v119 (0.8 before): Leif judges what looks crammed; the floor only stops what cannot be read at all (a sixteenth's column is then 0.75 S, heads 1.18 S wide already overlap). */
@@ -61,7 +82,8 @@ const prevInk = (b, prev, ds) => Math.max(0, ...prev.evs.filter((x) => x.ev.kind
   const flag = x.stem === "up" && x.ev.dur.base >= 8 && alone ? FLAG_W : 0;
   return x.dx + headW + Math.max(flip, flag) + (x.ev.dur.dots ? 0.9 : 0);
 }));
-const LEFT = 1.6; // S: brace + margin before the leading symbols
+const LEFT = 1.6; // S: brace + margin before the leading symbols, on a piece with one part and no bracket; brackets and names push it right (docs/COMPOSE_PARTS_DESIGN.md §2.2)
+const textW = (str, size) => 0.58 * size * String(str ?? "").length; // the layout's estimate of the serif's advance (the painter measures for real)
 const MIN_BAR = 8; // S: an empty bar
 /** Rest offsets in steps when a staff holds more than one voice in the bar: voice 1 high, 2 low, 3 higher, 4 lower. */
 const REST_STEP = [2, -2, 4, -4];
@@ -86,9 +108,15 @@ const stepsOf = (pitches, clef) => pitches.map((p) => staffStep({ letter: p.step
  * { S, width, height, systems, drawn, beams, ties, hit } — every coordinate in S.
  */
 export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false } = {}) {
-  const nStaves = doc.parts[0].staves;
+  const nStaves = nStavesOf(doc), staves = staffList(doc);
   const widthS = width / S;
   const M = metricsOf(doc);
+  // left of the system (docs/COMPOSE_PARTS_DESIGN.md §2.2): a bracket's rule, then the part names (first system) or abbreviations (after); a one-part piece prints neither and keeps LEFT
+  const named = doc.parts.length > 1;
+  // what stands between the names and the barline: a bracket's rule, or (named pieces only) the widest brace — Bravura's brace is 0.07 of its height wide, drawn 0.15 S left of the barline
+  const bracketW = M.groups.some((g) => g.kind === "bracket") ? BRACKET_W : named ? Math.max(0, ...M.groups.filter((g) => g.kind === "brace").map((g) => 0.07 * (g.bottom - g.top) + 0.15)) : 0;
+  const nameW = (first) => { if (!named) return 0; const w = Math.max(0, ...doc.parts.map((p) => textW(first ? p.name : p.abbr, first ? NAME_SIZE : ABBR_SIZE))); return w ? w + 1.0 : 0; };
+  const leftOf = (first) => LEFT + bracketW + nameW(first);
 
   // -- per bar: columns (union of onsets across staves and voices), leading symbols, ideal width --
   const bars = doc.measures.map((m, bi) => {
@@ -234,7 +262,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
   while (i < bars.length) {
     const sys = { bars: [], first: systems.length === 0 };
     let sum = 0;
-    const avail = widthS - LEFT - 0.5;
+    const avail = widthS - leftOf(sys.first) - 0.5;
     while (i < bars.length) {
       const b = bars[i];
       const w = leadingW(b, sys.bars.length === 0) + bodyW(b);
@@ -261,7 +289,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
   }
 
   // -- coordinates --
-  const drawn = [], beams = [], ties = [], clefs = [], graces = [], graceBeams = [], graceSlurs = [], trems = [];
+  const drawn = [], beams = [], ties = [], clefs = [], graces = [], graceBeams = [], graceSlurs = [], trems = [], partNames = [];
   const clefY = (topY, clef) => topY + (8 - (CLEFS[clef].line - 1) * 2) / 2;
   const hit = { systems: [] };
   const barPlace = []; // bar index → { hbar, si, sys, first } once placed
@@ -275,7 +303,14 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
     sys.courtesyLead = null;
     sys.endX = null; // where the staff lines stop when it is not the last barline
     const hsys = { top: sysTop - 3, bottom: sysTop + M.blockH + 3, staves: sys.staffTop.map((t) => ({ topY: t })), bars: [], ...(pins ? { room: sys.room, scale: sys.scale, capped: sys.scale === sys.cap, cap: sys.cap, pinned: sys.pinned, tight: sys.tight } : {}) };
-    let cursor = LEFT;
+    let cursor = leftOf(sys.first);
+    sys.x0 = cursor - 0.6; // the system's left barline; the staff lines start here
+    sys.groups = M.groups.map((g) => ({ ...g, top: sysTop + g.top, bottom: sysTop + g.bottom }));
+    sys.barlineSpans = M.barlineSpans.map((g) => ({ top: sysTop + g.top, bottom: sysTop + g.bottom }));
+    if (named) { // names right-aligned before the bracket, centred on the part's staves (docs/COMPOSE_PARTS_DESIGN.md §2.2)
+      let k0 = 0;
+      doc.parts.forEach((p, pi) => { const text = sys.first ? p.name : p.abbr; if (text) partNames.push({ text, x: sys.x0 - bracketW - 0.6, y: (staffTop(k0) + staffTop(k0 + p.staves - 1) + 4) / 2 + 0.4, size: sys.first ? NAME_SIZE : ABBR_SIZE, part: pi, system: si, anchor: "end" }); k0 += p.staves; });
+    }
     sys.bars.forEach((b, k) => {
       const first = k === 0;
       const barX0 = cursor;
@@ -546,7 +581,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
   const FINGER_STEP = 1.25, FINGER_AIR = 1.0, FINGER_INK = 0.91;
   for (const d of drawn) {
     if (d.rest || !d.fingers) continue;
-    const above = d.drawStaff === 0, x = d.x + d.headW / 2;
+    const above = staves[d.drawStaff]?.first ?? d.drawStaff === 0, x = d.x + d.headW / 2; // above on the first staff of its instrument (a one-staff part: always), below on the others (docs/COMPOSE_PARTS_DESIGN.md §2.4)
     const heads = d.heads.filter((h) => d.fingers[h.pi]).sort((p, q) => (above ? p.step - q.step : q.step - p.step));
     let y = above ? aboveOf(d) - FINGER_AIR : belowOf(d) + FINGER_AIR + FINGER_INK;
     for (const h of heads) { fingers.push({ x, y, n: d.fingers[h.pi], ev: d.id, pi: h.pi, system: d.system }); y += above ? -FINGER_STEP : FINGER_STEP; }
@@ -788,7 +823,7 @@ export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false
   /** The expression line of a staff in a system over [a, b) absolute ticks, and the text line at `a` — where a ghost mark would land. */
   const exprLineAt = (si, staff, a, b) => exprLine(si, staff, under(staff, a, b, si));
   const textLineAt = (si, staff, a) => Math.min(systems[si].staffTop[staff] - 2.3, ...under(staff, a, a + 1, si).map((d) => aboveOf(d) - 1.3));
-  return { S, unit: S, width, height, y0, metrics: M, systems, drawn, beams, ties, slurs, tuplets, marks, trillLines, trillAccs, glisses, arps, dynamics, hairpins, texts, chords, pedals, ottavas: ottavaLines, textLines, fingers, graces, graceBeams, graceSlurs, trems, similes, clefs, form, endings, lyrics, lyricLines, hit, nStaves, exprLine: exprLineAt, textLine: textLineAt, chordLine, pedalLine, ottavaLine, lyricLine, lyricOn };
+  return { S, unit: S, width, height, y0, metrics: M, systems, partNames, drawn, beams, ties, slurs, tuplets, marks, trillLines, trillAccs, glisses, arps, dynamics, hairpins, texts, chords, pedals, ottavas: ottavaLines, textLines, fingers, graces, graceBeams, graceSlurs, trems, similes, clefs, form, endings, lyrics, lyricLines, hit, nStaves, exprLine: exprLineAt, textLine: textLineAt, chordLine, pedalLine, ottavaLine, lyricLine, lyricOn };
 }
 
 function restBetween(drawn, a, b) {

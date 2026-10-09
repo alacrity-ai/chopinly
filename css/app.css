@@ -2354,6 +2354,8 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cp-svg .cp-ev.sel .head, .cp-svg .cp-ev.sel .rest, .cp-svg .cp-ev.sel .stem, .cp-svg .cp-ev.sel .head-part, .cp-svg .cp-head-g.sel .head, .cp-svg .cp-head-g.sel .head-part { fill: var(--hi); }
 .cp-svg .cp-head-g.sel .halo { fill: color-mix(in srgb, var(--hi) 22%, transparent); }
 .cp-svg .cp-brace { fill: var(--fg); }
+.cp-svg .cp-bracket { fill: var(--fg); } /* parts (WSHED-181): the bracket's rule and its hooks before an ensemble group */
+.cp-svg .cp-part-name { font: 500 1em var(--serif); fill: var(--fg); } /* part names before the first system, abbreviations after — upright like a chord symbol */
 .cp-svg .cp-tie, .cp-svg .cp-slur { fill: var(--fg); }
 .cp-svg .cp-tuplet-line { fill: none; stroke: var(--fg); stroke-width: 1.2; stroke-linecap: square; }
 .cp-svg .cp-tuplet-digit { fill: var(--fg); } /* its size (0.62 em) comes from paint.js, like every other glyph's */
@@ -2789,3 +2791,29 @@ input.lb-search { -webkit-appearance: none; appearance: none; }
 .cd-tone.left-out { opacity: 0.5; border-style: dashed; }
 .cd-tone.bass { border-style: dotted; }
 .cd-sheet-labels { justify-content: center; }
+
+/* --- Compose: the Instruments sheet (docs/COMPOSE_PARTS_DESIGN.md §3, WSHED-182) --- */
+.cp-ins-list { margin-bottom: 0.6rem; }
+.cp-ins-row { display: grid; grid-template-columns: 1.1rem 1fr auto; align-items: start; gap: 0.6rem; padding: 0.6rem 0.6rem 0.6rem 0.7rem; }
+.cp-ins-grip { color: var(--fg-dim); opacity: 0.6; padding-top: 0.75rem; }
+.cp-ins-grip .ic { width: 1rem; height: 1rem; }
+.cp-ins-fields { display: grid; grid-template-columns: minmax(0, 1fr) 6.5rem; gap: 0.4rem 0.5rem; min-width: 0; }
+.cp-ins-name, .cp-ins-abbr { min-width: 0; font-size: 0.95rem; padding: 0.5rem 0.65rem; }
+.cp-ins-kind { position: relative; display: flex; align-items: center; min-height: 2.2rem; padding: 0.25rem 0.5rem; border-radius: 0.6rem; background: color-mix(in srgb, var(--fg) 5%, transparent); color: var(--fg); font: 500 0.85rem var(--sans); cursor: pointer; }
+.cp-ins-kind-label { display: flex; flex-direction: column; gap: 0.1rem; }
+.cp-ins-kind-label small { color: var(--fg-dim); font-size: 0.7rem; }
+.cp-ins-select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 16px; } /* the native picker sits over its label: one menu that behaves on every device; 16px keeps iOS from zooming */
+.cp-ins-staves { display: inline-flex; gap: 0.25rem; align-self: center; justify-self: end; }
+.cp-ins-stave { width: 2.1rem; min-width: 2.1rem; height: 2.1rem; padding: 0; border-radius: 0.5rem; font-weight: 600; }
+.cp-ins-stave[aria-pressed="true"] { background: var(--accent); color: var(--bg); }
+.cp-ins-acts { display: flex; flex-direction: column; gap: 0.2rem; }
+.cp-ins-acts .cp-btn { --cp-h: 2.1rem; height: 2.1rem; border-radius: 0.5rem; }
+.cp-ins-acts .cp-btn .ic { width: 1rem; height: 1rem; transform: rotate(180deg); } /* the chevron points down; up is its turn */
+.cp-ins-acts .cp-ins-down .ic { transform: none; }
+.cp-ins-acts .lb-danger .ic { transform: none; }
+.cp-ins-acts .cp-btn:disabled { opacity: 0.3; }
+.cp-ins-add { position: relative; display: block; margin: 0.2rem 0 0.4rem; }
+.cp-ins-add-btn { display: inline-flex; align-items: center; gap: 0.5rem; height: 2.6rem; padding: 0 0.9rem 0 0.7rem; border-radius: 0.7rem; color: var(--accent); font-weight: 600; }
+.cp-ins-add.cp-ins-full .cp-ins-add-btn { opacity: 0.4; }
+.cp-ins-wrap .lb-sheet-body { max-height: min(72dvh, 44rem); overflow-y: auto; }
+@media (max-width: 480px) { .cp-ins-fields { grid-template-columns: minmax(0, 1fr) 5rem; } .cp-ins-row { gap: 0.4rem; padding-left: 0.4rem; } }

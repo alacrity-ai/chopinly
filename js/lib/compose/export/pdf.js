@@ -8,14 +8,14 @@
 // baked outlines (bravura.js) as one form XObject per glyph, words are set in Fraunces (embedded
 // subsets), hidden rests and halos are left out, every voice is ink. Pure given the libraries, so
 // node tests render real PDFs.
-import { layoutComposition } from "../layout.js";
+import { layoutComposition, metricsOf } from "../layout.js";
 import { paintScore } from "../paint.js";
 import { trimBars } from "../engine.js";
 import { BRAVURA } from "./bravura.js";
 
 export const PAGES = { letter: { w: 612, h: 792, label: "Letter" }, a4: { w: 595.28, h: 841.89, label: "A4" } };
-/** Staff spaces on offer, in mm: 1.4–2.5 by 0.05 (a 0.2 mm step in the staff's height; 1.8 = a 7.2 mm staff, the piano rastral). v108 (WSHED-146) — eight coarse steps before. */
-export const STAFF_MM = Array.from({ length: 23 }, (_, i) => Math.round(140 + 5 * i) / 100);
+/** Staff spaces on offer, in mm: 1.0–2.5 by 0.05 (a 0.2 mm step in the staff's height; 1.8 = a 7.2 mm staff, the piano rastral). v108 (WSHED-146) — eight coarse steps before. */
+export const STAFF_MM = Array.from({ length: 31 }, (_, i) => Math.round(100 + 5 * i) / 100); // 1.0–2.5 mm a space (4–10 mm a staff); below 1.4 since WSHED-185 — an ensemble score's size (Gould: orchestral parts 4–5 mm staves), so a 16-staff system still fits a page
 export const MARGINS = { narrow: 10, normal: 15, wide: 20 }; // mm
 export const DEFAULTS = { page: "letter", staffMm: 1.8, margins: "normal", header: true };
 const PT = 72 / 25.4;
@@ -124,8 +124,18 @@ export function planPages(doc, opts = {}) {
   const pageOfSys = []; pages.forEach((p, k) => { for (let i = p.first; i <= p.last; i++) pageOfSys[i] = k; });
   const pageOf = (sys) => pageOfSys[sys], pageAt = (y) => pageOfSys[M.systemAt(y, n)], dyOf = (sys) => sysDy[sys];
   const tight = L.hit.systems.map((s, k) => (s.tight ? k : -1)).filter((k) => k >= 0); // pinned rows that do not fit at this size: the sheet will not save over them
-  return { doc: d, L, S, ink, pages, page: pg, margin, width, height, opts: o, pageOf, pageAt, dyOf, tight };
+  const tooTall = M.blockH + 2 * AIR > availS + 1e-9; // a system taller than the page (docs/COMPOSE_PARTS_DESIGN.md §6): the sheet refuses the size and names one that fits
+  return { doc: d, L, S, ink, pages, page: pg, margin, width, height, opts: o, pageOf, pageAt, dyOf, tight, tooTall, nStaves: L.nStaves };
 }
+/** The largest staff size (mm, one of STAFF_MM) at which one system of this piece fits the page's printable height, or null when none does. */
+export function minStaffMm(doc, { page = DEFAULTS.page, margins = DEFAULTS.margins } = {}) {
+  const pg = PAGES[page] ?? PAGES[DEFAULTS.page], margin = (MARGINS[margins] ?? MARGINS[DEFAULTS.margins]) * PT;
+  const blockS = metricsOf(doc).blockH + 2 * AIR, maxS = (pg.h - 2 * margin) / blockS;
+  const fits = STAFF_MM.filter((mm) => mm * PT <= maxS);
+  return fits.length ? fits[fits.length - 1] : null;
+}
+/** The size the export sheet proposes the first time a piece is exported: 1.8 mm for one or two staves, 1.6 from three, 1.4 from six (§6). */
+export const proposedStaffMm = (nStaves) => (nStaves >= 6 ? 1.4 : nStaves >= 3 ? 1.6 : DEFAULTS.staffMm);
 
 /** Paint a plan into a PDF; resolves to the bytes (Uint8Array). `libs` = { PDFLib, fontkit, fonts: { regular, italic } }. */
 export async function renderPdf(plan, { PDFLib, fontkit, fonts }, { title = "", subtitle = "", composer = "", now = new Date() } = {}) {
@@ -264,7 +274,7 @@ class PdfPainter {
     }
   }
   /** The face a run is set in: chord symbols and lyrics upright, every other word italic (the screen's styles). */
-  font(cls) { return /\bcp-(chord|lyric)\b/.test(cls ?? "") ? this.regular : this.italic; }
+  font(cls) { return /\bcp-(chord|lyric|part-name)\b/.test(cls ?? "") ? this.regular : this.italic; }
   measure(str, size, cls) { return this.font(cls).widthOfTextAtSize(str, size * this.S) / this.S; }
   text(x, y, str, cls, { size, anchor, rotate } = {}) {
     if (this.skip) return;

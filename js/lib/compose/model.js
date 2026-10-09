@@ -1,7 +1,23 @@
 // The composition document (docs/COMPOSE_DESIGN.md §4). Pure — node-testable.
 import { ticks, capacity, fromTicks, splitRest, exprGrid, inMetre } from "./ticks.js";
+import { INSTRUMENTS, partFor } from "./instruments.js";
+import { CLEFS } from "../music.js";
 
-export const SCHEMA = 3; // v3 (WSHED-122): dynamics, hairpins and text are bar-level `expressions`, no longer note attributes
+export const SCHEMA = 4; // v3 (WSHED-122): dynamics, hairpins and text are bar-level `expressions`; v4 (WSHED-180): `parts[]` are real instruments — name, abbr, instrument, staves, default clefs
+/**
+ * Parts (docs/COMPOSE_PARTS_DESIGN.md §1.1): `parts[] = { id, name, abbr, instrument, staves, clefs }`. The measures'
+ * `staves[]` stays ONE FLAT ARRAY in part order — a part is a grouping of staves for brackets, names, clefs and sound.
+ */
+export const PARTS_MAX = 12, STAVES_MAX = 16, PART_STAVES_MAX = 3, PART_NAME_MAX = 40, PART_ABBR_MAX = 12;
+/** The staves of the document in score order, each with its part and its place in it. */
+export const staffList = (doc) => doc.parts.flatMap((p, pi) => Array.from({ length: p.staves }, (_, k) => ({ part: pi, index: k, first: k === 0, last: k === p.staves - 1 })));
+export const nStavesOf = (doc) => doc.parts.reduce((n, p) => n + p.staves, 0);
+/** The part (index into `parts`) a flat staff index belongs to; −1 off the end. */
+export const partOfStaff = (doc, k) => staffList(doc)[k]?.part ?? -1;
+/** The flat index of a part's first staff. */
+export const partStart = (doc, pi) => doc.parts.slice(0, pi).reduce((n, p) => n + p.staves, 0);
+/** The instrument group of a part (the catalogue's; a part whose instrument is unknown counts as "other"). */
+export const partGroup = (part) => (INSTRUMENTS[part?.instrument] ?? INSTRUMENTS.other).group;
 /** Dynamics, softest to loudest; the hairpin directions. */
 export const DYNAMICS = ["pppp", "ppp", "pp", "p", "mp", "mf", "f", "ff", "fff", "ffff"]; // the levels, softest first (the extremes since v98, WSHED-127)
 export const SUDDEN = ["sf", "sfz", "sfp", "fp", "rfz"]; // an accent on the slot's notes, the level in force untouched (fp / sfp then drop to p)
@@ -81,13 +97,16 @@ export function usedVoices(doc) {
   return out;
 }
 
-/** A blank piano score: treble + bass, C major, 4/4, eight empty bars. */
-export function newComposition({ id, title = "Untitled", composer = "", tags = [], now = Date.now() } = {}) {
-  const measures = Array.from({ length: DEFAULT_BARS }, () => newMeasure(2));
+/** The default part: a piano on the grand staff. */
+export const pianoPart = () => partFor("piano", 1, { abbr: "" });
+/** A blank score — a piano (treble + bass) unless `parts` says otherwise — C major, 4/4, eight empty bars. */
+export function newComposition({ id, title = "Untitled", composer = "", tags = [], now = Date.now(), parts = [pianoPart()] } = {}) {
+  const ps = parts.map((p) => structuredClone(p)), n = ps.reduce((s, p) => s + p.staves, 0);
+  const measures = Array.from({ length: DEFAULT_BARS }, () => newMeasure(n));
   measures[0].key = { fifths: 0 };
   measures[0].time = { beats: 4, unit: 4 };
-  measures[0].clefs = { 0: "treble", 1: "bass" };
-  return { id, v: SCHEMA, title, composer, tags: [...tags], createdAt: now, updatedAt: now, openedAt: now, tempo: DEFAULT_TEMPO, parts: [{ id: "p1", name: "Piano", staves: 2 }], measures };
+  measures[0].clefs = Object.fromEntries(ps.flatMap((p) => p.clefs).map((c, k) => [k, c]));
+  return { id, v: SCHEMA, title, composer, tags: [...tags], createdAt: now, updatedAt: now, openedAt: now, tempo: DEFAULT_TEMPO, parts: ps, measures };
 }
 
 export const clone = (doc) => structuredClone(doc);
@@ -129,11 +148,15 @@ export const isEmptyBar = (m) => m.staves.every((s) => s.voices.every((v) => !v 
 
 /** Throws on the first broken invariant (docs/COMPOSE_DESIGN.md §4.2). */
 export function validate(doc) {
-  if (![1, 2, SCHEMA].includes(doc.v)) throw new Error("schema"); // v1 documents are v2 documents with one voice per staff; v2 carries marks on notes (upgrade() lifts them)
+  if (![1, 2, 3, SCHEMA].includes(doc.v)) throw new Error("schema"); // v1 documents are v2 documents with one voice per staff; v2 carries marks on notes (upgrade() lifts them); v3 has a bare piano part (upgrade() fills it)
   if (!doc.measures.length) throw new Error("no bars");
-  const v3 = doc.v === SCHEMA;
+  const v3 = doc.v >= 3;
+  if (!Array.isArray(doc.parts) || !doc.parts.length) throw new Error("a piece needs one instrument");
+  const nStaves = nStavesOf(doc);
+  if (doc.v === SCHEMA) validateParts(doc);
   const m0 = doc.measures[0];
   if (!m0.key || !m0.time || !m0.clefs) throw new Error("bar 1 must carry key, time and clefs");
+  for (let k = 0; k < nStaves; k++) if (!CLEFS[m0.clefs[k]]) throw new Error(`bar 1: staff ${k + 1} has no clef`);
   if (doc.subtitle !== undefined && (typeof doc.subtitle !== "string" || !doc.subtitle.trim() || doc.subtitle.length > SUBTITLE_MAX)) throw new Error(`a subtitle is 1–${SUBTITLE_MAX} letters or absent`);
   const ids = new Set();
   doc.measures.forEach((m, bi) => {
@@ -147,7 +170,8 @@ export function validate(doc) {
       if (Object.keys(rest).length || (brk === undefined && w === undefined) || (brk !== undefined && !LAY_BREAKS.includes(brk)) || (w !== undefined && (typeof w !== "number" || !(w >= LAY_W_MIN && w <= LAY_W_MAX) || w === 1))) throw new Error(`bar ${bi + 1}: a layout pin is a break or a keep, and a weight ${LAY_W_MIN}–${LAY_W_MAX} other than 1`);
     }
     const cap = capacity(timeAt(doc, bi));
-    if (m.staves.length !== doc.parts[0].staves) throw new Error(`bar ${bi + 1}: staff count`);
+    if (m.staves.length !== nStaves) throw new Error(`bar ${bi + 1}: staff count`);
+    for (const [k, c] of Object.entries(m.clefs ?? {})) if (!(Number(k) >= 0 && Number(k) < nStaves) || !CLEFS[c]) throw new Error(`bar ${bi + 1}: a clef on a staff that is not there`);
     let lastAt = 0;
     for (const c of m.clefChanges ?? []) {
       if (!(c.staff >= 0 && c.staff < m.staves.length) || !Number.isInteger(c.at) || c.at <= 0 || c.at >= cap || inMetre(c.at, timeAt(doc, bi)) % exprGrid(timeAt(doc, bi)) || c.at < lastAt) throw new Error(`bar ${bi + 1}: clef change off the half-beat grid`); // on the expression grid since WSHED-168 (a beat before)
@@ -257,6 +281,7 @@ export function validate(doc) {
         if (v3 && (ev.dyn !== undefined || ev.hairpin !== undefined || ev.text !== undefined)) throw new Error(`${ev.id}: a v3 document keeps its marks in expressions`);
         if (ev.restY !== undefined && (ev.kind !== "rest" || !Number.isInteger(ev.restY) || Math.abs(ev.restY) > REST_Y_MAX)) throw new Error(`${ev.id}: restY must be a whole number of steps within ±${REST_Y_MAX} on a rest`);
         if (ev.cross !== undefined && (ev.kind !== "note" || (ev.cross !== 1 && ev.cross !== -1) || si + ev.cross < 0 || si + ev.cross >= m.staves.length)) throw new Error(`bar ${bi + 1}: ${ev.id} crosses to a staff that is not there`);
+        if (ev.cross !== undefined && partOfStaff(doc, si + ev.cross) !== partOfStaff(doc, si)) throw new Error(`bar ${bi + 1}: ${ev.id} crosses out of its instrument`); // docs/COMPOSE_PARTS_DESIGN.md §1.4
         if (ev.dur.tuplet) { const g = groups.get(ev.dur.tuplet.id) ?? { n: ev.dur.tuplet.n, plain: 0, last: i - 1, notes: 0 }; if (g.last !== i - 1) throw new Error(`bar ${bi + 1}: tuplet ${ev.dur.tuplet.id} is not contiguous`); g.last = i; g.plain += ticks({ base: ev.dur.base, dots: ev.dur.dots }); if (ev.kind === "note") g.notes++; groups.set(ev.dur.tuplet.id, g); }
       });
       for (const [gid, g] of groups) {
@@ -274,3 +299,19 @@ export function validate(doc) {
   return true;
 }
 function barStartAbs(doc, bar) { let t = 0; for (let b = 0; b < bar; b++) t += capacity(timeAt(doc, b)); return t; }
+/** The v4 part shapes (docs/COMPOSE_PARTS_DESIGN.md §1.1): ids unique, names bounded, a known instrument, 1–3 staves with a valid default clef each, the maxima. */
+function validateParts(doc) {
+  if (doc.parts.length > PARTS_MAX) throw new Error(`a piece holds at most ${PARTS_MAX} instruments`);
+  if (nStavesOf(doc) > STAVES_MAX) throw new Error(`a piece holds at most ${STAVES_MAX} staves`);
+  const ids = new Set();
+  for (const p of doc.parts) {
+    if (!p || typeof p !== "object" || typeof p.id !== "string" || !/^p\d+$/.test(p.id) || ids.has(p.id)) throw new Error("an instrument needs its own id");
+    ids.add(p.id);
+    if (typeof p.name !== "string" || !p.name.trim() || p.name !== p.name.trim() || p.name.length > PART_NAME_MAX) throw new Error(`an instrument's name is 1–${PART_NAME_MAX} letters`);
+    if (typeof p.abbr !== "string" || p.abbr !== p.abbr.trim() || p.abbr.length > PART_ABBR_MAX) throw new Error(`an instrument's abbreviation is at most ${PART_ABBR_MAX} letters`);
+    if (!INSTRUMENTS[p.instrument]) throw new Error(`${p.name}: no such instrument`);
+    if (!Number.isInteger(p.staves) || p.staves < 1 || p.staves > PART_STAVES_MAX) throw new Error(`${p.name}: an instrument has 1–${PART_STAVES_MAX} staves`);
+    if (!Array.isArray(p.clefs) || p.clefs.length !== p.staves || p.clefs.some((c) => !CLEFS[c])) throw new Error(`${p.name}: one default clef per staff`);
+    if (Object.keys(p).some((k) => !["id", "name", "abbr", "instrument", "staves", "clefs"].includes(k))) throw new Error(`${p.name}: an instrument carries only id, name, abbr, instrument, staves and clefs`);
+  }
+}

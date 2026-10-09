@@ -54,12 +54,19 @@ export function paintScore(L, p) {
     p.at?.(si);
     const lastBar = sys.endX ?? sys.barlines[sys.barlines.length - 1].x;
     p.group("cp-sys");
-    // staff lines
-    for (const topY of sys.staffTop) for (let i = 0; i < 5; i++) p.line(1.0, topY + i, lastBar, topY + i, "sline");
-    // brace + the system's left barline joining the staves
+    // staff lines, from the system's left barline (1.0 S on a one-part piece; brackets and names push it right)
+    const x0 = sys.x0 ?? 1.0;
+    for (const topY of sys.staffTop) for (let i = 0; i < 5; i++) p.line(x0, topY + i, lastBar, topY + i, "sline");
+    // the system's left barline joining every staff; a brace per keyboard part, a bracket (a rule with hooks) per ensemble group (docs/COMPOSE_PARTS_DESIGN.md §2.2)
     const t0 = sys.staffTop[0], t1 = sys.staffTop[sys.staffTop.length - 1] + 4;
-    p.rect(1.0 - 0.065, t0, 0.13, t1 - t0, "sline-bar");
-    if (sys.staffTop.length > 1) p.glyph(0.85, t1, G.brace, "glyph cp-brace", { scale: (t1 - t0) / 4, anchor: "end" });
+    p.rect(x0 - 0.065, t0, 0.13, t1 - t0, "sline-bar");
+    for (const g of sys.groups ?? (sys.staffTop.length > 1 ? [{ kind: "brace", top: t0, bottom: t1 }] : [])) {
+      if (g.kind === "brace") p.glyph(x0 - 0.15, g.bottom, G.brace, "glyph cp-brace", { scale: (g.bottom - g.top) / 4, anchor: "end" });
+      else { const bx = x0 - 0.7; p.rect(bx - 0.25, g.top, 0.5, g.bottom - g.top, "cp-bracket"); p.glyph(bx - 0.25, g.top, G.bracketTop, "glyph cp-bracket"); p.glyph(bx - 0.25, g.bottom, G.bracketBottom, "glyph cp-bracket"); }
+    }
+    // the spans a barline runs through: one part's staves, one bracket group's parts; broken between groups and lone parts
+    const spans = sys.barlineSpans ?? [{ top: t0, bottom: t1 }];
+    const bar = (x, w) => { for (const sp of spans) p.rect(x, sp.top, w, sp.bottom - sp.top, "sline-bar"); };
     // leading symbols per bar
     for (const lead of sys.leading) {
       lead.staves.forEach((st) => {
@@ -82,13 +89,15 @@ export function paintScore(L, p) {
     const dots = (x) => { for (const topY of sys.staffTop) p.glyph(x, topY + 4, G.repeatDots, "glyph cp-repeat-dots"); };
     for (const bl of sys.barlines) {
       const kind = bl.kind ?? (bl.final ? "final" : "single");
-      if (kind === "single") p.rect(bl.x - 0.065, t0, 0.13, t1 - t0, "sline-bar");
-      else if (kind === "double") { p.rect(bl.x - 0.065, t0, 0.13, t1 - t0, "sline-bar"); p.rect(bl.x - 0.565, t0, 0.13, t1 - t0, "sline-bar"); }
-      else { p.rect(bl.x - 0.9, t0, 0.13, t1 - t0, "sline-bar"); p.rect(bl.x - 0.45, t0, 0.5, t1 - t0, "sline-bar"); if (kind === "repeat") dots(bl.x - 1.85); }
-      if (bl.startX !== undefined) { p.rect(bl.startX + 0.05, t0, 0.5, t1 - t0, "sline-bar"); p.rect(bl.startX + 0.85, t0, 0.13, t1 - t0, "sline-bar"); dots(bl.startX + 1.25); }
+      if (kind === "single") bar(bl.x - 0.065, 0.13);
+      else if (kind === "double") { bar(bl.x - 0.065, 0.13); bar(bl.x - 0.565, 0.13); }
+      else { bar(bl.x - 0.9, 0.13); bar(bl.x - 0.45, 0.5); if (kind === "repeat") dots(bl.x - 1.85); }
+      if (bl.startX !== undefined) { bar(bl.startX + 0.05, 0.5); bar(bl.startX + 0.85, 0.13); dots(bl.startX + 1.25); }
     }
     p.end();
   });
+  // part names before the first system, abbreviations before the others (docs/COMPOSE_PARTS_DESIGN.md §2.2); upright like a chord symbol
+  for (const n of L.partNames ?? []) { on(n); p.text(n.x, n.y, n.text, "cp-part-name", { size: n.size, anchor: "end" }); }
   // clef changes inside a bar (small, before the beat they take effect on)
   for (const c of L.clefs) on(c), p.glyph(c.x, c.y, G[c.glyph], "glyph cp-clef-change", { scale: 0.8, data: { bar: c.bar, staff: c.staff } });
   // beams (under the notes); a cross-staff beam runs between the staves
