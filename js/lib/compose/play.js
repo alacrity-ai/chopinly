@@ -4,7 +4,7 @@
 import { PPQ } from "./ticks.js";
 import { onsets, midiOf, diatonicOf, barStarts, expressionsOf, spansOf, unroll, tempoMap, simileSource } from "./engine.js";
 import { capacity } from "./ticks.js";
-import { timeAt as timeOfBar, keyAt } from "./model.js";
+import { timeAt as timeOfBar, keyAt, nStavesOf } from "./model.js";
 import { keyAlterations } from "../music.js";
 import { createPiano } from "../keyboard/piano.js";
 
@@ -27,7 +27,7 @@ export function velocities(doc) {
   const out = new Map();
   const exprs = expressionsOf(doc);
   const levelAt = (ramp, t) => (t >= ramp.t1 ? ramp.to : ramp.from + (ramp.to - ramp.from) * ((t - ramp.t0) / Math.max(1, ramp.t1 - ramp.t0)));
-  for (let staff = 0; staff < (doc.parts[0]?.staves ?? 0); staff++) {
+  for (let staff = 0; staff < nStavesOf(doc); staff++) {
     const notes = [];
     for (let b = 0; b < doc.measures.length; b++) doc.measures[b].staves[staff].voices.forEach((v, voice) => { if (v) for (const o of onsets(v)) if (o.ev.kind === "note") notes.push({ ev: o.ev, voice, at: starts[b] + o.start }); });
     notes.sort((a, b) => a.at - b.at || a.voice - b.voice);
@@ -125,7 +125,7 @@ export function timeline(doc, { tempo } = {}) {
     return f;
   };
   const pushTempo = (at, bpm) => { const b = Math.round(bpm * 1e4) / 1e4; if (!tempos.length || tempos[tempos.length - 1].bpm !== b) tempos.push({ at, bpm: b }); };
-  const pedalsBy = Array.from({ length: doc.parts[0]?.staves ?? 0 }, (_, s) => spansOf(doc, "pedal", s)); // docs/COMPOSE_PIANO_DESIGN.md §7
+  const pedalsBy = Array.from({ length: nStavesOf(doc) }, (_, s) => spansOf(doc, "pedal", s)); // docs/COMPOSE_PIANO_DESIGN.md §7
   const pedaled = pedalsBy.map(() => []); // per staff: [{ from, to }] in performance ticks, adjacent pieces merged
   let perf = 0, prevBar = -2;
   let open = new Map(); // "staff:voice:midi" → the note still sounding through a tie

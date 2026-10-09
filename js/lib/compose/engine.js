@@ -3,8 +3,9 @@
 // the new document; a refused edit throws Nudge(sentence) and the document is
 // untouched. Pure — node-testable.
 import { groupSize, ticks, capacity, splitRest, fromTicks, exprGrid, inMetre, PPQ } from "./ticks.js";
-import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, sigAt, shortMetre, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, tempoOf, MAX_VOICES, REST_Y_MAX, EXPR_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, DYN_VALUES, HAIRPINS, SPAN_KINDS, PEDAL_STYLES, TEMPO_UNITS, REHEARSAL_TEXT_MAX, REPEAT_TIMES_MAX, TRILL_ALTERS, FINGER_MAX, GRACE_BASES, TREM_MAX, TEXT_MAX, BARLINE_ENDS, JUMPS, FORM_KINDS, TEMPO_TEXT_MAX, ENDING_MAX, MIN_TEMPO, MAX_TEMPO, GLISS, LYRIC_MAX, LYRIC_VERSES_MAX, SYLLABICS, eid } from "./model.js";
+import { clone, restEvent, noteEvent, durOf, newMeasure, barRests, timeAt, sigAt, shortMetre, keyAt, clefAt, evTicks, voiceTicks, isEmptyBar, voicesOf, tempoOf, MAX_VOICES, REST_Y_MAX, EXPR_Y_MAX, DEFAULT_BARS, SCHEMA, DYNAMICS, DYN_VALUES, HAIRPINS, SPAN_KINDS, PEDAL_STYLES, TEMPO_UNITS, REHEARSAL_TEXT_MAX, REPEAT_TIMES_MAX, TRILL_ALTERS, FINGER_MAX, GRACE_BASES, TREM_MAX, TEXT_MAX, BARLINE_ENDS, JUMPS, FORM_KINDS, TEMPO_TEXT_MAX, ENDING_MAX, MIN_TEMPO, MAX_TEMPO, GLISS, LYRIC_MAX, LYRIC_VERSES_MAX, SYLLABICS, eid, nStavesOf, staffList, partOfStaff, partStart, partGroup, pianoPart, PARTS_MAX, STAVES_MAX, PART_STAVES_MAX, PART_NAME_MAX, PART_ABBR_MAX } from "./model.js";
 import { parseChord, prettyQuality } from "./chordsym.js";
+import { INSTRUMENTS, partFor } from "./instruments.js";
 import { parsePitch, keyAlterations, CLEFS } from "../music.js";
 
 export class Nudge extends Error { constructor(msg, { bar = null } = {}) { super(msg); this.name = "Nudge"; this.bar = bar; } }
@@ -240,7 +241,7 @@ export function slurEnd(doc, staff, voice, ev, id) {
 }
 /** Re-derive every slur: rests carry none; a start without a stop later in its voice (or the reverse) is dropped. */
 export function cleanSlurs(doc) {
-  const nStaves = doc.parts[0].staves;
+  const nStaves = nStavesOf(doc);
   for (let staff = 0; staff < nStaves; staff++) for (let voice = 0; voice < MAX_VOICES; voice++) {
     const seq = seqOf(doc, staff, voice);
     if (!seq.length) continue;
@@ -279,7 +280,7 @@ export function nextNote(doc, f) {
  * `both`). Runs after every edit, so no tie ever dangles.
  */
 export function cleanTies(doc) {
-  const nStaves = doc.parts[0].staves;
+  const nStaves = nStavesOf(doc);
   for (let staff = 0; staff < nStaves; staff++) for (let voice = 0; voice < MAX_VOICES; voice++) {
     const seq = seqOf(doc, staff, voice);
     if (!seq.length) continue;
@@ -613,7 +614,7 @@ export function remove(doc, items) {
 
 /** Append an empty bar (in place — used by place; callers pass a clone). */
 export function appendBar(doc) {
-  doc.measures.push(newMeasure(doc.parts[0].staves, timeAt(doc, doc.measures.length - 1)));
+  doc.measures.push(newMeasure(nStavesOf(doc), timeAt(doc, doc.measures.length - 1)));
   return doc;
 }
 /** Keep one empty bar after the last bar with anything in it (in place). */
@@ -654,7 +655,7 @@ const clefAtEnd = (doc, bar, staff) => clefAt(doc, bar, staff, Number.MAX_SAFE_I
 export function insertBar(doc, at) {
   if (!Number.isInteger(at) || at < 0 || at > doc.measures.length) throw new Nudge("no such bar");
   const d = clone(doc);
-  const m = newMeasure(d.parts[0].staves, sigAt(d, Math.max(0, at - 1))); // the signature, never a neighbour's shortness
+  const m = newMeasure(nStavesOf(d), sigAt(d, Math.max(0, at - 1))); // the signature, never a neighbour's shortness
   if (at === 0) { const m0 = d.measures[0]; m.key = m0.key; m.time = m0.time; m.clefs = m0.clefs; delete m0.key; delete m0.time; delete m0.clefs; }
   for (const om of d.measures) {
     for (const x of om.expressions ?? []) if (isSpan(x) && x.end.bar >= at) x.end.bar++;
@@ -673,7 +674,7 @@ export function insertBar(doc, at) {
 export function deleteBar(doc, bar) {
   if (!doc.measures[bar]) throw new Nudge("no such bar");
   if (doc.measures.length === 1) throw new Nudge("a piece keeps one bar", { bar });
-  const d = clone(doc), m = d.measures[bar], next = d.measures[bar + 1], nStaves = d.parts[0].staves;
+  const d = clone(doc), m = d.measures[bar], next = d.measures[bar + 1], nStaves = nStavesOf(d);
   if (next) { // what the bar carried forward stays in force
     if (m.key && !next.key) next.key = m.key;
     if (m.time && !next.time) next.time = m.time;
@@ -826,8 +827,9 @@ export function clipFrom(doc, items) {
 export function paste(doc, clip, { bar, ticks: t, staff = 0, voice = 0 }) {
   if (!clip?.events.length) throw new Nudge("nothing to paste");
   const d = clone(doc);
-  const nStaves = d.parts[0].staves;
+  const nStaves = nStavesOf(d);
   const top = Math.max(0, Math.min(nStaves - clip.staves, staff));
+  if (clip.staves > 1 && partOfStaff(d, top) !== partOfStaff(d, top + clip.staves - 1)) throw new Nudge(`that phrase needs ${clip.staves} staves of one instrument`, { bar }); // docs/COMPOSE_PARTS_DESIGN.md §1.4
   const vOf = (e) => Math.min(MAX_VOICES - 1, voice + (e.dVoice ?? 0)); // the phrase's lowest voice lands in the active one; the rest keep their offsets, capped
   const A0 = barStarts(d).starts[bar] + Math.max(0, Math.round(t));
   // make room: append bars until the whole span fits
@@ -949,7 +951,7 @@ export function setTime(doc, bar, time) {
   const startOld = []; let total = 0;
   for (let b = bar; b < end; b++) { startOld.push(total); total += capacity(timeAt(doc, b)); }
   const capNew = capacity(time), nNew = Math.max(1, Math.ceil(total / capNew));
-  const nStaves = d.parts[0].staves;
+  const nStaves = nStavesOf(d);
   const fresh = Array.from({ length: nNew }, () => newMeasure(nStaves, time));
   const oldBars = d.measures.slice(bar, end);
   // key / clef changes inside the stretch follow their tick (a clef lands on the half-beat slot of the new metre at or before it)
@@ -1158,7 +1160,7 @@ export function chordOf(value) {
  */
 export function addExpression(doc, { kind, staff, bar, at, value }) {
   if (kind !== "dyn" && kind !== "text" && kind !== "chord") throw new Nudge("no such mark");
-  if (!doc.measures[bar] || !(staff >= 0 && staff < doc.parts[0].staves)) throw new Nudge("nowhere to put it");
+  if (!doc.measures[bar] || !(staff >= 0 && staff < nStavesOf(doc))) throw new Nudge("nowhere to put it");
   if (!onGrid(doc, bar, at)) throw new Nudge("that's off the grid", { bar });
   if (kind === "dyn" && !DYN_VALUES.includes(value)) throw new Nudge("no such dynamic");
   const v = kind === "text" ? cleanText(value) : value;
@@ -1182,7 +1184,8 @@ export function addSpan(doc, { kind, staff, bar, at, end, dir, niente, size, sty
   if (kind === "pedal" && style !== undefined && style !== null && !PEDAL_STYLES.includes(style)) throw new Nudge("no such pedal style");
   const tl = kind === "textline" ? { text: cleanText(text), endText: cleanText(endText) } : null;
   if (tl && !tl.text) throw new Nudge("say what the line says");
-  if (!doc.measures[bar] || !doc.measures[end?.bar] || !(staff >= 0 && staff < doc.parts[0].staves)) throw new Nudge("nowhere to put it");
+  if (!doc.measures[bar] || !doc.measures[end?.bar] || !(staff >= 0 && staff < nStavesOf(doc))) throw new Nudge("nowhere to put it");
+  if ((kind === "pedal" || (tl && /^una corda/i.test(tl.text))) && !isKeyboard(doc, staff)) throw new Nudge("the pedal belongs to the piano", { bar }); // docs/COMPOSE_PARTS_DESIGN.md §1.4
   if (!onGrid(doc, bar, at) || !onGrid(doc, end.bar, end.at)) throw new Nudge("that's off the grid", { bar });
   const { starts } = barStarts(doc);
   if (starts[end.bar] + end.at <= starts[bar] + at) throw new Nudge(`${SPAN_NAME[kind]} needs to end after it starts`, { bar: end.bar });
@@ -1347,8 +1350,9 @@ export function cleanExpressions(doc) {
 export function upgrade(doc) {
   if (doc.v === SCHEMA) return doc;
   const d = clone(doc);
+  if (d.v >= 3) return upgradeParts(d); // v3 → v4: the bare piano part becomes an instrument; the measures never move (docs/COMPOSE_PARTS_DESIGN.md §1.2)
   const { starts } = barStarts(d);
-  const nStaves = d.parts[0].staves;
+  const nStaves = nStavesOf(d);
   const add = (bar, x) => { d.measures[bar].expressions = [...exprsOf(d.measures[bar]), x]; };
   for (let staff = 0; staff < nStaves; staff++) for (let vi = 0; vi < MAX_VOICES; vi++) {
     const seq = [];
@@ -1372,8 +1376,152 @@ export function upgrade(doc) {
       delete ev.dyn; delete ev.hairpin; delete ev.text;
     }
   }
-  d.v = SCHEMA;
   cleanExpressions(d);
+  return upgradeParts(d);
+}
+/** v3 → v4 in place: every part gains `abbr`, `instrument` and default `clefs` (a two-staff part is a piano, one staff a voice, three an organ) and keeps its name; `v` becomes 4. */
+function upgradeParts(d) {
+  d.parts = d.parts.map((p, i) => {
+    const staves = p.staves ?? 2, key = p.instrument && INSTRUMENTS[p.instrument] ? p.instrument : staves >= 3 ? "organ" : staves === 2 ? "piano" : "voice";
+    const base = partFor(key, i + 1, { staves });
+    return { id: typeof p.id === "string" && /^p\d+$/.test(p.id) ? p.id : base.id, name: typeof p.name === "string" && p.name.trim() ? p.name.trim().slice(0, PART_NAME_MAX) : base.name, abbr: typeof p.abbr === "string" ? p.abbr.trim().slice(0, PART_ABBR_MAX) : "", instrument: key, staves: base.staves, clefs: Array.isArray(p.clefs) && p.clefs.length === base.staves && p.clefs.every((c) => CLEFS[c]) ? p.clefs : base.clefs };
+  });
+  d.v = SCHEMA;
+  return d;
+}
+
+// --- parts (docs/COMPOSE_PARTS_DESIGN.md §1.4, WSHED-180): pure operations on `doc.parts` and the flat staff array ---
+
+const partIndex = (d, partId) => { const i = d.parts.findIndex((p) => p.id === partId); if (i < 0) throw new Nudge("no such instrument"); return i; };
+const isKeyboard = (doc, staff) => partGroup(doc.parts[partOfStaff(doc, staff)]) === "keyboard";
+/**
+ * Re-index every reference to a flat staff index at or after `from` by `by` (±): the bars' `clefs`, `clefChanges[].staff`
+ * and `expressions[].staff`. In place. (A note's `cross` is relative — `uncrossOutside` tidies those after the staves move.)
+ */
+export function shiftStaffRefs(d, from, by) {
+  for (const m of d.measures) {
+    if (m.clefs) m.clefs = Object.fromEntries(Object.entries(m.clefs).map(([k, c]) => [Number(k) >= from ? Number(k) + by : Number(k), c]));
+    for (const c of m.clefChanges ?? []) if (c.staff >= from) c.staff += by;
+    for (const x of m.expressions ?? []) if (x.staff >= from) x.staff += by;
+  }
+}
+/** A crossed note whose target staff is no longer in its own part is drawn on its own staff again (in place). */
+export function uncrossOutside(d) {
+  const staves = staffList(d);
+  d.measures.forEach((m) => m.staves.forEach((s, si) => { for (const v of s.voices) for (const ev of v ?? []) if (ev.cross && staves[si + ev.cross]?.part !== staves[si]?.part) delete ev.cross; }));
+}
+/** A fresh staff for every bar: one voice of the bar's rests. */
+const emptyStaff = (d, bar) => ({ voices: [barRests(timeAt(d, bar))] });
+/** Append (or insert at `at`) a part of the catalogue's instrument → the new document; names from the catalogue unless given. */
+export function addPart(doc, instrument, { at = doc.parts.length, name, abbr, staves } = {}) {
+  if (!INSTRUMENTS[instrument]) throw new Nudge("no such instrument");
+  if (doc.parts.length >= PARTS_MAX) throw new Nudge(`a piece holds at most ${PARTS_MAX} instruments`);
+  const n = Math.max(0, ...doc.parts.map((p) => Number(p.id.slice(1)) || 0)) + 1;
+  const part = partFor(instrument, n, { name: cleanPartText(name, PART_NAME_MAX) || undefined, abbr: abbr === undefined ? undefined : cleanPartText(abbr, PART_ABBR_MAX), staves });
+  if (nStavesOf(doc) + part.staves > STAVES_MAX) throw new Nudge(`a piece holds at most ${STAVES_MAX} staves`);
+  const d = clone(doc), pi = Math.max(0, Math.min(d.parts.length, at)), k0 = partStart(d, pi);
+  shiftStaffRefs(d, k0, part.staves);
+  d.parts.splice(pi, 0, part);
+  d.measures.forEach((m, bi) => m.staves.splice(k0, 0, ...Array.from({ length: part.staves }, () => emptyStaff(d, bi))));
+  d.measures[0].clefs = { ...(d.measures[0].clefs ?? {}) };
+  part.clefs.forEach((c, k) => { d.measures[0].clefs[k0 + k] = c; });
+  uncrossOutside(d);
+  return d;
+}
+/** Drop a part and its staves from every bar — notes, expressions and clef changes on them go; refused on the last part. */
+export function removePart(doc, partId) {
+  const pi = partIndex(doc, partId);
+  if (doc.parts.length === 1) throw new Nudge("a piece needs one instrument");
+  const d = clone(doc), k0 = partStart(d, pi), n = d.parts[pi].staves;
+  for (const m of d.measures) {
+    m.staves.splice(k0, n);
+    if (m.clefs) { for (let k = k0; k < k0 + n; k++) delete m.clefs[k]; if (!Object.keys(m.clefs).length) delete m.clefs; }
+    if (m.clefChanges) { m.clefChanges = m.clefChanges.filter((c) => c.staff < k0 || c.staff >= k0 + n); if (!m.clefChanges.length) delete m.clefChanges; }
+    if (m.expressions) setExprs(m, m.expressions.filter((x) => x.staff < k0 || x.staff >= k0 + n));
+  }
+  d.parts.splice(pi, 1);
+  shiftStaffRefs(d, k0 + n, -n);
+  if (!d.measures[0].clefs) d.measures[0].clefs = {};
+  uncrossOutside(d); cleanTies(d); cleanSlurs(d); cleanExpressions(d);
+  return d;
+}
+/** Swap a part with its neighbour above (dir −1) or below (+1). */
+export function movePart(doc, partId, dir) {
+  const pi = partIndex(doc, partId), pj = pi + (dir < 0 ? -1 : 1);
+  if (pj < 0 || pj >= doc.parts.length) throw new Nudge(dir < 0 ? "it is already first" : "it is already last");
+  const [a, b] = pi < pj ? [pi, pj] : [pj, pi]; // a above b
+  const d = clone(doc), ka = partStart(d, a), na = d.parts[a].staves, nb = d.parts[b].staves, kb = ka + na;
+  const moveRefs = (m, list, key) => { for (const x of list) { if (x[key] >= ka && x[key] < kb) x[key] += nb; else if (x[key] >= kb && x[key] < kb + nb) x[key] -= na; } };
+  for (const m of d.measures) {
+    const upper = m.staves.slice(ka, kb), lower = m.staves.slice(kb, kb + nb);
+    m.staves.splice(ka, na + nb, ...lower, ...upper);
+    if (m.clefs) m.clefs = Object.fromEntries(Object.entries(m.clefs).map(([k, c]) => { const i = Number(k); return [i >= ka && i < kb ? i + nb : i >= kb && i < kb + nb ? i - na : i, c]; }));
+    moveRefs(m, m.clefChanges ?? [], "staff");
+    moveRefs(m, m.expressions ?? [], "staff");
+    if (m.expressions) setExprs(m, m.expressions);
+    if (m.clefChanges) m.clefChanges.sort((p, q) => p.at - q.at || p.staff - q.staff);
+  }
+  [d.parts[a], d.parts[b]] = [d.parts[b], d.parts[a]];
+  return d;
+}
+const cleanPartText = (s, max) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+/** Rename a part (name 1–40, abbreviation 0–12 letters; an empty name keeps the old one). */
+export function renamePart(doc, partId, { name, abbr } = {}) {
+  const pi = partIndex(doc, partId), d = clone(doc), p = d.parts[pi];
+  if (name !== undefined) p.name = cleanPartText(name, PART_NAME_MAX) || p.name;
+  if (abbr !== undefined) p.abbr = cleanPartText(abbr, PART_ABBR_MAX);
+  return d;
+}
+/** Change a part's instrument (name and abbreviation follow when they were the old instrument's); `resetClefs` also sets the staves' default clefs — only offered when the part holds no notes. */
+export function setPartInstrument(doc, partId, instrument, { resetClefs = false } = {}) {
+  if (!INSTRUMENTS[instrument]) throw new Nudge("no such instrument");
+  const pi = partIndex(doc, partId), d = clone(doc), p = d.parts[pi], old = INSTRUMENTS[p.instrument];
+  if (p.name === old.name) p.name = INSTRUMENTS[instrument].name;
+  if (p.abbr === old.abbr) p.abbr = INSTRUMENTS[instrument].abbr;
+  p.instrument = instrument;
+  const defaults = INSTRUMENTS[instrument].clefs;
+  if (resetClefs) {
+    if (!partIsEmpty(d, pi)) throw new Nudge("empty the instrument first");
+    const k0 = partStart(d, pi);
+    for (let k = 0; k < p.staves; k++) { p.clefs[k] = defaults[Math.min(k, defaults.length - 1)]; d.measures[0].clefs[k0 + k] = p.clefs[k]; }
+    for (const m of d.measures) if (m.clefChanges) { m.clefChanges = m.clefChanges.filter((c) => c.staff < k0 || c.staff >= k0 + p.staves); if (!m.clefChanges.length) delete m.clefChanges; }
+  }
+  return d;
+}
+/** Does a part hold only rests on every staff of every bar? */
+export function partIsEmpty(doc, pi) {
+  const k0 = partStart(doc, pi), n = doc.parts[pi].staves;
+  return doc.measures.every((m) => m.staves.slice(k0, k0 + n).every((s) => s.voices.every((v) => !v || v.every((ev) => ev.kind === "rest"))));
+}
+/** A part grows to or shrinks to `n` staves (1–3): a staff is added after its last with the instrument's next default clef (bass when it has none), or the last staff is removed — only when it holds nothing but rests. */
+export function setPartStaves(doc, partId, n) {
+  const pi = partIndex(doc, partId);
+  if (!Number.isInteger(n) || n < 1 || n > PART_STAVES_MAX) throw new Nudge(`an instrument has 1–${PART_STAVES_MAX} staves`);
+  const p0 = doc.parts[pi];
+  if (n === p0.staves) return doc;
+  if (n > p0.staves && nStavesOf(doc) + n - p0.staves > STAVES_MAX) throw new Nudge(`a piece holds at most ${STAVES_MAX} staves`);
+  const d = clone(doc), p = d.parts[pi], k0 = partStart(d, pi);
+  while (p.staves > n) {
+    const k = k0 + p.staves - 1;
+    if (!d.measures.every((m) => m.staves[k].voices.every((v) => !v || v.every((ev) => ev.kind === "rest")))) throw new Nudge("empty the staff first");
+    for (const m of d.measures) {
+      m.staves.splice(k, 1);
+      if (m.clefs) { delete m.clefs[k]; if (!Object.keys(m.clefs).length) delete m.clefs; }
+      if (m.clefChanges) { m.clefChanges = m.clefChanges.filter((c) => c.staff !== k); if (!m.clefChanges.length) delete m.clefChanges; }
+      if (m.expressions) setExprs(m, m.expressions.filter((x) => x.staff !== k));
+    }
+    p.staves--; p.clefs.pop();
+    shiftStaffRefs(d, k + 1, -1);
+    if (!d.measures[0].clefs) d.measures[0].clefs = {};
+  }
+  while (p.staves < n) {
+    const k = k0 + p.staves, defaults = INSTRUMENTS[p.instrument].clefs, clef = defaults[p.staves] ?? "bass";
+    shiftStaffRefs(d, k, 1);
+    d.measures.forEach((m, bi) => m.staves.splice(k, 0, emptyStaff(d, bi)));
+    d.measures[0].clefs = { ...(d.measures[0].clefs ?? {}), [k]: clef };
+    p.staves++; p.clefs.push(clef);
+  }
+  uncrossOutside(d); cleanTies(d); cleanSlurs(d); cleanExpressions(d);
   return d;
 }
 /** The rolled-chord signs: a plain wiggle, or one with an arrowhead saying which way the roll goes. */
@@ -1561,12 +1709,13 @@ export function swapVoices(doc, bars, a, b) {
 export function crossStaff(doc, evIds, dir) {
   if (dir !== 1 && dir !== -1) throw new Nudge("cross to the upper or the lower staff");
   const d = clone(doc);
-  const nStaves = d.parts[0].staves;
+  const nStaves = nStavesOf(d);
   const fs = [...new Set(evIds)].map((id) => find(d, id)).filter((f) => f && f.ev.kind === "note");
   if (!fs.length) throw new Nudge("pick the notes to cross");
   for (const f of fs) {
     const next = (f.ev.cross ?? 0) + dir;
     if (Math.abs(next) > 1 || f.staff + next < 0 || f.staff + next >= nStaves) throw new Nudge(dir < 0 ? "there is no staff above" : "there is no staff below", { bar: f.bar });
+    if (partOfStaff(d, f.staff + next) !== partOfStaff(d, f.staff)) throw new Nudge("notes cross only within an instrument", { bar: f.bar }); // docs/COMPOSE_PARTS_DESIGN.md §1.4
     if (next === 0) delete f.ev.cross; else f.ev.cross = next;
   }
   return d;

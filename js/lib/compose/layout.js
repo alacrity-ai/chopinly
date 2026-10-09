@@ -6,7 +6,7 @@
 import { keyAlterations, keySignatureGlyphs, CLEFS, staffStep } from "../music.js";
 import { timeSig } from "../staff/glyphs.js";
 import { ticks, capacity, groupSize, groupOf } from "./ticks.js";
-import { timeAt, keyAt, clefAt, evTicks, lyricVersesOf } from "./model.js";
+import { timeAt, keyAt, clefAt, evTicks, lyricVersesOf, nStavesOf, staffList, partGroup } from "./model.js";
 import { onsets, diatonicOf, nextEvent, slurEnd, expressionsOf, spansOf, barStarts, formMarksOf, simileTail, lyricRuns, tiedIn, seqOf } from "./engine.js";
 import { xOfTicks } from "./hit.js";
 import { qualityRuns } from "./chordsym.js";
@@ -17,8 +17,6 @@ export const TOP_PAD = 6, BOTTOM_PAD = 4;
 /** Lyrics (docs/COMPOSE_LYRICS_DESIGN.md §2–3): verse 1's baseline LYRIC_Y under the staff's bottom line, each further verse LYRIC_STEP lower; the band a staff with lyrics reserves below it, in S. */
 export const LYRIC_Y = 2.6, LYRIC_STEP = 1.6, LYRIC_SIZE = 1.15, LYRIC_AIR = 0.5, HYPHEN_MIN = 0.9;
 export const lyricBand = (verses) => (verses ? 1.4 + LYRIC_STEP * verses : 0);
-/** The staves of the document in score order, each with its part (WSHED-175; the parts epic WSHED-180 widens the record). */
-export const staffList = (doc) => doc.parts.flatMap((p, pi) => Array.from({ length: p.staves }, (_, k) => ({ part: pi, index: k })));
 /**
  * The vertical shape of every system of this document, in S (docs/COMPOSE_LYRICS_DESIGN.md §2, WSHED-175). The same
  * for every system — the engraver's systems stay uniform (hit-testing, the ghost and the playhead rely on it); paper
@@ -39,9 +37,6 @@ export function metricsOf(doc) {
   const systemAt = (yy, n) => Math.max(0, Math.min(n - 1, Math.floor((yy - TOP_PAD + sysGap / 2) / sysH)));
   return { staffTop, gaps, blockH, sysGap, sysH, topPad: TOP_PAD, bottomPad: BOTTOM_PAD, systemAt };
 }
-const DEFAULT_METRICS = metricsOf({ parts: [{ staves: 2 }], measures: [] });
-/** @deprecated (WSHED-175) — the metrics of a plain grand staff; read `L.metrics.systemAt` for the layout at hand. Goes next release. */
-export const systemAt = DEFAULT_METRICS.systemAt;
 const MAX_BARS_PER_SYSTEM = 6;
 /** Paper only (docs/COMPOSE_LAYOUT_DESIGN.md §2): a pinned row whose tightest bar falls under this share of natural spacing is `tight` — refused in the Layout view, red when a size change made it so.
  *  0.3 since v119 (0.8 before): Leif judges what looks crammed; the floor only stops what cannot be read at all (a sixteenth's column is then 0.75 S, heads 1.18 S wide already overlap). */
@@ -86,7 +81,7 @@ const stepsOf = (pitches, clef) => pitches.map((p) => staffStep({ letter: p.step
  * { S, width, height, systems, drawn, beams, ties, hit } — every coordinate in S.
  */
 export function layoutComposition(doc, { unit: S = 12, width = 800, pins = false } = {}) {
-  const nStaves = doc.parts[0].staves;
+  const nStaves = nStavesOf(doc);
   const widthS = width / S;
   const M = metricsOf(doc);
 

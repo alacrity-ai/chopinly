@@ -699,12 +699,12 @@ test("expressions: a v2 document is upgraded — every note-attached mark lands 
   d.v = 2;
   assert.ok(validate(d), "a v2 document with marks on notes is valid");
   const u = upgrade(d);
-  assert.equal(u.v, 3);
+  assert.equal(u.v, 4); // v2 → v3 lifts the marks, then → v4 fills the part (WSHED-180)
   assert.deepEqual(u.measures[0].expressions.map((x) => [x.kind, x.staff, x.at, x.value ?? x.dir, x.end]), [["dyn", 0, 0, "p", undefined], ["hairpin", 0, 0, "cresc", { bar: 0, at: 3 * Qt }], ["text", 0, Qt, "dolce", undefined]]);
   assert.deepEqual(u.measures[1].expressions.map((x) => [x.kind, x.staff, x.at, x.value]), [["text", 0, 0, "a tempo"], ["dyn", 1, 0, "mf"], ["dyn", 0, Qt, "ff"]], "the triplet's second member (a third of a quarter in) snaps down to beat 1");
   for (const m of u.measures) for (const st of m.staves) for (const vv of st.voices) for (const e of vv ?? []) assert.ok(!("dyn" in e) && !("hairpin" in e) && !("text" in e), "the old fields are gone");
   assert.ok(validate(u));
-  assert.equal(upgrade(u), u, "v3 comes back as the same object");
+  assert.equal(upgrade(u), u, "a current document comes back as the same object");
   assert.throws(() => { const w = structuredClone(u); w.measures[0].staves[0].voices[0][0].dyn = "p"; validate(w); }, /keeps its marks in expressions/);
   // a v1 document (no `v` bump needed beyond the marks) upgrades the same way
   const one = fresh(); one.v = 1; one.measures[0].staves[0].voices[0][0].text = "slow";
@@ -806,7 +806,7 @@ const vKinds = (doc, bar, staff, vi) => (doc.measures[bar].staves[staff].voices[
 
 test("voices are sparse per bar: a tap into voice 2 creates it with padding rests, only in that bar; deleting its last note removes it; voice 1 always stays; a v1 document validates as v2", () => {
   let d = place(fresh(), { bar: 0, staff: 0, ticks: 0, step: 4 }, Q).doc;
-  assert.equal(SCHEMA, 3); assert.equal(d.v, 3);
+  assert.equal(SCHEMA, 4); assert.equal(d.v, 4);
   assert.equal(d.measures[0].staves[0].voices.length, 1);
   const r = place(d, { bar: 0, staff: 0, ticks: 100, step: 0, voice: 1 }, H);
   d = r.doc;

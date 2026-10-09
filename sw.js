@@ -73,6 +73,7 @@ const SHELL = [
   "/js/lib/compose/history.js",
   "/js/lib/compose/layout.js",
   "/js/lib/compose/hit.js",
+  "/js/lib/compose/instruments.js",
   "/js/lib/compose/gesture.js",
   "/js/lib/compose/pins.js",
   "/js/lib/compose/favorites.js",
